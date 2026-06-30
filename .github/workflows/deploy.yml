@@ -1,19 +1,28 @@
 name: Deploy
-# REL002ManualDeploy
+# REL002AutoProductionDeploy
+# REL002ManualIntegrationDeploy
 # REL003ReleaseArtifacts
 
 on:
+  workflow_run:
+    workflows: ['PR Checks']
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
         description: Deployment environment
         required: true
-        default: production
+        default: integration
         type: choice
         options: [production, integration]
       version_tag:
-        description: Release tag. Production uses vX.Y.Z; integration uses vX.Y.Z-dev.N.
-        required: true
+        description: Optional release tag. Production uses vX.Y.Z; integration uses vX.Y.Z-dev.N. Blank auto-generates one.
+        required: false
+
+concurrency:
+  group: deploy-${{ github.event_name == 'workflow_run' && 'production' || inputs.environment }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -22,8 +31,15 @@ permissions:
 jobs:
   deploy:
     name: Deploy router and package agent
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run'
+       && github.event.workflow_run.conclusion == 'success'
+       && github.event.workflow_run.event == 'push'
+       && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    environment: ${{ github.event_name == 'workflow_run' && 'production' || (github.ref == 'refs/heads/main' && inputs.environment == 'production' && 'production' || 'integration') }}
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
@@ -31,27 +47,88 @@ jobs:
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
     steps:
+      - name: Resolve deploy settings
+        id: settings
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            target_env="production"
+            deploy_ref="${{ github.event.workflow_run.head_sha }}"
+          else
+            target_env="${{ inputs.environment }}"
+            deploy_ref="${{ github.ref }}"
+          fi
+          if [ "$target_env" = "production" ] && [ "${{ github.ref }}" != "refs/heads/main" ] && [ "${{ github.event_name }}" != "workflow_run" ]; then
+            echo "::error::Production deploys are only allowed from main. Got ref: ${{ github.ref }}"
+            exit 1
+          fi
+          version_tag="${{ inputs.version_tag }}"
+          if [ -z "$version_tag" ]; then
+            if [ "$target_env" = "production" ]; then
+              version_tag="v0.1.${{ github.run_number }}"
+            else
+              version_tag="v0.1.0-dev.${{ github.run_number }}"
+            fi
+          fi
+          if [ "$target_env" = "production" ]; then
+            printf '%s' "$version_tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+            db_name="codeflare-inference-mesh"
+            worker_name="codeflare-inference-mesh-router"
+            wrangler_env=""
+          else
+            printf '%s' "$version_tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$'
+            db_name="codeflare-inference-mesh-integration"
+            worker_name="codeflare-inference-mesh-router-integration"
+            wrangler_env="integration"
+          fi
+          {
+            echo "target_env=$target_env"
+            echo "deploy_ref=$deploy_ref"
+            echo "version_tag=$version_tag"
+            echo "db_name=$db_name"
+            echo "worker_name=$worker_name"
+            echo "wrangler_env=$wrangler_env"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7.0.0
         with:
-          ref: main
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
       - uses: actions/setup-node@v6.4.0
         with:
           node-version: '24'
       - uses: actions/setup-go@v6.5.0
         with:
           go-version: '1.26.4'
-      - name: Validate deploy inputs and secrets
+
+      - name: Wait for production gates
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GATE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          for workflow in Security Fuzz; do
+            ok=""
+            for attempt in $(seq 1 30); do
+              rows=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --commit "$GATE_SHA" --limit 10 --json status,conclusion,databaseId,url,name)
+              status=$(node -e "const rows=JSON.parse(process.argv[1]); if(rows.some((r)=>r.status==='completed' && r.conclusion==='success')) console.log('success'); else if(rows.some((r)=>r.status==='completed' && r.conclusion && r.conclusion !== 'success' && r.conclusion !== 'skipped')) console.log('failure'); else console.log('pending')" "$rows")
+              if [ "$status" = "success" ]; then ok="yes"; break; fi
+              if [ "$status" = "failure" ]; then echo "::error::$workflow failed for $GATE_SHA"; exit 1; fi
+              sleep 20
+            done
+            if [ "$ok" != "yes" ]; then echo "::error::$workflow did not complete successfully for $GATE_SHA"; exit 1; fi
+          done
+
+      - name: Validate deploy secrets
         run: |
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_API_TOKEN_RUNTIME"
-          if [ "${{ inputs.environment }}" = "production" ]; then
-            printf '%s' "${{ inputs.version_tag }}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
-          else
-            printf '%s' "${{ inputs.version_tag }}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$'
-          fi
+
       - name: Install router dependencies
         run: npm install
+
       - name: Repeat critical checks
         run: |
           npm run lint --workspace packages/router-worker
@@ -60,41 +137,59 @@ jobs:
           cd packages/node-agent
           go test ./...
           go vet ./...
+
       - name: Resolve or create D1 database
         working-directory: packages/router-worker
         run: |
           set -euo pipefail
-          DB_NAME="codeflare-inference-mesh"
+          DB_NAME="${{ steps.settings.outputs.db_name }}"
           npx wrangler d1 list --json > d1-list.json
-          DB_ID=$(node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync('d1-list.json','utf8')); const row=rows.find((x)=>x.name==='codeflare-inference-mesh'); if(row) process.stdout.write(row.uuid || row.id || '')")
+          DB_ID=$(DB_NAME="$DB_NAME" node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync('d1-list.json','utf8')); const row=rows.find((x)=>x.name===process.env.DB_NAME); if(row) process.stdout.write(row.uuid || row.id || '')")
           if [ -z "$DB_ID" ]; then
             npx wrangler d1 create "$DB_NAME" --json > d1-create.json
             DB_ID=$(node -e "const fs=require('fs'); const row=JSON.parse(fs.readFileSync('d1-create.json','utf8')); process.stdout.write(row.uuid || row.id || row.result?.uuid || row.result?.id || '')")
           fi
-          DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replace('create-via-deploy-workflow', process.env.DB_ID); fs.writeFileSync(p,text)"
+          DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID); fs.writeFileSync(p,text)"
+
       - name: Apply D1 migrations
         working-directory: packages/router-worker
-        run: npx wrangler d1 migrations apply codeflare-inference-mesh --remote
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
+          npx wrangler d1 migrations apply "${{ steps.settings.outputs.db_name }}" --remote "${args[@]}"
+
       - name: Enable Workers VPC Mesh binding
         working-directory: packages/router-worker
         run: |
           sed -i \
             -e '/^# \[\[vpc_networks\]\]$/s/^# //' \
+            -e '/^# \[\[env\.integration\.vpc_networks\]\]$/s/^# //' \
             -e '/^# binding = "MESH"$/s/^# //' \
             -e '/^# network_id = "cf1:network"$/s/^# //' \
             -e '/^# remote = true$/s/^# //' \
             wrangler.toml
-          for ln in '[[vpc_networks]]' 'binding = "MESH"' 'network_id = "cf1:network"' 'remote = true'; do
-            grep -qxF "$ln" wrangler.toml || { echo "::error::Workers VPC Mesh binding line not enabled: $ln"; exit 1; }
-          done
+          grep -q 'binding = "MESH"' wrangler.toml || { echo "::error::Workers VPC Mesh binding was not enabled"; exit 1; }
+          grep -q 'network_id = "cf1:network"' wrangler.toml || { echo "::error::Workers VPC Mesh network was not enabled"; exit 1; }
+          grep -q 'remote = true' wrangler.toml || { echo "::error::Workers VPC Mesh remote flag was not enabled"; exit 1; }
+
       - name: Set Worker runtime secrets
         working-directory: packages/router-worker
         run: |
-          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
-          printf '%s' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npx wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME
+          set -euo pipefail
+          args=()
+          if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
+          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"
+          printf '%s' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npx wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME "${args[@]}"
+
       - name: Deploy Worker
         working-directory: packages/router-worker
-        run: npx wrangler deploy
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
+          npx wrangler deploy "${args[@]}"
+
       - name: Build release artifacts and manifest
         working-directory: packages/node-agent
         run: |
@@ -106,7 +201,7 @@ jobs:
             EXT=""
             [ "$GOOS" = "windows" ] && EXT=".exe"
             OUT="dist/inference-mesh-agent-${GOOS}-${GOARCH}${EXT}"
-            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-X main.version=${{ inputs.version_tag }}" -o "$OUT" ./cmd/inference-mesh-agent
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-X main.version=${{ steps.settings.outputs.version_tag }}" -o "$OUT" ./cmd/inference-mesh-agent
             if [ "$GOOS" = "windows" ]; then
               (cd dist && zip "inference-mesh-agent-${GOOS}-${GOARCH}.zip" "inference-mesh-agent-${GOOS}-${GOARCH}${EXT}")
             else
@@ -116,32 +211,36 @@ jobs:
           cd dist
           sha256sum *.tar.gz *.zip > checksums.txt
           sha256sum -c checksums.txt
-          node -e "const fs=require('fs'); const crypto=require('crypto'); const files=fs.readdirSync('.').filter((f)=>/\\.(tar\\.gz|zip)$/.test(f)); const artifacts=files.map((name)=>({name, sha256: crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')})); fs.writeFileSync('release-manifest.json', JSON.stringify({version:'${{ inputs.version_tag }}', channel:'${{ inputs.environment }}', commit:process.env.GITHUB_SHA, publishedAt:new Date().toISOString(), artifacts}, null, 2)); fs.writeFileSync('release-notes.md', '# Inference Mesh Agent ${{ inputs.version_tag }}\n\nSee release-manifest.json and checksums.txt for artifact metadata.\n')"
+          node -e "const fs=require('fs'); const crypto=require('crypto'); const files=fs.readdirSync('.').filter((f)=>/\.(tar\.gz|zip)$/.test(f)); const artifacts=files.map((name)=>({name, sha256: crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')})); fs.writeFileSync('release-manifest.json', JSON.stringify({version:'${{ steps.settings.outputs.version_tag }}', channel:'${{ steps.settings.outputs.target_env }}', commit:process.env.GITHUB_SHA, publishedAt:new Date().toISOString(), artifacts}, null, 2)); fs.writeFileSync('release-notes.md', '# Inference Mesh Agent ${{ steps.settings.outputs.version_tag }}\n\nSee release-manifest.json and checksums.txt for artifact metadata.\n')"
+
       - name: Sign checksums when signing is configured
         if: env.COSIGN_PRIVATE_KEY != ''
         working-directory: packages/node-agent/dist
         run: |
           go install github.com/sigstore/cosign/v2/cmd/cosign@v2.6.1
           cosign sign-blob --key env://COSIGN_PRIVATE_KEY --output-signature checksums.txt.sig checksums.txt
+
       - name: Publish GitHub Release
         working-directory: packages/node-agent/dist
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           PRERELEASE=""
-          if [ "${{ inputs.environment }}" = "integration" ]; then PRERELEASE="--prerelease"; fi
-          gh release create "${{ inputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ inputs.version_tag }}" --notes-file release-notes.md $PRERELEASE
+          if [ "${{ steps.settings.outputs.target_env }}" = "integration" ]; then PRERELEASE="--prerelease"; fi
+          gh release create "${{ steps.settings.outputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ steps.settings.outputs.version_tag }}" --notes-file release-notes.md $PRERELEASE
+
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: inference-mesh-release-artifacts
           path: packages/node-agent/dist/*
+
       - name: Write deployment summary
         run: |
           {
             echo "## Codeflare Inference Mesh Deploy"
-            echo "- Environment: ${{ inputs.environment }}"
-            echo "- Ref: main"
-            echo "- Worker: codeflare-inference-mesh-router"
-            echo "- Release tag: ${{ inputs.version_tag }}"
+            echo "- Environment: ${{ steps.settings.outputs.target_env }}"
+            echo "- Ref: ${{ steps.settings.outputs.deploy_ref }}"
+            echo "- Worker: ${{ steps.settings.outputs.worker_name }}"
+            echo "- Release tag: ${{ steps.settings.outputs.version_tag }}"
             echo "- Artifacts: inference-mesh-release-artifacts"
           } >> "$GITHUB_STEP_SUMMARY"

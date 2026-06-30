@@ -1,11 +1,11 @@
-name: CI
+name: PR Checks
 # REL001PullRequestChecks
 # REL003PackageSmoke
 
 on:
-  pull_request:
-    branches: [main, develop]
   push:
+    branches: [main]
+  pull_request:
     branches: [main, develop]
   workflow_dispatch:
 

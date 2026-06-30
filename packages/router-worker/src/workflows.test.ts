@@ -20,13 +20,16 @@ type Job = {
   readonly permissions?: Record<string, string>
   readonly needs?: readonly string[]
   readonly 'timeout-minutes'?: number
+  readonly environment?: string
   readonly steps: readonly Step[]
 }
 
 type Workflow = {
+  readonly name?: string
   readonly on: Record<string, unknown>
   readonly permissions?: Record<string, string>
   readonly jobs: Record<string, Job>
+  readonly concurrency?: Record<string, string | boolean>
 }
 
 function workflow(name: string): Workflow {
@@ -45,13 +48,18 @@ function stepUses(job: Job): readonly string[] {
   return job.steps.map((step) => step.uses).filter((use): use is string => typeof use === 'string')
 }
 
+function allRunText(job: Job): string {
+  return stepRuns(job).join('\n')
+}
+
 describe('workflow contract values', () => {
   it('REQ-REL-001 runs PR, main-push, manual, router, agent, packaging, security, and aggregate test checks', () => {
     const ci = workflow('ci.yml')
 
+    expect(ci.name).toBe('PR Checks')
     expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push', 'workflow_dispatch'])
     expect(ci.on.pull_request).toEqual({ branches: ['main', 'develop'] })
-    expect(ci.on.push).toEqual({ branches: ['main', 'develop'] })
+    expect(ci.on.push).toEqual({ branches: ['main'] })
     expect(Object.keys(ci.jobs).sort()).toEqual(['agent', 'dependency-review', 'packaging', 'router', 'test', 'vulnerability-checks'])
     expect(ci.jobs.test!.needs).toEqual(['router', 'agent', 'packaging', 'dependency-review', 'vulnerability-checks'])
 
@@ -74,71 +82,82 @@ describe('workflow contract values', () => {
     expect(runLines(ci.jobs['vulnerability-checks']!)).toEqual(expect.arrayContaining(['govulncheck ./...']))
   })
 
-  it('REQ-REL-002 deploys only from workflow_dispatch main and applies D1 before Worker deploy', () => {
+  it('REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch', () => {
     const deploy = workflow('deploy.yml')
+    const deployJob = deploy.jobs.deploy!
+    const deployText = allRunText(deployJob)
 
-    expect(Object.keys(deploy.on)).toEqual(['workflow_dispatch'])
-    expect(deploy.jobs.deploy!['timeout-minutes']).toBe(45)
-    expect(deploy.jobs.deploy!.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: 'main' })
-    expect(deploy.jobs.deploy).toHaveProperty('env.CLOUDFLARE_API_TOKEN', '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}')
-    expect(runLines(deploy.jobs.deploy!)).toEqual(expect.arrayContaining([
-      'test -n "$CLOUDFLARE_ACCOUNT_ID"',
-      'test -n "$CLOUDFLARE_API_TOKEN"',
-      'test -n "$CLOUDFLARE_API_TOKEN_RUNTIME"',
-      'npm run lint --workspace packages/router-worker',
-      'npm run test --workspace packages/router-worker',
-      'npm run typecheck --workspace packages/router-worker',
-      'go test ./...',
-      'go vet ./...',
-      'npx wrangler d1 migrations apply codeflare-inference-mesh --remote',
-      "grep -qxF \"$ln\" wrangler.toml || { echo \"::error::Workers VPC Mesh binding line not enabled: $ln\"; exit 1; }",
-      'printf \'%s\' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID',
-      'printf \'%s\' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npx wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME',
-      'npx wrangler deploy'
-    ]))
+    expect(Object.keys(deploy.on).sort()).toEqual(['workflow_dispatch', 'workflow_run'])
+    expect(deploy.on.workflow_run).toEqual({ workflows: ['PR Checks'], types: ['completed'], branches: ['main'] })
+    expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.environment.default', 'integration')
+    expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.version_tag.required', false)
+    expect(deploy.concurrency).toMatchObject({ 'cancel-in-progress': true })
+    expect(deployJob['timeout-minutes']).toBe(45)
+    expect(deployJob.if).toContain("github.event.workflow_run.conclusion == 'success'")
+    expect(deployJob.if).toContain("github.event.workflow_run.event == 'push'")
+    expect(deployJob.if).toContain('github.event.workflow_run.head_repository.full_name == github.repository')
+    expect(deployJob.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}' })
+    expect(deployJob).toHaveProperty('env.CLOUDFLARE_API_TOKEN', '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}')
+    expect(deployText).toContain('Production deploys are only allowed from main')
+    expect(deployText).toContain('for workflow in Security Fuzz; do')
+    expect(deployText).toContain('npx wrangler d1 migrations apply "${{ steps.settings.outputs.db_name }}" --remote "${args[@]}"')
+    expect(deployText).toContain('printf \'%s\' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"')
+    expect(deployText).toContain('npx wrangler deploy "${args[@]}"')
+    expect(deployText).toContain('worker_name="codeflare-inference-mesh-router-integration"')
   })
 
   it('REQ-REL-003 builds cross-platform release assets, manifest, optional signature, and GitHub Release', () => {
     const deploy = workflow('deploy.yml')
+    const deployText = allRunText(deploy.jobs.deploy!)
 
-    expect(runLines(deploy.jobs.deploy!)).toEqual(expect.arrayContaining([
-      'for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do',
-      'sha256sum *.tar.gz *.zip > checksums.txt',
-      'sha256sum -c checksums.txt',
-      'cosign sign-blob --key env://COSIGN_PRIVATE_KEY --output-signature checksums.txt.sig checksums.txt',
-      'gh release create "${{ inputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ inputs.version_tag }}" --notes-file release-notes.md $PRERELEASE'
-    ]))
-    expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.version_tag.required', true)
+    expect(deployText).toContain('for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do')
+    expect(deployText).toContain('sha256sum *.tar.gz *.zip > checksums.txt')
+    expect(deployText).toContain('sha256sum -c checksums.txt')
+    expect(deployText).toContain('cosign sign-blob --key env://COSIGN_PRIVATE_KEY --output-signature checksums.txt.sig checksums.txt')
+    expect(deployText).toContain('gh release create "${{ steps.settings.outputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ steps.settings.outputs.version_tag }}" --notes-file release-notes.md $PRERELEASE')
     expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
   })
 
-  it('REQ-REL-004 enables CodeQL, Scorecard, and bounded fuzz workflows with explicit timeouts', () => {
+  it('REQ-REL-004 enables Security and Fuzz gates with stable aggregate checks and explicit timeouts', () => {
     const security = workflow('security.yml')
     const fuzz = workflow('fuzz.yml')
 
     expect(Object.keys(security.on).sort()).toEqual(['pull_request', 'push', 'schedule', 'workflow_dispatch'])
     expect(security.on.pull_request).toEqual({ branches: ['main', 'develop'] })
+    expect(security.on.push).toEqual({ branches: ['main'] })
     expect(security.jobs['workflow-safety']!['timeout-minutes']).toBe(5)
     expect(security.jobs.codeql).toHaveProperty('strategy.matrix.language', ['javascript-typescript', 'go'])
     expect(security.jobs.codeql).toHaveProperty('if', "github.repository_visibility == 'public'")
     expect(security.jobs.codeql!['timeout-minutes']).toBe(20)
     expect(security.jobs.scorecard).toHaveProperty('if', "github.repository_visibility == 'public' && github.ref == 'refs/heads/main'")
     expect(security.jobs.scorecard!['timeout-minutes']).toBe(10)
+    expect(security.jobs.security!.needs).toEqual(['workflow-safety', 'codeql'])
+    expect(security.jobs.security!['timeout-minutes']).toBe(5)
     expect(stepUses(security.jobs.codeql!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'github/codeql-action/init@v4.36.2', 'github/codeql-action/analyze@v4.36.2']))
     expect(stepUses(security.jobs.scorecard!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'ossf/scorecard-action@v2.4.3', 'github/codeql-action/upload-sarif@v4.36.2']))
     expect(security.jobs.scorecard).toHaveProperty('permissions.security-events', 'write')
     expect(fuzz.on.pull_request).toEqual({ branches: ['main', 'develop'] })
-    expect(Object.keys(fuzz.jobs).sort()).toEqual(['agent-fuzz', 'router-fuzz'])
+    expect(fuzz.on.push).toEqual({ branches: ['main'] })
+    expect(Object.keys(fuzz.jobs).sort()).toEqual(['agent-fuzz', 'fuzz', 'router-fuzz'])
+    expect(fuzz.jobs.fuzz!.needs).toEqual(['router-fuzz', 'agent-fuzz'])
+    expect(fuzz.jobs.fuzz!['timeout-minutes']).toBe(5)
     expect(fuzz.jobs['router-fuzz']!['timeout-minutes']).toBe(10)
     expect(fuzz.jobs['agent-fuzz']!['timeout-minutes']).toBe(10)
     expect(stepRuns(fuzz.jobs['router-fuzz']!)).toEqual(expect.arrayContaining(['npx vitest run src/fuzz.test.ts']))
     expect(stepRuns(fuzz.jobs['agent-fuzz']!)).toEqual(expect.arrayContaining(['go test -run=^$ -fuzz=Fuzz -fuzztime=30s ./internal/agent']))
   })
 
-  it('REQ-REL-004 avoids workflow_run head_sha checkout pattern from Codeflare alert 63', () => {
-    const workflows = ['ci.yml', 'deploy.yml', 'security.yml', 'fuzz.yml'].map(workflow)
+  it('REQ-REL-004 permits only the hardened deploy workflow_run checkout pattern', () => {
+    const ci = workflow('ci.yml')
+    const deploy = workflow('deploy.yml')
+    const security = workflow('security.yml')
+    const fuzz = workflow('fuzz.yml')
 
-    for (const item of workflows) {
+    expect(Object.hasOwn(deploy.on, 'workflow_run')).toBe(true)
+    expect(deploy.jobs.deploy!.if).toContain("github.event.workflow_run.event == 'push'")
+    expect(deploy.jobs.deploy!.if).toContain('github.event.workflow_run.head_repository.full_name == github.repository')
+    expect(deploy.jobs.deploy!.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}' })
+    for (const item of [ci, security, fuzz]) {
       expect(Object.hasOwn(item.on, 'workflow_run')).toBe(false)
       for (const job of Object.values(item.jobs)) {
         for (const step of job.steps) {
@@ -148,6 +167,5 @@ describe('workflow contract values', () => {
         }
       }
     }
-    expect(workflow('deploy.yml').jobs.deploy!.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: 'main' })
   })
 })

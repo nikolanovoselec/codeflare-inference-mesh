@@ -31,3 +31,35 @@ class_name = "RegistryDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RegistryDO"]
+
+[env.integration]
+name = "codeflare-inference-mesh-router-integration"
+workers_dev = true
+
+[env.integration.vars]
+MAX_REQUEST_BYTES = "16777216"
+HEARTBEAT_TTL_SECONDS = "45"
+AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
+AI_GATEWAY_ID = "inference-mesh-integration"
+WORKER_BASE_URL = "https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev"
+GITHUB_REPOSITORY = "nikolanovoselec/codeflare-inference-mesh"
+
+[[env.integration.d1_databases]]
+binding = "DB"
+database_name = "codeflare-inference-mesh-integration"
+database_id = "create-via-deploy-workflow"
+
+[[env.integration.durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDO"
+
+# Workers VPC / Cloudflare Mesh binding for integration deploys.
+# The deploy workflow uncomments this block before `wrangler deploy --env integration`.
+# [[env.integration.vpc_networks]]
+# binding = "MESH"
+# network_id = "cf1:network"
+# remote = true
+
+[[env.integration.migrations]]
+tag = "v1"
+new_sqlite_classes = ["RegistryDO"]

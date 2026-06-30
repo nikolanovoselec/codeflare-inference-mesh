@@ -1,8 +1,18 @@
 # Deployment
 
+## Contents
+
+- [Delivery model](#delivery-model)
+- [PR checks](#pr-checks)
+- [Deploy workflow](#deploy-workflow)
+- [Release channels](#release-channels)
+- [Rollback](#rollback)
+- [CI verification policy](#ci-verification-policy)
+- [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
+
 ## Delivery model
 
-Deployment is manual. Pull requests and main pushes verify behavior, but only the deploy workflow changes Cloudflare state or publishes node-agent artifacts. ([REQ-REL-001](../../sdd/spec/release-ci.md)) ([REQ-REL-002](../../sdd/spec/release-ci.md))
+Production deployment is automatic after a merged `main` push has green PR Checks, Security, and Fuzz gates. Integration deployment is manual and can run from any branch without changing the production Worker or D1 database. ([REQ-REL-001](../../sdd/spec/release-ci.md)) ([REQ-REL-002](../../sdd/spec/release-ci.md)) ([REQ-REL-004](../../sdd/spec/release-ci.md))
 
 ## PR checks
 
@@ -12,18 +22,20 @@ Deployment is manual. Pull requests and main pushes verify behavior, but only th
 | Agent | Go tests, vet, race tests, and command build. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
 | Packaging | Build one archive, generate checksums, verify hash, run staged version command. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
 | Security | npm audit, Go vulnerability check, dependency review where available. | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
+| Fuzz | Bounded router and agent fuzz targets run for pull requests and post-merge `main` pushes. | [REQ-REL-004](../../sdd/spec/release-ci.md) |
 
 ## Deploy workflow
 
 | Step | Outcome | REQs |
 | --- | --- | --- |
-| Validate input | Production deploy requires `main` and explicit version. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Resolve target | Production comes from the green `main` merge SHA; integration uses the manually selected branch. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Check gates | Production waits for exact-head Security and Fuzz success after PR Checks succeeds. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
 | Repeat checks | Critical router and agent checks pass before state changes. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| Prepare D1 | Database is created or resolved and migrations are applied. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Prepare D1 | The production or integration database is created or resolved and migrations are applied. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Build artifacts | Platform agent archives, checksums, signature, and manifest exist. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Publish release | GitHub Release contains all installer/update assets. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| Deploy Worker | Wrangler deploy publishes the router. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| Summarize | Workflow summary lists URL, release tag, environment, and artifacts. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Deploy Worker | Wrangler deploy publishes the production or integration router. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Summarize | Workflow summary lists ref, Worker, release tag, environment, and artifacts. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 
 ## Release channels
 
@@ -42,7 +54,8 @@ GitHub Actions is authoritative for full suites, builds, lint, type-checks, depl
 | Surface | Specification | Source |
 |---|---|---|
 | PR checks | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/ci.yml::REL001PullRequestChecks` <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks --> |
-| Manual deploy | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/deploy.yml::REL002ManualDeploy` <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy --> |
+| Production deploy gate | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/deploy.yml::REL002AutoProductionDeploy` <!-- @impl: .github/workflows/deploy.yml::REL002AutoProductionDeploy --> |
+| Manual integration deploy | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/deploy.yml::REL002ManualIntegrationDeploy` <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> |
 | Release artifacts | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/deploy.yml::REL003ReleaseArtifacts` <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts --> |
 | Bounded fuzz | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/fuzz.yml::REL004FuzzWorkflows` <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows --> |
 | Workflow contract tests | [release-ci.md](../../sdd/spec/release-ci.md) | `packages/router-worker/src/workflows.test.ts::workflow` <!-- @impl: packages/router-worker/src/workflows.test.ts::workflow --> |

@@ -12,7 +12,7 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Acceptance Criteria:**
 
-1. PR checks run on pull requests to `main` and `develop`, pushes to `main` and `develop`, and manual dispatch. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
+1. PR Checks run on pull requests to `main` and `develop`, pushes to `main`, and manual dispatch. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
 2. Router checks install dependencies, lint, run behavioral tests, type-check, generate Wrangler types, and perform a Worker dry-run deploy. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
 3. Agent checks run Go tests, Go vet, race tests, and build the agent command. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
 4. Packaging checks build at least one agent archive, generate checksums, verify the archive hash, and run the staged binary version command. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
@@ -30,19 +30,21 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 ---
 
-### REQ-REL-002: Manual deploy workflow
+### REQ-REL-002: Deploy workflow gating
 
-**Intent:** Deploying the Worker and publishing node-agent artifacts changes production state, so it must be explicit, repeat critical checks, and block production deploys from non-main refs.
+**Intent:** Deploying the Worker and publishing node-agent artifacts changes live state, so production must follow a green main merge while integration remains manually deployable from any branch.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. Deploy runs only from manual workflow dispatch. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
-2. Production deploy refuses to run unless the selected ref is `main`. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
-3. Deploy repeats critical router and agent checks before changing Cloudflare state. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
-4. Deploy creates or resolves the D1 database and applies D1 migrations before Worker deployment. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
-5. Deploy writes a summary that includes Worker URL, release tag, environment, and artifact list. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
+1. Production deploy starts automatically only from a successful `PR Checks` workflow run on a same-repository push to `main`. <!-- @impl: .github/workflows/deploy.yml::REL002AutoProductionDeploy -->
+2. Production deploy waits for exact-head `Security` and `Fuzz` workflows to complete successfully before changing Cloudflare state. <!-- @impl: .github/workflows/deploy.yml::REL002AutoProductionDeploy -->
+3. Manual production deploy refuses to run unless the selected ref is `main`. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy -->
+4. Manual integration deploy can run from any branch and targets the integration Worker and D1 database. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy -->
+5. Deploy repeats critical router and agent checks before changing Cloudflare state. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy -->
+6. Deploy creates or resolves the target D1 database and applies D1 migrations before Worker deployment. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy -->
+7. Deploy writes a summary that includes ref, Worker, release tag, environment, and artifact list. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy -->
 
 **Constraints:** [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface), [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
 
@@ -68,7 +70,7 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 2. Deploy creates a checksums file covering every uploaded archive. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
 3. Deploy signs the checksums file when signing is configured. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
 4. Deploy uploads a release manifest containing version, channel, commit, publish time, and artifact metadata. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
-5. Stable production releases require an explicit semantic version tag. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
+5. Stable production releases use a semantic version tag. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
 6. Prerelease integration releases use a prerelease tag that update clients ignore unless configured for that channel. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface)
@@ -92,9 +94,9 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 **Acceptance Criteria:**
 
 1. CodeQL is defined for JavaScript/TypeScript and Go and runs where GitHub code scanning is available. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
-2. Fuzz workflows run bounded router and agent fuzz targets on pull requests, manual dispatch, and a weekly schedule. <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows -->
+2. Fuzz workflows run bounded router and agent fuzz targets on pull requests, pushes to `main`, manual dispatch, and a weekly schedule. <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows -->
 3. Optional Scorecard runs with minimal permissions and no production write secrets on the default branch where SARIF upload is available. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
-4. Workflow safety checks reject forbidden workflow-run checkout patterns, floating runner/action pins, and major-only core action pins. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
+4. Workflow safety checks reject unsafe workflow-run checkout patterns, floating runner/action pins, and major-only core action pins. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 5. Security workflows define explicit timeouts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 6. Security workflows do not deploy or publish release artifacts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 
