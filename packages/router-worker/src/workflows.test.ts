@@ -11,7 +11,7 @@ type Step = {
   readonly run?: string
   readonly uses?: string
   readonly with?: Record<string, unknown>
-  readonly working-directory?: string
+  readonly 'working-directory'?: string
 }
 
 type Job = {
