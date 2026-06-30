@@ -143,11 +143,11 @@ jobs:
         run: |
           set -euo pipefail
           DB_NAME="${{ steps.settings.outputs.db_name }}"
-          npx wrangler d1 list --json > d1-list.json
+          npm exec -- wrangler d1 list --json > d1-list.json
           DB_ID=$(DB_NAME="$DB_NAME" node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync('d1-list.json','utf8')); const row=rows.find((x)=>x.name===process.env.DB_NAME); if(row) process.stdout.write(row.uuid || row.id || '')")
           if [ -z "$DB_ID" ]; then
-            npx wrangler d1 create "$DB_NAME" --json > d1-create.json
-            DB_ID=$(node -e "const fs=require('fs'); const row=JSON.parse(fs.readFileSync('d1-create.json','utf8')); process.stdout.write(row.uuid || row.id || row.result?.uuid || row.result?.id || '')")
+            npm exec -- wrangler d1 create "$DB_NAME" > d1-create.txt
+            DB_ID=$(node -e "const fs=require('fs'); const text=fs.readFileSync('d1-create.txt','utf8'); const match=text.match(/database_id\\s*=\\s*\"([^\"]+)\"/) || text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i); if(match) process.stdout.write(match[1] || match[0])")
           fi
           DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID); fs.writeFileSync(p,text)"
 
@@ -157,7 +157,7 @@ jobs:
           set -euo pipefail
           args=()
           if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
-          npx wrangler d1 migrations apply "${{ steps.settings.outputs.db_name }}" --remote "${args[@]}"
+          npm exec -- wrangler d1 migrations apply "${{ steps.settings.outputs.db_name }}" --remote "${args[@]}"
 
       - name: Enable Workers VPC Mesh binding
         working-directory: packages/router-worker
@@ -179,8 +179,8 @@ jobs:
           set -euo pipefail
           args=()
           if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
-          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"
-          printf '%s' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npx wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME "${args[@]}"
+          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npm exec -- wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"
+          printf '%s' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npm exec -- wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME "${args[@]}"
 
       - name: Deploy Worker
         working-directory: packages/router-worker
@@ -188,7 +188,7 @@ jobs:
           set -euo pipefail
           args=()
           if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
-          npx wrangler deploy "${args[@]}"
+          npm exec -- wrangler deploy "${args[@]}"
 
       - name: Build release artifacts and manifest
         working-directory: packages/node-agent
