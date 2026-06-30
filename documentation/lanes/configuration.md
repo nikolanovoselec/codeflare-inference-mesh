@@ -1,5 +1,16 @@
 # Configuration
 
+## Contents
+
+- [Worker secrets](#worker-secrets)
+- [Worker vars](#worker-vars)
+- [Wrangler bindings](#wrangler-bindings)
+- [Cloudflare One prerequisite](#cloudflare-one-prerequisite)
+- [Node agent config](#node-agent-config)
+- [GitHub secrets](#github-secrets)
+- [SDD config](#sdd-config)
+- [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
+
 ## Worker secrets
 
 | Name | Purpose | REQs |

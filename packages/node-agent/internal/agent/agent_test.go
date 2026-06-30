@@ -280,6 +280,9 @@ func TestREQSEC005LegacyConfigBackfillsDashboardToken(t *testing.T) {
 	t.Run("REQ-SEC-005", func(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	legacy := DefaultConfig(t.TempDir())
+	if legacy.DashboardToken == "" {
+		t.Fatalf("default config did not generate a dashboard token")
+	}
 	legacy.DashboardToken = ""
 	data, err := json.Marshal(legacy)
 	if err != nil {

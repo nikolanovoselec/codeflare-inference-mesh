@@ -1,5 +1,16 @@
 # Architecture
 
+## Contents
+
+- [Overview](#overview)
+- [Component map](#component-map)
+- [Data plane lifecycle](#data-plane-lifecycle)
+- [Control plane lifecycle](#control-plane-lifecycle)
+- [State flow](#state-flow)
+- [Runtime flow](#runtime-flow)
+- [Boundaries](#boundaries)
+- [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
+
 ## Overview
 
 Codeflare Inference Mesh exposes private local inference nodes through one Cloudflare AI Gateway custom provider. The public Worker validates Gateway traffic, consults durable state and a Durable Object scheduler, forwards requests through Workers VPC to a Mesh IP, and streams the local runtime response back. ([REQ-GWY-001](../../sdd/spec/gateway.md)) ([REQ-RTR-002](../../sdd/spec/router-worker.md))

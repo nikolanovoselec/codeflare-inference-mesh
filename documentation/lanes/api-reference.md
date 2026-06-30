@@ -106,9 +106,7 @@ All API responses that represent errors use an OpenAI-style `error` object when 
 
 **Auth:** Status is localhost dashboard only. Runtime-control POSTs require the local dashboard token.
 
-**Origin check:** applies
-
-Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
+**Origin check:** applies — browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
 
 **Contract:** Runtime-control routes are not Worker, Gateway, or Mesh routes and are not exposed by the public Worker.
 
