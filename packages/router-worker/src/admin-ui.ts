@@ -177,9 +177,10 @@ function adminUiScript(): string {
     return body;
   }
   const showJson = (id, value) => { byId(id).textContent = JSON.stringify(value, null, 2); };
+  const esc = (value) => String(value).replace(/[&<>\"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[char]));
   const copyButton = (value) => '<button type="button" data-copy="' + encodeURIComponent(value) + '">Copy</button>';
   function renderTokens(target, values) {
-    byId(target).innerHTML = Object.entries(values).filter(([, value]) => typeof value === 'string').map(([key, value]) => '<div class="token"><strong>' + key + '</strong><code>' + value + '</code>' + copyButton(value) + '</div>').join('');
+    byId(target).innerHTML = Object.entries(values).filter(([, value]) => typeof value === 'string').map(([key, value]) => '<div class="token"><strong>' + esc(key) + '</strong><code>' + esc(value) + '</code>' + copyButton(value) + '</div>').join('');
   }
   function renderStatus(value) {
     const nodes = Array.isArray(value.nodes) ? value.nodes : [];
@@ -188,8 +189,8 @@ function adminUiScript(): string {
       '<div class="metric"><strong>Nodes</strong><code>' + nodes.length + '</code></div>',
       '<div class="metric"><strong>Profiles</strong><code>' + profiles.length + '</code></div>',
       '<div class="metric"><strong>Generated</strong><code>' + (value.generatedAt || 'unknown') + '</code></div>',
-      '<div class="metric"><strong>Node state</strong><code>' + nodes.map((node) => node.id + ':' + node.status).join('\\n') + '</code></div>',
-      '<div class="metric"><strong>Profiles</strong><code>' + profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '%').join('\\n') + '</code></div>'
+      '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status).join('\\n')) + '</code></div>',
+      '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '%').join('\\n')) + '</code></div>'
     ].join('');
   }
   document.addEventListener('click', async (event) => {
