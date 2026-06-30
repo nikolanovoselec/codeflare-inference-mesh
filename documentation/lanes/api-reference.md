@@ -1,5 +1,19 @@
 # API Reference
 
+## Contents
+
+- [Conventions](#conventions)
+- [GET /health](#get-health-req-rtr-001)
+- [GET /v1/models](#get-v1models-req-gwy-001-req-run-001)
+- [POST /v1/chat/completions](#post-v1chatcompletions-req-rtr-002-req-rtr-003)
+- [POST /node/claim](#post-nodeclaim-req-adm-003-req-node-002)
+- [POST /node/heartbeat](#post-nodeheartbeat-req-node-002-req-obs-003)
+- [POST /node/unregister](#post-nodeunregister-req-obs-004)
+- [GET /install.sh](#get-installsh-req-adm-004)
+- [GET /install.ps1](#get-installps1-req-adm-004)
+- [Node dashboard local routes](#node-dashboard-local-routes-req-node-004-req-sec-004)
+- [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
+
 ## Conventions
 
 All API responses that represent errors use an OpenAI-style `error` object when they are visible to AI Gateway or OpenAI-compatible clients. Provider routes require the provider token; node routes require setup or node credentials; installer routes contain no permanent secrets. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
@@ -94,7 +108,7 @@ All API responses that represent errors use an OpenAI-style `error` object when 
 
 **Origin check:** applies
 
-Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed.
+Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
 
 **Contract:** Runtime-control routes are not Worker, Gateway, or Mesh routes and are not exposed by the public Worker.
 
@@ -105,3 +119,4 @@ Browser runtime-control requests with an `Origin` header must match the localhos
 | Provider routes | [gateway.md](../../sdd/spec/gateway.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Forwarding routes | [router-worker.md](../../sdd/spec/router-worker.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Node proxy | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/proxy.go::ProxyAnchors` <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> |
+| Dashboard controls | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/dashboard.go::DashboardAnchors` <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> |

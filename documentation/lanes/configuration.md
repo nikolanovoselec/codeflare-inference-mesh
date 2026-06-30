@@ -45,7 +45,7 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | `listenAddress` | Concrete Mesh-facing listener address derived from `meshIp`, `inferencePort`, and fallback policy. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
 | `inferencePort` | Mesh-facing inference listener port. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
 | `dashboardAddress` | Localhost dashboard bind address. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
-| `dashboardToken` | Local dashboard CSRF/control token stored only in local config and redacted from status APIs. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
+| `dashboardToken` | Local dashboard CSRF/control token stored only in local config, redacted from status APIs, and backfilled on legacy config load when absent. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md), [REQ-SEC-005](../../sdd/spec/security.md) |
 | `runtimeUrl` | Local OpenAI-compatible runtime URL proxied by the node agent. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
 | `runtimeModel` | Active upstream runtime model identifier. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `publicModels` | Public aliases this node can serve. | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
@@ -55,6 +55,8 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | `dataDir` | Directory for config, model cache, staged updates, and service data. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `releaseUrl` | GitHub Release API URL used by self-update. | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
 | `allowAllInterfaces` | Explicit fallback allowing `0.0.0.0` listener binding when Mesh IP binding is unavailable. | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
+
+Legacy config loads persist a generated `dashboardToken` before dashboard controls are served. ([REQ-SEC-005](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
 
 ## GitHub secrets
 

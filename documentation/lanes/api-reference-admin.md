@@ -28,7 +28,6 @@ POST /admin/setup
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Request:** No required body fields in the current implementation.
 
@@ -46,7 +45,6 @@ POST /admin/login
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Request:** No required body fields in the current implementation.
 
@@ -64,7 +62,6 @@ GET /admin/status
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Request:** No body.
 
@@ -82,7 +79,6 @@ POST /admin/setup-tokens
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Request:** No required body fields in the current implementation.
 
@@ -100,7 +96,6 @@ GET /admin/installers/{platform}
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Path parameters:** `platform` must be `linux`, `macos`, or `windows`.
 
@@ -118,7 +113,6 @@ POST /admin/nodes/{nodeId}/revoke
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Path parameters:** `nodeId` is the URL-encoded node identifier to revoke.
 
@@ -136,7 +130,6 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Request:** No required body fields in the current implementation; account, gateway, token, and Worker URL come from Worker environment.
 
@@ -154,7 +147,6 @@ POST /admin/custom-domain/validate
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Request:** JSON body with `hostname` as the candidate custom-domain hostname.
 
@@ -172,7 +164,6 @@ POST /admin/profiles/rollout
 
 **Origin check:** n/a
 
-No dedicated Origin-header gate; bearer/admin authentication is the route guard.
 
 **Request:** JSON body with `profileId` and numeric `rolloutPercent`.
 

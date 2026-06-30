@@ -59,6 +59,7 @@ function valuesOf(value: unknown): string[] {
 
 describe('router worker behavioral contracts', () => {
   it('REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families', async () => {
+    // RouteFamilySeparationTestAnchor
     const { router } = routerFixture()
 
     expect((await router(new Request('https://router.test/health'))).status).toBe(200)
@@ -69,6 +70,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens and stores only verifiers', async () => {
+    // TokenVerifierStorageTestAnchor
     const { router, store } = routerFixture()
     const response = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const body = await response.json() as Record<string, string>
@@ -81,6 +83,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families', async () => {
+    // CredentialBoundaryTestAnchor
     const { router } = routerFixture()
     expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: bearer('provider-secret'), body: JSON.stringify({ nodeId: 'node-a' }) }))).status).toBe(404)
     expect((await router(new Request('https://router.test/v1/models', { headers: bearer('admin-secret') }))).status).toBe(401)
@@ -120,6 +123,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-RTR-002 REQ-SEC-001 reuses generated upstream token when no env secret exists', async () => {
+    // UpstreamTokenReuseTestAnchor
     const capture: { request?: Request } = {}
     const store = new MemoryStore()
     const router = createRouter({
@@ -230,6 +234,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim', async () => {
+    // FirstRunSetupTokenTestAnchor
     const { router, store } = routerFixture()
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const setup = await setupResponse.json() as { setupToken: string }
@@ -259,6 +264,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-OBS-004 lets an authenticated node remove itself from scheduling', async () => {
+    // NodeUnregisterAuthorizationTestAnchor
     const { router, store } = routerFixture()
     await store.upsertNode({ ...nodeFixture({ status: 'online', inFlight: 1 }), nodeTokenVerifier: await hashToken('node-secret') })
 
@@ -302,6 +308,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status', async () => {
+    // AdminStatusRedactionTestAnchor
     const { router, store } = routerFixture()
     await store.upsertNode({ ...nodeFixture(), upstreamTokenVerifier: 'sha256:hidden' })
 
@@ -387,6 +394,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-SEC-003 strips client authorization and Cloudflare headers before Worker-to-node forwarding', async () => {
+    // WorkerHeaderFilteringTestAnchor
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture) })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)

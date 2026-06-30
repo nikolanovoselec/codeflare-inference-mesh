@@ -276,8 +276,8 @@ func (f *fakeRuntimeController) Restart(context.Context) error {
 	return nil
 }
 
-func TestREQSEC004LegacyConfigBackfillsDashboardToken(t *testing.T) {
-	t.Run("REQ-SEC-004", func(t *testing.T) {
+func TestREQSEC005LegacyConfigBackfillsDashboardToken(t *testing.T) {
+	t.Run("REQ-SEC-005", func(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	legacy := DefaultConfig(t.TempDir())
 	legacy.DashboardToken = ""

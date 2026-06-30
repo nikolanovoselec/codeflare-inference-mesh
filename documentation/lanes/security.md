@@ -16,7 +16,7 @@
 
 **Mitigation:** Each boundary uses a separate credential class with route-specific authorization.
 
-**Verification:** The `REQ-GWY-004 REQ-SEC-001` router test checks cross-family credential rejection; `TestREQNODE004DashboardRuntimeControlsUseController` checks dashboard-token enforcement. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-004 --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController -->
+**Verification:** The credential-boundary router test checks cross-family credential rejection; `TestREQNODE004DashboardRuntimeControlsUseController` checks dashboard-token enforcement. <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController -->
 
 **Implements:** [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -38,7 +38,7 @@
 
 **Mitigation:** Provider auth applies only to `/v1/models` and `/v1/chat/completions`; node claim, heartbeat, unregister, admin, installer, and health routes use their own policy.
 
-**Verification:** The `REQ-GWY-001 REQ-RTR-001` router test covers route-family separation, and the `REQ-OBS-004` router test covers node unregister authorization. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-001 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-OBS-004 -->
+**Verification:** The route-family router test covers public/provider/admin separation, the credential-boundary router test covers REQ-SEC-001 cross-family rejection, and the node-unregister router test covers node authorization. <!-- @impl: packages/router-worker/src/router.test.ts::RouteFamilySeparationTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::NodeUnregisterAuthorizationTestAnchor -->
 
 **Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -46,11 +46,11 @@
 
 **Threat:** Durable plaintext credentials could be recovered from D1 or logs after initial setup.
 
-**Mitigation:** Durable token records are verifier-only by default. Plaintext token display is one-time at creation. The generated Worker-to-node upstream token is recoverable in router config only because the Worker must present it to nodes during forwarding.
+**Mitigation:** Durable token records are verifier-only by default. Plaintext token display is one-time at creation. The generated Worker-to-node upstream token is recoverable in router config only because the Worker must present it to nodes during forwarding. The dashboard token is node-local config state; legacy configs without it backfill and persist one during load. ([REQ-SEC-005](../../sdd/spec/security.md))
 
-**Verification:** The `REQ-GWY-002 REQ-SEC-002` router test asserts verifier-only token records, the `REQ-RTR-002 REQ-SEC-001` router test asserts generated upstream-token reuse, and the `REQ-ADM-002 REQ-OBS-002` router test asserts admin status redaction. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-002 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-RTR-002 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-ADM-002 -->
+**Verification:** The token-verifier router test asserts verifier-only token records, the upstream-token reuse router test asserts generated upstream-token reuse, the admin-status router test asserts admin status redaction, and `TestREQSEC005LegacyConfigBackfillsDashboardToken` asserts dashboard-token backfill persistence. <!-- @impl: packages/router-worker/src/router.test.ts::TokenVerifierStorageTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::UpstreamTokenReuseTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminStatusRedactionTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQSEC005LegacyConfigBackfillsDashboardToken -->
 
-**Implements:** [REQ-SEC-002](../../sdd/spec/security.md)
+**Implements:** [REQ-SEC-002](../../sdd/spec/security.md), [REQ-SEC-005](../../sdd/spec/security.md)
 
 ## Header filtering
 
@@ -58,7 +58,7 @@
 
 **Mitigation:** The Worker forwards only approved inference metadata and the upstream token to a node. The node proxy strips credentials before forwarding to `llama-server`.
 
-**Verification:** The `REQ-SEC-003` router test and `TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` assert forbidden headers are absent at the next hop. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-SEC-003 --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams -->
+**Verification:** The Worker header-filtering router test and `TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` assert forbidden headers are absent at the next hop. <!-- @impl: packages/router-worker/src/router.test.ts::WorkerHeaderFilteringTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams -->
 
 **Implements:** [REQ-SEC-003](../../sdd/spec/security.md)
 
@@ -78,7 +78,7 @@
 
 **Mitigation:** First-run setup is intentionally open only until setup completes; after an active admin token exists, setup/admin routes require admin auth. Cloudflare Access is an optional hardening layer after a custom domain exists.
 
-**Verification:** The `REQ-GWY-002 REQ-SEC-002` router test asserts first-run token generation, the `REQ-ADM-002 REQ-OBS-002` router test asserts admin-only status, and the `REQ-GWY-004 REQ-SEC-001` router test asserts credential-class separation. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-002 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-ADM-002 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-004 -->
+**Verification:** The first-run setup router test asserts setup token generation and claim, the admin-status router test asserts admin-only status, and the credential-boundary router test asserts credential-class separation. <!-- @impl: packages/router-worker/src/router.test.ts::FirstRunSetupTokenTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminStatusRedactionTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor -->
 
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
@@ -89,4 +89,5 @@
 | Credential classes | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/auth.ts::AUTH_ANCHORS` <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> |
 | Header filtering | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/proxy.go::ProxyAnchors` <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> |
 | Runtime exposure | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/config.go::ConfigAnchors` <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> |
+| Dashboard token lifecycle | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/config.go::LoadConfig` <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig --> |
 | Dashboard controls | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/dashboard.go::DashboardAnchors` <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> |

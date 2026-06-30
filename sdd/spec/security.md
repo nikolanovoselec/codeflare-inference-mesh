@@ -96,15 +96,38 @@ This domain covers credential separation, route-level auth, header filtering, to
 3. The Mesh-facing listener requires upstream token verification before any inference proxy call. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
 4. Local dashboard endpoints bind to localhost and do not accept Worker upstream tokens as dashboard auth. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
 5. Runtime-control dashboard POSTs require the local dashboard token. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
-6. Legacy node-agent configs without `dashboardToken` generate and persist one during config load before dashboard controls are served. <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
-7. Runtime-control dashboard POSTs reject browser Origin headers that do not match the dashboard origin. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
-8. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
+6. Runtime-control dashboard POSTs reject browser Origin headers that do not match the dashboard origin. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
+7. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-NODE-003](node-agent.md#req-node-003-upstream-proxy), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-llamacpp-runtime)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-SEC-005: Dashboard token lifecycle
+
+**Intent:** Local runtime controls need a stable node-local dashboard token even when operators upgrade from earlier configs that did not include one.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. Newly generated node-agent configs include a non-empty `dashboardToken`. <!-- @impl: packages/node-agent/internal/agent/config.go::DefaultConfig -->
+2. Legacy node-agent configs without `dashboardToken` generate one during config load. <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
+3. A generated legacy backfill token is persisted so the dashboard token remains stable across reloads. <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard-and-operations)
 
 **Verification:** Automated test
 
