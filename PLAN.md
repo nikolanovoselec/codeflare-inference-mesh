@@ -24,14 +24,15 @@ system in phases.
 12. [Model Runtime Strategy](#model-runtime-strategy)
 13. [Admin Setup Flow](#admin-setup-flow)
 14. [AI Gateway Setup Flow](#ai-gateway-setup-flow)
-15. [GitHub Actions And Releases](#github-actions-and-releases)
-16. [Cloudflare API Token Scopes](#cloudflare-api-token-scopes)
-17. [Observability](#observability)
-18. [Failure Modes](#failure-modes)
-19. [Alternatives Considered](#alternatives-considered)
-20. [Implementation Phases](#implementation-phases)
-21. [Validation Gates](#validation-gates)
-22. [Open Decisions](#open-decisions)
+15. [Model Virtualization And Stable Gateway Names](#model-virtualization-and-stable-gateway-names)
+16. [GitHub Actions And Releases](#github-actions-and-releases)
+17. [Cloudflare API Token Scopes](#cloudflare-api-token-scopes)
+18. [Observability](#observability)
+19. [Failure Modes](#failure-modes)
+20. [Alternatives Considered](#alternatives-considered)
+21. [Implementation Phases](#implementation-phases)
+22. [Validation Gates](#validation-gates)
+23. [Open Decisions](#open-decisions)
 
 ## Purpose
 
@@ -179,13 +180,14 @@ Release plane
 2. AI Gateway calls custom provider URL on the Worker.
 3. Worker verifies the provider bearer token.
 4. Worker parses the OpenAI-compatible request.
-5. Worker asks Durable Object for a node reservation.
-6. Durable Object selects an eligible node.
-7. Worker sends the request through Workers VPC to the node Mesh IP.
-8. Node agent validates the upstream token.
-9. Node agent forwards to local inference runtime.
-10. Runtime response streams back through the same path.
-11. Worker releases the reservation when the stream ends or fails.
+5. Worker maps the public model name to the active internal model profile.
+6. Worker asks Durable Object for a node reservation.
+7. Durable Object selects an eligible node.
+8. Worker sends the request through Workers VPC to the node Mesh IP.
+9. Node agent validates the upstream token.
+10. Node agent forwards to local inference runtime.
+11. Runtime response streams back through the same path.
+12. Worker releases the reservation when the stream ends or fails.
 ```
 
 ### Control Plane Node Path
@@ -223,6 +225,8 @@ AI Gateway should not:
 - Know about individual local machines.
 - Hold node registration tokens.
 - Dispatch directly to WARP client IPs.
+- Know which concrete local model is currently active behind a stable router
+  alias.
 
 References:
 
@@ -403,6 +407,10 @@ This plan depends on these documented Cloudflare features:
 | GitHub Actions Syntax | CI and release workflow structure | <https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions> |
 | GoReleaser GitHub Actions | Cross-platform agent builds and checksums | <https://goreleaser.com/ci/actions/> |
 | llama.cpp Server | Default local OpenAI-compatible runtime | <https://github.com/ggml-org/llama.cpp/tree/master/tools/server> |
+| Qwen3.6 27B model card | Qwen long-context coding profile candidate | <https://huggingface.co/Qwen/Qwen3.6-27B> |
+| Gemma 4 model overview | Alternative local long-context model family | <https://ai.google.dev/gemma/docs/core> |
+| Gemma 4 model card | Gemma 4 context length, modalities, model details | <https://ai.google.dev/gemma/docs/core/model_card_4> |
+| Gemma 4 GGUF docs | Local Gemma 4 GGUF profiles and memory guidance | <https://unsloth.ai/docs/models/gemma-4> |
 
 ## End-To-End Flows
 
@@ -483,7 +491,7 @@ Flow:
 2. AI Gateway resolves dynamic route to custom provider.
 3. AI Gateway calls Worker `/v1/chat/completions`.
 4. Worker validates provider token.
-5. Worker normalizes requested model alias.
+5. Worker maps requested public model name to active internal profile.
 6. Worker asks Durable Object for a reservation.
 7. Durable Object selects a node.
 8. Worker calls node agent through `env.MESH.fetch`.
@@ -816,12 +824,13 @@ type NodeRecord = {
 ```ts
 type ModelRecord = {
   name: string;
-  aliases: string[];
+  publicAliases: string[];
   upstreamModel: string;
   context: number;
   loaded: boolean;
   quant?: string;
   profileId?: string;
+  profileVersion?: number;
 };
 ```
 
@@ -920,7 +929,7 @@ Response body:
 ```json
 {
   "error": {
-    "message": "No available inference node for model qwen3.5:27b",
+    "message": "No available inference node for model mesh-default",
     "type": "inference_mesh_busy"
   }
 }
@@ -1123,27 +1132,40 @@ Reference:
 
 ### Model Profiles
 
-The router owns model profiles. The agent consumes them.
+The router owns model profiles. The agent consumes them. A model profile is the
+internal runtime definition for one concrete model on one hardware class.
 
-Example:
+External clients and AI Gateway should not depend on these concrete names.
+They should call stable public aliases such as:
+
+```text
+mesh-default
+freestyler
+code-worker
+```
+
+The router maps those aliases to active profiles.
+
+### Qwen 3.6 27B Profile
 
 ```json
 {
-  "id": "qwen35-27b-200k-3090",
-  "label": "Qwen 3.5 27B, 200K context, RTX 3090",
+  "id": "qwen36-27b-256k-3090",
+  "label": "Qwen 3.6 27B, 256K context, RTX 3090",
   "engine": "llama.cpp",
+  "publicAliases": ["mesh-default", "freestyler"],
   "model": {
-    "name": "qwen3.5:27b",
-    "repo": "unsloth/Qwen3.5-27B-GGUF",
+    "name": "qwen3.6:27b",
+    "repo": "unsloth/Qwen3.6-27B-GGUF",
     "file": "Q4_K_M.gguf",
     "sha256": "optional-pinned-checksum"
   },
   "runtime": {
-    "context": 200000,
+    "context": 262144,
     "maxConcurrent": 1,
     "args": [
       "-ngl", "99",
-      "-c", "200000",
+      "-c", "262144",
       "-fa", "on",
       "--cache-type-k", "q4_0",
       "--cache-type-v", "q4_0",
@@ -1153,12 +1175,66 @@ Example:
 }
 ```
 
+This is the first serious coding-agent profile to test on an RTX 3090. It is
+the strongest current Qwen open-weight local candidate for long-context coding
+work.
+
+### Gemma 4 26B-A4B Profile
+
+```json
+{
+  "id": "gemma4-26b-a4b-256k-3090",
+  "label": "Gemma 4 26B-A4B, 256K context, RTX 3090",
+  "engine": "llama.cpp",
+  "publicAliases": ["mesh-default", "freestyler"],
+  "model": {
+    "name": "gemma4:26b-a4b",
+    "repo": "unsloth/gemma-4-26B-A4B-it-GGUF",
+    "file": "UD-Q4_K_M.gguf",
+    "sha256": "optional-pinned-checksum"
+  },
+  "runtime": {
+    "context": 262144,
+    "maxConcurrent": 1,
+    "args": [
+      "-ngl", "99",
+      "-c", "262144",
+      "-fa", "on",
+      "--cache-type-k", "q4_0",
+      "--cache-type-v", "q4_0",
+      "--no-mmproj"
+    ]
+  }
+}
+```
+
+Why Gemma 4 26B-A4B is in scope:
+
+- Google documents Gemma 4 as open weights with long-context support up to
+  256K tokens.
+- The 26B-A4B variant is a consumer-GPU-sized MoE candidate.
+- It is a useful competitor to Qwen3.6-27B for coding-agent quality, latency,
+  and reasoning behavior.
+- It can be served through `llama-server` as an OpenAI-compatible endpoint when
+  using a compatible GGUF build.
+
+Gemma caveats:
+
+- Use a recent llama.cpp build because Gemma 4 compatibility has changed over
+  time.
+- Test text-only first. Multimodal support is not required for the coding-agent
+  route and may need additional projector/runtime handling.
+- Treat 256K as a validation target, not a guarantee. Runtime overhead and KV
+  cache behavior decide whether the 3090 profile is stable.
+
 Why profiles live in the router:
 
 - New installs get updated defaults without rebuilding the agent.
 - Different hardware classes can get different profiles.
 - Admin can control which models are allowed.
 - AI Gateway route names can map cleanly to model aliases.
+- Public AI Gateway names can stay stable while the active internal model
+  changes from Qwen to Gemma or back.
 
 ### Initial Runtime Scope
 
@@ -1284,7 +1360,7 @@ Example:
 gateway: codeflare-enterprise
 route name: freestyler
 provider: custom-inference-mesh
-model: qwen3.5:27b
+model: mesh-default
 timeout: 60000 or higher
 retries: 0 or 1
 ```
@@ -1318,6 +1394,236 @@ Rules:
 - Log header names only.
 - Never log token values.
 - Delete or disable after validation.
+
+## Model Virtualization And Stable Gateway Names
+
+### Intent
+
+AI Gateway should be configured once and then left alone. The router should own
+model choice, model rollout, and node-agent profile propagation.
+
+The external contract should be stable:
+
+```text
+AI Gateway route: freestyler
+AI Gateway provider: custom-inference-mesh
+AI Gateway provider model: mesh-default
+Worker public model: mesh-default
+```
+
+The internal implementation can change:
+
+```text
+mesh-default -> qwen36-27b-256k-3090
+mesh-default -> gemma4-26b-a4b-256k-3090
+mesh-default -> small-smoke-test-32k
+```
+
+This lets the administrator switch between Qwen, Gemma, smaller smoke-test
+models, or hardware-specific profiles without reconfiguring AI Gateway.
+
+### Public Model Alias
+
+The Worker should expose public models from router config:
+
+```json
+{
+  "publicModels": [
+    {
+      "name": "mesh-default",
+      "description": "Default local inference mesh model",
+      "activeProfileId": "gemma4-26b-a4b-256k-3090",
+      "fallbackProfileIds": [
+        "qwen36-27b-256k-3090"
+      ]
+    }
+  ]
+}
+```
+
+`GET /v1/models` should return public aliases, not every internal runtime name.
+
+Example response:
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "mesh-default",
+      "object": "model",
+      "owned_by": "inference-mesh"
+    }
+  ]
+}
+```
+
+### Request Rewriting
+
+Inbound request from AI Gateway:
+
+```json
+{
+  "model": "mesh-default",
+  "messages": [],
+  "stream": true
+}
+```
+
+Router lookup:
+
+```text
+mesh-default
+  -> activeProfileId: gemma4-26b-a4b-256k-3090
+  -> internal model name: gemma4:26b-a4b
+```
+
+Outbound request to selected node:
+
+```json
+{
+  "model": "gemma4:26b-a4b",
+  "messages": [],
+  "stream": true
+}
+```
+
+The AI Gateway route stays configured with `mesh-default`. Only the Worker
+router config changes.
+
+### Profile Versioning
+
+Model profiles need a version so node agents can detect changes:
+
+```json
+{
+  "profileId": "gemma4-26b-a4b-256k-3090",
+  "profileVersion": 3,
+  "model": "gemma4:26b-a4b",
+  "context": 262144
+}
+```
+
+The Durable Object should store:
+
+```text
+public model alias
+active profile ID
+active profile version
+compatible node IDs
+rollout state
+```
+
+Node heartbeat should include:
+
+```json
+{
+  "nodeId": "win3090-office",
+  "readyProfiles": [
+    {
+      "profileId": "qwen36-27b-256k-3090",
+      "profileVersion": 1,
+      "loaded": true
+    }
+  ],
+  "activeRuntimeProfile": "qwen36-27b-256k-3090"
+}
+```
+
+Heartbeat response can include desired state:
+
+```json
+{
+  "desiredProfiles": [
+    {
+      "profileId": "gemma4-26b-a4b-256k-3090",
+      "profileVersion": 3,
+      "action": "prepare"
+    }
+  ],
+  "activePublicModels": [
+    {
+      "publicModel": "mesh-default",
+      "activeProfileId": "gemma4-26b-a4b-256k-3090"
+    }
+  ]
+}
+```
+
+### Rollout Flow
+
+Safe model swap:
+
+```text
+1. Admin changes `mesh-default` desired profile to Gemma 4.
+2. Router increments profile version.
+3. Node agents receive desired profile on heartbeat.
+4. Nodes download or prepare Gemma 4.
+5. Nodes start runtime or warm model.
+6. Nodes heartbeat `readyProfiles` including Gemma 4.
+7. Router switches `mesh-default` active profile when enough nodes are ready.
+8. New requests route to Gemma 4.
+9. Old Qwen profile remains available for rollback.
+```
+
+For MVP, the rollout can be manual:
+
+```text
+admin changes active profile
+node prepares profile
+admin switches active alias when node is ready
+```
+
+Later, the router can support canary and automatic readiness gates.
+
+### Compatibility With AI Gateway
+
+This architecture is compatible with AI Gateway because AI Gateway only sees a
+normal OpenAI-compatible provider:
+
+```text
+POST /v1/chat/completions
+model: mesh-default
+```
+
+The Worker performs all internal model selection and rewrites the model name
+before forwarding to the node. AI Gateway does not need to know whether the
+node is running Qwen, Gemma, or another local runtime.
+
+### Compatibility With OpenAI APIs
+
+The first supported endpoint should be:
+
+```text
+POST /v1/chat/completions
+```
+
+The Worker can add these later:
+
+```text
+POST /v1/responses
+POST /v1/completions
+POST /v1/embeddings
+```
+
+Do not make `/v1/completions` the primary target for Gemma 4. Gemma 4 is an
+instruction/chat model, and the router should normalize coding agents onto
+chat completions first.
+
+### Why This Is Better Than Reconfiguring AI Gateway
+
+Stable public aliases give:
+
+- one permanent AI Gateway custom provider
+- one permanent dynamic route
+- one permanent client configuration
+- router-controlled model swaps
+- fast rollback
+- node-agent propagation through heartbeat responses
+
+The cost is that the Worker must own alias mapping, profile versioning, and
+request rewriting. That is the right place for this logic because the Worker
+already owns scheduling and node selection.
 
 ## GitHub Actions And Releases
 
@@ -1546,7 +1852,8 @@ X-Inference-Mesh-Session: codex-pi-main
     {
       "nodeId": "win3090-office",
       "status": "ready",
-      "models": ["qwen3.5:27b"],
+      "publicModels": ["mesh-default"],
+      "activeProfiles": ["gemma4-26b-a4b-256k-3090"],
       "inFlight": 1,
       "maxConcurrent": 1,
       "lastSeenSecondsAgo": 8,
@@ -1561,7 +1868,9 @@ X-Inference-Mesh-Session: codex-pi-main
     {
       "sessionId": "codex-pi-main",
       "nodeId": "win3090-office",
-      "model": "qwen3.5:27b"
+      "publicModel": "mesh-default",
+      "profileId": "gemma4-26b-a4b-256k-3090",
+      "upstreamModel": "gemma4:26b-a4b"
     }
   ]
 }
@@ -1699,6 +2008,34 @@ Cons:
 Decision:
 
 Reject. Keep one Worker router.
+
+### Concrete Model Names In AI Gateway
+
+Alternative:
+
+```text
+AI Gateway route model: qwen3.6:27b
+AI Gateway route model: gemma4:26b-a4b
+```
+
+Pros:
+
+- Direct and easy to understand.
+- Less alias mapping logic in the Worker.
+
+Cons:
+
+- Every model change requires AI Gateway route edits.
+- Client configuration can drift from router state.
+- Rollback requires Cloudflare route changes instead of one router config
+  change.
+- Node-agent desired state cannot be coordinated cleanly with Gateway config.
+
+Decision:
+
+Reject for the main product. Use stable public aliases such as `mesh-default`
+or `freestyler` in AI Gateway, then let the Worker map those aliases to active
+internal profiles.
 
 ### KV, D1, Or R2 Instead Of Durable Object
 
@@ -1902,13 +2239,15 @@ agent manages llama.cpp runtime and model files
 Tasks:
 
 1. Add model profile fetch from Worker.
-2. Add model cache directory.
-3. Add resumable model download.
-4. Add checksum verification.
-5. Add llama-server binary management.
-6. Add runtime process supervisor.
-7. Add Start and Stop button.
-8. Add token/sec and GPU metrics.
+2. Add profile version tracking.
+3. Add desired-profile response on heartbeat.
+4. Add model cache directory.
+5. Add resumable model download.
+6. Add checksum verification.
+7. Add llama-server binary management.
+8. Add runtime process supervisor.
+9. Add Start and Stop button.
+10. Add token/sec and GPU metrics.
 
 Acceptance:
 
@@ -1952,13 +2291,15 @@ multiple machines serve one provider endpoint
 
 Tasks:
 
-1. Add model aliases.
-2. Add session affinity.
-3. Add reservations.
-4. Add node weights.
-5. Add failure penalties.
-6. Add 429 busy behavior.
-7. Add node revoke and drain controls.
+1. Add stable public model aliases.
+2. Add active profile mapping per public alias.
+3. Add request model rewriting.
+4. Add session affinity.
+5. Add reservations.
+6. Add node weights.
+7. Add failure penalties.
+8. Add 429 busy behavior.
+9. Add node revoke and drain controls.
 
 Acceptance:
 
@@ -1966,6 +2307,8 @@ Acceptance:
 - One hot session stays on one node.
 - Busy node is not overbooked.
 - Unhealthy node is avoided.
+- AI Gateway route can stay on `mesh-default` while router swaps active
+  profile between Qwen and Gemma.
 
 ### Phase 7: GitHub Actions
 
@@ -2071,9 +2414,8 @@ These must be nailed down before implementation reaches the relevant phase.
    tokens, or start with per-node upstream tokens immediately?
 
 4. Model profile defaults:
-   Should first profile target only `qwen3.5:27b` with 200K context, or should
-   the first version include both a long-context profile and a smaller fast
-   smoke-test profile?
+   Should `mesh-default` initially target `gemma4-26b-a4b-256k-3090`,
+   `qwen36-27b-256k-3090`, or a smaller fast smoke-test profile?
 
 5. Dynamic route automation:
    Should first version create only the custom provider and print manual
