@@ -1,3 +1,4 @@
+import { adminUiHtml } from './admin-ui'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
 import { CloudflareGatewayClient, type GatewaySyncRequest, type GatewaySyncResult } from './cloudflare-api'
 import { installerCommand, installScript, validateCustomDomain, type InstallerPlatform } from './installers'
@@ -27,6 +28,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
     const url = new URL(request.url)
     try {
       await deps.store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+      if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/admin')) return html(adminUiHtml(url.origin), id)
       if (request.method === 'GET' && url.pathname === '/health') return json({ ok: true, service: 'inference-mesh-router' }, 200, id)
       if (request.method === 'GET' && url.pathname === '/v1/models') return await handleModels(request, deps, id, now())
       if (request.method === 'POST' && url.pathname === '/v1/chat/completions') return await handleChat(request, deps, id, now())
@@ -297,6 +299,10 @@ function json(body: unknown, status: number, requestId: string): Response {
   return Response.json(body, { status, headers: { ...JSON_HEADERS, 'x-inference-mesh-request-id': requestId } })
 }
 
+function html(body: string, requestId: string): Response {
+  return new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'x-inference-mesh-request-id': requestId } })
+}
+
 async function readJson<T>(request: Request): Promise<T> {
   return await request.json() as T
 }
@@ -380,5 +386,6 @@ export const ROUTER_ANCHORS = {
   REQ_ADM_001: 'REQ-ADM-001',
   REQ_ADM_002: 'REQ-ADM-002',
   REQ_ADM_003: 'REQ-ADM-003',
+  REQ_ADM_006: 'REQ-ADM-006',
   REQ_SEC_002: 'REQ-SEC-002'
 } as const

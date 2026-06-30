@@ -108,6 +108,32 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-006: Admin configuration UI
+
+**Intent:** Admins must be able to configure and operate the deployed router from a responsive browser interface instead of using raw API calls for normal setup and operations.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. `GET /` and `GET /admin` serve the Admin configuration UI as HTML with no bearer token required to load the shell. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
+2. The UI exposes first-run setup, admin login, status refresh, setup-token creation, Linux/macOS/Windows installer generation, Gateway sync, custom-domain validation, node revocation, and profile rollout controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
+3. The UI stores admin tokens only in browser-controlled session/local storage and sends them as bearer credentials only when an admin action requires authentication. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
+4. The UI displays generated admin/provider/setup/upstream tokens only from creation responses and never reads plaintext credentials back from status. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
+5. The layout remains usable on desktop and mobile viewports with responsive navigation, forms, status panels, tables, and action controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-ADM-001](#req-adm-001-first-run-setup), [REQ-ADM-002](#req-adm-002-mvp-admin-auth), [REQ-ADM-003](#req-adm-003-setup-token-lifecycle), [REQ-ADM-004](#req-adm-004-one-line-installers), [REQ-ADM-005](#req-adm-005-optional-custom-domain), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout-controls), [REQ-OBS-002](observability.md#req-obs-002-admin-status)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ### REQ-ADM-005: Optional custom domain
 
 **Intent:** The router should work on `workers.dev` first and support a custom domain later without blocking the private Mesh proof path.
