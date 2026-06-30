@@ -90,7 +90,8 @@ describe('workflow contract values', () => {
       'npm run typecheck --workspace packages/router-worker',
       'go test ./...',
       'go vet ./...',
-      'npx wrangler d1 migrations apply cloudflare-inference-mesh --remote',
+      'npx wrangler d1 migrations apply codeflare-inference-mesh --remote',
+      "grep -qxF \"$ln\" wrangler.toml || { echo \"::error::Workers VPC Mesh binding line not enabled: $ln\"; exit 1; }",
       'printf \'%s\' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID',
       'printf \'%s\' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npx wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME',
       'npx wrangler deploy'

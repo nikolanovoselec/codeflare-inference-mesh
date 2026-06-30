@@ -1,5 +1,5 @@
 {
-  "name": "@cloudflare-inference-mesh/router-worker",
+  "name": "@codeflare-inference-mesh/router-worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -35,7 +35,7 @@ function routerFixture(overrides: Partial<Parameters<typeof createRouter>[0]> = 
         ADMIN_TOKEN: 'admin-secret',
         NODE_UPSTREAM_TOKEN: 'upstream-secret',
         WORKER_BASE_URL: 'https://router.example.workers.dev',
-        GITHUB_REPOSITORY: 'nikolanovoselec/cloudflare-inference-mesh',
+        GITHUB_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh',
         MAX_REQUEST_BYTES: '4096',
         ...overrides.env
       },
@@ -125,7 +125,10 @@ describe('router worker behavioral contracts', () => {
         controller.close()
       }
     })
-    const mesh = { fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }) } as Fetcher
+    const mesh = {
+      fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
+      connect() { throw new Error('connect is not used by inference forwarding') }
+    } as Fetcher
     const { router, store } = routerFixture({ mesh })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture())

@@ -1,4 +1,4 @@
-# Cloudflare Inference Mesh Plan
+# Codeflare Inference Mesh Plan
 
 Status: planning document
 
@@ -1965,7 +1965,7 @@ already owns scheduling and node selection.
 ### Planned Repository Layout
 
 ```text
-cloudflare-inference-mesh/
+codeflare-inference-mesh/
   packages/
     router-worker/
       src/

@@ -64,9 +64,9 @@ jobs:
         working-directory: packages/router-worker
         run: |
           set -euo pipefail
-          DB_NAME="cloudflare-inference-mesh"
+          DB_NAME="codeflare-inference-mesh"
           npx wrangler d1 list --json > d1-list.json
-          DB_ID=$(node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync('d1-list.json','utf8')); const row=rows.find((x)=>x.name==='cloudflare-inference-mesh'); if(row) process.stdout.write(row.uuid || row.id || '')")
+          DB_ID=$(node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync('d1-list.json','utf8')); const row=rows.find((x)=>x.name==='codeflare-inference-mesh'); if(row) process.stdout.write(row.uuid || row.id || '')")
           if [ -z "$DB_ID" ]; then
             npx wrangler d1 create "$DB_NAME" --json > d1-create.json
             DB_ID=$(node -e "const fs=require('fs'); const row=JSON.parse(fs.readFileSync('d1-create.json','utf8')); process.stdout.write(row.uuid || row.id || row.result?.uuid || row.result?.id || '')")
@@ -74,7 +74,19 @@ jobs:
           DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replace('create-via-deploy-workflow', process.env.DB_ID); fs.writeFileSync(p,text)"
       - name: Apply D1 migrations
         working-directory: packages/router-worker
-        run: npx wrangler d1 migrations apply cloudflare-inference-mesh --remote
+        run: npx wrangler d1 migrations apply codeflare-inference-mesh --remote
+      - name: Enable Workers VPC Mesh binding
+        working-directory: packages/router-worker
+        run: |
+          sed -i \
+            -e '/^# \[\[vpc_networks\]\]$/s/^# //' \
+            -e '/^# binding = "MESH"$/s/^# //' \
+            -e '/^# network_id = "cf1:network"$/s/^# //' \
+            -e '/^# remote = true$/s/^# //' \
+            wrangler.toml
+          for ln in '[[vpc_networks]]' 'binding = "MESH"' 'network_id = "cf1:network"' 'remote = true'; do
+            grep -qxF "$ln" wrangler.toml || { echo "::error::Workers VPC Mesh binding line not enabled: $ln"; exit 1; }
+          done
       - name: Set Worker runtime secrets
         working-directory: packages/router-worker
         run: |
@@ -126,10 +138,10 @@ jobs:
       - name: Write deployment summary
         run: |
           {
-            echo "## Cloudflare Inference Mesh Deploy"
+            echo "## Codeflare Inference Mesh Deploy"
             echo "- Environment: ${{ inputs.environment }}"
             echo "- Ref: main"
-            echo "- Worker: cloudflare-inference-mesh-router"
+            echo "- Worker: codeflare-inference-mesh-router"
             echo "- Release tag: ${{ inputs.version_tag }}"
             echo "- Artifacts: inference-mesh-release-artifacts"
           } >> "$GITHUB_STEP_SUMMARY"

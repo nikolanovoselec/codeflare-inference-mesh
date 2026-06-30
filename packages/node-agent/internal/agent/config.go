@@ -43,7 +43,7 @@ func DefaultConfig(dataDir string) Config {
 		ActiveProfileIDs: []string{"qwen36-27b-256k-3090"},
 		Capacity:         1,
 		DataDir:          dataDir,
-		ReleaseURL:       "https://api.github.com/repos/nikolanovoselec/cloudflare-inference-mesh/releases/latest",
+		ReleaseURL:       "https://api.github.com/repos/nikolanovoselec/codeflare-inference-mesh/releases/latest",
 	}
 }
 

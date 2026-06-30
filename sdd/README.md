@@ -1,6 +1,6 @@
-# Cloudflare Inference Mesh SDD
+# Codeflare Inference Mesh SDD
 
-Cloudflare Inference Mesh provides one stable AI Gateway route for private local inference nodes. The product hides local machine topology, preserves coding-session affinity, and keeps node access private through Cloudflare One, Mesh, and Workers VPC.
+Codeflare Inference Mesh provides one stable AI Gateway route for private local inference nodes. The product hides local machine topology, preserves coding-session affinity, and keeps node access private through Cloudflare One, Mesh, and Workers VPC.
 
 ## Actors
 

@@ -1,8 +1,10 @@
-# Cloudflare Inference Mesh
+# Codeflare Inference Mesh
 
-Cloudflare Inference Mesh lets you use private local LLM machines through one stable OpenAI-compatible Cloudflare AI Gateway route.
+Codeflare Inference Mesh lets you use private local LLM machines through one stable OpenAI-compatible Cloudflare AI Gateway route.
 
-The public surface is a Cloudflare Worker. Local nodes stay private on Cloudflare One / WARP / Mesh. The Worker receives AI Gateway requests, chooses an eligible node, forwards the request through Workers VPC, and streams the local `llama-server` response back to the client.
+The public surface is a Cloudflare Worker acting as an inference router. Local machines run node agents on Windows, macOS, or Linux. Each node agent registers with the router, advertises readiness, and reports the private Cloudflare One Client network-interface `IP:PORT` where it can receive inference requests.
+
+The router serves one stable AI Gateway dynamic route, such as `mesh-default`. During setup, the router generates a bearer token for AI Gateway and the operator enters that token in AI Gateway as the custom provider key / BYOK value. Client applications keep calling AI Gateway; AI Gateway calls the Worker; the Worker selects a ready node and forwards the request through Workers VPC / Cloudflare Mesh to the node agent.
 
 ## What this project is for
 
@@ -10,6 +12,7 @@ Use this when you want:
 
 - one stable AI Gateway model name such as `mesh-default`;
 - local GPUs hidden behind Cloudflare instead of public node URLs;
+- node agents that depend on Cloudflare One Client / WARP for private `IP:PORT` reachability;
 - session affinity for coding agents and long-context work;
 - node registration, heartbeat, capacity, and runtime status;
 - a Go node agent that proxies OpenAI-compatible requests to local `llama-server`;
@@ -92,7 +95,7 @@ Important bindings and values:
 | --- | --- | --- |
 | `DB` | D1 binding | Durable router state: config, tokens, nodes, profiles, sessions, reservations, audit events |
 | `REGISTRY` | Durable Object | Serialized scheduler decisions and reservation release handling |
-| `MESH` | service / Mesh binding placeholder | Worker-to-private-node fetch path |
+| `MESH` | Workers VPC Network binding | Required `cf1:network` binding used for Worker-to-private-node `fetch()` calls |
 | `MAX_REQUEST_BYTES` | Worker var | Maximum chat request body size |
 | `HEARTBEAT_TTL_SECONDS` | Worker var | Node heartbeat freshness window |
 | `AI_GATEWAY_ID` | Worker var | Gateway ID used by setup automation |
@@ -100,7 +103,19 @@ Important bindings and values:
 | `CLOUDFLARE_ACCOUNT_ID` | Worker secret | Runtime account ID for setup automation |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | Worker secret | Runtime token for AI Gateway automation |
 
-The deploy workflow creates or resolves the D1 database, applies migrations, writes runtime secrets, deploys the Worker, builds agent artifacts, creates checksums, optionally signs them, and publishes a GitHub Release.
+The deploy workflow creates or resolves the D1 database, applies migrations, uncomments the required `[[vpc_networks]]` / `network_id = "cf1:network"` binding, writes runtime secrets, deploys the Worker, builds agent artifacts, creates checksums, optionally signs them, and publishes a GitHub Release.
+
+## Cloudflare One / Mesh prerequisite
+
+Before deploy can produce a working inference path:
+
+1. Cloudflare One Client / WARP must be installed and enrolled on every node machine.
+2. Those devices must be in the same Cloudflare account network that the Worker reaches through `network_id = "cf1:network"`.
+3. The node agent must bind its inference listener to the Cloudflare One network-interface IP when possible.
+4. The node agent advertises that private `IP:PORT` to the router in claim and heartbeat requests.
+5. The local firewall must allow inbound traffic from the Cloudflare One / Mesh interface to that inference port.
+
+The deploy token does not create or enroll Cloudflare One devices. If you later want this project to automate Zero Trust device, connector, or route setup, that would require additional Cloudflare One / connector permissions beyond the current deploy and runtime tokens.
 
 ## Deploy
 

@@ -52,7 +52,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
 async function handleModels(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'provider', now, deps.env.ROUTER_PROVIDER_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const profiles = await deps.store.listProfiles()
-  return json({ object: 'list', data: profiles.flatMap((profile) => profile.publicAliases.map((id) => ({ id, object: 'model', owned_by: 'cloudflare-inference-mesh' }))) }, 200, requestId)
+  return json({ object: 'list', data: profiles.flatMap((profile) => profile.publicAliases.map((id) => ({ id, object: 'model', owned_by: 'codeflare-inference-mesh' }))) }, 200, requestId)
 }
 
 async function handleChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -187,7 +187,7 @@ async function handleInstaller(request: Request, deps: RouterDeps, url: URL, req
   if (!['linux', 'macos', 'windows'].includes(platform)) return json({ error: 'unknown_platform' }, 404, requestId)
   const setupToken = generateBearerToken('setup')
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
-  const command = installerCommand({ platform, workerUrl: deps.env.WORKER_BASE_URL ?? url.origin, setupToken, repository: deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/cloudflare-inference-mesh' })
+  const command = installerCommand({ platform, workerUrl: deps.env.WORKER_BASE_URL ?? url.origin, setupToken, repository: deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh' })
   return new Response(command, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'x-inference-mesh-request-id': requestId } })
 }
 

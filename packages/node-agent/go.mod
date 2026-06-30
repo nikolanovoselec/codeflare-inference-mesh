@@ -1,4 +1,4 @@
-module github.com/nikolanovoselec/cloudflare-inference-mesh/packages/node-agent
+module github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent
 
 go 1.26
 

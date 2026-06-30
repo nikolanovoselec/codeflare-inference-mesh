@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/nikolanovoselec/cloudflare-inference-mesh/packages/node-agent/internal/agent"
+	"github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent/internal/agent"
 )
 
 var version = "dev"

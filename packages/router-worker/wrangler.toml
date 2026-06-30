@@ -1,4 +1,4 @@
-name = "cloudflare-inference-mesh-router"
+name = "codeflare-inference-mesh-router"
 main = "src/index.ts"
 compatibility_date = "2026-06-01"
 workers_dev = true
@@ -8,21 +8,25 @@ MAX_REQUEST_BYTES = "1048576"
 HEARTBEAT_TTL_SECONDS = "45"
 AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
 AI_GATEWAY_ID = "inference-mesh"
-WORKER_BASE_URL = "https://cloudflare-inference-mesh-router.<your-subdomain>.workers.dev"
-GITHUB_REPOSITORY = "nikolanovoselec/cloudflare-inference-mesh"
+WORKER_BASE_URL = "https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev"
+GITHUB_REPOSITORY = "nikolanovoselec/codeflare-inference-mesh"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "cloudflare-inference-mesh"
+database_name = "codeflare-inference-mesh"
 database_id = "create-via-deploy-workflow"
 
 [[durable_objects.bindings]]
 name = "REGISTRY"
 class_name = "RegistryDO"
 
-[[services]]
-binding = "MESH"
-service = "cloudflare-inference-mesh-node"
+# Workers VPC / Cloudflare Mesh binding (required for real deploys).
+# Kept commented in source so CI dry-runs do not require an account with Workers VPC.
+# The deploy workflow uncomments and verifies this block before `wrangler deploy`.
+# [[vpc_networks]]
+# binding = "MESH"
+# network_id = "cf1:network"
+# remote = true
 
 [[migrations]]
 tag = "v1"
