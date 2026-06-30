@@ -17,5 +17,5 @@ servers.
 
 ## Status
 
-This repository currently contains the research and implementation plan in
-[research.md](research.md).
+This repository currently contains the architecture and execution plan in
+[PLAN.md](PLAN.md).
