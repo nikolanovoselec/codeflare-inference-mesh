@@ -1,0 +1,136 @@
+# Node Agent
+
+This domain covers the local cross-platform service that registers nodes, proxies inference, exposes a localhost UI, supervises runtime state, and participates in release updates.
+
+---
+
+### REQ-NODE-001: Cross-platform service
+
+**Intent:** Each private machine should run one installable service that works on Windows, macOS, and Linux without requiring public inbound networking.
+
+**Applies To:** Node Operator
+
+**Acceptance Criteria:**
+
+1. The node agent builds as one Go binary per supported OS and architecture.
+2. The agent can install and start itself as a Windows service, Linux systemd unit, or macOS LaunchDaemon.
+3. The local UI binds to `127.0.0.1` on the configured UI port.
+4. The Mesh-facing inference listener prefers the detected Mesh IP and falls back to `0.0.0.0` only with strict upstream-token enforcement.
+5. The service marks itself draining before intentional shutdown or update restart.
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P0
+
+**Dependencies:** None.
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---
+
+### REQ-NODE-002: Node claim and heartbeat
+
+**Intent:** A newly installed node must exchange a short-lived setup token for durable node credentials, then keep the router informed about reachability and runtime readiness.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. The agent claims a setup token once and receives permanent node, upstream, and profile configuration.
+2. A claimed node stores credentials in the platform-specific service data directory.
+3. Heartbeats include node identity, detected Mesh IP, listener port, runtime status, ready profiles, and metrics.
+4. The Worker persists heartbeat state to D1 and refreshes the scheduler's live lease.
+5. The heartbeat response may include desired profile actions for the node to prepare.
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle)
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---
+
+### REQ-NODE-003: Upstream proxy
+
+**Intent:** The node agent must protect the local runtime from arbitrary Mesh callers while preserving OpenAI-compatible request and stream behavior for the router.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. Mesh-facing `/v1/chat/completions` rejects requests without the configured upstream bearer token.
+2. Valid requests are forwarded to the configured local OpenAI-compatible runtime.
+3. Streaming runtime responses are streamed back to the Worker without full buffering.
+4. Runtime failures return an OpenAI-style error envelope and preserve an appropriate HTTP status.
+5. The proxy does not expose node credentials, setup tokens, or admin tokens to the local runtime.
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat)
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---
+
+### REQ-NODE-004: Local dashboard
+
+**Intent:** Node operators need a localhost dashboard that shows whether the node is registered, reachable through Mesh, running a model, and ready for inference.
+
+**Applies To:** Node Operator
+
+**Acceptance Criteria:**
+
+1. The dashboard reports node ID, display name, OS, architecture, agent version, and uptime.
+2. The dashboard reports router URL, claim status, heartbeat age, heartbeat latency, and last heartbeat error.
+3. The dashboard reports WARP status, Mesh IP, listening address, listening port, and firewall warning state when detectable.
+4. The dashboard reports runtime engine, process state, active model, context limit, in-flight requests, and recent throughput metrics.
+5. Dashboard controls can start, stop, and restart managed runtime only after the node has a claimed profile.
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-llamacpp-runtime)
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---
+
+### REQ-NODE-005: Agent self-update
+
+**Intent:** Node-agent updates must be explicit, verifiable, and reversible enough to avoid silently replacing a running service with an untrusted or broken binary.
+
+**Applies To:** Node Operator
+
+**Acceptance Criteria:**
+
+1. The agent can check the latest compatible GitHub Release for the configured update channel.
+2. The agent selects only artifacts matching its OS and architecture.
+3. The agent downloads the archive, checksums file, signature file when configured, and release manifest into a staging directory.
+4. The agent verifies the archive checksum before marking an update ready.
+5. The dashboard offers update-and-restart only after verification succeeds.
+6. The service keeps the previous binary for one rollback attempt after update apply.
+
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-REL-003](release-ci.md#req-rel-003-node-agent-release-artifacts)
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---

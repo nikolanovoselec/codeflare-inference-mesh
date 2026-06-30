@@ -3057,9 +3057,10 @@ Do not proceed past these gates without proving them.
 [ ] Previous binary is retained for rollback.
 ```
 
-## Resolved Decisions
+## Finalized Decisions
 
-These are fixed for the first implementation:
+These are fixed for the first implementation. There are no open architecture
+questions remaining before implementation starts.
 
 1. Repository and artifact distribution:
    Keep the repository private until the first Worker path works. Then make the
@@ -3067,8 +3068,9 @@ These are fixed for the first implementation:
    self-update.
 
 2. Model source schema:
-   Use `hfSpecifier` and `llamaServerModelArg` for Hugging Face GGUF sources.
-   Do not rely on ambiguous `repo` plus `file` fields.
+   Use `hfSpecifier`, `localFilename`, optional `sha256`, and
+   `llamaServerModelArg` for Hugging Face model sources. Do not rely on
+   ambiguous `repo` plus `file` fields.
 
 3. State persistence:
    Use D1 for all durable state and data persistence. Keep a Durable Object for
@@ -3078,34 +3080,34 @@ These are fixed for the first implementation:
    Instruct the user to manually add the generated bearer token as the AI
    Gateway provider key/BYOK value. Do not automate BYOK in v1.
 
-## Open Decisions
+5. Admin auth after first setup:
+   Use `ADMIN_TOKEN` and an admin session for the MVP. Cloudflare Access is an
+   optional hardening step after the custom domain exists; it is not required
+   for the first working version.
 
-These must be nailed down before implementation reaches the relevant phase.
+6. Runtime token model:
+   Use one `NODE_UPSTREAM_TOKEN` for MVP to prove the mesh and proxy path, then
+   add per-node upstream tokens in production hardening.
 
-1. Admin auth after first setup:
-   Keep `ADMIN_TOKEN` only for MVP, or add Cloudflare Access for `/admin/*`
-   once the custom domain exists?
+7. Model profile defaults:
+   `mesh-default` initially targets `qwen36-27b-256k-3090` for serious
+   coding-agent validation. `gemma4-26b-a4b-256k-3090` is the fallback and
+   benchmark profile. `small-smoke-test-32k` is available for fast validation.
 
-2. Runtime token model:
-   Use one `NODE_UPSTREAM_TOKEN` for MVP, then migrate to per-node upstream
-   tokens, or start with per-node upstream tokens immediately?
+8. Dynamic route automation:
+   The first version creates or updates the custom provider, dynamic route,
+   route version, and route deployment automatically. BYOK/provider-key entry
+   remains manual.
 
-3. Model profile defaults:
-   Should `mesh-default` initially target `gemma4-26b-a4b-256k-3090`,
-   `qwen36-27b-256k-3090`, or a smaller fast smoke-test profile?
+9. Node listener binding:
+   The agent prefers binding to the detected Mesh IP. If that fails, it may
+   bind to `0.0.0.0` only with strict upstream-token auth and a visible firewall
+   warning in local and admin status.
 
-4. Dynamic route automation:
-   Should first version create only the custom provider and print manual
-   dynamic-route instructions, or should it create provider, route, route
-   version, and deployment automatically?
-
-5. Node listener binding:
-   Should the agent insist on binding to Mesh IP, or allow `0.0.0.0` with
-   strict token auth and firewall rules as the default fallback?
-
-6. Hardware metrics:
-   Should GPU metrics be best-effort from `nvidia-smi` first, or should the
-   agent use platform-specific libraries from the start?
+10. Hardware metrics:
+    Start with best-effort platform probes such as `nvidia-smi`. Missing GPU
+    metrics are reported as absent, not fabricated. Native GPU libraries can be
+    added after the core path is stable.
 
 ## Recommended First Sprint
 

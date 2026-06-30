@@ -1,0 +1,32 @@
+mode: unleashed
+enforce_tdd: true
+transition: false
+
+test_globs:
+  - "packages/router-worker/**/*.test.{ts,tsx,js,jsx,mjs}"
+  - "packages/router-worker/**/*.spec.{ts,tsx,js,jsx,mjs}"
+  - "packages/node-agent/**/*_test.go"
+  - "tests/**/*.test.{ts,tsx,js,jsx,mjs}"
+  - "tests/**/*.spec.{ts,tsx,js,jsx,mjs}"
+  - "tests/e2e/**"
+
+src_globs:
+  - "packages/router-worker/src/**"
+  - "packages/router-worker/migrations/**"
+  - "packages/node-agent/cmd/**"
+  - "packages/node-agent/internal/**"
+  - ".github/workflows/**"
+
+forbidden_content_allowlist:
+  protocols: true
+  vendors: true
+  http_codes_in_api_reqs: true
+  performance_numbers: true
+  user_facing_strings: true
+
+forbidden_content_overrides: []
+
+req_length:
+  warn: 25
+  medium: 50
+  high: 100
