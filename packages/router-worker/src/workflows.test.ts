@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -100,12 +102,38 @@ describe('workflow contract values', () => {
     expect(deployJob).toHaveProperty('env.CLOUDFLARE_API_TOKEN', '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}')
     expect(deployText).toContain('Production deploys are only allowed from main')
     expect(deployText).toContain('for workflow in Security Fuzz; do')
-    expect(deployText).toContain('npm exec -- wrangler d1 list --json > d1-list.json')
-    expect(deployText).toContain('npm exec -- wrangler d1 create "$DB_NAME" > d1-create.txt')
+    expect(deployJob.steps.find((step) => step.name === 'Resolve or create D1 database')).toMatchObject({ 'working-directory': 'packages/router-worker' })
+    expect(runLines(deployJob)).toEqual(expect.arrayContaining([
+      'npm exec -- wrangler d1 list --json > d1-list.json',
+      'npm exec -- wrangler d1 create "$DB_NAME" > d1-create.txt',
+      'DB_ID=$(node scripts/d1-database-id.mjs d1-create.txt)',
+      '[ -n "$DB_ID" ] || { echo "::error::Could not resolve D1 database id"; exit 1; }'
+    ]))
     expect(deployText).toContain('npm exec -- wrangler d1 migrations apply "${{ steps.settings.outputs.db_name }}" --remote "${args[@]}"')
     expect(deployText).toContain('printf \'%s\' "$CLOUDFLARE_ACCOUNT_ID" | npm exec -- wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"')
     expect(deployText).toContain('npm exec -- wrangler deploy "${args[@]}"')
     expect(deployText).toContain('worker_name="codeflare-inference-mesh-router-integration"')
+  })
+
+  it('REQ-REL-002 extracts Wrangler D1 create IDs and fails closed when the ID is absent', () => {
+    const temp = mkdtempSync(resolve(tmpdir(), 'd1-id-'))
+    try {
+      const script = resolve(repoRoot, 'packages/router-worker/scripts/d1-database-id.mjs')
+      const validPath = resolve(temp, 'valid.txt')
+      const invalidPath = resolve(temp, 'invalid.txt')
+      writeFileSync(validPath, '[[d1_databases]]\nbinding = "DB"\ndatabase_name = "codeflare-inference-mesh-integration"\ndatabase_id = "11111111-2222-4333-8444-555555555555"\n')
+      writeFileSync(invalidPath, 'Created database without a stable identifier')
+
+      const valid = spawnSync(process.execPath, [script, validPath], { encoding: 'utf8' })
+      const invalid = spawnSync(process.execPath, [script, invalidPath], { encoding: 'utf8' })
+
+      expect(valid.status).toBe(0)
+      expect(valid.stdout).toBe('11111111-2222-4333-8444-555555555555')
+      expect(invalid.status).toBe(1)
+      expect(invalid.stdout).toBe('')
+    } finally {
+      rmSync(temp, { recursive: true, force: true })
+    }
   })
 
   it('REQ-REL-003 builds cross-platform release assets, manifest, optional signature, and GitHub Release', () => {

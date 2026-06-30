@@ -147,8 +147,9 @@ jobs:
           DB_ID=$(DB_NAME="$DB_NAME" node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync('d1-list.json','utf8')); const row=rows.find((x)=>x.name===process.env.DB_NAME); if(row) process.stdout.write(row.uuid || row.id || '')")
           if [ -z "$DB_ID" ]; then
             npm exec -- wrangler d1 create "$DB_NAME" > d1-create.txt
-            DB_ID=$(node -e "const fs=require('fs'); const text=fs.readFileSync('d1-create.txt','utf8'); const match=text.match(/database_id\\s*=\\s*\"([^\"]+)\"/) || text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i); if(match) process.stdout.write(match[1] || match[0])")
+            DB_ID=$(node scripts/d1-database-id.mjs d1-create.txt)
           fi
+          [ -n "$DB_ID" ] || { echo "::error::Could not resolve D1 database id"; exit 1; }
           DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID); fs.writeFileSync(p,text)"
 
       - name: Apply D1 migrations
