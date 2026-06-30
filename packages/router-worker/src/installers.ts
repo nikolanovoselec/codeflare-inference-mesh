@@ -1,5 +1,7 @@
 export type InstallerPlatform = 'linux' | 'macos' | 'windows'
 
+type InstallerArch = 'amd64' | 'arm64'
+
 export interface InstallerInput {
   readonly platform: InstallerPlatform
   readonly workerUrl: string
@@ -8,8 +10,15 @@ export interface InstallerInput {
 }
 
 export interface InstallScriptInput {
-  readonly platform: Extract<InstallerPlatform, 'linux' | 'macos'> | 'windows'
+  readonly platform: InstallerPlatform
   readonly repository: string
+}
+
+export interface InstallerPlan {
+  readonly assetName: string
+  readonly extractedBinary: string
+  readonly installedBinary: string
+  readonly checksumFile: 'checksums.txt'
 }
 
 export function installerCommand(input: InstallerInput): string {
@@ -25,19 +34,40 @@ export function installScript(input: InstallScriptInput): string {
   return input.platform === 'windows' ? windowsInstallScript(input.repository) : unixInstallScript(input.platform, input.repository)
 }
 
+export function installerPlan(platform: InstallerPlatform, arch: InstallerArch): InstallerPlan {
+  if (platform === 'windows') {
+    return {
+      assetName: `inference-mesh-agent-windows-${arch}.zip`,
+      extractedBinary: `inference-mesh-agent-windows-${arch}.exe`,
+      installedBinary: 'inference-mesh-agent.exe',
+      checksumFile: 'checksums.txt'
+    }
+  }
+  const os = platform === 'macos' ? 'darwin' : 'linux'
+  return {
+    assetName: `inference-mesh-agent-${os}-${arch}.tar.gz`,
+    extractedBinary: `inference-mesh-agent-${os}-${arch}`,
+    installedBinary: 'inference-mesh-agent',
+    checksumFile: 'checksums.txt'
+  }
+}
+
 export function validateCustomDomain(hostname: string): boolean {
   return /^(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z]{2,63}$/i.test(hostname)
 }
 
 function unixInstallScript(platform: 'linux' | 'macos', repository: string): string {
-  const os = platform === 'macos' ? 'darwin' : 'linux'
   const archExpression = platform === 'macos' ? '$(uname -m | sed s/x86_64/amd64/ | sed s/arm64/arm64/)' : '$(uname -m | sed s/x86_64/amd64/ | sed s/aarch64/arm64/)'
+  const platformLiteral = platform === 'macos' ? 'macos' : 'linux'
   return `#!/bin/sh
 set -eu
 : "\${ROUTER_URL:?ROUTER_URL is required}"
 : "\${SETUP_TOKEN:?SETUP_TOKEN is required}"
 ARCH="${archExpression}"
-ASSET="inference-mesh-agent-${os}-$ARCH.tar.gz"
+PLATFORM="${platformLiteral}"
+if [ "$PLATFORM" = "macos" ]; then OS="darwin"; else OS="linux"; fi
+ASSET="inference-mesh-agent-$OS-$ARCH.tar.gz"
+BIN="inference-mesh-agent-$OS-$ARCH"
 BASE_URL="https://github.com/${repository}/releases/latest/download"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -52,7 +82,7 @@ else
   test "$EXPECTED" = "$ACTUAL"
 fi
 tar -xzf "$ASSET"
-install -m 0755 inference-mesh-agent /usr/local/bin/inference-mesh-agent
+install -m 0755 "$BIN" /usr/local/bin/inference-mesh-agent
 /usr/local/bin/inference-mesh-agent install --router "$ROUTER_URL" --setup-token "$SETUP_TOKEN"
 if command -v systemctl >/dev/null 2>&1; then
   cat >/etc/systemd/system/inference-mesh-agent.service <<'UNIT'
@@ -88,6 +118,7 @@ if (-not $env:ROUTER_URL) { throw 'ROUTER_URL is required' }
 if (-not $env:SETUP_TOKEN) { throw 'SETUP_TOKEN is required' }
 $Arch = if ([Environment]::Is64BitOperatingSystem) { 'amd64' } else { throw 'unsupported architecture' }
 $Asset = "inference-mesh-agent-windows-$Arch.zip"
+$Bin = "inference-mesh-agent-windows-$Arch.exe"
 $BaseUrl = "https://github.com/${repository}/releases/latest/download"
 $Tmp = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $Tmp | Out-Null
@@ -100,6 +131,7 @@ try {
   $InstallDir = Join-Path $env:ProgramFiles 'Codeflare Inference Mesh'
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
   Expand-Archive (Join-Path $Tmp $Asset) -DestinationPath $InstallDir -Force
+  Copy-Item (Join-Path $InstallDir $Bin) (Join-Path $InstallDir 'inference-mesh-agent.exe') -Force
   & (Join-Path $InstallDir 'inference-mesh-agent.exe') install --router $env:ROUTER_URL --setup-token $env:SETUP_TOKEN
   if (-not (Get-Service inference-mesh-agent -ErrorAction SilentlyContinue)) {
     $BinaryPath = '"' + (Join-Path $InstallDir 'inference-mesh-agent.exe') + '" run'

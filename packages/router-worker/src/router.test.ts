@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { hashToken } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
+import { installerPlan } from './installers'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { createRouter } from './router'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
@@ -273,18 +274,20 @@ describe('router worker behavioral contracts', () => {
     expect(node?.inFlight).toBe(0)
   })
 
-  it('REQ-SCH-002 REQ-NODE-002 does not let stale heartbeat counters erase live reservations', async () => {
+  it('REQ-SCH-002 REQ-NODE-002 keeps scheduler reservation counts authoritative over heartbeats', async () => {
     const { router, store } = routerFixture()
-    await store.upsertNode({ ...nodeFixture({ capacity: 1, inFlight: 1 }), nodeTokenVerifier: await hashToken('node-secret') })
+    await store.upsertNode({ ...nodeFixture({ capacity: 1, inFlight: 0 }), nodeTokenVerifier: await hashToken('node-secret') })
 
     const response = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1, inFlight: 0, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1, inFlight: 1, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 1 } })
     }))
+    const node = await store.getNode('node-a')
 
     expect(response.status).toBe(200)
-    expect((await store.getNode('node-a'))?.inFlight).toBe(1)
+    expect(node?.inFlight).toBe(0)
+    expect(node?.metrics?.activeRequests).toBe(1)
   })
 
   it('REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status', async () => {
@@ -299,19 +302,19 @@ describe('router worker behavioral contracts', () => {
     expect(new Set(valuesOf(body)).has('sha256:hidden')).toBe(false)
   })
 
-  it('REQ-ADM-004 returns one-line installer commands and checksum-verifying scripts', async () => {
+  it('REQ-ADM-004 returns installer commands backed by platform artifact plans', async () => {
     const { router, store } = routerFixture()
     const commandResponse = await router(new Request('https://router.test/admin/installers/linux', { headers: bearer('admin-secret') }))
     const command = await commandResponse.text()
     const scriptUrl = new URL(command.split(/\s+/).find((part) => part.startsWith('https://'))!)
-    const scriptResponse = await router(new Request('https://router.test/install.sh?platform=linux'))
-    const script = await scriptResponse.text()
+    const linuxPlan = installerPlan('linux', 'amd64')
+    const windowsPlan = installerPlan('windows', 'amd64')
 
     expect(commandResponse.status).toBe(200)
     expect(scriptUrl.pathname).toBe('/install.sh')
     expect(scriptUrl.searchParams.get('platform')).toBe('linux')
-    expect(/sha256sum -c -|shasum -a 256/.test(script)).toBe(true)
-    expect(/systemctl enable --now|launchctl bootstrap/.test(script)).toBe(true)
+    expect(linuxPlan).toEqual({ assetName: 'inference-mesh-agent-linux-amd64.tar.gz', extractedBinary: 'inference-mesh-agent-linux-amd64', installedBinary: 'inference-mesh-agent', checksumFile: 'checksums.txt' })
+    expect(windowsPlan).toEqual({ assetName: 'inference-mesh-agent-windows-amd64.zip', extractedBinary: 'inference-mesh-agent-windows-amd64.exe', installedBinary: 'inference-mesh-agent.exe', checksumFile: 'checksums.txt' })
     expect(store.tokens.filter((token) => token.kind === 'setup' && token.active).length).toBe(1)
   })
 

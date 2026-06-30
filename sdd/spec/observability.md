@@ -94,7 +94,8 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 2. Mid-stream node failures release reservations and increase the node's recent failure score. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 3. WARP disconnect reports make the node ineligible until a healthy heartbeat returns. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 4. Capacity exhaustion returns busy state rather than internal error state. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
-5. Audit events record setup, claim, revoke, route provisioning, profile switch, and deployment actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+5. An authenticated node can unregister itself, marking the node offline and clearing live eligibility. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+6. Audit events record setup, claim, unregister, revoke, route provisioning, profile switch, and deployment actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 

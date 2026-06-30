@@ -50,28 +50,39 @@ type RuntimeManager struct {
 	mu      sync.Mutex
 	cmd     *exec.Cmd
 	done    chan error
+	cancel  context.CancelFunc
+	state   string
 }
 
 func NewRuntimeManager(command RuntimeCommand) *RuntimeManager {
-	return &RuntimeManager{command: command}
+	return &RuntimeManager{command: command, state: "stopped"}
 }
 
 func (m *RuntimeManager) Start(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.runningLocked() {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, m.command.Executable, m.command.Args...)
+	processCtx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(processCtx, m.command.Executable, m.command.Args...)
 	cmd.Env = append(os.Environ(), envPairs(m.command.Env)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	m.state = "starting"
 	if err := cmd.Start(); err != nil {
+		cancel()
+		m.state = "failed"
 		return fmt.Errorf("start runtime: %w", err)
 	}
 	m.cmd = cmd
+	m.cancel = cancel
 	m.done = make(chan error, 1)
-	go func() { m.done <- cmd.Wait() }()
+	m.state = "ready"
+	go m.wait(cmd, m.done)
 	return nil
 }
 
@@ -79,23 +90,39 @@ func (m *RuntimeManager) Stop(ctx context.Context) error {
 	m.mu.Lock()
 	cmd := m.cmd
 	done := m.done
+	cancel := m.cancel
 	m.cmd = nil
 	m.done = nil
+	m.cancel = nil
+	m.state = "stopping"
 	m.mu.Unlock()
 	if cmd == nil || cmd.Process == nil || done == nil {
+		m.setState("stopped")
 		return nil
 	}
 	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		if cancel != nil {
+			cancel()
+		}
 		return fmt.Errorf("stop runtime: %w", err)
 	}
 	select {
 	case <-ctx.Done():
+		if cancel != nil {
+			cancel()
+		}
 		_ = cmd.Process.Kill()
+		m.setState("failed")
 		return ctx.Err()
 	case err := <-done:
+		if cancel != nil {
+			cancel()
+		}
 		if err != nil && !strings.Contains(err.Error(), "signal") {
+			m.setState("failed")
 			return fmt.Errorf("wait runtime: %w", err)
 		}
+		m.setState("stopped")
 		return nil
 	}
 }
@@ -107,18 +134,60 @@ func (m *RuntimeManager) Restart(ctx context.Context) error {
 	return m.Start(ctx)
 }
 
+func (m *RuntimeManager) State() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runningLocked()
+	return m.state
+}
+
 func (m *RuntimeManager) runningLocked() bool {
 	if m.cmd == nil || m.done == nil {
+		if m.state == "" {
+			m.state = "stopped"
+		}
 		return false
 	}
 	select {
-	case <-m.done:
+	case err := <-m.done:
+		if m.cancel != nil {
+			m.cancel()
+		}
 		m.cmd = nil
 		m.done = nil
+		m.cancel = nil
+		if err != nil && !strings.Contains(err.Error(), "signal") {
+			m.state = "failed"
+		} else {
+			m.state = "stopped"
+		}
 		return false
 	default:
 		return true
 	}
+}
+
+func (m *RuntimeManager) wait(cmd *exec.Cmd, done chan error) {
+	err := cmd.Wait()
+	done <- err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cmd == cmd {
+		m.cmd = nil
+		m.done = nil
+		m.cancel = nil
+		if err != nil && !strings.Contains(err.Error(), "signal") {
+			m.state = "failed"
+		} else {
+			m.state = "stopped"
+		}
+	}
+}
+
+func (m *RuntimeManager) setState(state string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state = state
 }
 
 func LlamaCommand(profile ModelProfile, cacheDir string, listenAddress string) RuntimeCommand {

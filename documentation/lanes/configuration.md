@@ -35,14 +35,21 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 
 | Field | Purpose | REQs |
 | --- | --- | --- |
-| `router_url` | Router origin used for claim and heartbeat. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
-| `node_token` | Node-to-Worker heartbeat credential. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
-| `upstream_token` | Worker-to-node inference credential. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
-| `display_name` | Human-readable node label. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
-| `listen_port` | Mesh-facing inference listener port. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
-| `ui_port` | Localhost dashboard port. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
-| `model_cache_dir` | Directory for downloaded model files. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
-| `release_channel` | Stable or prerelease update channel. | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
+| `routerUrl` | Router origin used for claim and heartbeat. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| `nodeToken` | Node-to-Worker heartbeat credential. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| `upstreamToken` | Worker-to-node inference credential. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
+| `displayName` | Human-readable node label. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
+| `meshIp` | Cloudflare One interface IP advertised to the router. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
+| `inferencePort` | Mesh-facing inference listener port. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
+| `dashboardAddress` | Localhost dashboard bind address. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
+| `dashboardToken` | Local dashboard CSRF/control token stored only in local config and redacted from status APIs. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
+| `runtimeUrl` | Local OpenAI-compatible runtime URL proxied by the node agent. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
+| `runtimeModel` | Active upstream runtime model identifier. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `publicModels` | Public aliases this node can serve. | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
+| `activeProfileIds` | Desired profile IDs active on the node. | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
+| `profiles` | Desired profiles persisted from claim/heartbeat responses for model preparation and runtime command generation. | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `dataDir` | Directory for config, model cache, staged updates, and service data. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `releaseUrl` | GitHub Release API URL used by self-update. | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
 
 ## GitHub secrets
 

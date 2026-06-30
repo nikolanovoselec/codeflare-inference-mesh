@@ -39,10 +39,11 @@ This domain covers credential separation, route-level auth, header filtering, to
 **Acceptance Criteria:**
 
 1. Setup, provider, admin, node, and upstream tokens are generated with enough entropy for bearer-token use. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-2. Durable token records store hashes or encrypted values; when setup generates the Worker-to-node upstream token, router config keeps the recoverable value required for forwarding. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
-3. Token verification uses constant-time comparison for hash matches. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-4. Admin can revoke a node token and remove the node from eligible scheduling. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-5. Credential rotation creates a new verifier before disabling the old credential where the flow requires continuity. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+2. Durable token records store hashes or encrypted values. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+3. Router config keeps the generated Worker-to-node upstream token recoverable so the Worker can present it during node forwarding. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+4. Token verification uses constant-time comparison for hash matches. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+5. Admin can revoke a node token and remove the node from eligible scheduling. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+6. Credential rotation creates a new verifier before disabling the old credential where the flow requires continuity. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 

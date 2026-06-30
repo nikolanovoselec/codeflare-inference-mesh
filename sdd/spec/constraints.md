@@ -18,7 +18,7 @@ Client, provider, setup, node, upstream, admin, deploy, and runtime Cloudflare t
 
 ## CON-SEC-002: No plaintext durable secrets
 
-Durable token records store hashes or encrypted values. One-time display is used for generated credentials that the Worker never needs to present again; the generated Worker-to-node upstream token is the exception because forwarding requires the Worker to recover and present it.
+Durable token records avoid plaintext unless a component must recover and present that credential across its trust boundary.
 
 ## CON-STATE-001: D1 is durable truth
 

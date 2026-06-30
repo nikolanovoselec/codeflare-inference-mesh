@@ -12,7 +12,7 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Acceptance Criteria:**
 
-1. PR checks run on pull requests to `main`, pushes to `main` and `develop`, and manual dispatch. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
+1. PR checks run on pull requests to `main` and `develop`, pushes to `main` and `develop`, and manual dispatch. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
 2. Router checks install dependencies, lint, run behavioral tests, type-check, generate Wrangler types, and perform a Worker dry-run deploy. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
 3. Agent checks run Go tests, Go vet, race tests, and build the agent command. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
 4. Packaging checks build at least one agent archive, generate checksums, verify the archive hash, and run the staged binary version command. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
@@ -94,8 +94,9 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 1. CodeQL is defined for JavaScript/TypeScript and Go and runs where GitHub code scanning is available. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 2. Fuzz workflows run bounded router and agent fuzz targets on pull requests, manual dispatch, and a weekly schedule. <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows -->
 3. Optional Scorecard runs with minimal permissions and no production write secrets on the default branch where SARIF upload is available. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
-4. Security workflows define explicit timeouts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
-5. Security workflows do not deploy or publish release artifacts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
+4. Workflow safety checks reject forbidden workflow-run checkout patterns, floating runner/action pins, and major-only core action pins. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
+5. Security workflows define explicit timeouts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
+6. Security workflows do not deploy or publish release artifacts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 
 **Constraints:** [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 

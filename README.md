@@ -148,13 +148,13 @@ Production tags must match `vX.Y.Z`. Integration tags must match `vX.Y.Z-dev.N`.
 
 ## Verification
 
-GitHub Actions runs:
+GitHub Actions runs on pull requests to `main` or `develop`, pushes to `main` or `develop`, and manual dispatch where the workflow supports it:
 
 - router lint, behavioral tests, type-check, Wrangler type generation, Worker dry-run;
 - Go tests, vet, race tests, and agent command build;
 - package archive/checksum/version checks;
 - dependency review, npm audit, Go vulnerability checks;
-- bounded router and agent fuzz workflows;
-- workflow safety checks everywhere, plus CodeQL and Scorecard SARIF scans where GitHub code scanning is available.
+- bounded router and agent fuzz workflows for pull requests plus scheduled/manual runs;
+- workflow safety checks everywhere, CodeQL where GitHub code scanning is available, and Scorecard SARIF scans on the default branch.
 
 Avoid full expensive local suites in constrained containers. If you intentionally accept the risk, use only targeted checks for touched packages.

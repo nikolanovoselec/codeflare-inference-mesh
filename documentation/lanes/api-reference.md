@@ -84,6 +84,16 @@ All API responses that represent errors use an OpenAI-style `error` object when 
 
 **Contract:** Script accepts setup token through environment or command context and embeds no permanent credential.
 
+## Node dashboard local routes ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-SEC-004](../../sdd/spec/security.md))
+
+**Purpose:** Let the local node operator inspect status and control the managed runtime from the localhost dashboard.
+
+**Routes:** `GET /api/status`, `POST /api/runtime/start`, `POST /api/runtime/stop`, and `POST /api/runtime/restart` on the node-agent dashboard listener.
+
+**Auth:** Status is localhost dashboard only. Runtime-control POSTs require the local dashboard token and same-origin Origin check.
+
+**Contract:** Runtime-control routes are not Worker, Gateway, or Mesh routes and are not exposed by the public Worker.
+
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |

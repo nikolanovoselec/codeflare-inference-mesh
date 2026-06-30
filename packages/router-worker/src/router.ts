@@ -145,7 +145,7 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     publicModels: body.publicModels,
     activeProfileIds: body.activeProfileIds,
     capacity: body.capacity,
-    inFlight: Math.max(node.inFlight, body.inFlight),
+    inFlight: node.inFlight,
     lastSeenAt: now,
     runtime: body.runtime,
     ...(body.runtimeModel !== undefined ? { runtimeModel: body.runtimeModel } : {}),

@@ -84,7 +84,6 @@ func runService() error {
 		}
 		cfg = next
 	}
-	runtimeState := "external"
 	var runtimeManager *agent.RuntimeManager
 	if profile, ok := agent.SelectedProfile(cfg); ok {
 		listenAddress, err := agent.RuntimeListenAddress(cfg.RuntimeURL)
@@ -98,12 +97,17 @@ func runService() error {
 		if err := runtimeManager.Start(context.Background()); err != nil {
 			return err
 		}
-		runtimeState = "ready"
+	}
+	currentRuntimeState := func() string {
+		if runtimeManager == nil {
+			return "external"
+		}
+		return runtimeManager.State()
 	}
 	go func() {
 		client := agent.Client{RouterURL: cfg.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 		for range time.Tick(15 * time.Second) {
-			metrics := agent.RuntimeMetrics(runtimeState, cfg.RuntimeModel, activeRequests.Value())
+			metrics := agent.RuntimeMetrics(currentRuntimeState(), cfg.RuntimeModel, activeRequests.Value())
 			_, _ = client.Heartbeat(context.Background(), cfg.NodeToken, agent.HeartbeatFromConfig(cfg, metrics, activeRequests.Value()))
 		}
 	}()
@@ -113,7 +117,7 @@ func runService() error {
 	}
 	go func() {
 		_ = http.ListenAndServe(cfg.DashboardAddress, agent.DashboardHandler(func() agent.DashboardStatus {
-			metrics := agent.RuntimeMetrics(runtimeState, cfg.RuntimeModel, activeRequests.Value())
+			metrics := agent.RuntimeMetrics(currentRuntimeState(), cfg.RuntimeModel, activeRequests.Value())
 			return agent.DashboardStatus{Config: cfg, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
 		}, runtimeManager))
 	}()

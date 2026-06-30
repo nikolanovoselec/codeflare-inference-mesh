@@ -1,37 +1,85 @@
 # Security
 
+## Contents
+
+- [Trust boundaries](#trust-boundaries)
+- [Route authorization](#route-authorization)
+- [Token storage](#token-storage)
+- [Header filtering](#header-filtering)
+- [Runtime safety](#runtime-safety)
+- [Access position](#access-position)
+- [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
+
 ## Trust boundaries
+
+**Threat:** A leaked provider, setup, node, upstream, admin, deploy, or Cloudflare runtime credential could be reused across another trust boundary.
+
+**Mitigation:** Each boundary uses a separate credential class with route-specific authorization.
+
+**Verification:** Behavioral tests assert that provider, admin, setup, node, and upstream credentials are not accepted by the wrong route family.
+
+**Implements:** [REQ-SEC-001](../../sdd/spec/security.md)
 
 | Boundary | Credential | Purpose | REQs |
 | --- | --- | --- | --- |
 | Client to AI Gateway | Gateway auth token | Lets clients call the selected Gateway. | [REQ-SEC-001](../../sdd/spec/security.md) |
 | AI Gateway to Worker | Provider token | Lets Gateway call router `/v1/*` routes. | [REQ-GWY-002](../../sdd/spec/gateway.md), [REQ-SEC-001](../../sdd/spec/security.md) |
-| Admin to Worker | Admin token/session | Protects setup and admin routes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
+| Admin to Worker | Admin token/session | Protects setup and admin routes after first-run setup completes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | Installer to Worker | Setup token | Claims one node once. | [REQ-ADM-003](../../sdd/spec/setup-admin.md) |
-| Node to Worker | Node token | Authorizes heartbeat and unregister. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| Node to Worker | Node token | Authorizes heartbeat and unregister. | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-004](../../sdd/spec/observability.md) |
 | Worker to node | Upstream token | Authorizes Mesh-facing inference proxy. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
 | Workflow to Cloudflare | Deploy token | Deploys Worker and migrates D1. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Worker to Cloudflare API | Runtime token | Creates Gateway and optional domain resources. | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
 
 ## Route authorization
 
-Provider auth applies only to `/v1/models` and `/v1/chat/completions`. Node claim, heartbeat, admin, installer, and health routes each use their own policy. This avoids using one credential across unrelated trust boundaries. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+**Threat:** A credential for one actor could call routes intended for another actor.
+
+**Mitigation:** Provider auth applies only to `/v1/models` and `/v1/chat/completions`; node claim, heartbeat, unregister, admin, installer, and health routes use their own policy.
+
+**Verification:** Router tests cover route-family separation and node unregister authorization.
+
+**Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-SEC-001](../../sdd/spec/security.md)
 
 ## Token storage
 
-The durable default is verifier-only token records. Plaintext token display is one-time at creation, except the generated Worker-to-node upstream token is recoverable by router config because the Worker must present it to nodes during forwarding. Rotation flows create new verifiers and revoke old credentials when the relevant actor can switch safely. ([REQ-SEC-002](../../sdd/spec/security.md))
+**Threat:** Durable plaintext credentials could be recovered from D1 or logs after initial setup.
+
+**Mitigation:** Durable token records are verifier-only by default. Plaintext token display is one-time at creation. The generated Worker-to-node upstream token is recoverable in router config only because the Worker must present it to nodes during forwarding.
+
+**Verification:** Tests assert stored token records use verifiers, generated upstream tokens are reused by forwarding, and admin status redacts credential material.
+
+**Implements:** [REQ-SEC-002](../../sdd/spec/security.md)
 
 ## Header filtering
 
-The Worker forwards only approved inference metadata and the upstream token to a node. Node proxy code strips credentials before forwarding to the runtime unless the runtime is deliberately configured to require its own API key. ([REQ-SEC-003](../../sdd/spec/security.md))
+**Threat:** Client, Cloudflare, admin, setup, or node credentials could leak to a local runtime during proxying.
+
+**Mitigation:** The Worker forwards only approved inference metadata and the upstream token to a node. The node proxy strips credentials before forwarding to `llama-server`.
+
+**Verification:** Worker and node proxy tests assert forbidden headers are absent at the next hop.
+
+**Implements:** [REQ-SEC-003](../../sdd/spec/security.md)
 
 ## Runtime safety
 
-Managed `llama-server` profiles must not expose built-in tools, local file access, or web UI surfaces through the Mesh listener by default. Local dashboard auth is separate from Worker upstream auth. ([REQ-SEC-004](../../sdd/spec/security.md))
+**Threat:** A local or remote web page could control the node runtime, or a Mesh caller could access the local runtime without authorization.
+
+**Mitigation:** Managed `llama-server` runs behind the node proxy. The Mesh-facing listener requires the upstream token. Dashboard runtime controls are localhost-only and require the dashboard token plus a same-origin Origin check.
+
+**Verification:** Node-agent tests assert local dashboard redaction, runtime-control token enforcement, upstream proxy auth, and header filtering.
+
+**Implements:** [REQ-SEC-004](../../sdd/spec/security.md), [REQ-NODE-004](../../sdd/spec/node-agent.md)
 
 ## Access position
 
-Cloudflare Access is an optional admin-hardening layer after a custom domain exists. It is not part of the first implementation because Gateway and node traffic still require app-level identities. ([REQ-ADM-002](../../sdd/spec/setup-admin.md))
+**Threat:** Admin UI exposure could exceed the intended bootstrap/admin boundary.
+
+**Mitigation:** First-run setup is intentionally open only until setup completes; after an active admin token exists, setup/admin routes require admin auth. Cloudflare Access is an optional hardening layer after a custom domain exists.
+
+**Verification:** Router tests assert first-run token generation, admin-only status, and credential-class separation.
+
+**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
 ## Source anchors and specification backlinks
 
@@ -40,3 +88,4 @@ Cloudflare Access is an optional admin-hardening layer after a custom domain exi
 | Credential classes | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/auth.ts::AUTH_ANCHORS` <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> |
 | Header filtering | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/proxy.go::ProxyAnchors` <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> |
 | Runtime exposure | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/config.go::ConfigAnchors` <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> |
+| Dashboard controls | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/dashboard.go::DashboardAnchors` <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> |

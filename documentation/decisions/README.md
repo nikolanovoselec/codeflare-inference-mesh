@@ -6,17 +6,17 @@ This ledger records binding technical choices for the first implementation. It i
 
 | ID | Status | Decision | Related requirements |
 | --- | --- | --- | --- |
-| AD-001 | Accepted | Use Cloudflare Workers, AI Gateway, Workers VPC, Mesh, D1, and Durable Objects for the router plane. | REQ-GWY-001, REQ-RTR-002, REQ-SCH-001 |
-| AD-002 | Accepted | Use app-level bearer-token classes instead of Cloudflare Access as the MVP auth spine. | REQ-SEC-001, REQ-ADM-002 |
-| AD-003 | Accepted | Use D1 for durable truth and a Durable Object for live scheduling. | REQ-SCH-001, REQ-SCH-002 |
-| AD-004 | Accepted | Use Go for the node agent and a localhost web UI instead of a native desktop shell. | REQ-NODE-001, REQ-NODE-004 |
-| AD-005 | Accepted | Use `llama-server` as the first managed runtime. | REQ-RUN-003 |
-| AD-006 | Accepted | Make Qwen3.6 27B the primary `mesh-default` profile, Gemma 4 26B-A4B the fallback benchmark profile, and a small smoke-test profile available. | REQ-RUN-002 |
-| AD-007 | Accepted | Automate Gateway provider and dynamic route creation, but keep BYOK/provider-key entry manual in v1. | REQ-GWY-002, REQ-GWY-003 |
-| AD-008 | Accepted | Bind the node listener to Mesh IP when possible and allow `0.0.0.0` fallback only with strict token auth. | REQ-NODE-001, REQ-RTR-004 |
-| AD-009 | Accepted | Start hardware metrics with best-effort platform probes rather than native GPU libraries. | REQ-OBS-003 |
-| AD-010 | Accepted | Publish public GitHub Release artifacts for installers and self-update after the first Worker path is proven. | REQ-REL-003, REQ-NODE-005 |
-| AD-011 | Accepted | Keep first-run setup open until completed; do not require a separate initial setup token. | REQ-ADM-001, REQ-ADM-002 |
+| [AD-001](#ad-001-cloudflare-router-plane) | Accepted | Use Cloudflare Workers, AI Gateway, Workers VPC, Mesh, D1, and Durable Objects for the router plane. | REQ-GWY-001, REQ-RTR-002, REQ-SCH-001 |
+| [AD-002](#ad-002-app-level-bearer-token-auth-first) | Accepted | Use app-level bearer-token classes instead of Cloudflare Access as the MVP auth spine. | REQ-SEC-001, REQ-ADM-002 |
+| [AD-003](#ad-003-d1-plus-durable-object-scheduler) | Accepted | Use D1 for durable truth and a Durable Object for live scheduling. | REQ-SCH-001, REQ-SCH-002 |
+| [AD-004](#ad-004-go-service-with-localhost-ui) | Accepted | Use Go for the node agent and a localhost web UI instead of a native desktop shell. | REQ-NODE-001, REQ-NODE-004 |
+| [AD-005](#ad-005-llamacpp-first-runtime) | Accepted | Use `llama-server` as the first managed runtime. | REQ-RUN-003 |
+| [AD-006](#ad-006-default-model-profile-set) | Accepted | Make Qwen3.6 27B the primary `mesh-default` profile, Gemma 4 26B-A4B the fallback benchmark profile, and a small smoke-test profile available. | REQ-RUN-002 |
+| [AD-007](#ad-007-gateway-route-automation-with-manual-byok) | Accepted | Automate Gateway provider and dynamic route creation, but keep BYOK/provider-key entry manual in v1. | REQ-GWY-002, REQ-GWY-003 |
+| [AD-008](#ad-008-node-listener-binding-policy) | Accepted | Bind the node listener to Mesh IP when possible and allow `0.0.0.0` fallback only with strict token auth. | REQ-NODE-001, REQ-RTR-004 |
+| [AD-009](#ad-009-best-effort-hardware-metrics-first) | Accepted | Start hardware metrics with best-effort platform probes rather than native GPU libraries. | REQ-OBS-003 |
+| [AD-010](#ad-010-public-release-artifacts-after-mesh-proof) | Accepted | Publish public GitHub Release artifacts for installers and self-update after the first Worker path is proven. | REQ-REL-003, REQ-NODE-005 |
+| [AD-011](#ad-011-first-run-setup-is-the-one-time-bootstrap-gate) | Accepted | Keep first-run setup open until completed; do not require a separate initial setup token. | REQ-ADM-001, REQ-ADM-002 |
 
 ## AD-011: First-run setup is the one-time bootstrap gate
 

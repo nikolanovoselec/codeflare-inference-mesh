@@ -40,7 +40,7 @@ D1 is durable truth for records that must survive restarts. RegistryDO is hot st
 
 ## Runtime flow
 
-Phase 1 proves Worker-to-Mesh against an existing `llama-server`. Later phases let the node agent download verified model files, start `llama-server`, track profile versions, and report runtime metrics. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-OBS-003](../../sdd/spec/observability.md))
+The claimed node stores desired profiles, resolves the active profile, verifies or downloads the GGUF model, starts `llama-server`, and proxies Worker traffic to the local runtime. Runtime start/stop/restart controls are exposed only on the localhost dashboard with dashboard-token and Origin checks; heartbeats and dashboard status derive runtime state from the live runtime manager. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-OBS-003](../../sdd/spec/observability.md))
 
 ## Boundaries
 

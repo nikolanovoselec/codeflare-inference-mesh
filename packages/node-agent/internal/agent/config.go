@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -21,13 +23,14 @@ type Config struct {
 	ListenAddress      string   `json:"listenAddress"`
 	InferencePort      int      `json:"inferencePort"`
 	DashboardAddress   string   `json:"dashboardAddress"`
+	DashboardToken     string   `json:"dashboardToken,omitempty"`
 	RuntimeURL         string   `json:"runtimeUrl"`
 	RuntimeModel       string   `json:"runtimeModel"`
-	PublicModels       []string `json:"publicModels"`
+	PublicModels       []string       `json:"publicModels"`
 	ActiveProfileIDs   []string       `json:"activeProfileIds"`
 	Profiles           []ModelProfile `json:"profiles,omitempty"`
 	Capacity           int            `json:"capacity"`
-	DataDir            string   `json:"dataDir"`
+	DataDir            string         `json:"dataDir"`
 	ReleaseURL         string   `json:"releaseUrl"`
 	AllowAllInterfaces bool     `json:"allowAllInterfaces"`
 }
@@ -38,6 +41,7 @@ func DefaultConfig(dataDir string) Config {
 		ListenAddress:    "",
 		InferencePort:    8080,
 		DashboardAddress: "127.0.0.1:17777",
+		DashboardToken:   dashboardToken(),
 		RuntimeURL:       "http://127.0.0.1:8081",
 		RuntimeModel:     "qwen36-27b-256k-3090",
 		PublicModels:     []string{"mesh-default"},
@@ -121,6 +125,7 @@ func RedactedConfig(cfg Config) Config {
 		ListenAddress:      cfg.ListenAddress,
 		InferencePort:      cfg.InferencePort,
 		DashboardAddress:   cfg.DashboardAddress,
+		DashboardToken:     redact(cfg.DashboardToken),
 		RuntimeURL:         cfg.RuntimeURL,
 		RuntimeModel:       cfg.RuntimeModel,
 		PublicModels:       append([]string(nil), cfg.PublicModels...),
@@ -131,6 +136,14 @@ func RedactedConfig(cfg Config) Config {
 		ReleaseURL:         cfg.ReleaseURL,
 		AllowAllInterfaces: cfg.AllowAllInterfaces,
 	}
+}
+
+func dashboardToken() string {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)
 }
 
 func redact(value string) string {
