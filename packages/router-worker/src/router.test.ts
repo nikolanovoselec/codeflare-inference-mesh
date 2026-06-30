@@ -108,8 +108,8 @@ describe('router worker behavioral contracts', () => {
     expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout']))
     expect(html).toMatch(/data-responsive="desktop mobile"/)
     expect(html).toMatch(/@media \(max-width:760px\)/)
-    expect(html).toMatch(/sessionStorage\.getItem\('codeflareInferenceMeshAdminToken'\)/)
-    expect(html).toMatch(/localStorage\.getItem\('codeflareInferenceMeshAdminToken'\)/)
+    expect(html).toContain('sessionStorage.getItem(tokenKey)')
+    expect(html).toContain('localStorage.getItem(tokenKey)')
   })
 
   it('REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families', async () => {
