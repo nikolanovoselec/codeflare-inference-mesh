@@ -405,7 +405,10 @@ This plan depends on these documented Cloudflare features:
 | API Token Permissions | Required Cloudflare token scopes | <https://developers.cloudflare.com/fundamentals/api/reference/permissions/> |
 | Wrangler GitHub Action | Deploy Worker from GitHub Actions | <https://github.com/cloudflare/wrangler-action> |
 | GitHub Actions Syntax | CI and release workflow structure | <https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions> |
+| GitHub Releases API | Agent update checks and release metadata | <https://docs.github.com/rest/releases/releases> |
+| GitHub Release Assets API | Agent binary asset downloads | <https://docs.github.com/rest/releases/assets> |
 | GoReleaser GitHub Actions | Cross-platform agent builds and checksums | <https://goreleaser.com/ci/actions/> |
+| GoReleaser signing | Signed checksum files for update verification | <https://goreleaser.com/customization/sign/> |
 | llama.cpp Server | Default local OpenAI-compatible runtime | <https://github.com/ggml-org/llama.cpp/tree/master/tools/server> |
 | Qwen3.6 27B model card | Qwen long-context coding profile candidate | <https://huggingface.co/Qwen/Qwen3.6-27B> |
 | Gemma 4 model overview | Alternative local long-context model family | <https://ai.google.dev/gemma/docs/core> |
@@ -990,6 +993,9 @@ The agent should:
 - Start and stop runtime process.
 - Report runtime state and metrics.
 - Drain before shutdown.
+- Check for new signed node-agent releases.
+- Download and stage verified updates.
+- Offer update and restart through the local UI.
 
 ### Agent Local API
 
@@ -1004,6 +1010,9 @@ POST /api/model/download
 POST /api/runtime/start
 POST /api/runtime/stop
 POST /api/runtime/restart
+GET  /api/update/check
+POST /api/update/download
+POST /api/update/apply
 ```
 
 Mesh-facing API:
@@ -1085,6 +1094,180 @@ GPU temperature
 VRAM used and free
 CPU utilization
 system memory used and free
+```
+
+Update:
+
+```text
+current agent version
+latest available version
+release channel
+release notes link
+download status
+verification status
+staged version
+restart required
+last update check
+last update error
+```
+
+### Agent Self-Update
+
+The node agent should support self-update, but updates must be explicit,
+verified, and staged.
+
+Intent:
+
+```text
+agent checks GitHub Releases
+agent downloads matching OS/architecture artifact
+agent verifies checksum and signature
+agent stages new binary
+UI offers "Update and restart"
+service manager swaps binary and restarts agent
+```
+
+Do not silently replace the running service binary without verification or user
+approval in the MVP.
+
+### Update Check Flow
+
+The agent should periodically check:
+
+```text
+GET https://api.github.com/repos/<owner>/<repo>/releases/latest
+```
+
+It should also allow manual checks from the local UI:
+
+```text
+GET /api/update/check
+```
+
+The update checker should:
+
+1. Compare semantic versions.
+2. Ignore prereleases unless the node is on a prerelease channel.
+3. Select the asset matching OS and architecture.
+4. Find `checksums.txt`.
+5. Find signature or provenance files when available.
+6. Report available update in the dashboard.
+
+GitHub documents release metadata through the Releases REST API and binary
+downloads through release assets. Release assets can be downloaded from
+`browser_download_url` or through the asset API with an octet-stream accept
+header.
+
+References:
+
+- GitHub Releases API:
+  <https://docs.github.com/rest/releases/releases>
+- GitHub Release Assets API:
+  <https://docs.github.com/rest/releases/assets>
+
+### Update Download And Verification
+
+The agent should download to a staging directory:
+
+```text
+Windows:
+  C:\ProgramData\InferenceMesh\updates\<version>\
+
+Linux:
+  /var/lib/inference-mesh/updates/<version>/
+
+macOS:
+  /Library/Application Support/InferenceMesh/updates/<version>/
+```
+
+Verification steps:
+
+1. Download release archive.
+2. Download `checksums.txt`.
+3. Verify archive SHA256 against `checksums.txt`.
+4. Verify signed checksum file when signing is configured.
+5. Unpack into staging directory.
+6. Run `inference-mesh-agent version` from staged binary.
+7. Mark update as ready.
+
+The release workflow should sign checksum files. GoReleaser supports generating
+checksums and signing checksum artifacts, which is enough for the agent to
+verify that the downloaded archive matches a signed release manifest.
+
+Reference:
+
+- GoReleaser signing:
+  <https://goreleaser.com/customization/sign/>
+
+### Update Apply And Restart
+
+Applying an update is platform-specific.
+
+Linux:
+
+```text
+1. Mark node draining.
+2. Stop runtime if needed.
+3. Copy staged binary over installed binary.
+4. systemctl restart inference-mesh-agent.
+5. New process reports updated version on heartbeat.
+```
+
+Windows:
+
+```text
+1. Mark node draining.
+2. Stop runtime if needed.
+3. Ask service helper to stop service.
+4. Replace executable from staged location.
+5. Start Windows service.
+6. New process reports updated version on heartbeat.
+```
+
+macOS:
+
+```text
+1. Mark node draining.
+2. Stop runtime if needed.
+3. Replace staged binary.
+4. launchctl kickstart or restart LaunchDaemon.
+5. New process reports updated version on heartbeat.
+```
+
+The agent UI should show:
+
+```text
+Update available
+Download
+Verify
+Update and restart
+```
+
+The node should unregister or mark itself draining before restart so the router
+does not send new inference traffic to a node that is replacing its agent.
+
+### Update Policy
+
+MVP policy:
+
+```text
+auto check: yes
+auto download: optional, off by default
+auto apply: no
+UI approval required: yes
+verify checksum: required
+verify signature: required once signing is configured
+rollback: keep previous binary for one restart
+```
+
+Later policy options:
+
+```text
+stable channel
+prerelease channel
+maintenance windows
+fleet-wide staged rollout
+router-driven update pinning
 ```
 
 ### Service Installation
@@ -1652,22 +1835,75 @@ cloudflare-inference-mesh/
 
   .github/
     workflows/
-      ci.yml
-      release-node-agent.yml
-      deploy-worker.yml
+      pr-checks.yml
+      codeql.yml
+      fuzz.yml
+      deploy.yml
+      scorecard.yml
 ```
 
-### CI Workflow
+### Workflow Design
 
-`ci.yml` should run on pull requests and pushes.
+The workflow design should follow the same discipline as Codeflare:
+
+- PR checks are the normal merge gate.
+- Deploy is manual, not automatic on every push.
+- Production deploys are restricted to `main`.
+- Deploy repeats the critical checks before changing Cloudflare state.
+- Node-agent release artifacts are created by the deploy workflow.
+- Actions are pinned to commit SHAs.
+- Permissions are minimal and set per workflow or per job.
+- Concurrency groups prevent overlapping deploys or duplicate expensive checks.
+- Security workflows are separate from deploys.
+
+Why node-agent releases belong in deploy:
+
+The node agent has a self-update mechanism. That mechanism checks GitHub
+Releases and downloads signed artifacts. Therefore every real deployment that
+should update the fleet must also produce a release artifact set. If the Worker
+is deployed without publishing compatible agent artifacts, the router can
+advertise desired behavior that existing agents cannot run.
+
+### PR Checks Workflow
+
+`pr-checks.yml` should run on pull requests, pushes to `main`, and manual
+dispatch.
+
+Recommended triggers:
+
+```yaml
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+```
+
+Use one concurrency group per ref:
+
+```yaml
+concurrency:
+  group: pr-checks-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+```
+
+Permissions:
+
+```yaml
+permissions:
+  contents: read
+```
 
 Router checks:
 
 ```text
 npm ci
+npm run lint
 npm test
 npm run typecheck
-wrangler deploy --dry-run
+npx wrangler types
+npx wrangler deploy --dry-run
 ```
 
 Agent checks:
@@ -1675,40 +1911,214 @@ Agent checks:
 ```text
 go test ./...
 go vet ./...
+go test -race ./...
 build embedded UI
-go build
+go build ./cmd/inference-mesh-agent
 ```
 
-### Worker Deploy Workflow
-
-`deploy-worker.yml` should run on pushes to `main`.
-
-Responsibilities:
+Release packaging smoke check:
 
 ```text
-checkout
-setup node
-npm ci
-npm test
-wrangler deploy
-set Worker secrets if changed through protected workflow
+build Linux amd64 agent archive
+generate checksums.txt
+verify archive hash against checksums.txt
+run staged binary with `version`
 ```
 
-Reference:
+Security checks in PR workflow:
 
-- Wrangler GitHub Action:
-  <https://github.com/cloudflare/wrangler-action>
+```text
+npm audit --audit-level=high --omit=dev
+govulncheck ./...
+dependency-review on pull_request
+```
 
-### Node Agent Release Workflow
+References:
 
-`release-node-agent.yml` should run on version tags:
+- GitHub Actions workflow syntax:
+  <https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions>
+- Dependency review:
+  <https://github.com/actions/dependency-review-action>
+- govulncheck:
+  <https://go.dev/doc/tutorial/govulncheck>
+
+### CodeQL Workflow
+
+`codeql.yml` should run on pushes to `main`, pull requests, manual dispatch,
+and a weekly schedule.
+
+Recommended triggers:
 
 ```yaml
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
 ```
+
+Languages:
+
+```text
+javascript-typescript
+go
+```
+
+Permissions:
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+```
+
+Reference:
+
+- CodeQL action:
+  <https://github.com/github/codeql-action>
+
+### Fuzz Workflow
+
+`fuzz.yml` should run on pull requests, manual dispatch, and a weekly schedule.
+
+Recommended triggers:
+
+```yaml
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+```
+
+Router fuzz targets:
+
+```text
+model alias normalization
+OpenAI request parsing
+header filtering
+session ID extraction
+node eligibility scoring
+Durable Object reservation state transitions
+Cloudflare API response parsing
+```
+
+Agent fuzz targets:
+
+```text
+agent config parsing
+release asset selection
+checksum parsing
+version comparison
+heartbeat payload decoding
+model profile decoding
+Mesh IP detection filters
+```
+
+Implementation:
+
+```text
+TypeScript router:
+  fast-check or vitest property tests
+
+Go agent:
+  go test -fuzz with bounded CI time
+```
+
+Fuzz jobs should have explicit timeouts and should not deploy or use secrets.
+
+Reference:
+
+- Go fuzzing:
+  <https://go.dev/doc/security/fuzz/>
+
+### Manual Deploy Workflow
+
+`deploy.yml` should be the only workflow that deploys the Worker and publishes
+node-agent release artifacts.
+
+Recommended trigger:
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deploy target
+        type: choice
+        options:
+          - integration
+          - production
+        default: integration
+      agent_version:
+        description: Agent release version, required for production, for example v0.1.0
+        required: false
+      release_channel:
+        description: Agent update channel
+        type: choice
+        options:
+          - stable
+          - prerelease
+        default: stable
+      publish_agent_release:
+        description: Build and publish node-agent release artifacts
+        type: boolean
+        default: true
+```
+
+Production guard:
+
+```text
+if environment == production, require github.ref == refs/heads/main
+```
+
+Deploy job responsibilities:
+
+```text
+1. Check out the selected ref.
+2. Install router dependencies.
+3. Install Go.
+4. Run critical router tests and type checks.
+5. Run critical agent tests.
+6. Build router UI/assets if present.
+7. Generate Workers runtime types.
+8. Build node-agent artifacts for Windows, macOS, and Linux.
+9. Generate checksums.txt.
+10. Sign checksums.txt.
+11. Create or update GitHub Release.
+12. Upload node-agent archives, checksums.txt, and checksums.txt.sig.
+13. Deploy Worker with Wrangler.
+14. Set or rotate Worker secrets through protected steps.
+15. Write deployment summary with Worker URL, release tag, and artifact list.
+```
+
+The release tag should be deterministic and update-compatible:
+
+```text
+production:
+  require explicit semver tag, for example v0.1.0
+
+integration:
+  allow prerelease tag, for example v0.1.0-dev.<run_number>
+```
+
+The agent updater should ignore prerelease releases unless the node is on the
+prerelease channel.
+
+Deploy workflow permissions:
+
+```yaml
+permissions:
+  contents: write
+  id-token: write
+```
+
+`contents: write` is needed to create releases and upload assets. `id-token:
+write` is needed if release signing uses keyless Sigstore/cosign.
 
 Release artifacts:
 
@@ -1720,15 +2130,59 @@ inference-mesh-agent_darwin_arm64.tar.gz
 inference-mesh-agent_linux_amd64.tar.gz
 inference-mesh-agent_linux_arm64.tar.gz
 checksums.txt
+checksums.txt.sig
+release-manifest.json
 ```
 
-Use GoReleaser or a similar release workflow to build, package, checksum, and
-publish artifacts.
+`release-manifest.json` should include:
+
+```json
+{
+  "version": "v0.1.0",
+  "channel": "stable",
+  "commit": "<git_sha>",
+  "publishedAt": "<iso8601>",
+  "artifacts": [
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "name": "inference-mesh-agent_linux_amd64.tar.gz",
+      "sha256": "<sha256>"
+    }
+  ]
+}
+```
+
+Use GoReleaser or a similar release tool to build, package, checksum, and
+publish artifacts. The deploy workflow should sign the checksum file so node
+agents can verify downloaded update archives before staging them.
+
+Deploy should not publish a new stable agent release from untrusted code or a
+non-main branch.
 
 Reference:
 
+- Wrangler GitHub Action:
+  <https://github.com/cloudflare/wrangler-action>
 - GoReleaser GitHub Actions:
   <https://goreleaser.com/ci/actions/>
+- GoReleaser signing:
+  <https://goreleaser.com/customization/sign/>
+- GitHub Releases API:
+  <https://docs.github.com/rest/releases/releases>
+
+### Optional Scorecard Workflow
+
+After the core workflows exist, add an optional Scorecard workflow matching the
+Codeflare security posture:
+
+```text
+scorecard.yml
+  OpenSSF Scorecard on schedule and branch.
+```
+
+This workflow should have explicit timeouts, minimal permissions, and no
+production write access.
 
 ## Cloudflare API Token Scopes
 
@@ -2320,18 +2774,30 @@ build, release, and deploy from GitHub Actions
 
 Tasks:
 
-1. Add CI workflow.
-2. Add Worker deploy workflow.
-3. Add node release workflow.
-4. Add checksums.
-5. Publish artifacts.
-6. Make install scripts resolve latest compatible release.
+1. Add `pr-checks.yml`.
+2. Add `codeql.yml`.
+3. Add `fuzz.yml`.
+4. Add manual `deploy.yml`.
+5. Build node-agent release artifacts inside `deploy.yml`.
+6. Add checksums.
+7. Sign checksum file.
+8. Publish GitHub Release artifacts.
+9. Deploy Worker from manual deploy workflow.
+10. Make install scripts resolve latest compatible release.
+11. Add agent update-check metadata compatibility.
 
 Acceptance:
 
-- Push to `main` deploys Worker.
-- Tag builds node-agent releases.
+- Pull requests run PR checks.
+- CodeQL runs on PR, main, manual dispatch, and schedule.
+- Fuzz runs on PR, manual dispatch, and schedule.
+- Deploy is manual.
+- Production deploy is blocked outside `main`.
+- Deploy publishes node-agent release artifacts.
+- Deploy then deploys the Worker.
 - Installer verifies downloaded checksum.
+- Agent can discover the latest compatible release.
+- Agent can verify and stage a release artifact.
 
 ### Phase 8: Production Hardening
 
@@ -2344,9 +2810,11 @@ Tasks:
 5. Optional Cloudflare Access for admin hostname.
 6. Structured logs.
 7. Artifact signing.
-8. Auto-update policy.
-9. R2-backed artifact mirror.
-10. More backend adapters.
+8. Agent self-update UI.
+9. Agent update rollback.
+10. Fleet-wide update policy.
+11. R2-backed artifact mirror.
+12. More backend adapters.
 
 ## Validation Gates
 
@@ -2396,6 +2864,22 @@ Do not proceed past these gates without proving them.
 [ ] Session affinity works.
 [ ] Busy behavior returns 429.
 [ ] Stale nodes expire.
+```
+
+### Gate 6: Agent Self-Update
+
+```text
+[ ] Agent checks GitHub Releases.
+[ ] Agent ignores incompatible OS/architecture artifacts.
+[ ] Agent downloads release archive and checksums.
+[ ] Agent verifies archive checksum.
+[ ] Agent verifies signed checksum file when signing is configured.
+[ ] Agent stages update without replacing the running binary.
+[ ] UI offers Update and restart.
+[ ] Agent marks node draining before restart.
+[ ] Service restarts on Windows, macOS, and Linux.
+[ ] Agent reports new version after restart.
+[ ] Previous binary is retained for rollback.
 ```
 
 ## Open Decisions
