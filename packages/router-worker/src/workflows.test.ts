@@ -121,7 +121,7 @@ describe('workflow contract values', () => {
     expect(security.jobs.codeql).toHaveProperty('strategy.matrix.language', ['javascript-typescript', 'go'])
     expect(security.jobs.codeql).toHaveProperty('if', "github.repository_visibility == 'public'")
     expect(security.jobs.codeql!['timeout-minutes']).toBe(20)
-    expect(security.jobs.scorecard).toHaveProperty('if', "github.repository_visibility == 'public'")
+    expect(security.jobs.scorecard).toHaveProperty('if', "github.repository_visibility == 'public' && github.ref == 'refs/heads/main'")
     expect(security.jobs.scorecard!['timeout-minutes']).toBe(10)
     expect(stepUses(security.jobs.codeql!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'github/codeql-action/init@v4.36.2', 'github/codeql-action/analyze@v4.36.2']))
     expect(stepUses(security.jobs.scorecard!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'ossf/scorecard-action@v2.4.3', 'github/codeql-action/upload-sarif@v4.36.2']))

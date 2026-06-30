@@ -93,7 +93,7 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 1. CodeQL is defined for JavaScript/TypeScript and Go and runs where GitHub code scanning is available. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 2. Fuzz workflows run bounded router and agent fuzz targets on pull requests, manual dispatch, and a weekly schedule. <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows -->
-3. Optional Scorecard runs with minimal permissions and no production write secrets where SARIF upload is available. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
+3. Optional Scorecard runs with minimal permissions and no production write secrets on the default branch where SARIF upload is available. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 4. Security workflows define explicit timeouts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 5. Security workflows do not deploy or publish release artifacts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 

@@ -102,7 +102,8 @@ try {
   Expand-Archive (Join-Path $Tmp $Asset) -DestinationPath $InstallDir -Force
   & (Join-Path $InstallDir 'inference-mesh-agent.exe') install --router $env:ROUTER_URL --setup-token $env:SETUP_TOKEN
   if (-not (Get-Service inference-mesh-agent -ErrorAction SilentlyContinue)) {
-    New-Service -Name inference-mesh-agent -DisplayName 'Codeflare Inference Mesh Agent' -BinaryPathName "`"$(Join-Path $InstallDir 'inference-mesh-agent.exe')`" run" -StartupType Automatic
+    $BinaryPath = '"' + (Join-Path $InstallDir 'inference-mesh-agent.exe') + '" run'
+    New-Service -Name inference-mesh-agent -DisplayName 'Codeflare Inference Mesh Agent' -BinaryPathName $BinaryPath -StartupType Automatic
   }
   Start-Service inference-mesh-agent
 } finally {
