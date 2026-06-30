@@ -19,7 +19,7 @@ Provider auth applies only to `/v1/models` and `/v1/chat/completions`. Node clai
 
 ## Token storage
 
-The durable default is verifier-only storage. Plaintext token display is one-time at creation. Rotation flows create new verifiers and revoke old credentials when the relevant actor can switch safely. ([REQ-SEC-002](../../sdd/spec/security.md))
+The durable default is verifier-only token records. Plaintext token display is one-time at creation, except the generated Worker-to-node upstream token is recoverable by router config because the Worker must present it to nodes during forwarding. Rotation flows create new verifiers and revoke old credentials when the relevant actor can switch safely. ([REQ-SEC-002](../../sdd/spec/security.md))
 
 ## Header filtering
 

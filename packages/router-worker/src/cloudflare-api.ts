@@ -20,27 +20,30 @@ export class CloudflareGatewayClient {
   constructor(private readonly token: string, private readonly fetcher: typeof fetch = fetch) {}
 
   async syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult> {
-    const provider = await this.request<{ id: string }>(input.accountId, `/ai-gateway/gateways/${input.gatewayId}/custom-providers`, 'POST', {
+    const providerSlug = slugify(input.providerName)
+    const provider = await this.request<{ id: string; slug?: string }>(input.accountId, '/ai-gateway/custom-providers', 'POST', {
       name: input.providerName,
-      endpoint: `${input.workerUrl.replace(/\/$/, '')}/v1/chat/completions`,
-      api_format: 'openai-chat-completions'
+      slug: providerSlug,
+      base_url: originOnly(input.workerUrl),
+      description: 'Codeflare Inference Mesh OpenAI-compatible router',
+      enable: true
     })
     const route = await this.request<{ id: string }>(input.accountId, `/ai-gateway/gateways/${input.gatewayId}/routes`, 'POST', {
       name: input.routeName,
-      enabled: true,
-      strategy: 'dynamic'
+      enabled: true
     })
-    const version = await this.request<{ id: string }>(input.accountId, `/ai-gateway/gateways/${input.gatewayId}/routes/${route.id}/versions`, 'POST', {
-      providers: [{ id: provider.id, weight: 1 }]
+    const version = await this.request<{ id: string; version_id?: string }>(input.accountId, `/ai-gateway/gateways/${input.gatewayId}/routes/${route.id}/versions`, 'POST', {
+      elements: routeGraph(`custom-${provider.slug ?? providerSlug}`, 'mesh-default')
     })
-    const deployment = await this.request<{ id: string }>(input.accountId, `/ai-gateway/gateways/${input.gatewayId}/routes/${route.id}/deployments`, 'POST', {
-      version_id: version.id
+    const routeVersionId = version.version_id ?? version.id
+    const deployment = await this.request<{ id: string; deployment_id?: string }>(input.accountId, `/ai-gateway/gateways/${input.gatewayId}/routes/${route.id}/deployments`, 'POST', {
+      version_id: routeVersionId
     })
     return {
       providerId: provider.id,
       routeId: route.id,
-      routeVersionId: version.id,
-      deploymentId: deployment.id,
+      routeVersionId,
+      deploymentId: deployment.deployment_id ?? deployment.id,
       manualProviderKeyRequired: true,
       providerTokenInstructions: input.providerTokenInstructions
     }
@@ -66,6 +69,29 @@ export class CloudflareGatewayClient {
 interface ApiEnvelope<T> {
   readonly success: boolean
   readonly result: T
+}
+
+function originOnly(workerUrl: string): string {
+  const url = new URL(workerUrl)
+  if (url.protocol !== 'https:') throw new Error('Cloudflare custom providers require https base_url')
+  return url.origin
+}
+
+function slugify(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'codeflare-inference-mesh'
+}
+
+function routeGraph(provider: string, model: string) {
+  return [
+    { id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } },
+    {
+      id: 'model',
+      type: 'model',
+      properties: { provider, model, retries: 1, timeout: 120000 },
+      outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } }
+    },
+    { id: 'end', type: 'end', outputs: {} }
+  ]
 }
 
 export const CLOUDFLARE_API_ANCHORS = {

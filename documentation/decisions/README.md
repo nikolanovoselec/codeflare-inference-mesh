@@ -16,6 +16,23 @@ This ledger records binding technical choices for the first implementation. It i
 | AD-008 | Accepted | Bind the node listener to Mesh IP when possible and allow `0.0.0.0` fallback only with strict token auth. | REQ-NODE-001, REQ-RTR-004 |
 | AD-009 | Accepted | Start hardware metrics with best-effort platform probes rather than native GPU libraries. | REQ-OBS-003 |
 | AD-010 | Accepted | Publish public GitHub Release artifacts for installers and self-update after the first Worker path is proven. | REQ-REL-003, REQ-NODE-005 |
+| AD-011 | Accepted | Keep first-run setup open until completed; do not require a separate initial setup token. | REQ-ADM-001, REQ-ADM-002 |
+
+## AD-011: First-run setup is the one-time bootstrap gate
+
+**Status:** Accepted
+
+**Context:** The router is deployed to a controlled Worker during initial setup. Before setup is complete there is no durable admin credential yet; after setup completes, admin auth and optional Cloudflare Access protect the control plane. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+
+**Decision:** First-run `/admin/setup` stays open until the initial admin configuration completes. Do not add a separate `INITIAL_SETUP_TOKEN`, pre-admin setup token, or equivalent extra gate for this one-time bootstrap path.
+
+**Alternatives considered:** Requiring a configured initial setup token before first-run setup.
+
+**Rationale:** A separate initial setup token adds operator friction and another secret without improving the intended controlled bootstrap flow. The real boundary is completing setup quickly, storing only verifiers, then requiring admin authentication and optional Access hardening.
+
+**Consequences:** Setup must generate credentials exactly once, store setup-complete state, and require admin auth after an active admin token exists. Future changes must not reintroduce a pre-admin setup-token gate.
+
+**Related requirements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
 ## AD-001: Cloudflare router plane
 

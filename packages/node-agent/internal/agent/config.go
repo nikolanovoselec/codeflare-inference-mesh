@@ -24,8 +24,9 @@ type Config struct {
 	RuntimeURL         string   `json:"runtimeUrl"`
 	RuntimeModel       string   `json:"runtimeModel"`
 	PublicModels       []string `json:"publicModels"`
-	ActiveProfileIDs   []string `json:"activeProfileIds"`
-	Capacity           int      `json:"capacity"`
+	ActiveProfileIDs   []string       `json:"activeProfileIds"`
+	Profiles           []ModelProfile `json:"profiles,omitempty"`
+	Capacity           int            `json:"capacity"`
 	DataDir            string   `json:"dataDir"`
 	ReleaseURL         string   `json:"releaseUrl"`
 	AllowAllInterfaces bool     `json:"allowAllInterfaces"`
@@ -41,6 +42,7 @@ func DefaultConfig(dataDir string) Config {
 		RuntimeModel:     "qwen36-27b-256k-3090",
 		PublicModels:     []string{"mesh-default"},
 		ActiveProfileIDs: []string{"qwen36-27b-256k-3090"},
+		Profiles:         nil,
 		Capacity:         1,
 		DataDir:          dataDir,
 		ReleaseURL:       "https://api.github.com/repos/nikolanovoselec/codeflare-inference-mesh/releases/latest",
@@ -123,6 +125,7 @@ func RedactedConfig(cfg Config) Config {
 		RuntimeModel:       cfg.RuntimeModel,
 		PublicModels:       append([]string(nil), cfg.PublicModels...),
 		ActiveProfileIDs:   append([]string(nil), cfg.ActiveProfileIDs...),
+		Profiles:           append([]ModelProfile(nil), cfg.Profiles...),
 		Capacity:           cfg.Capacity,
 		DataDir:            cfg.DataDir,
 		ReleaseURL:         cfg.ReleaseURL,

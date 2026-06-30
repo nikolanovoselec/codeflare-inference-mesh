@@ -13,10 +13,10 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. The setup UI is available on the Worker origin until setup is completed. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
-2. First-run setup requires the configured initial setup token. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+2. First-run setup remains open until the first admin configuration completes. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 3. Successful first-run setup stores setup-complete state in D1. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 4. The setup flow creates and displays the provider token exactly once. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
-5. After setup completes, setup routes require admin authentication rather than the initial setup token. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+5. After setup completes, setup routes require admin authentication rather than remaining open. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 

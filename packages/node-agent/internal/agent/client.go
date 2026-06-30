@@ -73,6 +73,7 @@ func ApplyClaim(cfg Config, claim ClaimResponse, path string) (Config, error) {
 	next.NodeID = claim.NodeID
 	next.NodeToken = claim.NodeToken
 	next.UpstreamToken = claim.UpstreamToken
+	next.Profiles = append([]ModelProfile(nil), claim.Profiles...)
 	next.SetupToken = ""
 	if err := SaveConfig(path, next); err != nil {
 		return Config{}, err

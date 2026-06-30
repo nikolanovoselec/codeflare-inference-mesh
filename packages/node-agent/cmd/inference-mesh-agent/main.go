@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent/internal/agent"
@@ -70,7 +71,7 @@ func runService() error {
 	if err != nil {
 		return err
 	}
-	metrics := agent.RuntimeMetrics("ready", cfg.RuntimeModel, 0)
+	activeRequests := &agent.ActiveCounter{}
 	if cfg.SetupToken != "" && cfg.NodeToken == "" {
 		claimClient := agent.Client{RouterURL: cfg.RouterURL}
 		claim, err := claimClient.Claim(context.Background(), cfg.SetupToken, agent.ClaimRequest{DisplayName: cfg.DisplayName, MeshIP: cfg.MeshIP, InferencePort: cfg.InferencePort, PublicModels: cfg.PublicModels, ActiveProfileIDs: cfg.ActiveProfileIDs, Capacity: cfg.Capacity})
@@ -83,20 +84,38 @@ func runService() error {
 		}
 		cfg = next
 	}
+	runtimeState := "external"
+	var runtimeManager *agent.RuntimeManager
+	if profile, ok := agent.SelectedProfile(cfg); ok {
+		listenAddress, err := agent.RuntimeListenAddress(cfg.RuntimeURL)
+		if err != nil {
+			return err
+		}
+		if _, err := agent.EnsureModel(context.Background(), profile, cfg.DataDir, nil); err != nil {
+			return err
+		}
+		runtimeManager = agent.NewRuntimeManager(agent.LlamaCommand(profile, filepath.Join(cfg.DataDir, "models"), listenAddress))
+		if err := runtimeManager.Start(context.Background()); err != nil {
+			return err
+		}
+		runtimeState = "ready"
+	}
 	go func() {
 		client := agent.Client{RouterURL: cfg.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 		for range time.Tick(15 * time.Second) {
-			_, _ = client.Heartbeat(context.Background(), cfg.NodeToken, agent.HeartbeatFromConfig(cfg, metrics, 0))
+			metrics := agent.RuntimeMetrics(runtimeState, cfg.RuntimeModel, activeRequests.Value())
+			_, _ = client.Heartbeat(context.Background(), cfg.NodeToken, agent.HeartbeatFromConfig(cfg, metrics, activeRequests.Value()))
 		}
 	}()
-	proxy, err := agent.ProxyHandler(cfg.RuntimeURL, cfg.UpstreamToken)
+	proxy, err := agent.ProxyHandler(cfg.RuntimeURL, cfg.UpstreamToken, activeRequests)
 	if err != nil {
 		return err
 	}
 	go func() {
 		_ = http.ListenAndServe(cfg.DashboardAddress, agent.DashboardHandler(func() agent.DashboardStatus {
+			metrics := agent.RuntimeMetrics(runtimeState, cfg.RuntimeModel, activeRequests.Value())
 			return agent.DashboardStatus{Config: cfg, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
-		}))
+		}, runtimeManager))
 	}()
 	return http.ListenAndServe(agent.ListenerAddress(cfg.MeshIP, cfg.InferencePort, cfg.AllowAllInterfaces), proxy)
 }

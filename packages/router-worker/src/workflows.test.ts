@@ -51,7 +51,7 @@ describe('workflow contract values', () => {
 
     expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push', 'workflow_dispatch'])
     expect(ci.on.pull_request).toEqual({ branches: ['main'] })
-    expect(ci.on.push).toEqual({ branches: ['main'] })
+    expect(ci.on.push).toEqual({ branches: ['main', 'develop'] })
     expect(Object.keys(ci.jobs).sort()).toEqual(['agent', 'dependency-review', 'packaging', 'router', 'test', 'vulnerability-checks'])
     expect(ci.jobs.test!.needs).toEqual(['router', 'agent', 'packaging', 'dependency-review', 'vulnerability-checks'])
 
@@ -117,8 +117,11 @@ describe('workflow contract values', () => {
     const fuzz = workflow('fuzz.yml')
 
     expect(Object.keys(security.on).sort()).toEqual(['pull_request', 'push', 'schedule', 'workflow_dispatch'])
+    expect(security.jobs['workflow-safety']!['timeout-minutes']).toBe(5)
     expect(security.jobs.codeql).toHaveProperty('strategy.matrix.language', ['javascript-typescript', 'go'])
+    expect(security.jobs.codeql).toHaveProperty('if', "github.repository_visibility == 'public'")
     expect(security.jobs.codeql!['timeout-minutes']).toBe(20)
+    expect(security.jobs.scorecard).toHaveProperty('if', "github.repository_visibility == 'public'")
     expect(security.jobs.scorecard!['timeout-minutes']).toBe(10)
     expect(stepUses(security.jobs.codeql!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'github/codeql-action/init@v4.36.2', 'github/codeql-action/analyze@v4.36.2']))
     expect(stepUses(security.jobs.scorecard!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'ossf/scorecard-action@v2.4.3', 'github/codeql-action/upload-sarif@v4.36.2']))

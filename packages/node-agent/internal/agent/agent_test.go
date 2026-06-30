@@ -81,7 +81,11 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 }
 
 func TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(t *testing.T) {
+	counter := &ActiveCounter{}
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if counter.Value() != 1 {
+			t.Fatalf("proxy did not count the active request")
+		}
 		if r.Header.Get("authorization") != "" || r.Header.Get("cf-access-client-secret") != "" {
 			t.Fatalf("proxy leaked forbidden headers")
 		}
@@ -90,7 +94,7 @@ func TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(t *testing.T) {
 		_, _ = io.WriteString(w, "data: two\n\n")
 	}))
 	defer runtime.Close()
-	proxy, err := ProxyHandler(runtime.URL, "upstream-token")
+	proxy, err := ProxyHandler(runtime.URL, "upstream-token", counter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +110,9 @@ func TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(t *testing.T) {
 	proxy.ServeHTTP(good, req)
 	if good.Code != http.StatusOK || good.Body.String() != "data: one\n\ndata: two\n\n" {
 		t.Fatalf("unexpected proxy response %d %q", good.Code, good.Body.String())
+	}
+	if counter.Value() != 0 {
+		t.Fatalf("proxy did not release the active request")
 	}
 }
 
@@ -127,10 +134,28 @@ func TestREQNODE004DashboardRedactsCredentials(t *testing.T) {
 	}
 }
 
+func TestREQNODE004DashboardRuntimeControlsUseController(t *testing.T) {
+	controller := &fakeRuntimeController{}
+	handler := DashboardHandler(func() DashboardStatus {
+		return DashboardStatus{Config: Config{}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
+	}, controller)
+
+	for _, path := range []string{"/api/runtime/start", "/api/runtime/stop", "/api/runtime/restart"} {
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, path, nil))
+		if resp.Code != http.StatusOK {
+			t.Fatalf("runtime control %s returned %d", path, resp.Code)
+		}
+	}
+	if controller.starts != 1 || controller.stops != 1 || controller.restarts != 1 {
+		t.Fatalf("runtime controls not routed: %#v", controller)
+	}
+}
+
 func TestREQRUN003LlamaRuntimeCommandAndChecksum(t *testing.T) {
 	profile := ModelProfile{ID: "p", LocalFilename: "model.gguf", ContextWindow: 32768, Runtime: "llama.cpp"}
 	cmd := LlamaCommand(profile, "/cache", "100.64.1.10:8080")
-	if cmd.Executable != "llama-server" || cmd.Args[0] != "--model" || cmd.Args[2] != "--ctx-size" {
+	if cmd.Executable != "llama-server" || cmd.Args[0] != "--model" || cmd.Args[2] != "--ctx-size" || cmd.Args[6] != "--port" || cmd.Args[7] != "8080" {
 		t.Fatalf("invalid command: %#v", cmd)
 	}
 	file := filepath.Join(t.TempDir(), "model.gguf")
@@ -164,6 +189,27 @@ func TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches(t *testing.T) {
 	if _, err := StageUpdate(bytes.NewReader(data), "bad", t.TempDir(), "agent"); err == nil {
 		t.Fatalf("expected checksum mismatch")
 	}
+}
+
+type fakeRuntimeController struct {
+	starts   int
+	stops    int
+	restarts int
+}
+
+func (f *fakeRuntimeController) Start(context.Context) error {
+	f.starts++
+	return nil
+}
+
+func (f *fakeRuntimeController) Stop(context.Context) error {
+	f.stops++
+	return nil
+}
+
+func (f *fakeRuntimeController) Restart(context.Context) error {
+	f.restarts++
+	return nil
 }
 
 func TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken(t *testing.T) {

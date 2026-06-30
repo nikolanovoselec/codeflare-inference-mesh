@@ -36,6 +36,9 @@ The first implementation slice covers all 38 SDD requirements with source anchor
 - Operational documentation: [documentation/](documentation/)
 - Architecture plan: [PLAN.md](PLAN.md)
 - Implementation plan: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
+- Contributing guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Security policy: [SECURITY.md](SECURITY.md)
+- License: [PolyForm Noncommercial 1.0.0](LICENSE)
 - Task tracking: [pending.md](pending.md)
 
 ## GitHub repository secrets
@@ -152,6 +155,6 @@ GitHub Actions runs:
 - package archive/checksum/version checks;
 - dependency review, npm audit, Go vulnerability checks;
 - bounded router and agent fuzz workflows;
-- CodeQL and Scorecard security scans.
+- workflow safety checks everywhere, plus CodeQL and Scorecard SARIF scans where GitHub code scanning is available.
 
 Avoid full expensive local suites in constrained containers. If you intentionally accept the risk, use only targeted checks for touched packages.

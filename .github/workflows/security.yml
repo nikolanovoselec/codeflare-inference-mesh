@@ -3,7 +3,7 @@ name: Security
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -16,10 +16,38 @@ permissions:
   actions: read
 
 jobs:
+  workflow-safety:
+    name: Workflow safety baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - name: Reject dangerous workflow checkout pattern
+        run: |
+          bad_event='workflow''_run'
+          bad_ref='head''_sha'
+          if grep -R "$bad_event\|$bad_ref" .github/workflows; then
+            echo "::error::dangerous workflow checkout pattern is forbidden"
+            exit 1
+          fi
+      - name: Require pinned action and runner versions
+        run: |
+          floating_action='@''latest'
+          floating_runner='ubuntu-''latest'
+          if grep -R "$floating_action\|$floating_runner" .github/workflows; then
+            echo "::error::unversioned action or runner pin found"
+            exit 1
+          fi
+          if grep -RE "actions/(checkout|setup-node|setup-go|upload-artifact)@v[0-9]+([^0-9.]|$)" .github/workflows; then
+            echo "::error::major-only action pin found"
+            exit 1
+          fi
+
   codeql:
     name: CodeQL
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    if: github.repository_visibility == 'public'
     strategy:
       fail-fast: false
       matrix:
@@ -35,6 +63,7 @@ jobs:
     name: OpenSSF Scorecard
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    if: github.repository_visibility == 'public'
     permissions:
       contents: read
       security-events: write

@@ -5,9 +5,26 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync/atomic"
 )
 
-func ProxyHandler(runtimeURL string, upstreamToken string) (http.Handler, error) {
+type ActiveCounter struct {
+	value int64
+}
+
+func (c *ActiveCounter) Inc() {
+	atomic.AddInt64(&c.value, 1)
+}
+
+func (c *ActiveCounter) Dec() {
+	atomic.AddInt64(&c.value, -1)
+}
+
+func (c *ActiveCounter) Value() int {
+	return int(atomic.LoadInt64(&c.value))
+}
+
+func ProxyHandler(runtimeURL string, upstreamToken string, counters ...*ActiveCounter) (http.Handler, error) {
 	target, err := url.Parse(strings.TrimRight(runtimeURL, "/"))
 	if err != nil {
 		return nil, err
@@ -27,6 +44,10 @@ func ProxyHandler(runtimeURL string, upstreamToken string) (http.Handler, error)
 		if req.Header.Get("authorization") != "Bearer "+upstreamToken {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
+		}
+		if len(counters) > 0 && counters[0] != nil {
+			counters[0].Inc()
+			defer counters[0].Dec()
 		}
 		proxy.ServeHTTP(w, req)
 	}), nil

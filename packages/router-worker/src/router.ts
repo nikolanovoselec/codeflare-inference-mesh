@@ -1,12 +1,12 @@
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
 import { CloudflareGatewayClient, type GatewaySyncRequest, type GatewaySyncResult } from './cloudflare-api'
-import { installerCommand, validateCustomDomain, type InstallerPlatform } from './installers'
+import { installerCommand, installScript, validateCustomDomain, type InstallerPlatform } from './installers'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { meshUrl } from './scheduler'
 import type { ClaimRequest, CredentialKind, HeartbeatRequest, ModelProfile, RouterEnv, Scheduler, Store, TokenRecord } from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
-const DEFAULT_MAX_BYTES = 1_048_576
+const DEFAULT_MAX_BYTES = 16 * 1024 * 1024
 const SETUP_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 
 export interface RouterDeps {
@@ -32,7 +32,10 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (request.method === 'POST' && url.pathname === '/v1/chat/completions') return await handleChat(request, deps, id, now())
       if (request.method === 'POST' && url.pathname === '/node/claim') return await handleNodeClaim(request, deps, id, now())
       if (request.method === 'POST' && url.pathname === '/node/heartbeat') return await handleNodeHeartbeat(request, deps, id, now())
+      if (request.method === 'POST' && url.pathname === '/node/unregister') return await handleNodeUnregister(request, deps, id, now())
       if (url.pathname === '/admin/setup' && request.method === 'POST') return await handleFirstSetup(request, deps, id, now())
+      if (url.pathname === '/install.sh' && request.method === 'GET') return handleInstallScript(deps, url.searchParams.get('platform') === 'macos' ? 'macos' : 'linux')
+      if (url.pathname === '/install.ps1' && request.method === 'GET') return handleInstallScript(deps, 'windows')
       if (url.pathname === '/admin/login' && request.method === 'POST') return await handleAdminLogin(request, deps, id, now())
       if (url.pathname === '/admin/status' && request.method === 'GET') return await handleAdminStatus(request, deps, id, now())
       if (url.pathname === '/admin/setup-tokens' && request.method === 'POST') return await handleSetupToken(request, deps, id, now())
@@ -70,18 +73,24 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   const result = await deps.scheduler.reserve({ publicModel, sessionId, now })
   if (!result.reservation || !result.node || !result.profile) return json({ error: result.reason ?? 'busy', requestId }, result.reason === 'no-profile' ? 404 : 429, requestId)
 
-  const upstreamToken = deps.env.NODE_UPSTREAM_TOKEN
+  const upstreamToken = await resolveUpstreamToken(deps)
   if (!upstreamToken) {
     await deps.scheduler.release(result.reservation.reservationId, now)
     return json({ error: 'upstream_token_missing', requestId }, 503, requestId)
   }
 
   const rewritten = JSON.stringify({ ...body, model: result.reservation.upstreamModel })
-  const upstream = await deps.mesh.fetch(meshUrl(result.node, '/v1/chat/completions'), {
-    method: 'POST',
-    headers: approvedNodeHeaders(request.headers, upstreamToken, requestId),
-    body: rewritten
-  })
+  let upstream: Response
+  try {
+    upstream = await deps.mesh.fetch(meshUrl(result.node, '/v1/chat/completions'), {
+      method: 'POST',
+      headers: approvedNodeHeaders(request.headers, upstreamToken, requestId),
+      body: rewritten
+    })
+  } catch (error) {
+    await deps.scheduler.release(result.reservation.reservationId, now)
+    throw error
+  }
   const headers = responseMetadataHeaders(upstream.headers, requestId, sessionId, result.node.id)
   return releaseOnCompletion(upstream, headers, () => deps.scheduler.release(result.reservation!.reservationId, now))
 }
@@ -93,7 +102,7 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
   const validation = validateClaim(body)
   if (validation.length > 0) return json({ error: 'invalid_claim', fields: validation }, 400, requestId)
   const nodeToken = generateBearerToken('node')
-  const upstreamToken = deps.env.NODE_UPSTREAM_TOKEN ?? generateBearerToken('upstream')
+  const upstreamToken = await getOrCreateUpstreamToken(deps)
   const nodeId = stableNodeId(body.displayName, body.meshIp)
   const nodeRecord = {
     id: nodeId,
@@ -136,7 +145,7 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     publicModels: body.publicModels,
     activeProfileIds: body.activeProfileIds,
     capacity: body.capacity,
-    inFlight: body.inFlight,
+    inFlight: Math.max(node.inFlight, body.inFlight),
     lastSeenAt: now,
     runtime: body.runtime,
     ...(body.runtimeModel !== undefined ? { runtimeModel: body.runtimeModel } : {}),
@@ -146,13 +155,26 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   return json({ ok: true, desiredProfiles: await deps.store.listProfiles() }, 200, requestId)
 }
 
+async function handleNodeUnregister(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const body = await readJson<{ nodeId?: string }>(request)
+  if (!body?.nodeId) return json({ error: 'invalid_unregister' }, 400, requestId)
+  const node = await deps.store.getNode(body.nodeId)
+  if (!node) return json({ error: 'unknown_node' }, 404, requestId)
+  const presented = bearerToken(request)
+  const tokenOk = node.nodeTokenVerifier ? await verifyPlainOrHashed(node.nodeTokenVerifier, presented) : Boolean(await authenticateTokenByNode(request, deps.store, 'node', body.nodeId, now))
+  if (!tokenOk) return json({ error: 'unauthorized' }, 401, requestId)
+  await deps.store.upsertNode({ ...node, status: 'offline', inFlight: 0, lastSeenAt: now })
+  await deps.store.appendAudit({ id: requestId, type: 'node_unregistered', at: now, actor: 'node', target: body.nodeId, detail: {} })
+  return json({ ok: true }, 200, requestId)
+}
+
 async function handleFirstSetup(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const existingAdmins = await deps.store.listTokens('admin')
   if (existingAdmins.some((token) => token.active) && !(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const adminToken = generateBearerToken('admin')
   const providerToken = generateBearerToken('provider')
   const setupToken = generateBearerToken('setup')
-  const upstreamToken = deps.env.NODE_UPSTREAM_TOKEN ?? generateBearerToken('upstream')
+  const upstreamToken = await getOrCreateUpstreamToken(deps)
   await deps.store.putToken(await createTokenRecord('admin', adminToken, now))
   await deps.store.putToken(await createTokenRecord('provider', providerToken, now))
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
@@ -191,6 +213,12 @@ async function handleInstaller(request: Request, deps: RouterDeps, url: URL, req
   return new Response(command, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'x-inference-mesh-request-id': requestId } })
 }
 
+function handleInstallScript(deps: RouterDeps, platform: InstallerPlatform): Response {
+  const repository = deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh'
+  const contentType = platform === 'windows' ? 'text/plain; charset=utf-8' : 'text/x-shellscript; charset=utf-8'
+  return new Response(installScript({ platform, repository }), { status: 200, headers: { 'content-type': contentType } })
+}
+
 async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
@@ -199,7 +227,7 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!accountId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
-  const result = await client.syncCustomProvider({ accountId, gatewayId, workerUrl, providerName: 'custom-inference-mesh', routeName: 'mesh-default', providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.' })
+  const result = await client.syncCustomProvider({ accountId, gatewayId, workerUrl, providerName: 'codeflare-inference-mesh', routeName: 'mesh-default', providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.' })
   await deps.store.putConfig('cloudflare_gateway', result)
   await deps.store.appendAudit({ id: requestId, type: 'gateway_sync', at: now, actor: 'admin', detail: { ...result } })
   return json(result, 200, requestId)
@@ -227,6 +255,18 @@ async function handleProfileRollout(request: Request, deps: RouterDeps, requestI
   await deps.store.setActiveProfile(body.profileId, body.rolloutPercent)
   await deps.store.appendAudit({ id: requestId, type: 'profile_rollout', at: now, actor: 'admin', target: body.profileId, detail: { rolloutPercent: body.rolloutPercent } })
   return json({ ok: true }, 200, requestId)
+}
+
+async function resolveUpstreamToken(deps: RouterDeps): Promise<string | undefined> {
+  return deps.env.NODE_UPSTREAM_TOKEN ?? await deps.store.getConfig<string>('node_upstream_token')
+}
+
+async function getOrCreateUpstreamToken(deps: RouterDeps): Promise<string> {
+  const existing = await resolveUpstreamToken(deps)
+  if (existing) return existing
+  const token = generateBearerToken('upstream')
+  await deps.store.putConfig('node_upstream_token', token)
+  return token
 }
 
 async function authenticateKind(request: Request, deps: RouterDeps, kind: CredentialKind, now: number, envSecret?: string): Promise<boolean> {
@@ -339,5 +379,6 @@ export const ROUTER_ANCHORS = {
   REQ_OBS_004: 'REQ-OBS-004',
   REQ_ADM_001: 'REQ-ADM-001',
   REQ_ADM_002: 'REQ-ADM-002',
-  REQ_ADM_003: 'REQ-ADM-003'
+  REQ_ADM_003: 'REQ-ADM-003',
+  REQ_SEC_002: 'REQ-SEC-002'
 } as const

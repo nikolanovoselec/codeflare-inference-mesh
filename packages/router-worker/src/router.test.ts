@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { hashToken } from './auth'
+import { CloudflareGatewayClient } from './cloudflare-api'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { createRouter } from './router'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
@@ -117,6 +118,55 @@ describe('router worker behavioral contracts', () => {
     expect(reservation.releasedAt).toBe(1_700_000_000_000)
   })
 
+  it('REQ-RTR-002 REQ-SEC-001 reuses generated upstream token when no env secret exists', async () => {
+    const capture: { request?: Request } = {}
+    const store = new MemoryStore()
+    const router = createRouter({
+      store,
+      scheduler: new StoreScheduler(store, () => 'reservation-generated'),
+      mesh: makeMesh(capture),
+      now: () => 1_700_000_000_000,
+      requestId: () => 'request-generated',
+      env: { ROUTER_PROVIDER_TOKEN: 'provider-secret', WORKER_BASE_URL: 'https://router.example.workers.dev', MAX_REQUEST_BYTES: '4096' }
+    })
+    const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
+    const setup = await setupResponse.json() as { setupToken: string; upstreamToken: string }
+    await router(new Request('https://router.test/node/claim', {
+      method: 'POST',
+      headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1 })
+    }))
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'mesh-default', messages: [] })
+    }))
+
+    expect(response.status).toBe(200)
+    expect(capture.request!.headers.get('authorization')).toBe(`Bearer ${setup.upstreamToken}`)
+  })
+
+  it('REQ-RTR-002 releases a reservation when Mesh fetch throws', async () => {
+    const mesh = {
+      fetch: async () => { throw new Error('mesh unavailable') },
+      connect() { throw new Error('connect is not used by inference forwarding') }
+    } as Fetcher
+    const { router, store } = routerFixture({ mesh })
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture({ capacity: 1 }))
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'mesh-default', messages: [] })
+    }))
+
+    expect(response.status).toBe(500)
+    expect([...store.reservations.values()][0]?.releasedAt).toBe(1_700_000_000_000)
+    expect((await store.getNode('node-a'))?.inFlight).toBe(0)
+  })
+
   it('REQ-RTR-003 streams upstream bodies without buffering them first', async () => {
     const stream = new ReadableStream({
       start(controller) {
@@ -207,6 +257,36 @@ describe('router worker behavioral contracts', () => {
     expect((await store.getNode('node-a'))?.metrics?.gpuName).toBe('RTX 3090')
   })
 
+  it('REQ-OBS-004 lets an authenticated node remove itself from scheduling', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode({ ...nodeFixture({ status: 'online', inFlight: 1 }), nodeTokenVerifier: await hashToken('node-secret') })
+
+    const response = await router(new Request('https://router.test/node/unregister', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: 'node-a' })
+    }))
+    const node = await store.getNode('node-a')
+
+    expect(response.status).toBe(200)
+    expect(node?.status).toBe('offline')
+    expect(node?.inFlight).toBe(0)
+  })
+
+  it('REQ-SCH-002 REQ-NODE-002 does not let stale heartbeat counters erase live reservations', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode({ ...nodeFixture({ capacity: 1, inFlight: 1 }), nodeTokenVerifier: await hashToken('node-secret') })
+
+    const response = await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1, inFlight: 0, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+    }))
+
+    expect(response.status).toBe(200)
+    expect((await store.getNode('node-a'))?.inFlight).toBe(1)
+  })
+
   it('REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status', async () => {
     const { router, store } = routerFixture()
     await store.upsertNode({ ...nodeFixture(), upstreamTokenVerifier: 'sha256:hidden' })
@@ -219,15 +299,19 @@ describe('router worker behavioral contracts', () => {
     expect(new Set(valuesOf(body)).has('sha256:hidden')).toBe(false)
   })
 
-  it('REQ-ADM-004 returns one-line installer commands with a fresh setup token', async () => {
+  it('REQ-ADM-004 returns one-line installer commands and checksum-verifying scripts', async () => {
     const { router, store } = routerFixture()
-    const response = await router(new Request('https://router.test/admin/installers/linux', { headers: bearer('admin-secret') }))
-    const command = await response.text()
+    const commandResponse = await router(new Request('https://router.test/admin/installers/linux', { headers: bearer('admin-secret') }))
+    const command = await commandResponse.text()
+    const scriptUrl = new URL(command.split(/\s+/).find((part) => part.startsWith('https://'))!)
+    const scriptResponse = await router(new Request('https://router.test/install.sh?platform=linux'))
+    const script = await scriptResponse.text()
 
-    const download = new URL(command.split(/\s+/).find((part) => part.startsWith('https://'))!)
-
-    expect(response.status).toBe(200)
-    expect(download.pathname.endsWith('/inference-mesh-agent-linux-amd64.tar.gz')).toBe(true)
+    expect(commandResponse.status).toBe(200)
+    expect(scriptUrl.pathname).toBe('/install.sh')
+    expect(scriptUrl.searchParams.get('platform')).toBe('linux')
+    expect(/sha256sum -c -|shasum -a 256/.test(script)).toBe(true)
+    expect(/systemctl enable --now|launchctl bootstrap/.test(script)).toBe(true)
     expect(store.tokens.filter((token) => token.kind === 'setup' && token.active).length).toBe(1)
   })
 
@@ -249,6 +333,34 @@ describe('router worker behavioral contracts', () => {
     expect(response.status).toBe(200)
     expect(calls).toEqual(['account-a', 'gateway-a', 'https://router.example.workers.dev'])
     expect(body).toMatchObject({ deploymentId: 'deployment-a', manualProviderKeyRequired: true })
+  })
+
+  it('REQ-GWY-003 uses Cloudflare custom-provider and dynamic-route payload contracts', async () => {
+    const calls: Array<{ path: string; body: Record<string, unknown> }> = []
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      calls.push({ path: url.pathname, body })
+      if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh' } })
+      if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { id: 'route-a' } })
+      if (url.pathname.endsWith('/versions')) return Response.json({ success: true, result: { id: 'version-a' } })
+      return Response.json({ success: true, result: { id: 'deployment-a' } })
+    }) as typeof fetch
+    const client = new CloudflareGatewayClient('runtime-token', fetcher)
+
+    const result = await client.syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev/v1/chat/completions', providerName: 'Codeflare Inference Mesh', routeName: 'mesh-default', providerTokenInstructions: 'manual' })
+    const versionBody = calls[2]!.body as { elements: Array<{ type: string; properties?: Record<string, unknown> }> }
+    const modelNode = versionBody.elements.find((element) => element.type === 'model')!
+
+    expect(calls.map((call) => call.path)).toEqual([
+      '/client/v4/accounts/account-a/ai-gateway/custom-providers',
+      '/client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes',
+      '/client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes/route-a/versions',
+      '/client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes/route-a/deployments'
+    ])
+    expect(calls[0]!.body).toEqual({ name: 'Codeflare Inference Mesh', slug: 'codeflare-inference-mesh', base_url: 'https://router.example.workers.dev', description: 'Codeflare Inference Mesh OpenAI-compatible router', enable: true })
+    expect(modelNode.properties).toEqual({ provider: 'custom-codeflare-inference-mesh', model: 'mesh-default', retries: 1, timeout: 120000 })
+    expect(result).toEqual({ providerId: 'provider-a', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
   })
 
   it('REQ-ADM-005 validates optional custom-domain hostnames before accepting them', async () => {
