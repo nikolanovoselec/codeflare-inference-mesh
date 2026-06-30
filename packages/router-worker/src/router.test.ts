@@ -278,16 +278,27 @@ describe('router worker behavioral contracts', () => {
     const { router, store } = routerFixture()
     await store.upsertNode({ ...nodeFixture({ capacity: 1, inFlight: 0 }), nodeTokenVerifier: await hashToken('node-secret') })
 
-    const response = await router(new Request('https://router.test/node/heartbeat', {
+    const staleHigh = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
       body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1, inFlight: 1, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 1 } })
     }))
-    const node = await store.getNode('node-a')
+    const afterStaleHigh = await store.getNode('node-a')
+    await store.upsertNode({ ...afterStaleHigh!, inFlight: 1 })
 
-    expect(response.status).toBe(200)
-    expect(node?.inFlight).toBe(0)
-    expect(node?.metrics?.activeRequests).toBe(1)
+    const staleZero = await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1, inFlight: 0, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+    }))
+    const afterStaleZero = await store.getNode('node-a')
+
+    expect(staleHigh.status).toBe(200)
+    expect(afterStaleHigh?.inFlight).toBe(0)
+    expect(afterStaleHigh?.metrics?.activeRequests).toBe(1)
+    expect(staleZero.status).toBe(200)
+    expect(afterStaleZero?.inFlight).toBe(1)
+    expect(afterStaleZero?.metrics?.activeRequests).toBe(0)
   })
 
   it('REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status', async () => {

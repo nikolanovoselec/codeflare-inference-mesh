@@ -62,6 +62,15 @@ func LoadConfig(path string) (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
+	if cfg.DashboardToken == "" {
+		cfg.DashboardToken = dashboardToken()
+		if cfg.DashboardToken == "" {
+			return Config{}, fmt.Errorf("generate dashboard token")
+		}
+		if err := SaveConfig(path, cfg); err != nil {
+			return Config{}, fmt.Errorf("persist dashboard token: %w", err)
+		}
+	}
 	return cfg, nil
 }
 

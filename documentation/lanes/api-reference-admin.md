@@ -16,7 +16,7 @@
 
 ## Conventions
 
-Admin routes use the MVP admin token or an admin session derived from it after first-run setup completes. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+Admin routes use the MVP admin token or an admin session derived from it after first-run setup completes. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. Admin routes do not implement a dedicated Origin-header gate; bearer/admin authentication is the route guard. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
 ## POST /admin/setup ([REQ-ADM-001](../../sdd/spec/setup-admin.md))
 
@@ -26,7 +26,9 @@ POST /admin/setup
 
 **Authentication:** Open only while no active admin token exists; admin auth is required after setup completes.
 
-**Origin check:** Public Worker origin is allowed during first-run setup; after setup, caller must pass admin auth.
+**Origin check:** None.
+
+**Request:** No required body fields in the current implementation.
 
 **Response:** Stores setup-complete state and displays generated admin, provider, setup, and upstream credentials once.
 
@@ -40,7 +42,9 @@ POST /admin/login
 
 **Authentication:** Admin token or admin session.
 
-**Origin check:** Same admin route-family policy as other admin endpoints.
+**Origin check:** None.
+
+**Request:** No required body fields in the current implementation.
 
 **Response:** Returns the MVP bearer-token session contract.
 
@@ -54,7 +58,9 @@ GET /admin/status
 
 **Authentication:** Admin token or admin session.
 
-**Origin check:** Same admin route-family policy as other admin endpoints.
+**Origin check:** None.
+
+**Request:** No body.
 
 **Response:** Returns nodes, profiles, recent audit entries, and generated timestamp with credentials redacted.
 
@@ -68,7 +74,9 @@ POST /admin/setup-tokens
 
 **Authentication:** Admin token or admin session.
 
-**Origin check:** Same admin route-family policy as other admin endpoints.
+**Origin check:** None.
+
+**Request:** No required body fields in the current implementation.
 
 **Response:** Displays the setup token once and stores only its verifier.
 
@@ -82,9 +90,11 @@ GET /admin/installers/{platform}
 
 **Authentication:** Admin token or admin session.
 
-**Origin check:** Same admin route-family policy as other admin endpoints.
+**Origin check:** None.
 
-**Response:** Returns a command for `linux`, `macos`, or `windows` that fetches `/install.sh` or `/install.ps1` and passes only router URL plus setup token.
+**Path parameters:** `platform` must be `linux`, `macos`, or `windows`.
+
+**Response:** Returns a command that fetches `/install.sh` or `/install.ps1` and passes only router URL plus setup token.
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
@@ -96,7 +106,9 @@ POST /admin/nodes/{nodeId}/revoke
 
 **Authentication:** Admin token or admin session.
 
-**Origin check:** Same admin route-family policy as other admin endpoints.
+**Origin check:** None.
+
+**Path parameters:** `nodeId` is the URL-encoded node identifier to revoke.
 
 **Response:** Marks the node revoked and clears live eligibility.
 
@@ -110,7 +122,9 @@ POST /admin/cloudflare/gateway/sync
 
 **Authentication:** Admin token or admin session.
 
-**Origin check:** Same admin route-family policy as other admin endpoints.
+**Origin check:** None.
+
+**Request:** No required body fields in the current implementation; account, gateway, token, and Worker URL come from Worker environment.
 
 **Response:** Stores provider, route, route version, and deployment identifiers in D1.
 
@@ -124,7 +138,9 @@ POST /admin/custom-domain/validate
 
 **Authentication:** Admin token or admin session.
 
-**Origin check:** Same admin route-family policy as other admin endpoints.
+**Origin check:** None.
+
+**Request:** JSON body with `hostname` as the candidate custom-domain hostname.
 
 **Response:** Returns the hostname validation result without changing the active Worker origin.
 
@@ -138,7 +154,9 @@ POST /admin/profiles/rollout
 
 **Authentication:** Admin token or admin session.
 
-**Origin check:** Same admin route-family policy as other admin endpoints.
+**Origin check:** None.
+
+**Request:** JSON body with `profileId` and numeric `rolloutPercent`.
 
 **Response:** Stores a versioned profile rollout update.
 

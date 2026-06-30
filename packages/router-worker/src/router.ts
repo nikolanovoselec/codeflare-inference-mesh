@@ -151,7 +151,7 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     ...(body.runtimeModel !== undefined ? { runtimeModel: body.runtimeModel } : {}),
     ...(body.metrics !== undefined ? { metrics: body.metrics } : {})
   }
-  await deps.store.upsertNode(next)
+  await deps.store.updateNodeHeartbeat(next)
   return json({ ok: true, desiredProfiles: await deps.store.listProfiles() }, 200, requestId)
 }
 

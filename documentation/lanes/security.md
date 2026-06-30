@@ -12,11 +12,11 @@
 
 ## Trust boundaries
 
-**Threat:** A leaked provider, setup, node, upstream, admin, deploy, or Cloudflare runtime credential could be reused across another trust boundary.
+**Threat:** A leaked provider, setup, node, upstream, dashboard, admin, deploy, or Cloudflare runtime credential could be reused across another trust boundary.
 
 **Mitigation:** Each boundary uses a separate credential class with route-specific authorization.
 
-**Verification:** Behavioral tests assert that provider, admin, setup, node, and upstream credentials are not accepted by the wrong route family.
+**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` checks route-family credential separation; `packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController` checks dashboard-token enforcement. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController -->
 
 **Implements:** [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -27,6 +27,7 @@
 | Admin to Worker | Admin token/session | Protects setup and admin routes after first-run setup completes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | Installer to Worker | Setup token | Claims one node once. | [REQ-ADM-003](../../sdd/spec/setup-admin.md) |
 | Node to Worker | Node token | Authorizes heartbeat and unregister. | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-004](../../sdd/spec/observability.md) |
+| Local dashboard to node agent | Dashboard token | Authorizes localhost runtime-control POSTs. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
 | Worker to node | Upstream token | Authorizes Mesh-facing inference proxy. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
 | Workflow to Cloudflare | Deploy token | Deploys Worker and migrates D1. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Worker to Cloudflare API | Runtime token | Creates Gateway and optional domain resources. | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
@@ -37,7 +38,7 @@
 
 **Mitigation:** Provider auth applies only to `/v1/models` and `/v1/chat/completions`; node claim, heartbeat, unregister, admin, installer, and health routes use their own policy.
 
-**Verification:** Router tests cover route-family separation and node unregister authorization.
+**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` covers route-family separation and node unregister authorization. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture -->
 
 **Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -47,7 +48,7 @@
 
 **Mitigation:** Durable token records are verifier-only by default. Plaintext token display is one-time at creation. The generated Worker-to-node upstream token is recoverable in router config only because the Worker must present it to nodes during forwarding.
 
-**Verification:** Tests assert stored token records use verifiers, generated upstream tokens are reused by forwarding, and admin status redacts credential material.
+**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` asserts verifier-only token records, generated upstream-token reuse, and admin status redaction. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture -->
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md)
 
@@ -57,7 +58,7 @@
 
 **Mitigation:** The Worker forwards only approved inference metadata and the upstream token to a node. The node proxy strips credentials before forwarding to `llama-server`.
 
-**Verification:** Worker and node proxy tests assert forbidden headers are absent at the next hop.
+**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` and `packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` assert forbidden headers are absent at the next hop. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams -->
 
 **Implements:** [REQ-SEC-003](../../sdd/spec/security.md)
 
@@ -65,9 +66,9 @@
 
 **Threat:** A local or remote web page could control the node runtime, or a Mesh caller could access the local runtime without authorization.
 
-**Mitigation:** Managed `llama-server` runs behind the node proxy. The Mesh-facing listener requires the upstream token. Dashboard runtime controls are localhost-only and require the dashboard token plus a same-origin Origin check.
+**Mitigation:** Managed `llama-server` runs behind the node proxy. The Mesh-facing listener requires the upstream token. Dashboard runtime controls are localhost-only, require the dashboard token, and reject browser Origin headers that do not match the dashboard origin.
 
-**Verification:** Node-agent tests assert local dashboard redaction, runtime-control token enforcement, upstream proxy auth, and header filtering.
+**Verification:** `packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController` asserts dashboard-token enforcement; `packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` asserts upstream proxy auth and header filtering. <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams -->
 
 **Implements:** [REQ-SEC-004](../../sdd/spec/security.md), [REQ-NODE-004](../../sdd/spec/node-agent.md)
 
@@ -77,7 +78,7 @@
 
 **Mitigation:** First-run setup is intentionally open only until setup completes; after an active admin token exists, setup/admin routes require admin auth. Cloudflare Access is an optional hardening layer after a custom domain exists.
 
-**Verification:** Router tests assert first-run token generation, admin-only status, and credential-class separation.
+**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` asserts first-run token generation, admin-only status, and credential-class separation. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture -->
 
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 

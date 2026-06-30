@@ -40,11 +40,11 @@ D1 is durable truth for records that must survive restarts. RegistryDO is hot st
 
 ## Runtime flow
 
-The claimed node stores desired profiles, resolves the active profile, verifies or downloads the GGUF model, starts `llama-server`, and proxies Worker traffic to the local runtime. Runtime start/stop/restart controls are exposed only on the localhost dashboard with dashboard-token and Origin checks; heartbeats and dashboard status derive runtime state from the live runtime manager. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-OBS-003](../../sdd/spec/observability.md))
+The claimed node stores desired profiles, resolves the active profile, verifies or downloads the GGUF model, starts `llama-server`, and proxies Worker traffic to the local runtime. Runtime start/stop/restart controls are exposed only on the localhost dashboard, require the dashboard token, and validate same-origin browser Origin headers when present; heartbeats and dashboard status derive runtime state from the live runtime manager. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-OBS-003](../../sdd/spec/observability.md))
 
 ## Boundaries
 
-Only the Worker is public. Node listeners are reachable through Mesh and still require upstream bearer tokens. Admin, provider, setup, node, upstream, deploy, and runtime Cloudflare credentials are separate. ([REQ-SEC-001](../../sdd/spec/security.md))
+Only the Worker is public. Node listeners are reachable through Mesh and still require upstream bearer tokens. Admin, provider, setup, node, dashboard, upstream, deploy, and runtime Cloudflare credentials are separate. ([REQ-SEC-001](../../sdd/spec/security.md))
 
 ## Source anchors and specification backlinks
 

@@ -140,6 +140,7 @@ export interface Store {
   listNodes(now: number): Promise<readonly NodeRecord[]>
   getNode(nodeId: string): Promise<NodeRecord | undefined>
   upsertNode(node: NodeRecord): Promise<void>
+  updateNodeHeartbeat(node: NodeRecord): Promise<void>
   revokeNode(nodeId: string, now: number): Promise<void>
   getSession(sessionId: string): Promise<SessionRecord | undefined>
   putSession(session: SessionRecord): Promise<void>

@@ -36,10 +36,13 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | Field | Purpose | REQs |
 | --- | --- | --- |
 | `routerUrl` | Router origin used for claim and heartbeat. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| `setupToken` | Short-lived node enrollment token, cleared after claim. | [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| `nodeId` | Stable node identifier assigned by the router after claim. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
 | `nodeToken` | Node-to-Worker heartbeat credential. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
 | `upstreamToken` | Worker-to-node inference credential. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
 | `displayName` | Human-readable node label. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
 | `meshIp` | Cloudflare One interface IP advertised to the router. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
+| `listenAddress` | Concrete Mesh-facing listener address derived from `meshIp`, `inferencePort`, and fallback policy. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
 | `inferencePort` | Mesh-facing inference listener port. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
 | `dashboardAddress` | Localhost dashboard bind address. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
 | `dashboardToken` | Local dashboard CSRF/control token stored only in local config and redacted from status APIs. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
@@ -48,8 +51,10 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | `publicModels` | Public aliases this node can serve. | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
 | `activeProfileIds` | Desired profile IDs active on the node. | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
 | `profiles` | Desired profiles persisted from claim/heartbeat responses for model preparation and runtime command generation. | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `capacity` | Router-facing concurrent request capacity advertised by the node. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `dataDir` | Directory for config, model cache, staged updates, and service data. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `releaseUrl` | GitHub Release API URL used by self-update. | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
+| `allowAllInterfaces` | Explicit fallback allowing `0.0.0.0` listener binding when Mesh IP binding is unavailable. | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
 
 ## GitHub secrets
 

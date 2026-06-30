@@ -264,6 +264,33 @@ func (f *fakeRuntimeController) Restart(context.Context) error {
 	return nil
 }
 
+func TestREQSEC004LegacyConfigBackfillsDashboardToken(t *testing.T) {
+	t.Run("REQ-SEC-004", func(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	legacy := DefaultConfig(t.TempDir())
+	legacy.DashboardToken = ""
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.DashboardToken == "" || persisted.DashboardToken != loaded.DashboardToken {
+		t.Fatalf("dashboard token was not backfilled and persisted")
+	}
+	})
+}
+
 func TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken(t *testing.T) {
 	t.Run("REQ-SEC-004", func(t *testing.T) {
 	cfg := DefaultConfig(t.TempDir())

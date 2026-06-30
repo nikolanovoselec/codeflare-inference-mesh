@@ -12,7 +12,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. Client-to-Gateway, Gateway-to-Worker, setup, node-to-Worker, Worker-to-node, admin, deploy, and runtime Cloudflare credentials are separate classes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+1. Client-to-Gateway, Gateway-to-Worker, setup, node-to-Worker, dashboard, Worker-to-node, admin, deploy, and runtime Cloudflare credentials are separate classes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
 2. Provider tokens cannot claim nodes or access admin routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
 3. Node tokens cannot call provider endpoints or admin routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
 4. Setup tokens cannot heartbeat, proxy inference, or access admin routes after claim. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
@@ -95,7 +95,9 @@ This domain covers credential separation, route-level auth, header filtering, to
 2. Local runtime built-in tools, file access, and unauthenticated web UI features are disabled for managed profiles unless explicitly allowed by an Admin profile. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
 3. The Mesh-facing listener requires upstream token verification before any inference proxy call. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
 4. Local dashboard endpoints bind to localhost and do not accept Worker upstream tokens as dashboard auth. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
-5. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
+5. Runtime-control dashboard POSTs require the local dashboard token. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
+6. Runtime-control dashboard POSTs reject browser Origin headers that do not match the dashboard origin. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
+7. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 

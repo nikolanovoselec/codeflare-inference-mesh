@@ -86,7 +86,7 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 **Intent:** Normal operational failures should produce actionable state transitions and errors rather than ambiguous `500` responses.
 
-**Applies To:** Admin
+**Applies To:** Admin, Node Agent
 
 **Acceptance Criteria:**
 

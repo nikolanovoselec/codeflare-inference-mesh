@@ -14,7 +14,7 @@ The router must build node URLs from validated Mesh IP and allowed port fields. 
 
 ## CON-SEC-001: Separate credential classes
 
-Client, provider, setup, node, upstream, admin, deploy, and runtime Cloudflare tokens are separate credentials with separate storage and rotation paths.
+Client, provider, setup, node, dashboard, upstream, admin, deploy, and runtime Cloudflare tokens are separate credentials with separate storage and rotation paths.
 
 ## CON-SEC-002: No plaintext durable secrets
 

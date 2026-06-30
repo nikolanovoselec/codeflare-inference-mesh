@@ -42,18 +42,24 @@ export class D1Store implements Store {
   }
 
   async listNodes(now: number): Promise<readonly NodeRecord[]> {
-    const rows = await this.db.prepare('SELECT node_json FROM nodes ORDER BY id').all<{ node_json: string }>()
-    return (rows.results ?? []).map((row) => materializeNode(parseJson<NodeRecord>(row.node_json), now))
+    const rows = await this.db.prepare('SELECT node_json, in_flight FROM nodes ORDER BY id').all<NodeRow>()
+    return (rows.results ?? []).map((row) => materializeNode(nodeFromRow(row), now))
   }
 
   async getNode(nodeId: string): Promise<NodeRecord | undefined> {
-    const row = await this.db.prepare('SELECT node_json FROM nodes WHERE id = ?').bind(nodeId).first<{ node_json: string }>()
-    return row ? parseJson<NodeRecord>(row.node_json) : undefined
+    const row = await this.db.prepare('SELECT node_json, in_flight FROM nodes WHERE id = ?').bind(nodeId).first<NodeRow>()
+    return row ? nodeFromRow(row) : undefined
   }
 
   async upsertNode(node: NodeRecord): Promise<void> {
     await this.db.prepare('INSERT OR REPLACE INTO nodes (id, node_json, status, mesh_ip, inference_port, in_flight, capacity, last_seen_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(node.id, JSON.stringify(node), node.status, node.meshIp, node.inferencePort, node.inFlight, node.capacity, node.lastSeenAt, this.now())
+      .run()
+  }
+
+  async updateNodeHeartbeat(node: NodeRecord): Promise<void> {
+    await this.db.prepare('UPDATE nodes SET node_json = ?, status = ?, mesh_ip = ?, inference_port = ?, capacity = ?, last_seen_at = ?, updated_at = ? WHERE id = ?')
+      .bind(JSON.stringify(node), node.status, node.meshIp, node.inferencePort, node.capacity, node.lastSeenAt, this.now(), node.id)
       .run()
   }
 
@@ -138,6 +144,11 @@ export class D1Store implements Store {
   }
 }
 
+interface NodeRow {
+  readonly node_json: string
+  readonly in_flight: number
+}
+
 interface ReservationRow {
   readonly reservation_id: string
   readonly node_id: string
@@ -182,6 +193,11 @@ function tokenFromRow(row: TokenRow): TokenRecord {
     ...(row.node_id !== null ? { nodeId: row.node_id } : {}),
     ...(row.expires_at !== null ? { expiresAt: row.expires_at } : {})
   }
+}
+
+function nodeFromRow(row: NodeRow): NodeRecord {
+  const node = parseJson<NodeRecord>(row.node_json)
+  return { ...node, inFlight: row.in_flight }
 }
 
 function materializeNode(node: NodeRecord, now: number): NodeRecord {

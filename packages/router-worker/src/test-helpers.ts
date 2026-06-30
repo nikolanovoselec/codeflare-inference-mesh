@@ -43,6 +43,11 @@ export class MemoryStore implements Store {
     this.nodes.set(node.id, node)
   }
 
+  async updateNodeHeartbeat(node: NodeRecord): Promise<void> {
+    const existing = this.nodes.get(node.id)
+    this.nodes.set(node.id, { ...node, inFlight: existing?.inFlight ?? node.inFlight })
+  }
+
   async revokeNode(nodeId: string, now: number): Promise<void> {
     const node = this.nodes.get(nodeId)
     if (node) this.nodes.set(nodeId, { ...node, status: 'revoked', failurePenaltyUntil: now + 31536000000 })
