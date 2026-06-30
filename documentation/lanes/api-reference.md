@@ -90,7 +90,11 @@ All API responses that represent errors use an OpenAI-style `error` object when 
 
 **Routes:** `GET /api/status`, `POST /api/runtime/start`, `POST /api/runtime/stop`, and `POST /api/runtime/restart` on the node-agent dashboard listener.
 
-**Auth:** Status is localhost dashboard only. Runtime-control POSTs require the local dashboard token. Browser requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed.
+**Auth:** Status is localhost dashboard only. Runtime-control POSTs require the local dashboard token.
+
+**Origin check:** applies
+
+Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed.
 
 **Contract:** Runtime-control routes are not Worker, Gateway, or Mesh routes and are not exposed by the public Worker.
 

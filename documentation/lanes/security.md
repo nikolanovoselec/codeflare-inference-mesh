@@ -16,7 +16,7 @@
 
 **Mitigation:** Each boundary uses a separate credential class with route-specific authorization.
 
-**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` checks route-family credential separation; `packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController` checks dashboard-token enforcement. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController -->
+**Verification:** The `REQ-GWY-004 REQ-SEC-001` router test checks cross-family credential rejection; `TestREQNODE004DashboardRuntimeControlsUseController` checks dashboard-token enforcement. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-004 --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController -->
 
 **Implements:** [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -38,7 +38,7 @@
 
 **Mitigation:** Provider auth applies only to `/v1/models` and `/v1/chat/completions`; node claim, heartbeat, unregister, admin, installer, and health routes use their own policy.
 
-**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` covers route-family separation and node unregister authorization. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture -->
+**Verification:** The `REQ-GWY-001 REQ-RTR-001` router test covers route-family separation, and the `REQ-OBS-004` router test covers node unregister authorization. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-001 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-OBS-004 -->
 
 **Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -48,7 +48,7 @@
 
 **Mitigation:** Durable token records are verifier-only by default. Plaintext token display is one-time at creation. The generated Worker-to-node upstream token is recoverable in router config only because the Worker must present it to nodes during forwarding.
 
-**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` asserts verifier-only token records, generated upstream-token reuse, and admin status redaction. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture -->
+**Verification:** The `REQ-GWY-002 REQ-SEC-002` router test asserts verifier-only token records, the `REQ-RTR-002 REQ-SEC-001` router test asserts generated upstream-token reuse, and the `REQ-ADM-002 REQ-OBS-002` router test asserts admin status redaction. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-002 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-RTR-002 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-ADM-002 -->
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md)
 
@@ -58,7 +58,7 @@
 
 **Mitigation:** The Worker forwards only approved inference metadata and the upstream token to a node. The node proxy strips credentials before forwarding to `llama-server`.
 
-**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` and `packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` assert forbidden headers are absent at the next hop. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams -->
+**Verification:** The `REQ-SEC-003` router test and `TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` assert forbidden headers are absent at the next hop. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-SEC-003 --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams -->
 
 **Implements:** [REQ-SEC-003](../../sdd/spec/security.md)
 
@@ -78,7 +78,7 @@
 
 **Mitigation:** First-run setup is intentionally open only until setup completes; after an active admin token exists, setup/admin routes require admin auth. Cloudflare Access is an optional hardening layer after a custom domain exists.
 
-**Verification:** `packages/router-worker/src/router.test.ts::routerFixture` asserts first-run token generation, admin-only status, and credential-class separation. <!-- @impl: packages/router-worker/src/router.test.ts::routerFixture -->
+**Verification:** The `REQ-GWY-002 REQ-SEC-002` router test asserts first-run token generation, the `REQ-ADM-002 REQ-OBS-002` router test asserts admin-only status, and the `REQ-GWY-004 REQ-SEC-001` router test asserts credential-class separation. <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-002 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-ADM-002 --> <!-- @impl: packages/router-worker/src/router.test.ts::REQ-GWY-004 -->
 
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 

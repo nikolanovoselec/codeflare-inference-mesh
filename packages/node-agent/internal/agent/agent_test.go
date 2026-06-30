@@ -156,6 +156,18 @@ func TestREQNODE004DashboardRuntimeControlsUseController(t *testing.T) {
 		t.Fatalf("expected missing token to be forbidden, got %d", forbidden.Code)
 	}
 
+	badOrigin := httptest.NewRecorder()
+	badOriginRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/start", nil)
+	badOriginRequest.Header.Set("origin", "https://evil.example")
+	badOriginRequest.Header.Set("x-inference-mesh-dashboard-token", "dashboard-token")
+	handler.ServeHTTP(badOrigin, badOriginRequest)
+	if badOrigin.Code != http.StatusForbidden {
+		t.Fatalf("expected mismatched origin to be forbidden, got %d", badOrigin.Code)
+	}
+	if controller.starts != 0 || controller.stops != 0 || controller.restarts != 0 {
+		t.Fatalf("forbidden runtime control reached controller: %#v", controller)
+	}
+
 	for _, path := range []string{"/api/runtime/start", "/api/runtime/stop", "/api/runtime/restart"} {
 		resp := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777"+path, nil)

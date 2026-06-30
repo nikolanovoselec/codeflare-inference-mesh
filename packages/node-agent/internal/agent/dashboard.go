@@ -107,4 +107,4 @@ func isLoopbackHost(hostport string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-const DashboardAnchors = "REQ-NODE-004 REQ-SEC-004"
+const DashboardAnchors = "REQ-NODE-004 REQ-SEC-001 REQ-SEC-004"
