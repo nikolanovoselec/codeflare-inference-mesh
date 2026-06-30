@@ -103,10 +103,11 @@ Important bindings and values:
 | `HEARTBEAT_TTL_SECONDS` | Worker var | Node heartbeat freshness window |
 | `AI_GATEWAY_ID` | Worker var | Gateway ID used by setup automation |
 | `WORKER_BASE_URL` | Worker var | Public Worker origin used for custom provider setup |
+| `AGENT_RELEASE_TAG` | Worker var | GitHub Release tag used by install scripts for node-agent package downloads |
 | `CLOUDFLARE_ACCOUNT_ID` | Worker secret | Runtime account ID for setup automation |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | Worker secret | Runtime token for AI Gateway automation |
 
-The deploy workflow creates or resolves the D1 database, applies migrations, uncomments the required `[[vpc_networks]]` / `network_id = "cf1:network"` binding, writes runtime secrets, deploys the Worker, builds agent artifacts, creates checksums, optionally signs them, and publishes a GitHub Release.
+The deploy workflow creates or resolves the D1 database, applies migrations, uncomments the required `[[vpc_networks]]` / `network_id = "cf1:network"` binding, writes runtime secrets, injects the selected `AGENT_RELEASE_TAG`, deploys the Worker, builds agent artifacts, creates checksums, optionally signs them, and publishes a GitHub Release.
 
 ## Cloudflare One / Mesh prerequisite
 
@@ -136,7 +137,7 @@ Production tags must match `vX.Y.Z`. Integration tags must match `vX.Y.Z-dev.N`.
 
 ## After deploy
 
-1. Open the deployed Worker admin setup route.
+1. Open the deployed Worker root or `/admin` route in a browser.
 2. Run first setup to generate:
    - admin token;
    - provider token;

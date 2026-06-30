@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ADMIN_UI_ACTIONS, ADMIN_UI_RESPONSIVE } from './admin-ui'
 import { hashToken } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan } from './installers'
@@ -57,7 +58,60 @@ function valuesOf(value: unknown): string[] {
   return []
 }
 
+function adminUiConfig(html: string): { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; workerOrigin: string } {
+  const match = html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)
+  expect(match).not.toBeNull()
+  return JSON.parse(match![1]!.replaceAll('&quot;', '"').replaceAll('&amp;', '&')) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; workerOrigin: string }
+}
+
 describe('router worker behavioral contracts', () => {
+  it('REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function', async () => {
+    // AdminConfigurationUiTestAnchor
+    const { router } = routerFixture()
+    const root = await router(new Request('https://router.test/'))
+    const admin = await router(new Request('https://router.test/admin'))
+    const html = await admin.text()
+    const config = adminUiConfig(html)
+    const actionIds = config.actions.map((action) => action.id)
+
+    expect(root.status).toBe(200)
+    expect(admin.status).toBe(200)
+    expect(admin.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(config.workerOrigin).toBe('https://router.test')
+    expect(actionIds).toEqual([
+      'first-run-setup',
+      'admin-login',
+      'status-refresh',
+      'setup-token-create',
+      'installer-linux',
+      'installer-macos',
+      'installer-windows',
+      'gateway-sync',
+      'custom-domain-validate',
+      'node-revoke',
+      'profile-rollout'
+    ])
+    expect(config.actions.filter((action) => action.auth === 'admin').map((action) => action.path)).toEqual([
+      '/admin/login',
+      '/admin/status',
+      '/admin/setup-tokens',
+      '/admin/installers/linux',
+      '/admin/installers/macos',
+      '/admin/installers/windows',
+      '/admin/cloudflare/gateway/sync',
+      '/admin/custom-domain/validate',
+      '/admin/nodes/{nodeId}/revoke',
+      '/admin/profiles/rollout'
+    ])
+    expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 2, minTouchTargetPx: 44 })
+    const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
+    expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout']))
+    expect(html).toMatch(/data-responsive="desktop mobile"/)
+    expect(html).toMatch(/@media \(max-width:760px\)/)
+    expect(html).toMatch(/sessionStorage\.getItem\('codeflareInferenceMeshAdminToken'\)/)
+    expect(html).toMatch(/localStorage\.getItem\('codeflareInferenceMeshAdminToken'\)/)
+  })
+
   it('REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families', async () => {
     // RouteFamilySeparationTestAnchor
     const { router } = routerFixture()
@@ -320,17 +374,20 @@ describe('router worker behavioral contracts', () => {
     expect(new Set(valuesOf(body)).has('sha256:hidden')).toBe(false)
   })
 
-  it('REQ-ADM-004 returns installer commands backed by platform artifact plans', async () => {
-    const { router, store } = routerFixture()
+  it('REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans', async () => {
+    const { router, store } = routerFixture({ env: { AGENT_RELEASE_TAG: 'v0.1.0-dev.1782860991' } })
     const commandResponse = await router(new Request('https://router.test/admin/installers/linux', { headers: bearer('admin-secret') }))
     const command = await commandResponse.text()
     const scriptUrl = new URL(command.split(/\s+/).find((part) => part.startsWith('https://'))!)
+    const scriptResponse = await router(new Request('https://router.test/install.sh?platform=linux'))
+    const script = await scriptResponse.text()
     const linuxPlan = installerPlan('linux', 'amd64')
     const windowsPlan = installerPlan('windows', 'amd64')
 
     expect(commandResponse.status).toBe(200)
     expect(scriptUrl.pathname).toBe('/install.sh')
     expect(scriptUrl.searchParams.get('platform')).toBe('linux')
+    expect(script).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/releases/download/v0.1.0-dev.1782860991')
     expect(linuxPlan).toEqual({ assetName: 'inference-mesh-agent-linux-amd64.tar.gz', extractedBinary: 'inference-mesh-agent-linux-amd64', installedBinary: 'inference-mesh-agent', checksumFile: 'checksums.txt' })
     expect(windowsPlan).toEqual({ assetName: 'inference-mesh-agent-windows-amd64.zip', extractedBinary: 'inference-mesh-agent-windows-amd64.exe', installedBinary: 'inference-mesh-agent.exe', checksumFile: 'checksums.txt' })
     expect(store.tokens.filter((token) => token.kind === 'setup' && token.active).length).toBe(1)

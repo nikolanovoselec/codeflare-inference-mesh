@@ -30,6 +30,7 @@
 | `HEARTBEAT_TTL_SECONDS` | Node heartbeat freshness window. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `AI_GATEWAY_ID` | AI Gateway instance used for route automation. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `WORKER_BASE_URL` | Public Worker origin used when registering the AI Gateway custom provider. | [REQ-GWY-001](../../sdd/spec/gateway.md) |
+| `AGENT_RELEASE_TAG` | Deploy-selected GitHub Release tag used by `/install.sh` and `/install.ps1` so integration installers download prerelease artifacts from the exact release. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 
 ## Wrangler bindings
 
@@ -96,6 +97,7 @@ Legacy config loads persist a generated `dashboardToken` before dashboard contro
 | Surface | Specification | Source |
 |---|---|---|
 | Worker env vars | [security.md](../../sdd/spec/security.md) | `packages/router-worker/wrangler.toml::MAX_REQUEST_BYTES` <!-- @impl: packages/router-worker/wrangler.toml::MAX_REQUEST_BYTES --> |
+| Agent release tag | [release-ci.md](../../sdd/spec/release-ci.md) | `packages/router-worker/wrangler.toml::AGENT_RELEASE_TAG` <!-- @impl: packages/router-worker/wrangler.toml::AGENT_RELEASE_TAG --> |
 | Workers VPC Network | [router-worker.md](../../sdd/spec/router-worker.md) | `packages/router-worker/wrangler.toml::cf1:network` <!-- @impl: packages/router-worker/wrangler.toml::cf1:network --> |
 | Integration Worker environment | [release-ci.md](../../sdd/spec/release-ci.md) | `packages/router-worker/wrangler.toml::codeflare-inference-mesh-router-integration` <!-- @impl: packages/router-worker/wrangler.toml::codeflare-inference-mesh-router-integration --> |
 | Agent config | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/config.go::Config` <!-- @impl: packages/node-agent/internal/agent/config.go::Config --> |

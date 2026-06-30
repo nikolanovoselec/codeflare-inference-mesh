@@ -10,6 +10,7 @@ AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
 AI_GATEWAY_ID = "inference-mesh"
 WORKER_BASE_URL = "https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev"
 GITHUB_REPOSITORY = "nikolanovoselec/codeflare-inference-mesh"
+AGENT_RELEASE_TAG = "agent-release-tag-placeholder"
 
 [[d1_databases]]
 binding = "DB"
@@ -43,6 +44,7 @@ AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
 AI_GATEWAY_ID = "inference-mesh-integration"
 WORKER_BASE_URL = "https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev"
 GITHUB_REPOSITORY = "nikolanovoselec/codeflare-inference-mesh"
+AGENT_RELEASE_TAG = "agent-release-tag-placeholder"
 
 [[env.integration.d1_databases]]
 binding = "DB"

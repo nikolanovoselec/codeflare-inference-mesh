@@ -13,6 +13,7 @@ type Step = {
   readonly run?: string
   readonly uses?: string
   readonly with?: Record<string, unknown>
+  readonly env?: Record<string, string>
   readonly 'working-directory'?: string
 }
 
@@ -109,6 +110,8 @@ describe('workflow contract values', () => {
       'DB_ID=$(node scripts/d1-database-id.mjs d1-create.txt)',
       '[ -n "$DB_ID" ] || { echo "::error::Could not resolve D1 database id"; exit 1; }'
     ]))
+    expect(deployJob.steps.find((step) => step.name === 'Resolve or create D1 database')?.env).toEqual({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' })
+    expect(deployText).toContain("replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG)")
     expect(deployText).toContain('npm exec -- wrangler d1 migrations apply "${{ steps.settings.outputs.db_name }}" --remote "${args[@]}"')
     expect(deployText).toContain('printf \'%s\' "$CLOUDFLARE_ACCOUNT_ID" | npm exec -- wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"')
     expect(deployText).toContain('npm exec -- wrangler deploy "${args[@]}"')

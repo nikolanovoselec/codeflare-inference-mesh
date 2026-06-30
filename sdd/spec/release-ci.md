@@ -72,6 +72,7 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 4. Deploy uploads a release manifest containing version, channel, commit, publish time, and artifact metadata. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
 5. Stable production releases use a semantic version tag. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
 6. Prerelease integration releases use a prerelease tag that update clients ignore unless configured for that channel. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
+7. Deploy injects the selected release tag into the Worker so installer scripts download agent archives from that exact release instead of GitHub `latest`. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface)
 

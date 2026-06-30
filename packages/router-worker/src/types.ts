@@ -175,6 +175,7 @@ export interface RouterEnv {
   readonly AI_GATEWAY_ID?: string
   readonly WORKER_BASE_URL?: string
   readonly GITHUB_REPOSITORY?: string
+  readonly AGENT_RELEASE_TAG?: string
   readonly MAX_REQUEST_BYTES?: string
   readonly HEARTBEAT_TTL_SECONDS?: string
 }

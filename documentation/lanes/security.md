@@ -76,11 +76,11 @@
 
 **Threat:** Admin UI exposure could exceed the intended bootstrap/admin boundary.
 
-**Mitigation:** First-run setup is intentionally open only until setup completes; after an active admin token exists, setup/admin routes require admin auth. Cloudflare Access is an optional hardening layer after a custom domain exists.
+**Mitigation:** The Admin UI shell is public so first-run setup works on `workers.dev`, but state-changing admin actions require admin bearer authentication after setup completes. First-run setup is intentionally open only until setup completes; after an active admin token exists, setup/admin routes require admin auth. Cloudflare Access is an optional hardening layer after a custom domain exists.
 
 **Verification:** The first-run setup router test asserts setup token generation and claim, the admin-status router test asserts admin-only status, and the credential-boundary router test asserts credential-class separation. <!-- @impl: packages/router-worker/src/router.test.ts::FirstRunSetupTokenTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminStatusRedactionTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor -->
 
-**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
 ## Source anchors and specification backlinks
 

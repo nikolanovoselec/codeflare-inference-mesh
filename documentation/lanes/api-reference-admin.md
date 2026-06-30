@@ -3,6 +3,8 @@
 ## Contents
 
 - [Conventions](#conventions)
+- [GET /](#get--req-adm-006)
+- [GET /admin](#get-admin-req-adm-006)
 - [POST /admin/setup](#post-adminsetup-req-adm-001)
 - [POST /admin/login](#post-adminlogin-req-adm-002)
 - [GET /admin/status](#get-adminstatus-req-obs-002)
@@ -17,6 +19,34 @@
 ## Conventions
 
 Admin routes use the MVP admin token or an admin session derived from it after first-run setup completes. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. Admin routes do not implement a dedicated Origin-header gate; bearer/admin authentication is the route guard. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+
+## GET / ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
+
+```http
+GET /
+```
+
+**Authentication:** None for the UI shell.
+
+**Origin check:** n/a
+
+**Response:** Returns the responsive Admin configuration UI. Admin actions inside the UI still use bearer authentication after first-run setup completes.
+
+**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+
+## GET /admin ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
+
+```http
+GET /admin
+```
+
+**Authentication:** None for the UI shell.
+
+**Origin check:** n/a
+
+**Response:** Returns the same responsive Admin configuration UI as `/`.
+
+**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
 ## POST /admin/setup ([REQ-ADM-001](../../sdd/spec/setup-admin.md))
 
@@ -175,6 +205,7 @@ POST /admin/profiles/rollout
 
 | Surface | Specification | Source |
 |---|---|---|
+| Admin UI | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS` <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> |
 | Admin routes | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Installer routes | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/installers.ts::INSTALLER_ANCHORS` <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> |
 | Gateway sync | [gateway.md](../../sdd/spec/gateway.md) | `packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS` <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS --> |

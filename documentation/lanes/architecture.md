@@ -38,12 +38,12 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## Control plane lifecycle
 
-1. Admin completes first-run setup on `workers.dev`. ([REQ-ADM-001](../../sdd/spec/setup-admin.md))
+1. Admin opens `/` or `/admin` on the Worker and completes first-run setup in the browser. ([REQ-ADM-001](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
 2. Admin configures AI Gateway provider and route through setup automation. ([REQ-GWY-003](../../sdd/spec/gateway.md))
-3. Admin creates a one-time setup token. ([REQ-ADM-003](../../sdd/spec/setup-admin.md))
+3. Admin creates a one-time setup token from the UI. ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
 4. Node operator runs the generated install command. ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
 5. Node agent claims the token and starts heartbeat. ([REQ-NODE-002](../../sdd/spec/node-agent.md))
-6. Admin observes readiness and active profiles in status surfaces. ([REQ-OBS-002](../../sdd/spec/observability.md))
+6. Admin observes readiness and active profiles in responsive status surfaces. ([REQ-OBS-002](../../sdd/spec/observability.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
 
 ## State flow
 
@@ -62,6 +62,7 @@ Only the Worker is public. Node listeners are reachable through Mesh and still r
 | Surface | Specification | Source |
 |---|---|---|
 | Router Worker | [router-worker.md](../../sdd/spec/router-worker.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
+| Admin UI | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS` <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> |
 | Scheduler | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> |
 | D1 store | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/store.ts::STORE_ANCHORS` <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> |
 | Node agent | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/client.go::ClientAnchors` <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> |

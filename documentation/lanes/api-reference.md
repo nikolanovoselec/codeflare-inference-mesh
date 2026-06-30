@@ -88,7 +88,7 @@ All API responses that represent errors use an OpenAI-style `error` object when 
 
 **Auth:** None.
 
-**Contract:** Script accepts setup token through environment or command context and embeds no permanent credential.
+**Contract:** Script accepts setup token through environment or command context, embeds no permanent credential, and downloads the node-agent archive from the Worker `AGENT_RELEASE_TAG` release.
 
 ## GET /install.ps1 ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
 
@@ -96,7 +96,7 @@ All API responses that represent errors use an OpenAI-style `error` object when 
 
 **Auth:** None.
 
-**Contract:** Script accepts setup token through environment or command context and embeds no permanent credential.
+**Contract:** Script accepts setup token through environment or command context, embeds no permanent credential, and downloads the node-agent archive from the Worker `AGENT_RELEASE_TAG` release.
 
 ## Node dashboard local routes ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-SEC-004](../../sdd/spec/security.md))
 

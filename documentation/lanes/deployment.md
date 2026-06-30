@@ -34,12 +34,12 @@ Production deployment is automatic after a merged `main` push has green PR Check
 | Prepare D1 | The production or integration database is created or resolved and migrations are applied. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Build artifacts | Platform agent archives, checksums, signature, and manifest exist. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Publish release | GitHub Release contains all installer/update assets. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| Deploy Worker | Wrangler deploy publishes the production or integration router. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG` set to the selected release tag. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Summarize | Workflow summary lists ref, Worker, release tag, environment, and artifacts. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 
 ## Release channels
 
-Production releases use stable semantic tags such as `v0.1.0`. Integration releases use prerelease tags such as `v0.1.0-dev.<run_number>`. Node agents on stable ignore prerelease releases. ([REQ-REL-003](../../sdd/spec/release-ci.md))
+Production releases use stable semantic tags such as `v0.1.0`. Integration releases use prerelease tags such as `v0.1.0-dev.<run_number>`. The deployed Worker stores the selected tag in `AGENT_RELEASE_TAG`, so install scripts download from `/releases/download/<tag>/` and integration installs use prerelease artifacts instead of GitHub `latest`. Node agents on stable ignore prerelease releases. ([REQ-REL-003](../../sdd/spec/release-ci.md))
 
 ## Rollback
 

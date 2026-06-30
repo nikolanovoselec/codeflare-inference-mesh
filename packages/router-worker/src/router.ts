@@ -217,8 +217,9 @@ async function handleInstaller(request: Request, deps: RouterDeps, url: URL, req
 
 function handleInstallScript(deps: RouterDeps, platform: InstallerPlatform): Response {
   const repository = deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh'
+  const releaseTag = deps.env.AGENT_RELEASE_TAG ?? 'latest'
   const contentType = platform === 'windows' ? 'text/plain; charset=utf-8' : 'text/x-shellscript; charset=utf-8'
-  return new Response(installScript({ platform, repository }), { status: 200, headers: { 'content-type': contentType } })
+  return new Response(installScript({ platform, repository, releaseTag }), { status: 200, headers: { 'content-type': contentType } })
 }
 
 async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
