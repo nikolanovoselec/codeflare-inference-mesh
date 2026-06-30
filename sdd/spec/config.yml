@@ -8,7 +8,6 @@ test_globs:
   - "packages/node-agent/**/*_test.go"
   - "tests/**/*.test.{ts,tsx,js,jsx,mjs}"
   - "tests/**/*.spec.{ts,tsx,js,jsx,mjs}"
-  - "tests/e2e/**"
 
 src_globs:
   - "packages/router-worker/src/**"

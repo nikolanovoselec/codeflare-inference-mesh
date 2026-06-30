@@ -1,0 +1,22 @@
+{
+  "name": "@cloudflare-inference-mesh/router-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "node ./scripts/lint.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "cf-types": "wrangler types --env-interface Env",
+    "dry-run": "wrangler deploy --dry-run --outdir dist/dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260621.1",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9",
+    "wrangler": "4.103.0",
+    "yaml": "2.9.0"
+  }
+}

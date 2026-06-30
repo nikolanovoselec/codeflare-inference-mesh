@@ -21,7 +21,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Status:** Accepted
 
-**Context:** The product needs one public provider endpoint while local nodes stay private. Cloudflare documents Workers VPC Mesh bindings with `network_id: "cf1:network"`, and AI Gateway custom providers require an HTTPS upstream origin.
+**Context:** The product needs one public provider endpoint while local nodes stay private. Cloudflare documents Workers VPC Mesh bindings with `network_id: "cf1:network"`, and AI Gateway custom providers require an HTTPS upstream origin. <!-- @impl: packages/router-worker/src/index.ts::INDEX_ANCHORS -->
 
 **Decision:** The router plane uses AI Gateway custom provider and dynamic route, a public Cloudflare Worker, Workers VPC bound to Cloudflare Mesh, D1, and a Durable Object scheduler.
 
@@ -31,13 +31,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** The first validation gate is Worker-to-Mesh fetch before installers, model download, or multi-node scheduling.
 
-**Related requirements:** REQ-GWY-001, REQ-RTR-002, REQ-SCH-001
+**Related requirements:** [REQ-GWY-001](../../sdd/spec/gateway.md), [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-SCH-001](../../sdd/spec/state-scheduling.md)
 
 ## AD-002: App-level bearer-token auth first
 
 **Status:** Accepted
 
-**Context:** Gateway, admin UI, setup flow, node heartbeat, and Worker-to-node calls have different trust boundaries.
+**Context:** Gateway, admin UI, setup flow, node heartbeat, and Worker-to-node calls have different trust boundaries. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
 
 **Decision:** MVP auth uses separate app-level bearer-token classes. Cloudflare Access is optional admin hardening after a custom domain exists.
 
@@ -47,13 +47,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** The implementation must keep route-family auth strict and never reuse credentials across boundaries.
 
-**Related requirements:** REQ-SEC-001, REQ-ADM-002
+**Related requirements:** [REQ-SEC-001](../../sdd/spec/security.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
 ## AD-003: D1 plus Durable Object scheduler
 
 **Status:** Accepted
 
-**Context:** Durable state must survive Worker restarts, but live reservations need serialized updates.
+**Context:** Durable state must survive Worker restarts, but live reservations need serialized updates. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS -->
 
 **Decision:** D1 stores durable truth. A Durable Object owns live scheduling, reservations, leases, and sticky sessions.
 
@@ -63,13 +63,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Scheduler state must be rebuildable from D1 after eviction or deploy.
 
-**Related requirements:** REQ-SCH-001, REQ-SCH-002
+**Related requirements:** [REQ-SCH-001](../../sdd/spec/state-scheduling.md), [REQ-SCH-002](../../sdd/spec/state-scheduling.md)
 
 ## AD-004: Go service with localhost UI
 
 **Status:** Accepted
 
-**Context:** The node must run on Windows, macOS, Linux, and headless hosts.
+**Context:** The node must run on Windows, macOS, Linux, and headless hosts. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
 
 **Decision:** The node agent is a Go service with an embedded localhost web UI.
 
@@ -79,13 +79,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** UI polish is web-based, and OS-specific service integration lives behind Go packages.
 
-**Related requirements:** REQ-NODE-001, REQ-NODE-004
+**Related requirements:** [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-NODE-004](../../sdd/spec/node-agent.md)
 
 ## AD-005: llama.cpp first runtime
 
 **Status:** Accepted
 
-**Context:** The first runtime must work across Windows, macOS, and Linux and expose OpenAI-compatible chat endpoints.
+**Context:** The first runtime must work across Windows, macOS, and Linux and expose OpenAI-compatible chat endpoints. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors -->
 
 **Decision:** Use `llama-server` as the first managed runtime.
 
@@ -95,13 +95,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Other runtimes are adapter work after the Mesh and llama.cpp path works.
 
-**Related requirements:** REQ-RUN-003
+**Related requirements:** [REQ-RUN-003](../../sdd/spec/runtime-profiles.md)
 
 ## AD-006: Default model profile set
 
 **Status:** Accepted
 
-**Context:** The original plan had an open question about whether `mesh-default` should start with Qwen, Gemma, or a smoke-test profile.
+**Context:** The original plan had an open question about whether `mesh-default` should start with Qwen, Gemma, or a smoke-test profile. <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES -->
 
 **Decision:** `mesh-default` initially targets Qwen3.6 27B for serious coding validation. Gemma 4 26B-A4B is the fallback benchmark profile. A small 32K smoke-test profile exists for fast validation.
 
@@ -111,13 +111,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Hardware validation must prove the 27B profile on target nodes before claiming production readiness.
 
-**Related requirements:** REQ-RUN-002
+**Related requirements:** [REQ-RUN-002](../../sdd/spec/runtime-profiles.md)
 
 ## AD-007: Gateway route automation with manual BYOK
 
 **Status:** Accepted
 
-**Context:** The setup flow should avoid manual route construction, but automatic provider-key storage requires Secrets Store permissions.
+**Context:** The setup flow should avoid manual route construction, but automatic provider-key storage requires Secrets Store permissions. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS -->
 
 **Decision:** The Worker setup UI creates or updates the custom provider, route, version, and deployment. The Admin manually enters the generated provider token into AI Gateway BYOK/provider-key settings in v1.
 
@@ -127,13 +127,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Setup UI must clearly show the provider token once and verify the header shape after manual entry.
 
-**Related requirements:** REQ-GWY-002, REQ-GWY-003
+**Related requirements:** [REQ-GWY-002](../../sdd/spec/gateway.md), [REQ-GWY-003](../../sdd/spec/gateway.md)
 
 ## AD-008: Node listener binding policy
 
 **Status:** Accepted
 
-**Context:** Binding directly to a Mesh IP is safest but can be unreliable across operating systems.
+**Context:** Binding directly to a Mesh IP is safest but can be unreliable across operating systems. <!-- @impl: packages/node-agent/internal/agent/config.go::ListenerAddress -->
 
 **Decision:** The agent prefers Mesh IP binding. It may fall back to `0.0.0.0` only with strict upstream bearer-token auth and a firewall warning.
 
@@ -143,13 +143,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Admin status and local dashboard must expose binding mode and firewall warning state.
 
-**Related requirements:** REQ-NODE-001, REQ-RTR-004
+**Related requirements:** [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-RTR-004](../../sdd/spec/router-worker.md)
 
 ## AD-009: Best-effort hardware metrics first
 
 **Status:** Accepted
 
-**Context:** Hardware metrics are useful but platform libraries add packaging and permissions complexity.
+**Context:** Hardware metrics are useful but platform libraries add packaging and permissions complexity. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseNvidiaSMI -->
 
 **Decision:** Start with best-effort platform probes such as `nvidia-smi` where available, and report absent metrics when unsupported.
 
@@ -159,13 +159,13 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Metrics must never be fabricated, and scheduling must tolerate missing GPU metrics.
 
-**Related requirements:** REQ-OBS-003
+**Related requirements:** [REQ-OBS-003](../../sdd/spec/observability.md)
 
 ## AD-010: Public release artifacts after Mesh proof
 
 **Status:** Accepted
 
-**Context:** Installers and self-update need downloadable artifacts with verifiable checksums.
+**Context:** Installers and self-update need downloadable artifacts with verifiable checksums. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors -->
 
 **Decision:** Keep the repository private until the first Worker-to-Mesh path works, then make releases public enough for installer and updater downloads.
 
@@ -175,4 +175,4 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Agent release publication waits until the core path is proven, and install scripts verify artifacts before installation.
 
-**Related requirements:** REQ-REL-003, REQ-NODE-005
+**Related requirements:** [REQ-REL-003](../../sdd/spec/release-ci.md), [REQ-NODE-005](../../sdd/spec/node-agent.md)

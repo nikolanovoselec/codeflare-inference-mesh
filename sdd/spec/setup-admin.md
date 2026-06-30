@@ -12,11 +12,11 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The setup UI is available on the Worker origin until setup is completed.
-2. First-run setup requires the configured initial setup token.
-3. Successful first-run setup stores setup-complete state in D1.
-4. The setup flow creates and displays the provider token exactly once.
-5. After setup completes, setup routes require admin authentication rather than the initial setup token.
+1. The setup UI is available on the Worker origin until setup is completed. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+2. First-run setup requires the configured initial setup token. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+3. Successful first-run setup stores setup-complete state in D1. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+4. The setup flow creates and displays the provider token exactly once. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+5. After setup completes, setup routes require admin authentication rather than the initial setup token. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -26,7 +26,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -38,11 +38,11 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. Admin routes accept a configured admin token or an admin session derived from it.
-2. Admin token verification uses a stored verifier rather than plaintext token storage.
-3. Cloudflare Access is documented as an optional hardening step after the custom domain exists.
-4. Admin authentication is never accepted for provider `/v1/*` requests or node heartbeat identity.
-5. Failed admin authentication does not reveal whether setup has completed.
+1. Admin routes accept a configured admin token or an admin session derived from it. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+2. Admin token verification uses a stored verifier rather than plaintext token storage. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+3. Cloudflare Access is documented as an optional hardening step after the custom domain exists. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+4. Admin authentication is never accepted for provider `/v1/*` requests or node heartbeat identity. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+5. Failed admin authentication does not reveal whether setup has completed. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -52,7 +52,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -64,11 +64,11 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Admin can create a setup token with expiration, optional node name, and allowed profile list.
-2. The router stores only the setup token verifier and claim metadata in D1.
-3. A setup token can be claimed at most once.
-4. Expired, claimed, or invalid setup tokens are rejected.
-5. Successful claim returns permanent node credentials and the initial desired profile state.
+1. The Admin can create a setup token with expiration, optional node name, and allowed profile list. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+2. The router stores only the setup token verifier and claim metadata in D1. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+3. A setup token can be claimed at most once. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+4. Expired, claimed, or invalid setup tokens are rejected. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
+5. Successful claim returns permanent node credentials and the initial desired profile state. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -78,7 +78,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -90,11 +90,11 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Admin UI generates Linux/macOS and Windows install commands that pass only router URL, setup token, and optional node name.
-2. `/install.sh` installs the matching Unix agent artifact and service wrapper.
-3. `/install.ps1` installs the matching Windows agent artifact and service wrapper.
-4. Install scripts verify downloaded artifact checksums before installation.
-5. Install scripts do not embed provider, admin, node, upstream, deploy, or Cloudflare API credentials.
+1. The Admin UI generates Linux/macOS and Windows install commands that pass only router URL, setup token, and optional node name. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
+2. `/install.sh` installs the matching Unix agent artifact and service wrapper. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
+3. `/install.ps1` installs the matching Windows agent artifact and service wrapper. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
+4. Install scripts verify downloaded artifact checksums before installation. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
+5. Install scripts do not embed provider, admin, node, upstream, deploy, or Cloudflare API credentials. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -104,7 +104,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -116,11 +116,11 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Admin can keep using the `workers.dev` origin after setup.
-2. The Admin can select a zone and hostname for a Worker custom domain when runtime Cloudflare permissions allow it.
-3. Custom domain setup failure leaves the existing Worker origin usable.
-4. AI Gateway provider configuration can be updated to the custom domain after it is attached.
-5. The setup UI records the selected custom domain and Cloudflare zone resource identifiers in D1.
+1. The Admin can keep using the `workers.dev` origin after setup. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
+2. The Admin can select a zone and hostname for a Worker custom domain when runtime Cloudflare permissions allow it. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
+3. Custom domain setup failure leaves the existing Worker origin usable. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
+4. AI Gateway provider configuration can be updated to the custom domain after it is attached. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
+5. The setup UI records the selected custom domain and Cloudflare zone resource identifiers in D1. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -130,6 +130,13 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
+
+## Related documentation
+
+- [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)
+- [documentation/lanes/configuration.md](../../documentation/lanes/configuration.md)
+- [documentation/lanes/deployment.md](../../documentation/lanes/deployment.md)
+- [documentation/lanes/security.md](../../documentation/lanes/security.md)

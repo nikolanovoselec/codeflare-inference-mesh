@@ -2,9 +2,9 @@
 
 ## Conventions
 
-Admin routes use the MVP admin token or an admin session derived from it. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. (REQ-ADM-002) (REQ-SEC-001)
+Admin routes use the MVP admin token or an admin session derived from it. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
-## GET / (REQ-ADM-001)
+## GET / ([REQ-ADM-001](../../sdd/spec/setup-admin.md))
 
 **Purpose:** Redirect to setup or admin UI based on setup state.
 
@@ -12,7 +12,7 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Returns or redirects to the appropriate UI.
 
-## GET /setup (REQ-ADM-001)
+## GET /setup ([REQ-ADM-001](../../sdd/spec/setup-admin.md))
 
 **Purpose:** Serve first-run setup UI while setup is incomplete.
 
@@ -20,7 +20,7 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Shows setup state, provider-token generation, and Gateway setup steps.
 
-## GET /admin (REQ-ADM-002)
+## GET /admin ([REQ-ADM-002](../../sdd/spec/setup-admin.md))
 
 **Purpose:** Serve admin dashboard after setup completes.
 
@@ -28,7 +28,7 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Shows fleet, routes, setup-token controls, and profile state.
 
-## GET /admin/status (REQ-OBS-002)
+## GET /admin/status ([REQ-OBS-002](../../sdd/spec/observability.md))
 
 **Purpose:** Return machine-readable fleet and session status.
 
@@ -36,7 +36,7 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Returns nodes, active sessions, profiles, lease state, and failure penalties.
 
-## GET /admin/nodes (REQ-OBS-002)
+## GET /admin/nodes ([REQ-OBS-002](../../sdd/spec/observability.md))
 
 **Purpose:** List registered nodes and durable node state.
 
@@ -44,7 +44,7 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Returns node records without token hashes or plaintext credentials.
 
-## GET /admin/routes (REQ-GWY-003)
+## GET /admin/routes ([REQ-GWY-003](../../sdd/spec/gateway.md))
 
 **Purpose:** Show configured Gateway provider and dynamic route resources.
 
@@ -52,7 +52,7 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Returns selected Gateway ID, provider ID, route ID, version, and deployment state.
 
-## POST /admin/setup-tokens (REQ-ADM-003)
+## POST /admin/setup-tokens ([REQ-ADM-003](../../sdd/spec/setup-admin.md))
 
 **Purpose:** Create a short-lived setup token for one node.
 
@@ -60,7 +60,7 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Displays the token once and stores only its verifier.
 
-## POST /admin/nodes/:nodeId/revoke (REQ-SEC-002)
+## POST /admin/nodes/:nodeId/revoke ([REQ-SEC-002](../../sdd/spec/security.md))
 
 **Purpose:** Revoke a node credential and remove the node from scheduling.
 
@@ -68,7 +68,7 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Marks the node revoked and clears live eligibility.
 
-## POST /admin/cloudflare/custom-domain (REQ-ADM-005)
+## POST /admin/cloudflare/custom-domain ([REQ-ADM-005](../../sdd/spec/setup-admin.md))
 
 **Purpose:** Attach or update an optional Worker custom domain.
 
@@ -76,10 +76,18 @@ Admin routes use the MVP admin token or an admin session derived from it. They n
 
 **Success:** Stores zone and hostname resource IDs when Cloudflare accepts the change.
 
-## POST /admin/cloudflare/ai-gateway (REQ-GWY-003)
+## POST /admin/cloudflare/ai-gateway ([REQ-GWY-003](../../sdd/spec/gateway.md))
 
 **Purpose:** Create or update Gateway custom provider and dynamic route resources.
 
 **Auth:** Admin token or admin session.
 
 **Success:** Stores provider, route, route version, and deployment identifiers in D1.
+
+## Source anchors and specification backlinks
+
+| Surface | Specification | Source |
+|---|---|---|
+| Admin routes | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
+| Installer routes | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/installers.ts::INSTALLER_ANCHORS` <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> |
+| Gateway sync | [gateway.md](../../sdd/spec/gateway.md) | `packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS` <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS --> |

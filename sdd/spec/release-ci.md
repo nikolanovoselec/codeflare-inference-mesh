@@ -12,11 +12,11 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Acceptance Criteria:**
 
-1. PR checks run on pull requests to `main`, pushes to `main`, and manual dispatch.
-2. Router checks install dependencies, lint, run behavioral tests, type-check, generate Wrangler types, and perform a Worker dry-run deploy.
-3. Agent checks run Go tests, Go vet, race tests, and build the agent command.
-4. Packaging checks build at least one agent archive, generate checksums, verify the archive hash, and run the staged binary version command.
-5. Security checks include npm audit, Go vulnerability checks, and dependency review where the event supports it.
+1. PR checks run on pull requests to `main`, pushes to `main`, and manual dispatch. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
+2. Router checks install dependencies, lint, run behavioral tests, type-check, generate Wrangler types, and perform a Worker dry-run deploy. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
+3. Agent checks run Go tests, Go vet, race tests, and build the agent command. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
+4. Packaging checks build at least one agent archive, generate checksums, verify the archive hash, and run the staged binary version command. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
+5. Security checks include npm audit, Go vulnerability checks, and dependency review where the event supports it. <!-- @impl: .github/workflows/ci.yml::REL001PullRequestChecks -->
 
 **Constraints:** [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface), [CON-SDD-001](constraints.md#con-sdd-001-sdd-and-tdd-stay-coupled)
 
@@ -26,7 +26,7 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -38,11 +38,11 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Acceptance Criteria:**
 
-1. Deploy runs only from manual workflow dispatch.
-2. Production deploy refuses to run unless the selected ref is `main`.
-3. Deploy repeats critical router and agent checks before changing Cloudflare state.
-4. Deploy creates or resolves the D1 database and applies D1 migrations before Worker deployment.
-5. Deploy writes a summary that includes Worker URL, release tag, environment, and artifact list.
+1. Deploy runs only from manual workflow dispatch. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
+2. Production deploy refuses to run unless the selected ref is `main`. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
+3. Deploy repeats critical router and agent checks before changing Cloudflare state. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
+4. Deploy creates or resolves the D1 database and applies D1 migrations before Worker deployment. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
+5. Deploy writes a summary that includes Worker URL, release tag, environment, and artifact list. <!-- @impl: .github/workflows/deploy.yml::REL002ManualDeploy -->
 
 **Constraints:** [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface), [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
 
@@ -52,7 +52,7 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -64,12 +64,12 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Acceptance Criteria:**
 
-1. Deploy builds Windows, macOS, and Linux agent archives for amd64 and arm64 where supported.
-2. Deploy creates a checksums file covering every uploaded archive.
-3. Deploy signs the checksums file when signing is configured.
-4. Deploy uploads a release manifest containing version, channel, commit, publish time, and artifact metadata.
-5. Stable production releases require an explicit semantic version tag.
-6. Prerelease integration releases use a prerelease tag that update clients ignore unless configured for that channel.
+1. Deploy builds Windows, macOS, and Linux agent archives for amd64 and arm64 where supported. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
+2. Deploy creates a checksums file covering every uploaded archive. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
+3. Deploy signs the checksums file when signing is configured. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
+4. Deploy uploads a release manifest containing version, channel, commit, publish time, and artifact metadata. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
+5. Stable production releases require an explicit semantic version tag. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
+6. Prerelease integration releases use a prerelease tag that update clients ignore unless configured for that channel. <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface)
 
@@ -79,7 +79,7 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -91,11 +91,11 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Acceptance Criteria:**
 
-1. CodeQL runs for JavaScript/TypeScript and Go on pull requests, main pushes, manual dispatch, and a weekly schedule.
-2. Fuzz workflows run bounded router and agent fuzz targets on pull requests, manual dispatch, and a weekly schedule.
-3. Optional Scorecard runs with minimal permissions and no production write secrets.
-4. Security workflows define explicit timeouts.
-5. Security workflows do not deploy or publish release artifacts.
+1. CodeQL runs for JavaScript/TypeScript and Go on pull requests, main pushes, manual dispatch, and a weekly schedule. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
+2. Fuzz workflows run bounded router and agent fuzz targets on pull requests, manual dispatch, and a weekly schedule. <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows -->
+3. Optional Scorecard runs with minimal permissions and no production write secrets. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
+4. Security workflows define explicit timeouts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
+5. Security workflows do not deploy or publish release artifacts. <!-- @impl: .github/workflows/security.yml::REL004SecurityWorkflows -->
 
 **Constraints:** [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -105,6 +105,12 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
+
+## Related documentation
+
+- [documentation/lanes/deployment.md](../../documentation/lanes/deployment.md)
+- [documentation/lanes/security.md](../../documentation/lanes/security.md)
+- [documentation/lanes/troubleshooting.md](../../documentation/lanes/troubleshooting.md)

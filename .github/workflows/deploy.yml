@@ -1,0 +1,130 @@
+name: Deploy
+# REL002ManualDeploy
+# REL003ReleaseArtifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        default: production
+        type: choice
+        options: [production, integration]
+      version_tag:
+        description: Release tag. Production uses vX.Y.Z; integration uses vX.Y.Z-dev.N.
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  deploy:
+    name: Deploy router and package agent
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
+      CLOUDFLARE_API_TOKEN_RUNTIME: ${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          ref: main
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '24'
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version: '1.26.4'
+      - name: Validate deploy inputs and secrets
+        run: |
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_API_TOKEN_RUNTIME"
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            printf '%s' "${{ inputs.version_tag }}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          else
+            printf '%s' "${{ inputs.version_tag }}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$'
+          fi
+      - name: Install router dependencies
+        run: npm install
+      - name: Repeat critical checks
+        run: |
+          npm run lint --workspace packages/router-worker
+          npm run test --workspace packages/router-worker
+          npm run typecheck --workspace packages/router-worker
+          cd packages/node-agent
+          go test ./...
+          go vet ./...
+      - name: Resolve or create D1 database
+        working-directory: packages/router-worker
+        run: |
+          set -euo pipefail
+          DB_NAME="cloudflare-inference-mesh"
+          npx wrangler d1 list --json > d1-list.json
+          DB_ID=$(node -e "const fs=require('fs'); const rows=JSON.parse(fs.readFileSync('d1-list.json','utf8')); const row=rows.find((x)=>x.name==='cloudflare-inference-mesh'); if(row) process.stdout.write(row.uuid || row.id || '')")
+          if [ -z "$DB_ID" ]; then
+            npx wrangler d1 create "$DB_NAME" --json > d1-create.json
+            DB_ID=$(node -e "const fs=require('fs'); const row=JSON.parse(fs.readFileSync('d1-create.json','utf8')); process.stdout.write(row.uuid || row.id || row.result?.uuid || row.result?.id || '')")
+          fi
+          DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replace('create-via-deploy-workflow', process.env.DB_ID); fs.writeFileSync(p,text)"
+      - name: Apply D1 migrations
+        working-directory: packages/router-worker
+        run: npx wrangler d1 migrations apply cloudflare-inference-mesh --remote
+      - name: Deploy Worker
+        working-directory: packages/router-worker
+        run: npx wrangler deploy
+      - name: Build release artifacts and manifest
+        working-directory: packages/node-agent
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+            GOOS=${target%/*}
+            GOARCH=${target#*/}
+            EXT=""
+            [ "$GOOS" = "windows" ] && EXT=".exe"
+            OUT="dist/inference-mesh-agent-${GOOS}-${GOARCH}${EXT}"
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-X main.version=${{ inputs.version_tag }}" -o "$OUT" ./cmd/inference-mesh-agent
+            if [ "$GOOS" = "windows" ]; then
+              (cd dist && zip "inference-mesh-agent-${GOOS}-${GOARCH}.zip" "inference-mesh-agent-${GOOS}-${GOARCH}${EXT}")
+            else
+              tar -C dist -czf "dist/inference-mesh-agent-${GOOS}-${GOARCH}.tar.gz" "inference-mesh-agent-${GOOS}-${GOARCH}"
+            fi
+          done
+          cd dist
+          sha256sum *.tar.gz *.zip > checksums.txt
+          sha256sum -c checksums.txt
+          node -e "const fs=require('fs'); const crypto=require('crypto'); const files=fs.readdirSync('.').filter((f)=>/\\.(tar\\.gz|zip)$/.test(f)); const artifacts=files.map((name)=>({name, sha256: crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')})); fs.writeFileSync('release-manifest.json', JSON.stringify({version:'${{ inputs.version_tag }}', channel:'${{ inputs.environment }}', commit:process.env.GITHUB_SHA, publishedAt:new Date().toISOString(), artifacts}, null, 2)); fs.writeFileSync('release-notes.md', '# Inference Mesh Agent ${{ inputs.version_tag }}\n\nSee release-manifest.json and checksums.txt for artifact metadata.\n')"
+      - name: Sign checksums when signing is configured
+        if: env.COSIGN_PRIVATE_KEY != ''
+        working-directory: packages/node-agent/dist
+        run: |
+          go install github.com/sigstore/cosign/v2/cmd/cosign@v2.6.1
+          cosign sign-blob --key env://COSIGN_PRIVATE_KEY --output-signature checksums.txt.sig checksums.txt
+      - name: Publish GitHub Release
+        working-directory: packages/node-agent/dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE=""
+          if [ "${{ inputs.environment }}" = "integration" ]; then PRERELEASE="--prerelease"; fi
+          gh release create "${{ inputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ inputs.version_tag }}" --notes-file release-notes.md $PRERELEASE
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: inference-mesh-release-artifacts
+          path: packages/node-agent/dist/*
+      - name: Write deployment summary
+        run: |
+          {
+            echo "## Cloudflare Inference Mesh Deploy"
+            echo "- Environment: ${{ inputs.environment }}"
+            echo "- Ref: main"
+            echo "- Worker: cloudflare-inference-mesh-router"
+            echo "- Release tag: ${{ inputs.version_tag }}"
+            echo "- Artifacts: inference-mesh-release-artifacts"
+          } >> "$GITHUB_STEP_SUMMARY"

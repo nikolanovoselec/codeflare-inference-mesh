@@ -12,11 +12,11 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. Client-to-Gateway, Gateway-to-Worker, setup, node-to-Worker, Worker-to-node, admin, deploy, and runtime Cloudflare credentials are separate classes.
-2. Provider tokens cannot claim nodes or access admin routes.
-3. Node tokens cannot call provider endpoints or admin routes.
-4. Setup tokens cannot heartbeat, proxy inference, or access admin routes after claim.
-5. Upstream tokens are accepted only by node-agent Mesh-facing inference routes.
+1. Client-to-Gateway, Gateway-to-Worker, setup, node-to-Worker, Worker-to-node, admin, deploy, and runtime Cloudflare credentials are separate classes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+2. Provider tokens cannot claim nodes or access admin routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+3. Node tokens cannot call provider endpoints or admin routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+4. Setup tokens cannot heartbeat, proxy inference, or access admin routes after claim. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+5. Upstream tokens are accepted only by node-agent Mesh-facing inference routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -26,7 +26,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -38,11 +38,11 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. Setup, provider, admin, node, and upstream tokens are generated with enough entropy for bearer-token use.
-2. Durable storage stores token hashes or encrypted values, never plaintext by default.
-3. Token verification uses constant-time comparison for hash matches.
-4. Admin can revoke a node token and remove the node from eligible scheduling.
-5. Credential rotation creates a new verifier before disabling the old credential where the flow requires continuity.
+1. Setup, provider, admin, node, and upstream tokens are generated with enough entropy for bearer-token use. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+2. Durable storage stores token hashes or encrypted values, never plaintext by default. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+3. Token verification uses constant-time comparison for hash matches. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+4. Admin can revoke a node token and remove the node from eligible scheduling. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+5. Credential rotation creates a new verifier before disabling the old credential where the flow requires continuity. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -52,7 +52,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -64,11 +64,11 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. The Worker sends only the node upstream token and approved inference metadata to the selected node.
-2. The Worker strips client authorization, Cloudflare API tokens, admin credentials, node credentials, and setup credentials before node forwarding.
-3. The node agent strips upstream token headers before forwarding to the local runtime unless the runtime is explicitly configured to require them.
-4. Observability logs record credential-bearing header names only when values are redacted.
-5. Header filtering applies to streaming and non-streaming requests.
+1. The Worker sends only the node upstream token and approved inference metadata to the selected node. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+2. The Worker strips client authorization, Cloudflare API tokens, admin credentials, node credentials, and setup credentials before node forwarding. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+3. The node agent strips upstream token headers before forwarding to the local runtime unless the runtime is explicitly configured to require them. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+4. Observability logs record credential-bearing header names only when values are redacted. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+5. Header filtering applies to streaming and non-streaming requests. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
@@ -78,7 +78,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -90,11 +90,11 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. The node agent proxies only the configured inference and health endpoints to the runtime.
-2. Local runtime built-in tools, file access, and unauthenticated web UI features are disabled for managed profiles unless explicitly allowed by an Admin profile.
-3. The Mesh-facing listener requires upstream token verification before any inference proxy call.
-4. Local dashboard endpoints bind to localhost and do not accept Worker upstream tokens as dashboard auth.
-5. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials.
+1. The node agent proxies only the configured inference and health endpoints to the runtime. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
+2. Local runtime built-in tools, file access, and unauthenticated web UI features are disabled for managed profiles unless explicitly allowed by an Admin profile. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
+3. The Mesh-facing listener requires upstream token verification before any inference proxy call. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
+4. Local dashboard endpoints bind to localhost and do not accept Worker upstream tokens as dashboard auth. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
+5. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -104,6 +104,12 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
+
+## Related documentation
+
+- [documentation/lanes/security.md](../../documentation/lanes/security.md)
+- [documentation/lanes/configuration.md](../../documentation/lanes/configuration.md)
+- [documentation/lanes/api-reference.md](../../documentation/lanes/api-reference.md)

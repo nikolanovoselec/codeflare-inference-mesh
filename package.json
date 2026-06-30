@@ -1,0 +1,19 @@
+{
+  "name": "cloudflare-inference-mesh",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare AI Gateway router and node agent for private inference mesh.",
+  "workspaces": [
+    "packages/router-worker"
+  ],
+  "scripts": {
+    "lint": "npm run lint --workspace packages/router-worker",
+    "test": "npm run test --workspace packages/router-worker",
+    "typecheck": "npm run typecheck --workspace packages/router-worker",
+    "cf-types": "npm run cf-types --workspace packages/router-worker",
+    "dry-run": "npm run dry-run --workspace packages/router-worker"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

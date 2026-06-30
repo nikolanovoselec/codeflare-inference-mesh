@@ -1,0 +1,29 @@
+name = "cloudflare-inference-mesh-router"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+[vars]
+MAX_REQUEST_BYTES = "1048576"
+HEARTBEAT_TTL_SECONDS = "45"
+AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
+AI_GATEWAY_ID = "inference-mesh"
+WORKER_BASE_URL = "https://cloudflare-inference-mesh-router.<your-subdomain>.workers.dev"
+GITHUB_REPOSITORY = "nikolanovoselec/cloudflare-inference-mesh"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cloudflare-inference-mesh"
+database_id = "create-via-deploy-workflow"
+
+[[durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDO"
+
+[[services]]
+binding = "MESH"
+service = "cloudflare-inference-mesh-node"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RegistryDO"]

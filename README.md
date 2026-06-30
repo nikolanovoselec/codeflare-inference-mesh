@@ -4,16 +4,17 @@ Cloudflare Inference Mesh exposes private local LLM machines as one OpenAI-compa
 
 ## Status
 
-This repository is implementation-ready but has not started source implementation yet.
+The first implementation slice is in place for all 38 SDD requirements: router Worker, D1 schema, Durable Object scheduler, Go node agent, workflow contracts, behavioral tests, and source anchors.
 
 - Product contract: [sdd/](sdd/)
 - Operational documentation: [documentation/](documentation/)
 - Architecture plan: [PLAN.md](PLAN.md)
+- Implementation plan: [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
 - Implementation tracking: [pending.md](pending.md)
 
-All implementation work should start from the Planned REQs in `sdd/spec/` and follow test-first delivery. Source `@impl` anchors are added when a REQ moves from `Planned` to `Partial` or `Implemented`.
+All requirement acceptance criteria now carry source `@impl` anchors. Verification runs in GitHub Actions because this container must not run local test suites or builds.
 
-## Planned packages
+## Packages
 
 ```text
 packages/router-worker   Cloudflare Worker, Durable Object scheduler, D1 migrations
