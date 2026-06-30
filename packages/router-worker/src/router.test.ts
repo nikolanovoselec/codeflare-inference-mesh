@@ -39,7 +39,7 @@ function routerFixture(overrides: Partial<Parameters<typeof createRouter>[0]> = 
         MAX_REQUEST_BYTES: '4096',
         ...overrides.env
       },
-      cloudflareClient: overrides.cloudflareClient
+      ...(overrides.cloudflareClient !== undefined ? { cloudflareClient: overrides.cloudflareClient } : {})
     })
   }
 }

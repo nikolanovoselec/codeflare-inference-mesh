@@ -9,6 +9,6 @@
     "exactOptionalPropertyTypes": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "types": ["@cloudflare/workers-types", "vitest"]
+    "types": ["@cloudflare/workers-types", "vitest", "node"]
   }
 }

@@ -91,6 +91,8 @@ describe('workflow contract values', () => {
       'go test ./...',
       'go vet ./...',
       'npx wrangler d1 migrations apply cloudflare-inference-mesh --remote',
+      'printf \'%s\' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID',
+      'printf \'%s\' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npx wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME',
       'npx wrangler deploy'
     ]))
   })

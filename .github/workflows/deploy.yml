@@ -75,6 +75,11 @@ jobs:
       - name: Apply D1 migrations
         working-directory: packages/router-worker
         run: npx wrangler d1 migrations apply cloudflare-inference-mesh --remote
+      - name: Set Worker runtime secrets
+        working-directory: packages/router-worker
+        run: |
+          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
+          printf '%s' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npx wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME
       - name: Deploy Worker
         working-directory: packages/router-worker
         run: npx wrangler deploy

@@ -201,7 +201,7 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
   const result = await client.syncCustomProvider({ accountId, gatewayId, workerUrl, providerName: 'custom-inference-mesh', routeName: 'mesh-default', providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.' })
   await deps.store.putConfig('cloudflare_gateway', result)
-  await deps.store.appendAudit({ id: requestId, type: 'gateway_sync', at: now, actor: 'admin', detail: result })
+  await deps.store.appendAudit({ id: requestId, type: 'gateway_sync', at: now, actor: 'admin', detail: { ...result } })
   return json(result, 200, requestId)
 }
 
@@ -314,13 +314,14 @@ function releaseOnCompletion(response: Response, headers: Headers, release: () =
 }
 
 function validateClaim(body: ClaimRequest | undefined): string[] {
+  if (!body) return ['displayName', 'meshIp', 'inferencePort', 'publicModels', 'activeProfileIds', 'capacity']
   const errors: string[] = []
-  if (!body?.displayName) errors.push('displayName')
-  if (!body?.meshIp) errors.push('meshIp')
-  if (!Number.isInteger(body?.inferencePort)) errors.push('inferencePort')
-  if (!Array.isArray(body?.publicModels)) errors.push('publicModels')
-  if (!Array.isArray(body?.activeProfileIds)) errors.push('activeProfileIds')
-  if (!Number.isInteger(body?.capacity) || body.capacity < 1) errors.push('capacity')
+  if (!body.displayName) errors.push('displayName')
+  if (!body.meshIp) errors.push('meshIp')
+  if (!Number.isInteger(body.inferencePort)) errors.push('inferencePort')
+  if (!Array.isArray(body.publicModels)) errors.push('publicModels')
+  if (!Array.isArray(body.activeProfileIds)) errors.push('activeProfileIds')
+  if (!Number.isInteger(body.capacity) || body.capacity < 1) errors.push('capacity')
   return errors
 }
 
