@@ -65,6 +65,12 @@ function adminUiConfig(html: string): { actions: typeof ADMIN_UI_ACTIONS; respon
   return JSON.parse(match![1]!) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; workerOrigin: string }
 }
 
+function adminUiScript(html: string): string {
+  const match = html.match(/<script>([\s\S]+)<\/script>\s*<\/body>/)
+  expect(match).not.toBeNull()
+  return match![1]!
+}
+
 describe('router worker behavioral contracts', () => {
   it('REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function', async () => {
     // AdminConfigurationUiTestAnchor
@@ -115,6 +121,7 @@ describe('router worker behavioral contracts', () => {
     expect(html).toMatch(/@media \(max-width:760px\)/)
     expect(html).toContain('sessionStorage.getItem(tokenKey)')
     expect(html).toContain('localStorage.getItem(tokenKey)')
+    expect(() => new Function(adminUiScript(html))).not.toThrow()
   })
 
   it('REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families', async () => {

@@ -330,8 +330,8 @@ function adminUiScript(): string {
       '<div class="metric"><strong>Nodes</strong><code>' + nodes.length + '</code></div>',
       '<div class="metric"><strong>Profiles</strong><code>' + profiles.length + '</code></div>',
       '<div class="metric"><strong>Generated</strong><code>' + (value.generatedAt || 'unknown') + '</code></div>',
-      '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status).join('\n')) + '</code></div>',
-      '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '%').join('\n')) + '</code></div>'
+      '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status).join('\\n')) + '</code></div>',
+      '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '%').join('\\n')) + '</code></div>'
     ].join('');
   }
   document.addEventListener('click', async (event) => {
