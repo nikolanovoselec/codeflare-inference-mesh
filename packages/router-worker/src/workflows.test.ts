@@ -220,6 +220,9 @@ describe('workflow contract values', () => {
       const unsafeAction = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeActionDir] })
       const unsafeRunner = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeRunnerDir] })
 
+      expect(unsafeWorkflowRun.status).not.toBe(0)
+      expect(unsafeAction.status).not.toBe(0)
+      expect(unsafeRunner.status).not.toBe(0)
       expect(unsafeWorkflowRun.stderr).toContain('workflow_run checkout is missing exact head_sha ref')
       expect(unsafeAction.stderr).toContain('actions/checkout@main uses floating ref')
       expect(unsafeRunner.stderr).toContain('ubuntu-latest is a floating runner ref')

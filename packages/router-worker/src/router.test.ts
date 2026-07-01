@@ -323,7 +323,8 @@ describe('router worker behavioral contracts', () => {
   it('REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim', async () => {
     // FirstRunSetupTokenTestAnchor
     const { router, store } = routerFixture()
-    await store.putToken(await createTokenRecord('setup', 'expired-setup', 1_699_913_599_999, undefined, 1_700_000_000_000))
+    const expiredRecord = await createTokenRecord('setup', 'expired-setup', 1_699_913_599_999, undefined, 1_700_000_000_000)
+    await store.putToken(expiredRecord)
     const expired = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer('expired-setup'), 'content-type': 'application/json' },
@@ -345,7 +346,8 @@ describe('router worker behavioral contracts', () => {
     expect(expired.status).toBe(401)
     expect(claim.status).toBe(201)
     expect(consumed.status).toBe(401)
-    expect(store.tokens.filter((token) => token.kind === 'setup').every((token) => token.active === false)).toBe(true)
+    expect(store.tokens.find((token) => token.id === expiredRecord.id)?.active).toBe(true)
+    expect(store.tokens.filter((token) => token.kind === 'setup' && token.id !== expiredRecord.id).every((token) => token.active === false)).toBe(true)
     expect(store.nodes.has('node-a-100-64-1-10')).toBe(true)
   })
 
