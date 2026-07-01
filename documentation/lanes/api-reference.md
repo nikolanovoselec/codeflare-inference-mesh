@@ -3,20 +3,14 @@
 ## Contents
 
 - [Conventions](#conventions)
-- [GET /health](#get-health-req-rtr-001)
-- [GET /v1/models](#get-v1models-req-gwy-001-req-run-001)
-- [POST /v1/chat/completions](#post-v1chatcompletions-req-rtr-002-req-rtr-003)
-- [POST /node/claim](#post-nodeclaim-req-adm-003-req-node-002)
-- [POST /node/heartbeat](#post-nodeheartbeat-req-node-002-req-obs-003)
-- [POST /node/unregister](#post-nodeunregister-req-obs-005)
-- [GET /install.sh](#get-installsh-req-adm-004)
-- [GET /install.ps1](#get-installps1-req-adm-004)
-- [Node dashboard local routes](#node-dashboard-local-routes-req-node-004-req-sec-004)
+- [Endpoints](#endpoints)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions
 
 All API responses that represent errors use an OpenAI-style `error` object when they are visible to AI Gateway or OpenAI-compatible clients. Provider routes require the provider token; node routes require setup or node credentials; installer routes contain no permanent secrets. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+
+## Endpoints
 
 ### GET /health ([REQ-RTR-001](../../sdd/spec/router-worker.md))
 

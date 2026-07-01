@@ -48,10 +48,30 @@ function actionUses(lines) {
 }
 
 function runnerPins(lines) {
-  return lines
-    .map((line) => line.match(/^\s*runs-on\s*:\s*(.+?)\s*(?:#.*)?$/)?.[1])
-    .filter(Boolean)
-    .flatMap((value) => value.replace(/[\[\]'\"]/g, '').split(',').map((item) => item.trim()).filter(Boolean))
+  const pins = []
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? ''
+    const match = line.match(/^(\s*)runs-on\s*:\s*(.*?)\s*(?:#.*)?$/)
+    if (!match) continue
+    const [, indent = '', rawValue = ''] = match
+    if (rawValue) {
+      pins.push(...parseRunnerValue(rawValue))
+      continue
+    }
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const child = lines[next] ?? ''
+      const childIndent = child.match(/^\s*/)?.[0].length ?? 0
+      if (child.trim() === '') continue
+      if (childIndent <= indent.length) break
+      const item = child.match(/^\s*-\s*(.+?)\s*(?:#.*)?$/)?.[1]
+      if (item) pins.push(...parseRunnerValue(item))
+    }
+  }
+  return pins
+}
+
+function parseRunnerValue(value) {
+  return value.replace(/[\[\]'\"]/g, '').split(',').map((item) => item.trim()).filter(Boolean)
 }
 
 function invalidRunnerPin(runner) {

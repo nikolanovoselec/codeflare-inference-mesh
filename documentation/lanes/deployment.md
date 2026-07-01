@@ -43,19 +43,19 @@ Production releases use stable semantic tags such as `v0.1.0`. Integration relea
 
 ## Rollback
 
-**When:** The latest Worker deployment or release artifact is bad and a previous Git ref is known to be safe.
+**When:** The latest Worker deployment or release artifact is bad and the safe code has been restored onto the deployment branch.
 
 **Command:**
 
 ```bash
-gh workflow run Deploy --ref main -f environment=production -f version_tag=<known-good-tag>
+gh workflow run Deploy --ref main -f environment=production -f version_tag=<new-rollback-tag>
 ```
 
-For integration rollback, use `--ref develop -f environment=integration` with the known-good integration tag. Production rollback still requires the selected ref to be `main`.
+For integration rollback, restore the safe code onto the selected integration branch and run `gh workflow run Deploy --ref develop -f environment=integration -f version_tag=<new-rollback-tag>`. The current workflow publishes artifacts for the selected ref and tag; it does not redeploy an existing release tag.
 
-**Verifies:** After the workflow succeeds, call `GET /health` on the target Worker and confirm installer scripts reference the known-good release tag.
+**Verifies:** After the workflow succeeds, call `GET /health` on the target Worker and confirm installer scripts reference the new rollback release tag.
 
-**Rollback:** If the rollback workflow fails before Worker deploy, the existing Worker remains active. If it fails after publishing a release but before deploy, delete the unused GitHub Release tag and rerun with the last known-good tag.
+**Rollback:** If the rollback workflow fails before Worker deploy, the existing Worker remains active. If it fails after publishing a release but before deploy, delete the unused rollback GitHub Release tag and rerun from the restored safe ref with a fresh tag.
 
 Agent rollback uses the previous binary retained by the service update flow. Model profile rollback switches the public alias back to a previously ready profile. ([REQ-NODE-005](../../sdd/spec/node-agent.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
 

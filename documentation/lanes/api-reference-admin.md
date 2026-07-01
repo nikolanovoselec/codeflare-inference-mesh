@@ -3,22 +3,14 @@
 ## Contents
 
 - [Conventions](#conventions)
-- [GET /](#get--req-adm-006)
-- [GET /admin](#get-admin-req-adm-006)
-- [POST /admin/setup](#post-adminsetup-req-adm-001)
-- [POST /admin/login](#post-adminlogin-req-adm-002)
-- [GET /admin/status](#get-adminstatus-req-obs-002)
-- [POST /admin/setup-tokens](#post-adminsetup-tokens-req-adm-003)
-- [GET /admin/installers/:platform](#get-admininstallersplatform-req-adm-004)
-- [POST /admin/nodes/:nodeId/revoke](#post-adminnodesnodeidrevoke-req-sec-002)
-- [POST /admin/cloudflare/gateway/sync](#post-admincloudflaregatewaysync-req-gwy-003)
-- [POST /admin/custom-domain/validate](#post-admincustom-domainvalidate-req-adm-005)
-- [POST /admin/profiles/rollout](#post-adminprofilesrollout-req-run-004)
+- [Endpoints](#endpoints)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions
 
 Admin routes use the MVP admin token or an admin session derived from it after first-run setup completes. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. Admin routes do not implement a dedicated Origin-header gate; bearer/admin authentication is the route guard. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+
+## Endpoints
 
 ### GET / ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
 
@@ -145,7 +137,7 @@ POST /admin/setup-tokens
 
 **Origin check:** n/a
 
-**Request:** No required body fields in the current implementation; the handler creates a 24h setup token and does not accept per-token metadata yet.
+**Request:** No body. Creates a setup token with a 24h expiration and stores only its verifier.
 
 **Response**
 

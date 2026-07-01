@@ -6,6 +6,7 @@
 - Updated [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) to anchor workflow safety to runner and action pin validation.
 - Updated [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain) to anchor custom-domain selection, persistence, and Gateway sync to their implementation paths.
 - Updated [REQ-SEC-002](security.md#req-sec-002-secret-storage-and-rotation-readiness) so revocation and setup-token staging anchors prove the attached acceptance criteria.
+- Clarified [REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle) fixed 24h setup-token behavior, [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain) stored-domain Gateway sync behavior, and [REQ-OBS-004](observability.md#req-obs-004-failure-reporting) aggregate audit-event verification.
 
 ## 2026-06-30
 
