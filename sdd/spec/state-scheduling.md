@@ -1,6 +1,6 @@
 # State And Scheduling
 
-This domain covers durable records, hot scheduler state, reservations, leases, session affinity, and busy behavior.
+This domain covers durable records, hot scheduler state, reservations, leases, session affinity, and scheduler miss behavior.
 
 ---
 
@@ -58,16 +58,16 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 
 ### REQ-SCH-003: Node eligibility and scheduler miss responses
 
-**Intent:** The router must distinguish model-configuration misses and normal capacity exhaustion from server failure. Missing profiles return not-found, while unavailable eligible capacity returns a retryable busy response instead of an internal error.
+**Intent:** The router must distinguish model-configuration misses and normal capacity exhaustion from server failure. Missing profiles return not-found, while unavailable eligible capacity returns no-node instead of an internal error.
 
 **Applies To:** Client
 
 **Acceptance Criteria:**
 
-1. A node is eligible only while its lease is unexpired and status is ready. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-node when no eligible node has capacity) -->
-2. A node is ineligible when the requested profile is unsupported, unloaded, over capacity, under failure penalty, or has invalid Mesh connection data. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-node when no eligible node has capacity) -->
+1. A node is eligible only while its lease is unexpired and status is online. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
+2. A node is ineligible when the requested profile is unsupported, unloaded, over capacity, under failure penalty, or has invalid Mesh connection data. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
 3. The scheduler returns `no-profile` when no profile is configured for the requested public alias. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-profile when the public model has no configured profile) -->
-4. The scheduler returns `no-node` when no node is eligible for the requested profile. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-node when no eligible node has capacity) -->
+4. The scheduler returns `no-node` when no node is eligible for the requested profile. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
 5. The Worker translates `no-profile` into `404` with a request ID and scheduler reason. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-profile when the public model has no configured profile) -->
 6. The Worker translates `no-node` into `429` with a request ID and scheduler reason. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-node when no eligible node has capacity) -->
 
@@ -93,7 +93,7 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 
 1. The scheduler extracts explicit session IDs before using metadata or weak fallback heuristics. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 preserves session affinity when the sticky node remains eligible) -->
 2. A valid session mapping gives the mapped node a dominant scheduling bonus when that node remains eligible. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 preserves session affinity when the sticky node remains eligible) -->
-3. A hot sticky session prefers a busy response over moving to another node when moving would violate the session policy. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 preserves session affinity when the sticky node remains eligible) -->
+3. An ineligible sticky node does not block routing to another eligible node. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 uses another eligible node when the sticky node is ineligible) -->
 4. Session mappings expire after the configured inactivity window. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 preserves session affinity when the sticky node remains eligible) -->
 5. The Admin status surface reports active session-to-node mappings. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 preserves session affinity when the sticky node remains eligible) -->
 

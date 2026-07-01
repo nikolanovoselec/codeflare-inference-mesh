@@ -4,7 +4,7 @@
 
 - [AI Gateway returns authentication errors](#ai-gateway-returns-authentication-errors)
 - [Worker cannot reach node](#worker-cannot-reach-node)
-- [Requests return busy](#requests-return-busy)
+- [Requests return no-node](#requests-return-no-node)
 - [Session latency suddenly increases](#session-latency-suddenly-increases)
 - [Installer cannot verify artifact](#installer-cannot-verify-artifact)
 - [Node update is staged but not applied](#node-update-is-staged-but-not-applied)
@@ -26,7 +26,7 @@
 
 **Fix:** Verify WARP/Mesh enrollment, validate the Mesh IP in admin status, confirm the listener port, and check `env.MESH.fetch` against the node health endpoint. ([REQ-RTR-004](../../sdd/spec/router-worker.md)) ([REQ-NODE-002](../../sdd/spec/node-agent.md))
 
-## Requests return busy
+## Requests return no-node
 
 **Symptom:** Client receives `429` with `no-node` plus a request ID.
 
@@ -40,7 +40,7 @@
 
 **Cause:** The session moved nodes, a lease expired, or the runtime cache was cleared during restart/profile switch.
 
-**Fix:** Check admin session mapping, node leases, recent failures, and runtime restarts; prefer returning busy for hot sticky sessions. ([REQ-SCH-004](../../sdd/spec/state-scheduling.md)) ([REQ-OBS-004](../../sdd/spec/observability.md))
+**Fix:** Check admin session mapping, node leases, recent failures, and runtime restarts; confirm another eligible node is available before moving the session. ([REQ-SCH-004](../../sdd/spec/state-scheduling.md)) ([REQ-OBS-004](../../sdd/spec/observability.md))
 
 ## Installer cannot verify artifact
 

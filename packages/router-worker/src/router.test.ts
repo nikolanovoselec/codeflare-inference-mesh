@@ -356,6 +356,42 @@ describe('router worker behavioral contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'no-profile', requestId: 'request-a' })
   })
 
+  it('REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling', async () => {
+    const now = 1_700_000_000_000
+    const ineligibleNodes = [
+      nodeFixture({ id: 'expired', lastSeenAt: now - 45_001 }),
+      nodeFixture({ id: 'offline', status: 'offline' }),
+      nodeFixture({ id: 'unsupported-model', publicModels: ['other-alias'] }),
+      nodeFixture({ id: 'unloaded-profile', activeProfileIds: [] }),
+      nodeFixture({ id: 'penalized', failurePenaltyUntil: now + 1_000 }),
+      nodeFixture({ id: 'over-capacity', capacity: 1, inFlight: 1 }),
+      nodeFixture({ id: 'unsafe-mesh', meshIp: '8.8.8.8' })
+    ] as const
+
+    for (const node of ineligibleNodes) {
+      const store = new MemoryStore()
+      await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+      await store.upsertNode(node)
+      const result = await new StoreScheduler(store).reserve({ publicModel: 'mesh-default', sessionId: `session-${node.id}`, now })
+
+      expect(result.reason).toBe('no-node')
+      expect(result.reservation).toBeUndefined()
+    }
+  })
+
+  it('REQ-SCH-004 uses another eligible node when the sticky node is ineligible', async () => {
+    const store = new MemoryStore()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 1, capacity: 1 }))
+    await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 0 }))
+    await store.putSession({ sessionId: 'session-a', nodeId: 'node-a', publicModel: 'mesh-default', profileId: 'qwen36-27b-256k-3090', upstreamModel: 'qwen36-27b-256k-3090', expiresAt: 1_700_000_100_000 })
+    const scheduler = new StoreScheduler(store, () => 'reservation-c')
+
+    const result = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_000 })
+
+    expect(result.reservation?.nodeId).toBe('node-b')
+  })
+
   it('REQ-SCH-004 preserves session affinity when the sticky node remains eligible', async () => {
     const store = new MemoryStore()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)

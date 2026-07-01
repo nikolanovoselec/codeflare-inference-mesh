@@ -73,7 +73,7 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   const publicModel = body.model
   const sessionId = sessionIdFor(request, body, requestId)
   const result = await deps.scheduler.reserve({ publicModel, sessionId, now })
-  if (!result.reservation || !result.node || !result.profile) return json({ error: result.reason ?? 'busy', requestId }, result.reason === 'no-profile' ? 404 : 429, requestId)
+  if (!result.reservation || !result.node || !result.profile) return json({ error: result.reason ?? 'no-node', requestId }, result.reason === 'no-profile' ? 404 : 429, requestId)
 
   const upstreamToken = await resolveUpstreamToken(deps)
   if (!upstreamToken) {

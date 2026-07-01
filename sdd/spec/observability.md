@@ -90,10 +90,10 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 **Acceptance Criteria:**
 
-1. Missed heartbeats expire a node lease and remove the node from eligible scheduling. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-node when no eligible node has capacity) -->
+1. Missed heartbeats expire a node lease and remove the node from eligible scheduling. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
 2. Mid-stream node failures release reservations and increase the node's recent failure score. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 releases a reservation when Mesh fetch throws) -->
-3. WARP disconnect reports make the node ineligible until a healthy heartbeat returns. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-node when no eligible node has capacity) -->
-4. Capacity exhaustion returns busy state rather than internal error state. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-node when no eligible node has capacity) -->
+3. Invalid Mesh connection data makes the node ineligible until a healthy heartbeat returns. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
+4. Capacity exhaustion returns no-node rather than internal error state. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
 5. Audit events record setup, claim, unregister, revoke, route provisioning, and profile switch actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-004 records audit events for setup, claim, unregister, revoke, route provisioning, and profile switch actions) -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)

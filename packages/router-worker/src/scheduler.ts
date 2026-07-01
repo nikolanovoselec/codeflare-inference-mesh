@@ -16,7 +16,7 @@ export class StoreScheduler implements Scheduler {
     const nodes = await this.store.listNodes(request.now)
     const eligible = eligibleNodes(nodes, profile, request.now)
     const selected = stickyNode && isEligible(stickyNode, profile, request.now) ? stickyNode : selectNode(eligible)
-    if (!selected) return { reason: eligible.length === 0 ? 'no-node' : 'busy' }
+    if (!selected) return { reason: 'no-node' }
 
     const reservation: ReservationRecord = {
       reservationId: this.requestId(),

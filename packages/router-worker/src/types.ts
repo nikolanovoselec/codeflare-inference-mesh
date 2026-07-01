@@ -128,7 +128,7 @@ export interface ReservationResult {
   readonly reservation?: ReservationRecord
   readonly node?: NodeRecord
   readonly profile?: ModelProfile
-  readonly reason?: 'no-profile' | 'busy' | 'no-node'
+  readonly reason?: 'no-profile' | 'no-node'
 }
 
 export interface Store {
