@@ -11,7 +11,7 @@ Admin routes use the MVP admin token or an admin session derived from it after f
 
 ### GET /
 
-Serves the guided responsive Admin configuration UI shell.
+Serves the responsive command-center Admin configuration UI shell.
 
 ```http
 GET /
@@ -27,13 +27,13 @@ GET /
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Guided Admin UI shell is served with anti-framing headers; admin actions still require bearer authentication after setup completes. | HTML. |
+| `200` | Command-center Admin UI shell is served with anti-framing headers; the shell loads without a bearer token, while admin action rows still require bearer authentication after setup completes. | HTML. |
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
 ### GET /admin
 
-Serves the same guided responsive Admin configuration UI shell as `/`.
+Serves the same responsive command-center Admin configuration UI shell as `/`.
 
 ```http
 GET /admin
@@ -49,7 +49,7 @@ GET /admin
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Same guided Admin UI shell and anti-framing headers as `/`. | HTML. |
+| `200` | Same command-center Admin UI shell and anti-framing headers as `/`. | HTML. |
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
@@ -72,9 +72,9 @@ POST /admin/setup
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `201` | Credentials are generated once; durable storage keeps verifiers/config only. | Generated admin, provider, setup, and upstream credentials. |
-| `401` | Setup has completed and admin auth is missing or invalid. | Error object. |
+| `401` | Setup has completed and admin auth is missing or invalid; the command-center setup row renders this as inline setup-locked feedback instead of exposing raw JSON. | Error object. |
 
-**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/login
 

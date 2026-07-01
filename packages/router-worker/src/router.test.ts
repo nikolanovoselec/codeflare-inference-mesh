@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_ACTIONS, ADMIN_UI_OPERATOR_FLOW, ADMIN_UI_RESPONSIVE } from './admin-ui'
+import { ADMIN_UI_ACTIONS, ADMIN_UI_ACTION_ROW_ANCHOR, ADMIN_UI_COMMAND_CENTER, ADMIN_UI_OPERATOR_FLOW, ADMIN_UI_RESPONSIVE, ADMIN_UI_SETUP_LOCKED_FEEDBACK } from './admin-ui'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan } from './installers'
@@ -58,11 +58,11 @@ function valuesOf(value: unknown): string[] {
   return []
 }
 
-function adminUiConfig(html: string): { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; operatorFlow: typeof ADMIN_UI_OPERATOR_FLOW; workerOrigin: string } {
+function adminUiConfig(html: string): { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; operatorFlow: typeof ADMIN_UI_OPERATOR_FLOW; commandCenter: typeof ADMIN_UI_COMMAND_CENTER; setupLockedFeedback: typeof ADMIN_UI_SETUP_LOCKED_FEEDBACK; workerOrigin: string } {
   const match = html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)
   expect(match).not.toBeNull()
   expect(match![1]).not.toContain('&quot;')
-  return JSON.parse(match![1]!) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; operatorFlow: typeof ADMIN_UI_OPERATOR_FLOW; workerOrigin: string }
+  return JSON.parse(match![1]!) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; operatorFlow: typeof ADMIN_UI_OPERATOR_FLOW; commandCenter: typeof ADMIN_UI_COMMAND_CENTER; setupLockedFeedback: typeof ADMIN_UI_SETUP_LOCKED_FEEDBACK; workerOrigin: string }
 }
 
 function adminUiScript(html: string): string {
@@ -118,26 +118,18 @@ describe('router worker behavioral contracts', () => {
       panelOrder: ['setup', 'login', 'setup-token', 'installer', 'gateway', 'domain', 'status', 'node', 'profile']
     })
     const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
-    const idlePanels = [...html.matchAll(/data-state="idle"/g)]
+    const idleRows = [...html.matchAll(/data-state="idle"/g)]
     const outputSurfaces = [...html.matchAll(/data-empty="[^"]+"/g)]
-    const operatorPanels = [...html.matchAll(/<div class="panel[^"]*" id="([^"]+)"[^>]*data-step="([1-9])"/g)].map((match) => ({ id: match[1], step: Number(match[2]) }))
+    const commandRows = [...html.matchAll(/data-row="([^"]+)"/g)].map((match) => match[1])
     expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout']))
-    expect(idlePanels).toHaveLength(9)
-    expect(outputSurfaces).toHaveLength(8)
-    expect(operatorPanels).toEqual([
-      { id: 'setup', step: 1 },
-      { id: 'login', step: 2 },
-      { id: 'setup-token', step: 3 },
-      { id: 'installer', step: 4 },
-      { id: 'gateway', step: 5 },
-      { id: 'domain', step: 6 },
-      { id: 'status', step: 7 },
-      { id: 'node', step: 8 },
-      { id: 'profile', step: 9 }
-    ])
+    expect(config.commandCenter).toEqual(ADMIN_UI_COMMAND_CENTER)
+    expect(config.setupLockedFeedback).toEqual(ADMIN_UI_SETUP_LOCKED_FEEDBACK)
+    expect(idleRows).toHaveLength(9)
+    expect(outputSurfaces).toHaveLength(9)
+    expect(commandRows).toEqual([...ADMIN_UI_COMMAND_CENTER.rowOrder])
     expect(html).toMatch(/data-responsive="desktop mobile"/)
-    expect(html).toMatch(/data-layout="operator-sequence"/)
-    expect(html).toMatch(/data-density="wide"/)
+    expect(html).toMatch(/data-layout="command-center"/)
+    expect(html).toMatch(/data-density="operator"/)
     expect(html).toMatch(/data-panel-order="setup login setup-token installer gateway domain status node profile"/)
     expect(html).toMatch(/class="live-badge"/)
     expect(html).toMatch(/\.status-dot\{display:inline-block/)
@@ -146,6 +138,62 @@ describe('router worker behavioral contracts', () => {
     expect(html).toContain('sessionStorage.getItem(tokenKey)')
     expect(html).toContain('localStorage.getItem(tokenKey)')
     expect(() => new Function(adminUiScript(html))).not.toThrow()
+  })
+
+  it('REQ-ADM-006 serves a command-center admin UI with consistent action rows', async () => {
+    // AdminCommandCenterUiTestAnchor
+    const { router } = routerFixture()
+    const admin = await router(new Request('https://router.test/admin'))
+    const html = await admin.text()
+    const config = adminUiConfig(html)
+    const rowContracts = [...html.matchAll(/data-action-row="([^"]+)"/g)].map((match) => match[1])
+    const railOrder = html.match(/data-rail-order="([^"]+)"/)?.[1]
+    const statusStrip = html.match(/data-status-strip="([^"]+)"/)?.[1]
+
+    expect(admin.status).toBe(200)
+    expect(config.commandCenter.layout).toBe('command-center')
+    expect(config.commandCenter.railOrder).toEqual(['setup', 'auth', 'enroll', 'route', 'operate'])
+    expect(config.commandCenter.statusStrip).toEqual(['setup', 'auth', 'nodes', 'profiles', 'audit'])
+    expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
+    expect(railOrder).toBe('setup auth enroll route operate')
+    expect(statusStrip).toBe('setup auth nodes profiles audit')
+    expect(rowContracts).toHaveLength(ADMIN_UI_COMMAND_CENTER.rowOrder.length)
+    expect(rowContracts.every((contract) => contract === ADMIN_UI_ACTION_ROW_ANCHOR.slots.join(' '))).toBe(true)
+    expect([...html.matchAll(/class="action-row"/g)]).toHaveLength(ADMIN_UI_COMMAND_CENTER.rowOrder.length)
+    expect(html).not.toMatch(/class="hero"/)
+    expect(html).not.toMatch(/class="panel command-panel"/)
+  })
+
+  it('REQ-ADM-006 renders setup-locked feedback instead of raw JSON', async () => {
+    // AdminSetupLockedFeedbackTestAnchor
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/admin'))).text()
+    const listeners = new Map<string, (event: { target: { closest: (selector: string) => unknown } }) => Promise<void>>()
+    const classes = new Set<string>()
+    const setupOutput = { textContent: '', innerHTML: '', dataset: { feedback: '' }, classList: { add: (name: string) => classes.add(name), remove: (name: string) => classes.delete(name), toggle: (name: string, enabled: boolean) => enabled ? classes.add(name) : classes.delete(name) } }
+    const setupScope = { dataset: { state: 'idle' }, setAttribute: () => undefined, querySelector: (selector: string) => selector === '[data-output]' ? setupOutput : undefined }
+    const setupButton = { dataset: { action: 'first-run-setup' }, disabled: false, closest: (selector: string) => selector === '[data-action]' ? setupButton : selector === '[data-action-scope]' ? setupScope : null }
+    const elements = new Map<string, unknown>([
+      ['admin-ui-config', { textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] }],
+      ['origin-label', { textContent: '' }],
+      ['admin-token', { value: '' }],
+      ['remember-token', { checked: false }],
+      ['setup-status', { textContent: '' }],
+      ['auth-status', { textContent: '' }],
+      ['toast', { textContent: '', classList: { add: () => undefined, remove: () => undefined } }],
+      ['setup-output', setupOutput]
+    ])
+    const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
+    const documentStub = { getElementById: (id: string) => elements.get(id), addEventListener: (name: string, listener: (event: { target: { closest: (selector: string) => unknown } }) => Promise<void>) => listeners.set(name, listener) }
+    const fetchStub = async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } })
+
+    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, () => undefined)
+    await listeners.get('click')!({ target: setupButton })
+
+    expect(setupScope.dataset.state).toBe('error')
+    expect(classes.has('is-error')).toBe(true)
+    expect(setupOutput.dataset.feedback).toBe('setup-locked')
+    expect(setupOutput.textContent).not.toMatch(/^\{/)
   })
 
   it('REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families', async () => {

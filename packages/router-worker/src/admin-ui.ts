@@ -30,8 +30,32 @@ export const ADMIN_UI_OPERATOR_FLOW = {
   panelOrder: ['setup', 'login', 'setup-token', 'installer', 'gateway', 'domain', 'status', 'node', 'profile']
 } as const
 
+export const ADMIN_UI_COMMAND_CENTER = {
+  layout: 'command-center',
+  statusStrip: ['setup', 'auth', 'nodes', 'profiles', 'audit'],
+  railOrder: ['setup', 'auth', 'enroll', 'route', 'operate'],
+  rowOrder: ['first-run-setup', 'admin-login', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'status-refresh', 'node-revoke', 'profile-rollout']
+} as const
+
+export const ADMIN_UI_ACTION_ROW_ANCHOR = {
+  className: 'action-row',
+  slots: ['copy', 'controls', 'feedback']
+} as const
+
+export const ADMIN_UI_SETUP_LOCKED_FEEDBACK = {
+  status: 401,
+  variant: 'setup-locked'
+} as const
+
 export function adminUiHtml(workerOrigin: string): string {
-  const config = scriptJson({ workerOrigin, actions: ADMIN_UI_ACTIONS, responsive: ADMIN_UI_RESPONSIVE, operatorFlow: ADMIN_UI_OPERATOR_FLOW })
+  const config = scriptJson({
+    workerOrigin,
+    actions: ADMIN_UI_ACTIONS,
+    responsive: ADMIN_UI_RESPONSIVE,
+    operatorFlow: ADMIN_UI_OPERATOR_FLOW,
+    commandCenter: ADMIN_UI_COMMAND_CENTER,
+    setupLockedFeedback: ADMIN_UI_SETUP_LOCKED_FEEDBACK
+  })
   return `<!doctype html>
 <html lang="en" data-admin-ui="codeflare-inference-mesh">
 <head>
@@ -47,93 +71,67 @@ export function adminUiHtml(workerOrigin: string): string {
         <span class="brand-mark" aria-hidden="true"></span>
         <span><strong>codeflare</strong><small>Inference Mesh admin</small></span>
       </a>
-      <nav class="nav" aria-label="Admin sections">
-        <a href="#setup">Setup</a>
-        <a href="#setup-token">Enroll</a>
-        <a href="#gateway">Route</a>
-        <a href="#status">Operate</a>
-      </nav>
+      <div class="origin-pill" aria-label="Router health">
+        <span class="live-badge"><span class="status-dot" aria-hidden="true"></span>LIVE</span>
+        <code id="origin-label"></code>
+      </div>
     </header>
 
-    <main class="main">
-      <section class="hero" aria-labelledby="admin-title">
+    <main class="console" data-layout="command-center" data-density="operator" data-command-center="true">
+      <section class="overview" aria-labelledby="admin-title">
         <div>
-          <p class="hero-kicker">THE CODEFLARE <span>INFERENCE MESH</span></p>
-          <h1 id="admin-title">Operate the <span class="flare">private inference router.</span></h1>
-          <p class="lede">Start with setup, verify admin access, enroll nodes, then keep Gateway, profiles, and audit state in one governed run.</p>
+          <h1 id="admin-title">Operate inference mesh</h1>
+          <p>Set up credentials, enroll nodes, route traffic, and inspect state from one control surface.</p>
         </div>
-        <aside class="health-panel" aria-label="Router health">
-          <span class="live-badge"><span class="status-dot" aria-hidden="true"></span>LIVE</span>
-          <span>Worker shell loaded</span>
-          <code id="origin-label"></code>
+        <div class="status-strip" aria-label="Admin status summary" data-status-strip="${ADMIN_UI_COMMAND_CENTER.statusStrip.join(' ')}">
+          ${statusItem('Setup', 'locked', 'setup-status')}
+          ${statusItem('Auth', 'required', 'auth-status')}
+          ${statusItem('Nodes', '—', 'node-status')}
+          ${statusItem('Profiles', '—', 'profile-status')}
+          ${statusItem('Audit', '—', 'audit-status')}
+        </div>
+      </section>
+
+      <div class="command-grid">
+        <aside class="workflow-rail" aria-label="Operator workflow" data-rail-order="${ADMIN_UI_COMMAND_CENTER.railOrder.join(' ')}">
+          ${railItem('setup', 'Setup', 'Locked')}
+          ${railItem('auth', 'Auth', 'Required')}
+          ${railItem('enroll', 'Enroll', 'Setup token')}
+          ${railItem('route', 'Route', 'Gateway + domain')}
+          ${railItem('operate', 'Operate', 'Status + controls')}
         </aside>
-      </section>
 
-      <section class="workspace" aria-label="Admin configuration workspace" data-layout="operator-sequence" data-density="wide" data-panel-order="${ADMIN_UI_OPERATOR_FLOW.panelOrder.join(' ')}">
-        <div class="panel command-panel" id="setup" data-form="setup" data-state="idle" data-step="1">
-          ${panelHeader('First-run setup', 'Only run this before setup has been completed. If this Worker is already locked, paste the existing admin token in the next section.', 'first-run-setup')}
-          <button class="primary" type="button" data-action="first-run-setup">Create first credentials</button>
-          <div class="token-grid result surface" id="setup-output" data-output="setup-tokens" data-empty="Generated credentials will appear here once." aria-live="polite"></div>
-        </div>
+        <section class="work-area" aria-label="Admin work area" data-layout="command-center-work-area" data-panel-order="${ADMIN_UI_OPERATOR_FLOW.panelOrder.join(' ')}">
+          <section class="work-section" id="setup" data-flow-stage="setup">
+            ${sectionHeader('Setup')}
+            ${actionRow({ id: 'first-run-setup', actionId: 'first-run-setup', title: 'First-run setup', description: 'Only works before setup is locked. Once locked, use the existing admin token.', controls: '<button class="primary" type="button" data-action="first-run-setup">Create first credentials</button>', outputId: 'setup-output', outputKind: 'setup-tokens', empty: 'Generated credentials appear here once.' })}
+          </section>
 
-        <div class="panel" id="login" data-form="login" data-state="idle" data-step="2">
-          ${panelHeader('Admin token', 'Paste the admin token generated during setup. It stays in browser storage, not D1 plaintext.', 'admin-login')}
-          <label>Admin token<input name="adminToken" id="admin-token" autocomplete="off" type="password"></label>
-          <label class="check"><input name="rememberToken" id="remember-token" type="checkbox"> Remember on this device</label>
-          <div class="button-row">
-            <button type="button" data-action="admin-login">Verify token</button>
-            <button class="secondary" type="button" data-action="forget-token">Forget token</button>
-          </div>
-        </div>
+          <section class="work-section" id="login" data-flow-stage="auth">
+            ${sectionHeader('Auth')}
+            ${actionRow({ id: 'admin-login', actionId: 'admin-login', title: 'Admin token', description: 'Paste the token generated during setup. It stays in browser storage, not D1 plaintext.', controls: '<div class="control-line"><input class="control-input" name="adminToken" id="admin-token" autocomplete="off" type="password" aria-label="Admin token"><button type="button" data-action="admin-login">Verify token</button><button class="secondary" type="button" data-action="forget-token">Forget</button></div><label class="check"><input name="rememberToken" id="remember-token" type="checkbox"> Remember on this device</label>', outputId: 'login-output', outputKind: 'login-feedback', empty: 'Token verification feedback appears here.' })}
+          </section>
 
-        <div class="panel" id="setup-token" data-form="setup-token" data-state="idle" data-step="3">
-          ${panelHeader('Setup token', 'Generate a one-time node enrollment token, then use an installer command before it expires.', 'setup-token-create')}
-          <button type="button" data-action="setup-token-create">Create setup token</button>
-          <div class="token-grid result surface" id="setup-token-output" data-output="setup-token" data-empty="A short-lived setup token will appear here." aria-live="polite"></div>
-        </div>
+          <section class="work-section" id="setup-token" data-flow-stage="enroll">
+            ${sectionHeader('Enroll')}
+            ${actionRow({ id: 'setup-token-create', actionId: 'setup-token-create', title: 'Setup token', description: 'Create a short-lived node enrollment token.', controls: '<button type="button" data-action="setup-token-create">Create setup token</button>', outputId: 'setup-token-output', outputKind: 'setup-token', empty: 'A short-lived setup token appears here.' })}
+            ${actionRow({ id: 'installer-generate', actionId: 'installer-linux', title: 'Installer command', description: 'Generate a release-backed install command for the node platform.', controls: '<div class="control-line compact"><select name="platform" id="installer-platform" aria-label="Installer platform"><option value="linux">Linux</option><option value="macos">macOS</option><option value="windows">Windows</option></select><button type="button" data-action="installer-generate">Generate installer</button></div>', outputId: 'installer-output', outputKind: 'installer-command', empty: 'Installer command output appears here.', tag: 'pre' })}
+          </section>
 
-        <div class="panel" id="installer" data-form="installer" data-state="idle" data-step="4">
-          ${panelHeader('Installers', 'Generate Linux, macOS, or Windows install commands backed by release artifacts.', 'installer-linux')}
-          <label>Platform<select name="platform" id="installer-platform"><option value="linux">Linux</option><option value="macos">macOS</option><option value="windows">Windows</option></select></label>
-          <button type="button" data-action="installer-generate">Generate installer command</button>
-          <pre class="result command" id="installer-output" data-output="installer-command" data-empty="Installer command output will appear here." tabindex="0"></pre>
-        </div>
+          <section class="work-section" id="gateway" data-flow-stage="route">
+            ${sectionHeader('Route')}
+            ${actionRow({ id: 'gateway-sync', actionId: 'gateway-sync', title: 'AI Gateway', description: 'Sync custom provider, dynamic route, version, and deployment metadata.', controls: '<button type="button" data-action="gateway-sync">Sync Gateway route</button>', outputId: 'gateway-output', outputKind: 'gateway-sync', empty: 'Gateway sync response appears here.', tag: 'pre' })}
+            ${actionRow({ id: 'custom-domain-validate', actionId: 'custom-domain-validate', title: 'Custom domain', description: 'Validate a hostname before switching Gateway traffic to a custom origin.', controls: '<div class="control-stack"><input class="control-input" name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url" aria-label="Hostname"><input class="control-input" name="zoneId" id="custom-domain-zone" placeholder="Zone ID" aria-label="Zone ID"><button type="button" data-action="custom-domain-validate">Validate hostname</button></div>', outputId: 'domain-output', outputKind: 'custom-domain', empty: 'Hostname validation response appears here.', tag: 'pre' })}
+          </section>
 
-        <div class="panel" id="gateway" data-form="gateway" data-state="idle" data-step="5">
-          ${panelHeader('AI Gateway', 'Sync the custom provider, dynamic route, version, and deployment metadata when runtime Cloudflare credentials are configured.', 'gateway-sync')}
-          <button type="button" data-action="gateway-sync">Sync Gateway route</button>
-          <pre class="result" id="gateway-output" data-output="gateway-sync" data-empty="Gateway sync response will appear here. Configuration errors stay visible." tabindex="0"></pre>
-        </div>
-
-        <div class="panel" id="domain" data-form="custom-domain" data-state="idle" data-step="6">
-          ${panelHeader('Custom domain', 'Validate a hostname before switching Gateway traffic to a custom origin.', 'custom-domain-validate')}
-          <label>Hostname<input name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url"></label>
-          <label>Zone ID<input name="zoneId" id="custom-domain-zone" placeholder="0123456789abcdef0123456789abcdef"></label>
-          <button type="button" data-action="custom-domain-validate">Validate hostname</button>
-          <pre class="result" id="domain-output" data-output="custom-domain" data-empty="Hostname validation response will appear here." tabindex="0"></pre>
-        </div>
-
-        <div class="panel wide" id="status" data-form="status" data-state="idle" data-step="7">
-          ${panelHeader('Status', 'Redacted operational state from /admin/status. Plaintext credentials are never read back.', 'status-refresh')}
-          <button type="button" data-action="status-refresh">Refresh status</button>
-          <div class="status-grid result surface" id="status-output" data-output="status" data-empty="Refresh status to load redacted nodes, profiles, and audit events." aria-live="polite"></div>
-        </div>
-
-        <div class="panel" id="node" data-form="node-revoke" data-state="idle" data-step="8">
-          ${panelHeader('Node controls', 'Revoke a node from scheduling when it should no longer receive traffic.', 'node-revoke')}
-          <label>Node ID<input name="nodeId" id="node-id" autocomplete="off"></label>
-          <button class="danger" type="button" data-action="node-revoke">Revoke node</button>
-          <pre class="result" id="node-output" data-output="node-revoke" data-empty="Revocation result will appear here." tabindex="0"></pre>
-        </div>
-
-        <div class="panel" id="profile" data-form="profile-rollout" data-state="idle" data-step="9">
-          ${panelHeader('Profile rollout', 'Set rollout percentage for an existing model profile.', 'profile-rollout')}
-          <label>Profile ID<input name="profileId" id="profile-id" autocomplete="off" placeholder="gemma4-26b-a4b-256k-3090"></label>
-          <label>Rollout percent<input name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100"></label>
-          <button type="button" data-action="profile-rollout">Update rollout</button>
-          <pre class="result" id="profile-output" data-output="profile-rollout" data-empty="Profile rollout result will appear here." tabindex="0"></pre>
-        </div>
-      </section>
+          <section class="work-section" id="status" data-flow-stage="operate">
+            ${sectionHeader('Operate')}
+            ${actionRow({ id: 'status-refresh', actionId: 'status-refresh', title: 'Status', description: 'Load redacted nodes, profiles, audit events, and freshness metadata.', controls: '<button type="button" data-action="status-refresh">Refresh status</button>', outputId: 'status-output', outputKind: 'status', empty: 'Refresh status to load redacted state.', surfaceClass: 'status-grid' })}
+            ${actionRow({ id: 'node-revoke', actionId: 'node-revoke', title: 'Node controls', description: 'Revoke a node when it should no longer receive traffic.', controls: '<div class="control-line"><input class="control-input" name="nodeId" id="node-id" autocomplete="off" aria-label="Node ID" placeholder="node id"><button class="danger" type="button" data-action="node-revoke">Revoke node</button></div>', outputId: 'node-output', outputKind: 'node-revoke', empty: 'Revocation result appears here.', tag: 'pre' })}
+            ${actionRow({ id: 'profile-rollout', actionId: 'profile-rollout', title: 'Profile rollout', description: 'Set rollout percentage for an existing model profile.', controls: '<div class="control-stack"><input class="control-input" name="profileId" id="profile-id" autocomplete="off" placeholder="gemma4-26b-a4b-256k-3090" aria-label="Profile ID"><div class="control-line compact"><input class="control-input short" name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100" aria-label="Rollout percent"><button type="button" data-action="profile-rollout">Update rollout</button></div></div>', outputId: 'profile-output', outputKind: 'profile-rollout', empty: 'Profile rollout result appears here.', tag: 'pre' })}
+          </section>
+        </section>
+      </div>
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -144,133 +142,151 @@ export function adminUiHtml(workerOrigin: string): string {
 </html>`
 }
 
-function panelHeader(title: string, description: string, actionId: string): string {
-  const action = ADMIN_UI_ACTIONS.find((item) => item.id === actionId)
+interface ActionRowOptions {
+  readonly id: string
+  readonly actionId: string
+  readonly title: string
+  readonly description: string
+  readonly controls: string
+  readonly outputId: string
+  readonly outputKind: string
+  readonly empty: string
+  readonly tag?: 'div' | 'pre'
+  readonly surfaceClass?: string
+}
+
+function sectionHeader(title: string): string {
+  return `<h2>${escapeHtml(title)}</h2>`
+}
+
+function actionRow(options: ActionRowOptions): string {
+  const action = ADMIN_UI_ACTIONS.find((item) => item.id === options.actionId)
+  const outputTag = options.tag ?? 'div'
+  const surfaceClass = options.surfaceClass ? `result ${options.surfaceClass}` : 'result'
   const authLabel = action?.id === 'first-run-setup' ? 'first run only' : action?.auth
-  const meta = action ? `<span>${action.method}</span><code>${escapeHtml(action.path)}</code><span>${escapeHtml(authLabel ?? '')}</span>` : ''
-  return `<div class="panel-head"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div><div class="panel-state" aria-hidden="true"></div></div><div class="meta-row" aria-label="Route contract">${meta}</div>`
+  const meta = action ? `<div class="row-meta"><span>${action.method}</span><code>${escapeHtml(action.path)}</code><span>${escapeHtml(authLabel ?? '')}</span></div>` : ''
+  return `<div class="action-row" id="row-${escapeHtml(options.id)}" data-action-scope="${escapeHtml(options.id)}" data-row="${escapeHtml(options.id)}" data-state="idle" data-action-row="${ADMIN_UI_ACTION_ROW_ANCHOR.slots.join(' ')}">
+    <div class="row-copy"><h3>${escapeHtml(options.title)}</h3><p>${escapeHtml(options.description)}</p>${meta}<span class="row-state" aria-hidden="true"></span></div>
+    <div class="row-controls">${options.controls}<${outputTag} class="${surfaceClass}" id="${escapeHtml(options.outputId)}" data-output="${escapeHtml(options.outputKind)}" data-empty="${escapeHtml(options.empty)}"${outputTag === 'pre' ? ' tabindex="0"' : ''} aria-live="polite"></${outputTag}></div>
+  </div>`
+}
+
+function railItem(id: string, label: string, state: string): string {
+  return `<a class="rail-item" href="#${escapeHtml(id)}" data-rail-item="${escapeHtml(id)}"><span>${escapeHtml(label)}</span><small>${escapeHtml(state)}</small></a>`
+}
+
+function statusItem(label: string, value: string, id: string): string {
+  return `<div class="status-item"><span>${escapeHtml(label)}</span><strong id="${escapeHtml(id)}">${escapeHtml(value)}</strong></div>`
 }
 
 function adminUiCss(): string {
   return `:root{
   color-scheme:dark;
-  --font-sans:'Inter Variable',Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --font-mono:'JetBrains Mono Variable','JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
-  --bg-base:#0a0a0c;
-  --bg-base-rgb:10 10 12;
-  --bg-surface:#101015;
-  --bg-surface-rgb:16 16 21;
-  --bg-elevated:#16161d;
-  --bg-terminal:#0c0c11;
-  --border-subtle:#1c1c22;
-  --border-default:#2a2a33;
-  --border-strong:#3a3a45;
-  --text-primary:#f6f6f7;
-  --text-secondary:#adadb6;
-  --text-muted:#8a8a94;
-  --text-dimmed:#565660;
-  --accent:#ff5c3c;
-  --accent-rgb:255 92 60;
-  --accent-hover:#ff734f;
-  --accent-soft:rgb(var(--accent-rgb)/.12);
-  --accent-line:rgb(var(--accent-rgb)/.32);
-  --flare-gradient:linear-gradient(96deg,#ff8a3d 0%,#ff5c3c 52%,#ff3f7c 100%);
-  --term-green:#4ade80;
-  --term-cyan:#67e8f9;
-  --term-warn:#fbbf24;
-  --danger:#ff5c3c;
-  --radius:14px;
-  --radius-sm:10px;
-  --nav-height:4rem;
-  --shadow:0 30px 60px -30px rgb(0 0 0/.72);
-  --focus:0 0 0 3px rgb(var(--accent-rgb)/.28);
+  --font-sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --bg:#09090b;
+  --surface:#101014;
+  --surface-2:#15151b;
+  --surface-3:#1b1b22;
+  --line:#292932;
+  --line-strong:#3a3a46;
+  --text:#f4f4f5;
+  --muted:#b0b0ba;
+  --dim:#747480;
+  --accent:#ff6a45;
+  --accent-soft:rgb(255 106 69/.12);
+  --accent-line:rgb(255 106 69/.36);
+  --success:#4ade80;
+  --warning:#f59e0b;
+  --danger:#ff6a45;
+  --radius:12px;
+  --radius-sm:9px;
+  --focus:0 0 0 3px rgb(255 106 69/.28);
 }
 *,*::before,*::after{box-sizing:border-box}
 *{margin:0}
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:calc(var(--nav-height) + 1rem)}
-body{min-height:100vh;background:var(--bg-base);isolation:isolate;color:var(--text-secondary);font:15px/1.62 var(--font-sans);font-synthesis:none;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;overflow-x:clip}
-body::before{content:'';position:fixed;z-index:-2;inset:0;background:radial-gradient(ellipse max(32rem,120vw) clamp(16rem,38svh,30rem) at 50% -4rem,rgb(var(--accent-rgb)/.14) 0%,rgb(var(--accent-rgb)/.07) 34%,transparent 72%)}
-body::after{content:'';position:fixed;z-index:-1;inset:0;background:linear-gradient(180deg,transparent 0%,var(--bg-base) 62%),radial-gradient(circle at 12% 18%,rgb(255 63 124/.08),transparent 26%);pointer-events:none}
-::selection{background:rgb(var(--accent-rgb)/.28);color:var(--text-primary)}
-a{color:var(--accent);text-decoration:none;transition:color .18s ease}
-a:hover{color:var(--accent-hover)}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:5rem}
+body{min-height:100vh;background:var(--bg);color:var(--muted);font:14px/1.5 var(--font-sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:inherit;text-decoration:none}
 button,input,select{font:inherit}
-button{display:inline-flex;align-items:center;justify-content:center;gap:.38rem;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--bg-elevated);color:var(--text-primary);font-size:.92rem;font-weight:650;line-height:1;padding:.72rem 1rem;white-space:nowrap;cursor:pointer;box-shadow:0 1px 0 rgb(255 255 255/.05) inset;transition:transform .12s ease,background .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease}
-button:hover{background:#1d1d25;border-color:var(--text-muted);color:var(--text-primary)}
+button{display:inline-flex;align-items:center;justify-content:center;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text);font-weight:650;padding:.62rem .9rem;white-space:nowrap;cursor:pointer;transition:background .16s ease,border-color .16s ease,transform .1s ease,opacity .16s ease}
+button:hover{background:var(--surface-3);border-color:var(--dim)}
 button:active{transform:translateY(1px)}
-button:disabled{cursor:not-allowed;opacity:.62}
+button:disabled{cursor:not-allowed;opacity:.6}
+button.primary{background:var(--accent);border-color:transparent;color:#170b06}
+button.primary:hover{background:#ff7b58;color:#170b06}
+button.secondary{background:transparent;border-color:var(--line);color:var(--muted)}
+button.danger{background:rgb(255 106 69/.1);border-color:var(--accent-line);color:#ff9a7f}
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,pre:focus-visible{outline:none;box-shadow:var(--focus)}
-button.primary{background:var(--accent);border-color:transparent;color:#160a06}
-button.primary:hover{background:var(--accent-hover);color:#160a06}
-button.secondary{background:transparent;border-color:var(--border-default);color:var(--text-secondary)}
-button.danger{background:rgb(var(--accent-rgb)/.12);border-color:var(--accent-line);color:var(--accent-hover)}
-button.danger:hover{border-color:var(--accent);color:var(--text-primary)}
+input,select{min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;border:1px solid var(--line);border-radius:var(--radius-sm);background:#0d0d11;color:var(--text);padding:.6rem .75rem}
+input::placeholder{color:#8b8b96;opacity:1}
 code,pre{font-family:var(--font-mono)}
 .shell{min-height:100vh}
-.topbar{position:sticky;top:0;z-index:50;min-height:var(--nav-height);display:flex;align-items:center;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--border-subtle);background:rgb(var(--bg-base-rgb)/.72);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%);padding:.75rem clamp(1.25rem,5vw,2.25rem)}
-.brand{display:inline-flex;align-items:center;gap:.55rem;color:var(--text-primary);font-size:1.02rem;font-weight:700;letter-spacing:-.01em;text-decoration:none}
-.brand:hover{color:var(--text-primary)}
-.brand span:last-child{display:grid;gap:.08rem}
-.brand small{color:var(--text-muted);font-size:.72rem;font-weight:500;letter-spacing:0}
-.brand-mark{width:.7rem;height:.7rem;border-radius:3px;background:var(--flare-gradient);box-shadow:0 0 14px rgb(var(--accent-rgb)/.55)}
-.nav{display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap;justify-content:flex-end}
-.nav a{color:var(--text-muted);font-size:.9rem;font-weight:500;text-decoration:none}
-.nav a:hover{color:var(--text-primary)}
-.main{width:100%;max-width:72rem;margin:0 auto;padding:clamp(1.25rem,5vw,2.25rem)}
-.hero{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,24rem);gap:clamp(2rem,5vw,4rem);align-items:end;padding:clamp(3.5rem,4rem + 4vw,6rem) 0 clamp(2.5rem,5vw,4rem)}
-.hero-kicker{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:.34em;position:relative;z-index:2;margin:0 0 1rem;color:var(--accent);font-size:.75rem;font-weight:600;letter-spacing:.16em;line-height:1;text-transform:uppercase}
-.hero-kicker span{color:var(--text-primary)}
-.hero h1{max-width:15ch;color:var(--text-primary);font-size:clamp(2.5rem,1.6rem + 4.4vw,4.5rem);font-weight:680;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
-.hero h1 .flare{background:var(--flare-gradient);-webkit-background-clip:text;background-clip:text;color:transparent}
-.lede{max-width:48ch;margin-top:1.4rem;color:var(--text-primary);font-size:clamp(1.05rem,.98rem + .4vw,1.2rem);line-height:1.5;text-wrap:pretty}
-.health-panel,.panel{border:1px solid var(--border-default);border-radius:var(--radius);background:rgb(var(--bg-surface-rgb)/.92);box-shadow:var(--shadow)}
-.health-panel{display:grid;gap:.5rem;align-self:end;overflow:hidden;padding:1rem;font-family:var(--font-mono);font-size:.8125rem}
-.health-panel::before{content:'';display:block;height:.7rem;width:.7rem;border-radius:50%;background:var(--border-strong);box-shadow:1.1rem 0 0 var(--border-strong),2.2rem 0 0 var(--accent);margin-bottom:.2rem}
-.health-panel span:not(.status-dot){color:var(--text-primary)}
-.live-badge{align-items:center;display:inline-flex;gap:.38rem;justify-self:start;border:1px solid rgb(74 222 128/.34);border-radius:999px;background:rgb(74 222 128/.1);color:var(--term-green);font-size:.68rem;font-weight:700;letter-spacing:.08em;line-height:1;padding:.34rem .55rem}
-.status-dot{display:inline-block;width:.48rem;height:.48rem;border-radius:50%;background:var(--term-green);box-shadow:0 0 0 .18rem rgb(74 222 128/.12),0 0 16px rgb(74 222 128/.42)}
-#origin-label{display:block;max-width:100%;overflow:visible;color:var(--text-muted);white-space:normal;overflow-wrap:anywhere;word-break:break-word}
-.workspace{counter-reset:admin-step;display:flex;flex-direction:column;gap:.85rem;max-width:66rem;margin:0 auto}
-.panel{counter-increment:admin-step;display:grid;grid-template-columns:minmax(14rem,18rem) minmax(0,1fr);gap:.8rem 1.25rem;min-width:0;overflow:hidden;padding:1rem;width:100%;align-items:start}
-.panel.wide,.command-panel{width:100%}
-.panel[data-state=loading]{border-color:var(--term-cyan)}
-.panel[data-state=ready]{border-color:rgb(74 222 128/.58)}
-.panel[data-state=error]{border-color:var(--accent-line)}
-.panel-head{display:grid;grid-column:1;gap:.5rem;padding:0}
-.panel-head::before{content:counter(admin-step,decimal-leading-zero);display:inline-flex;align-items:center;justify-content:center;width:2.1rem;height:1.45rem;border:1px solid var(--border-default);border-radius:999px;color:var(--accent);font-family:var(--font-mono);font-size:.68rem;font-weight:600;line-height:1}
-.panel h2{color:var(--text-primary);font-size:1.02rem;font-weight:650;line-height:1.2;letter-spacing:-.01em;margin:0 0 .25rem}
-.panel p{max-width:28ch;color:var(--text-secondary);margin:0;text-wrap:pretty}
-.panel-state{justify-self:start;border:1px solid var(--border-default);border-radius:999px;color:var(--text-muted);font-family:var(--font-mono);font-size:.63rem;font-weight:600;line-height:1;padding:.3rem .5rem;white-space:nowrap;text-transform:uppercase}
-.panel[data-state=idle] .panel-state::before{content:'READY'}
-.panel[data-state=loading] .panel-state::before{content:'RUNNING'}
-.panel[data-state=ready] .panel-state::before{content:'PASSED';color:var(--term-green)}
-.panel[data-state=error] .panel-state::before{content:'BLOCKED';color:var(--accent-hover)}
-.meta-row{align-items:center;display:flex;flex-wrap:wrap;gap:.35rem;grid-column:1;padding:0;color:var(--text-muted);font-family:var(--font-mono);font-size:.7rem}
-.meta-row span,.meta-row code{border:1px solid var(--border-default);border-radius:999px;background:rgb(255 255 255/.018);color:var(--text-muted);font-size:.72rem;font-weight:500;padding:.24rem .5rem}
-.meta-row span:first-child{color:var(--accent)}
-.meta-row code{max-width:100%;overflow:auto}
-.panel > button,.panel > label,.panel > .button-row,.panel > .result{grid-column:2;margin:0}
-.panel > button{justify-self:start}
-.panel > label{max-width:34rem;width:100%}
-label{display:grid;gap:.32rem;color:var(--text-muted);font-size:.84rem;font-weight:650;margin:0}
-input,select{min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;width:100%;max-width:34rem;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--bg-terminal);color:var(--text-primary);padding:.6rem .75rem}
-input::placeholder{color:var(--text-dimmed);opacity:1}
-.check{align-items:center;display:flex;font-weight:600}
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--line);background:rgb(9 9 11/.9);backdrop-filter:blur(12px);padding:.85rem clamp(1rem,3vw,1.5rem)}
+.brand{display:inline-flex;align-items:center;gap:.65rem;color:var(--text)}
+.brand-mark{width:.7rem;height:.7rem;border-radius:3px;background:var(--accent);box-shadow:0 0 16px rgb(255 106 69/.42)}
+.brand span:last-child{display:grid;gap:.05rem}
+.brand strong{font-size:.98rem;line-height:1}
+.brand small{color:var(--dim);font-size:.76rem}
+.origin-pill{display:flex;align-items:center;justify-content:flex-end;gap:.65rem;min-width:0;max-width:58vw}
+.live-badge{display:inline-flex;align-items:center;gap:.35rem;border:1px solid rgb(74 222 128/.34);border-radius:999px;background:rgb(74 222 128/.1);color:var(--success);font-size:.68rem;font-weight:800;letter-spacing:.06em;padding:.28rem .48rem}
+.status-dot{display:inline-block;width:.45rem;height:.45rem;border-radius:50%;background:var(--success);box-shadow:0 0 0 .16rem rgb(74 222 128/.12),0 0 12px rgb(74 222 128/.4)}
+#origin-label{display:block;min-width:0;max-width:100%;overflow:visible;color:var(--muted);font-size:.78rem;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+.console{width:min(1180px,100%);margin:0 auto;padding:1.25rem clamp(1rem,3vw,1.5rem) 3rem}
+.overview{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:1rem}
+.overview h1{color:var(--text);font-size:1.55rem;font-weight:720;letter-spacing:-.02em;line-height:1.15;text-wrap:balance}
+.overview p{max-width:64ch;margin-top:.35rem;color:var(--muted)}
+.status-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-sm)}
+.status-item{display:grid;gap:.2rem;border-right:1px solid var(--line);padding:.65rem .75rem;min-width:0}
+.status-item:last-child{border-right:0}
+.status-item span{color:var(--dim);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+.status-item strong{color:var(--text);font-size:.9rem;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.command-grid{display:grid;grid-template-columns:13.5rem minmax(0,1fr);gap:1rem;margin-top:1rem;align-items:start}
+.workflow-rail{position:sticky;top:5rem;display:grid;gap:.35rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:.5rem}
+.rail-item{display:grid;gap:.1rem;border-radius:var(--radius-sm);padding:.7rem .75rem;color:var(--muted)}
+.rail-item:hover{background:var(--surface-2);color:var(--text)}
+.rail-item span{color:var(--text);font-weight:700}
+.rail-item small{color:var(--dim);font-size:.76rem}
+.work-area{display:grid;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+.work-section{display:grid;gap:0;border-bottom:1px solid var(--line)}
+.work-section:last-child{border-bottom:0}
+.work-section>h2{border-bottom:1px solid var(--line);background:#0d0d11;color:var(--text);font-size:.78rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:.7rem .9rem}
+.action-row{display:grid;grid-template-columns:minmax(12rem,16rem) minmax(0,1fr);gap:1rem;border-bottom:1px solid var(--line);padding:.95rem}
+.action-row:last-child{border-bottom:0}
+.action-row[data-state=loading]{background:rgb(103 232 249/.04)}
+.action-row[data-state=ready]{background:rgb(74 222 128/.04)}
+.action-row[data-state=error]{background:rgb(255 106 69/.055)}
+.row-copy{display:grid;align-content:start;gap:.45rem;min-width:0}
+.row-copy h3{color:var(--text);font-size:1rem;font-weight:700;letter-spacing:-.01em;line-height:1.2}
+.row-copy p{max-width:32ch;color:var(--muted)}
+.row-meta{display:flex;flex-wrap:wrap;gap:.35rem;color:var(--dim);font-family:var(--font-mono);font-size:.72rem}
+.row-meta span,.row-meta code{border:1px solid var(--line);border-radius:999px;background:#0d0d11;padding:.2rem .45rem;max-width:100%;overflow:auto}
+.row-meta span:first-child{color:var(--accent)}
+.row-state{justify-self:start;border:1px solid var(--line);border-radius:999px;color:var(--dim);font-family:var(--font-mono);font-size:.66rem;font-weight:800;letter-spacing:.04em;padding:.24rem .48rem;text-transform:uppercase}
+.action-row[data-state=idle] .row-state::before{content:'ready'}
+.action-row[data-state=loading] .row-state::before{content:'running';color:#67e8f9}
+.action-row[data-state=ready] .row-state::before{content:'done';color:var(--success)}
+.action-row[data-state=error] .row-state::before{content:'blocked';color:#ff9a7f}
+.row-controls{display:grid;gap:.6rem;min-width:0;align-content:start}
+.control-line,.control-stack{display:flex;align-items:center;gap:.5rem;min-width:0}
+.control-stack{align-items:stretch;flex-wrap:wrap}
+.control-line.compact{justify-content:flex-start}
+.control-input{flex:1 1 18rem;max-width:30rem;min-width:10rem}
+.control-input.short{flex:0 0 8rem;min-width:8rem}
+select{flex:0 0 10rem}
+.check{display:inline-flex;align-items:center;gap:.45rem;color:var(--muted);font-size:.85rem;font-weight:600}
 .check input{min-height:auto;width:auto;accent-color:var(--accent)}
-.button-row{display:flex;gap:.6rem;flex-wrap:wrap}
-.token-grid,.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;margin-top:0}
-.token,.metric{min-width:0;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:rgb(255 255 255/.018);padding:.8rem}
-.token strong,.metric strong{display:block;color:var(--text-muted);font-family:var(--font-mono);font-size:.65rem;font-weight:500;letter-spacing:.06em;margin-bottom:.35rem;text-transform:uppercase}
-.token code,.metric code{display:block;overflow:auto;color:var(--text-primary);white-space:nowrap}
-.token button{margin-top:.65rem;min-height:2.15rem;padding:.45rem .75rem}
-.result{min-height:3.6rem;overflow:auto;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--bg-terminal);color:var(--text-secondary);font-family:var(--font-mono);font-size:.8125rem;line-height:1.75;padding:1rem;white-space:pre-wrap}
-.result:empty::before{content:attr(data-empty);color:var(--text-dimmed)}
-.result.is-error{border-color:var(--accent-line);background:rgb(var(--accent-rgb)/.08);color:var(--accent-hover)}
-.command:not(:empty){color:var(--text-primary)}
-.toast{position:fixed;right:1rem;bottom:1rem;z-index:60;max-width:min(28rem,calc(100vw - 2rem));border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--bg-elevated);color:var(--text-primary);box-shadow:var(--shadow);opacity:0;pointer-events:none;padding:.85rem 1rem;transform:translateY(.5rem);transition:opacity .18s ease,transform .18s ease}
+.result{min-height:2.75rem;max-height:16rem;overflow:auto;border:1px solid var(--line);border-radius:var(--radius-sm);background:#0d0d11;color:var(--muted);font-family:var(--font-mono);font-size:.8rem;line-height:1.6;padding:.7rem;white-space:pre-wrap}
+.result:empty::before{content:attr(data-empty);color:var(--dim)}
+.result.is-error{border-color:var(--accent-line);background:rgb(255 106 69/.08);color:#ff9a7f}
+.token-grid,.status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.5rem;font-family:var(--font-sans)}
+.token,.metric{min-width:0;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);padding:.65rem}
+.token strong,.metric strong{display:block;color:var(--dim);font-size:.68rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:.25rem}
+.token code,.metric code{display:block;overflow:auto;color:var(--text);font-family:var(--font-mono);white-space:nowrap}
+.token button{margin-top:.55rem;min-height:2.1rem;padding:.42rem .65rem}
+.toast{position:fixed;right:1rem;bottom:1rem;z-index:30;max-width:min(28rem,calc(100vw - 2rem));border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--surface-2);color:var(--text);box-shadow:0 20px 60px rgb(0 0 0/.45);opacity:0;pointer-events:none;padding:.8rem .95rem;transform:translateY(.5rem);transition:opacity .16s ease,transform .16s ease}
 .toast.show{opacity:1;transform:translateY(0)}
-@media (min-width:900px){.panel > .button-row{max-width:34rem}.result{min-height:4.25rem}}
-@media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){.topbar{position:static;align-items:flex-start;flex-direction:column}.nav{justify-content:flex-start;gap:.85rem;overflow-x:auto;width:100%;padding-bottom:.2rem}.hero{display:flex;flex-direction:column;padding-top:2.5rem}.hero h1{font-size:clamp(2.2rem,12vw,3.2rem);max-width:12ch}.health-panel{width:100%}.panel{grid-template-columns:1fr;padding:.9rem}.panel-head,.meta-row,.panel > button,.panel > label,.panel > .button-row,.panel > .result{grid-column:1}.button-row,button{width:100%}.panel > button{justify-self:stretch}.panel-state{justify-self:start}}
+@media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){.topbar{position:static;align-items:flex-start;flex-direction:column}.origin-pill{align-items:flex-start;flex-direction:column;max-width:100%}.console{padding-top:1rem}.status-strip{display:flex;overflow-x:auto}.status-item{min-width:7.5rem}.command-grid{grid-template-columns:1fr}.workflow-rail{position:static;display:flex;overflow-x:auto}.rail-item{min-width:8rem}.action-row{grid-template-columns:1fr}.row-copy p{max-width:65ch}.control-line,.control-stack{align-items:stretch;flex-direction:column}.control-input,.control-input.short,select,button{width:100%;max-width:none;min-width:0;flex-basis:auto}.result{max-height:none}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}`
 }
 
@@ -295,13 +311,13 @@ function adminUiScript(): string {
     if (!response.ok) throw Object.assign(new Error(typeof body === 'string' ? body : body.error || 'request failed'), { body, status: response.status });
     return body;
   }
-  const panelFor = (target) => target.closest('.panel');
-  const setPanelState = (panel, state) => { if (!panel) return; panel.dataset.state = state; panel.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false'); };
-  const primaryOutput = (panel) => panel?.querySelector('[data-output]');
+  const scopeFor = (target) => target.closest('[data-action-scope]');
+  const setScopeState = (scope, state) => { if (!scope) return; scope.dataset.state = state; scope.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false'); };
+  const primaryOutput = (scope) => scope?.querySelector('[data-output]');
   const setOutput = (id, value, isError = false) => { const el = byId(id); el.classList.toggle('is-error', isError); el.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); };
   const showJson = (id, value) => setOutput(id, value);
   const friendlyError = (action, error) => {
-    if (action === 'first-run-setup' && error.status === 401) return 'Setup is already complete for this Worker. Paste the existing admin token in the Admin token section, then use the authenticated controls below.';
+    if (action === 'first-run-setup' && error.status === config.setupLockedFeedback.status) return 'Setup is already complete for this Worker. Paste the existing admin token in the Admin token section, then use the authenticated controls below.';
     if (error.status === 401) return 'Admin token missing or invalid. Paste the admin token, verify it, then try this action again.';
     return error.body?.error || error.message || 'Request failed';
   };
@@ -314,10 +330,15 @@ function adminUiScript(): string {
   function renderStatus(value) {
     const nodes = Array.isArray(value.nodes) ? value.nodes : [];
     const profiles = Array.isArray(value.profiles) ? value.profiles : [];
+    const audit = Array.isArray(value.audit) ? value.audit : [];
+    byId('node-status').textContent = String(nodes.length);
+    byId('profile-status').textContent = String(profiles.length);
+    byId('audit-status').textContent = String(audit.length);
     byId('status-output').classList.remove('is-error');
     byId('status-output').innerHTML = [
       '<div class="metric"><strong>Nodes</strong><code>' + nodes.length + '</code></div>',
       '<div class="metric"><strong>Profiles</strong><code>' + profiles.length + '</code></div>',
+      '<div class="metric"><strong>Audit</strong><code>' + audit.length + '</code></div>',
       '<div class="metric"><strong>Generated</strong><code>' + (value.generatedAt || 'unknown') + '</code></div>',
       '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status).join('\\n')) + '</code></div>',
       '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '%').join('\\n')) + '</code></div>'
@@ -329,16 +350,16 @@ function adminUiScript(): string {
     const button = event.target.closest('[data-action]');
     const action = button?.dataset.action;
     if (!action) return;
-    const panel = panelFor(button);
+    const scope = scopeFor(button);
     try {
-      setPanelState(panel, 'loading'); button.disabled = true;
+      setScopeState(scope, 'loading'); button.disabled = true;
       if (action === 'first-run-setup') {
         const body = await request('/admin/setup', { method: 'POST' });
-        renderTokens('setup-output', body); setToken(body.adminToken || '', byId('remember-token').checked); toast('Setup complete');
+        renderTokens('setup-output', body); setToken(body.adminToken || '', byId('remember-token').checked); byId('setup-status').textContent = 'locked'; byId('auth-status').textContent = 'verified'; toast('Setup complete');
       } else if (action === 'admin-login') {
-        setToken(byId('admin-token').value.trim(), byId('remember-token').checked); await request('/admin/login', { method: 'POST', headers: headers(true) }); toast('Admin token verified');
+        setToken(byId('admin-token').value.trim(), byId('remember-token').checked); await request('/admin/login', { method: 'POST', headers: headers(true) }); byId('auth-status').textContent = 'verified'; setOutput('login-output', 'Admin token verified'); toast('Admin token verified');
       } else if (action === 'forget-token') {
-        setToken('', false); toast('Token removed');
+        setToken('', false); byId('auth-status').textContent = 'required'; setOutput('login-output', 'Token removed'); toast('Token removed');
       } else if (action === 'status-refresh') {
         renderStatus(await request('/admin/status', { headers: headers(true) }));
       } else if (action === 'setup-token-create') {
@@ -354,12 +375,16 @@ function adminUiScript(): string {
       } else if (action === 'profile-rollout') {
         showJson('profile-output', await request('/admin/profiles/rollout', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ profileId: byId('profile-id').value.trim(), rolloutPercent: Number(byId('rollout-percent').value) }) }));
       }
-      setPanelState(panel, 'ready');
+      setScopeState(scope, 'ready');
     } catch (error) {
       const message = friendlyError(action, error);
-      const output = primaryOutput(panel);
-      if (output) { output.classList.add('is-error'); output.textContent = message; }
-      setPanelState(panel, 'error');
+      const output = primaryOutput(scope);
+      if (output) {
+        output.classList.add('is-error');
+        if (action === 'first-run-setup' && error.status === config.setupLockedFeedback.status) output.dataset.feedback = config.setupLockedFeedback.variant;
+        output.textContent = message;
+      }
+      setScopeState(scope, 'error');
       toast(message);
     } finally {
       button.disabled = false;
@@ -381,5 +406,8 @@ function escapeHtml(value: string): string {
 }
 
 export const ADMIN_UI_ANCHORS = {
-  REQ_ADM_006: 'REQ-ADM-006'
+  REQ_ADM_006: 'REQ-ADM-006',
+  COMMAND_CENTER: 'ADMIN_UI_COMMAND_CENTER',
+  ACTION_ROW: 'ADMIN_UI_ACTION_ROW_ANCHOR',
+  SETUP_LOCKED_FEEDBACK: 'ADMIN_UI_SETUP_LOCKED_FEEDBACK'
 } as const
