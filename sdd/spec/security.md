@@ -127,7 +127,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Priority:** P1
 
-**Dependencies:** [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard-and-operations)
+**Dependencies:** [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard)
 
 **Verification:** Automated test
 

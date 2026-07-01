@@ -59,17 +59,36 @@ function jobBlocks(lines) {
 }
 
 function hasHardenedWorkflowRunJob(job) {
-  const normalized = job.lines.join(' ')
-  return /\bif\s*:/.test(normalized) &&
-    /github\.event\.workflow_run\.event\s*==\s*'push'/.test(normalized) &&
-    /github\.event\.workflow_run\.head_repository\.full_name\s*==\s*github\.repository/.test(normalized)
+  const jobIf = jobLevelField(job, 'if')
+  return /github\.event\.workflow_run\.event\s*==\s*'push'/.test(jobIf) &&
+    /github\.event\.workflow_run\.head_repository\.full_name\s*==\s*github\.repository/.test(jobIf)
+}
+
+function jobLevelField(job, name) {
+  for (let index = 0; index < job.lines.length; index += 1) {
+    const line = job.lines[index] ?? ''
+    const match = line.match(new RegExp(`^ {4}${name}\\s*:\\s*(.*)$`))
+    if (!match) continue
+    const value = [match[1] ?? '']
+    for (let next = index + 1; next < job.lines.length; next += 1) {
+      const child = job.lines[next] ?? ''
+      if (indentOf(child) <= 4) break
+      value.push(child.trim())
+    }
+    return value.join(' ')
+  }
+  return ''
 }
 
 function checkoutSteps(job) {
+  return stepBlocks(job).filter((stepLines) => stepLines.some((line) => /^\s*(?:-\s*)?uses\s*:\s*actions\/checkout@\S+\s*$/.test(line)))
+}
+
+function stepBlocks(job) {
   const steps = []
   for (let index = 0; index < job.lines.length; index += 1) {
     const line = job.lines[index] ?? ''
-    const match = line.match(/^(\s*)-\s+uses\s*:\s*(actions\/checkout@\S+)\s*$/)
+    const match = line.match(/^(\s*)-\s+/)
     if (!match) continue
     const stepIndent = match[1].length
     const stepLines = [line]

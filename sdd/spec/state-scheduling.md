@@ -56,9 +56,9 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 
 ---
 
-### REQ-SCH-003: Node eligibility and busy response
+### REQ-SCH-003: Node eligibility and scheduler miss responses
 
-**Intent:** The router must distinguish normal capacity exhaustion from server failure. When no eligible node exists, clients receive a retryable busy response instead of an internal error.
+**Intent:** The router must distinguish model-configuration misses and normal capacity exhaustion from server failure. Missing profiles return not-found, while unavailable eligible capacity returns a retryable busy response instead of an internal error.
 
 **Applies To:** Client
 
@@ -66,9 +66,9 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 
 1. A node is eligible only while its lease is unexpired and status is ready. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
 2. A node is ineligible when the requested profile is unsupported, unloaded, over capacity, under failure penalty, or has invalid Mesh connection data. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
-3. The scheduler returns a busy result when no eligible node is available. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
-4. The Worker translates busy results into a `429` response with a request ID and busy/no-node error code. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
-5. Busy responses include the scheduler reason so operators can distinguish no-profile, busy, and no-node states. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
+3. The scheduler returns `no-profile` when no profile is configured for the requested public alias. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
+4. The scheduler returns a busy or no-node result when eligible capacity is unavailable. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
+5. The Worker translates `no-profile` into `404` and busy/no-node results into `429`, always with a request ID and scheduler reason. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation)
 

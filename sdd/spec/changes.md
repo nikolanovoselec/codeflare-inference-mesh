@@ -9,8 +9,8 @@
 - Updated [REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle) and [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain) so setup tokens expire after 24 hours and stored custom domains continue driving Gateway sync.
 - Added [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui) so the Admin UI presents setup, enrollment, routing, and operations as a guided responsive workflow.
 - Updated [REQ-SEC-002](security.md#req-sec-002-secret-storage-and-rotation-readiness) so node revocation cannot be undone by later heartbeat or unregister calls.
-- Updated [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui), [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard-and-operations), and [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) so Admin UI HTML rejects framing, dashboard runtime controls report unavailable managed runtimes safely, and workflow safety validates each workflow job/step structurally.
-- Updated [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-busy-response) so busy responses identify busy/no-node outcomes with request IDs instead of promising Retry-After.
+- Updated [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui), [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard), and [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) so Admin UI HTML rejects framing, dashboard runtime controls report unavailable managed runtimes safely, and workflow safety validates each workflow job/step structurally.
+- Updated [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses) so busy responses identify busy/no-node outcomes with request IDs instead of promising Retry-After.
 
 ## 2026-06-30
 

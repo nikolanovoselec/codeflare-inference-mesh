@@ -20,7 +20,7 @@ Local builds, tests, lint, type-checks, and dev servers are not run in this cont
 
 3. **Durable state and scheduling**
    - Implement D1 repositories, schema migrations, Durable Object reservation serialization, session affinity, node eligibility, and busy responses.
-   - Backlinks: [`REQ-SCH-001`](sdd/spec/state-scheduling.md#req-sch-001-durable-router-state), [`REQ-SCH-002`](sdd/spec/state-scheduling.md#req-sch-002-node-reservations), [`REQ-SCH-003`](sdd/spec/state-scheduling.md#req-sch-003-node-eligibility-and-busy-response), [`REQ-SCH-004`](sdd/spec/state-scheduling.md#req-sch-004-session-affinity).
+   - Backlinks: [`REQ-SCH-001`](sdd/spec/state-scheduling.md#req-sch-001-durable-router-state), [`REQ-SCH-002`](sdd/spec/state-scheduling.md#req-sch-002-node-reservations), [`REQ-SCH-003`](sdd/spec/state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [`REQ-SCH-004`](sdd/spec/state-scheduling.md#req-sch-004-session-affinity).
 
 4. **Model aliases and runtime profiles**
    - Seed `mesh-default`, Qwen3.6, Gemma 4, and smoke-test profiles.

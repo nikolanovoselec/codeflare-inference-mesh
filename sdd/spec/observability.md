@@ -48,7 +48,7 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 **Priority:** P1
 
-**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-busy-response), [REQ-SCH-004](state-scheduling.md#req-sch-004-session-affinity)
+**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-SCH-004](state-scheduling.md#req-sch-004-session-affinity)
 
 **Verification:** Automated test
 
@@ -100,7 +100,7 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 **Priority:** P1
 
-**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-busy-response), [REQ-RTR-003](router-worker.md#req-rtr-003-streaming-pass-through)
+**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-RTR-003](router-worker.md#req-rtr-003-streaming-pass-through)
 
 **Verification:** Automated test
 
@@ -122,7 +122,7 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 **Priority:** P1
 
-**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-busy-response), [REQ-SEC-001](security.md#req-sec-001-credential-boundaries)
+**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-SEC-001](security.md#req-sec-001-credential-boundaries)
 
 **Verification:** Automated test
 
