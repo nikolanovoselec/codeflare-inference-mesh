@@ -72,9 +72,9 @@ POST /admin/setup
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `201` | Credentials are generated once; durable storage keeps verifiers/config only. | Generated admin, provider, setup, and upstream credentials. |
-| `401` | Setup has completed and admin auth is missing or invalid; the command-center setup control renders inline locked-state guidance instead of exposing raw JSON. | Error object. |
+| `401` | Setup has completed and admin auth is missing or invalid. | Error object. |
 
-**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/login
 
