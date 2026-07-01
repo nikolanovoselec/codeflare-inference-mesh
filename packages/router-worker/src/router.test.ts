@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_ACTIONS, ADMIN_UI_RESPONSIVE } from './admin-ui'
+import { ADMIN_UI_ACTIONS, ADMIN_UI_OPERATOR_FLOW, ADMIN_UI_RESPONSIVE } from './admin-ui'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan } from './installers'
@@ -58,11 +58,11 @@ function valuesOf(value: unknown): string[] {
   return []
 }
 
-function adminUiConfig(html: string): { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; workerOrigin: string } {
+function adminUiConfig(html: string): { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; operatorFlow: typeof ADMIN_UI_OPERATOR_FLOW; workerOrigin: string } {
   const match = html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)
   expect(match).not.toBeNull()
   expect(match![1]).not.toContain('&quot;')
-  return JSON.parse(match![1]!) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; workerOrigin: string }
+  return JSON.parse(match![1]!) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; operatorFlow: typeof ADMIN_UI_OPERATOR_FLOW; workerOrigin: string }
 }
 
 function adminUiScript(html: string): string {
@@ -111,6 +111,10 @@ describe('router worker behavioral contracts', () => {
       '/admin/profiles/rollout'
     ])
     expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 1, minTouchTargetPx: 44 })
+    expect(config.operatorFlow).toEqual({
+      stages: ['setup/authentication', 'enrollment/installers', 'Gateway/domain routing', 'status/node/profile operations'],
+      panelOrder: ['setup', 'login', 'setup-token', 'installer', 'gateway', 'domain', 'status', 'node', 'profile']
+    })
     const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
     const idlePanels = [...html.matchAll(/data-state="idle"/g)]
     const outputSurfaces = [...html.matchAll(/data-empty="[^"]+"/g)]
@@ -132,6 +136,7 @@ describe('router worker behavioral contracts', () => {
     expect(html).toMatch(/data-responsive="desktop mobile"/)
     expect(html).toMatch(/data-layout="operator-sequence"/)
     expect(html).toMatch(/data-density="wide"/)
+    expect(html).toMatch(/data-panel-order="setup login setup-token installer gateway domain status node profile"/)
     expect(html).toMatch(/@media \(max-width:760px\)/)
     expect(html).toContain('sessionStorage.getItem(tokenKey)')
     expect(html).toContain('localStorage.getItem(tokenKey)')

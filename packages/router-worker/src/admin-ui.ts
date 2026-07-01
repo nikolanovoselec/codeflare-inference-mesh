@@ -25,8 +25,13 @@ export const ADMIN_UI_RESPONSIVE = {
   minTouchTargetPx: 44
 } as const
 
+export const ADMIN_UI_OPERATOR_FLOW = {
+  stages: ['setup/authentication', 'enrollment/installers', 'Gateway/domain routing', 'status/node/profile operations'],
+  panelOrder: ['setup', 'login', 'setup-token', 'installer', 'gateway', 'domain', 'status', 'node', 'profile']
+} as const
+
 export function adminUiHtml(workerOrigin: string): string {
-  const config = scriptJson({ workerOrigin, actions: ADMIN_UI_ACTIONS, responsive: ADMIN_UI_RESPONSIVE })
+  const config = scriptJson({ workerOrigin, actions: ADMIN_UI_ACTIONS, responsive: ADMIN_UI_RESPONSIVE, operatorFlow: ADMIN_UI_OPERATOR_FLOW })
   return `<!doctype html>
 <html lang="en" data-admin-ui="codeflare-inference-mesh">
 <head>
@@ -71,7 +76,7 @@ export function adminUiHtml(workerOrigin: string): string {
         <div><strong>~/operate</strong><span>Watch status, profiles, and revocation</span></div>
       </section>
 
-      <section class="workspace" aria-label="Admin configuration workspace" data-layout="operator-sequence" data-density="wide">
+      <section class="workspace" aria-label="Admin configuration workspace" data-layout="operator-sequence" data-density="wide" data-panel-order="${ADMIN_UI_OPERATOR_FLOW.panelOrder.join(' ')}">
         <div class="panel command-panel" id="setup" data-form="setup" data-state="idle" data-step="1">
           ${panelHeader('First-run setup', 'Create credentials once, copy them immediately, then store the admin token locally if this is your browser.', 'first-run-setup')}
           <button class="primary" type="button" data-action="first-run-setup">Run first-run setup</button>

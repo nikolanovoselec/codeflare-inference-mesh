@@ -7,7 +7,7 @@
 - Updated [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain) to anchor custom-domain selection, persistence, and Gateway sync to their implementation paths.
 - Updated [REQ-SEC-002](security.md#req-sec-002-secret-storage-and-rotation-readiness) so revocation and setup-token staging anchors prove the attached acceptance criteria.
 - Clarified [REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle) fixed 24h setup-token behavior and [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain) stored-domain Gateway sync behavior.
-- Updated [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui) to require the guided Admin UI operator sequence: setup/authentication, enrollment/installers, Gateway/domain routing, then status/node/profile operations.
+- Updated [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui) to split guided Admin UI operator sequence coverage from desktop/mobile usability coverage.
 
 ## 2026-06-30
 
