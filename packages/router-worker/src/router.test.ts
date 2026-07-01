@@ -342,6 +342,20 @@ describe('router worker behavioral contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'no-node', requestId: 'request-a' })
   })
 
+  it('REQ-SCH-003 returns no-profile when the public model has no configured profile', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'missing-public-alias', messages: [] })
+    }))
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: 'no-profile', requestId: 'request-a' })
+  })
+
   it('REQ-SCH-004 preserves session affinity when the sticky node remains eligible', async () => {
     const store = new MemoryStore()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)

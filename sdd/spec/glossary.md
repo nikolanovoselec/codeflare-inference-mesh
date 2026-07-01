@@ -14,6 +14,7 @@
 | Public Model Alias | Stable external model name, such as `mesh-default`, that the Worker rewrites to an internal profile. |
 | Reservation | Scheduler record that assigns one request to one node until the request completes or expires. |
 | Session Affinity | Routing preference that keeps one coding session on the same node to preserve context-cache reuse. |
+| Scheduler Miss | Router outcome when a requested alias has no profile or no eligible node can currently serve it. |
 | Setup Token | Short-lived, single-use token that lets one node claim permanent credentials. |
 | Provider Token | Bearer token stored in AI Gateway BYOK/provider-key settings and sent to the router for `/v1/*` calls. |
 | Node Token | Per-node credential used for heartbeat and unregister calls. |
