@@ -19,7 +19,7 @@ Provider responses include request ID, session ID when present, and selected nod
 | --- | --- | --- |
 | Nodes | Node status, public models, active profiles, capacity, in-flight count, last seen. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 | Profiles | Public aliases, upstream model, version, rollout percent, and active flag. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md), [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| Audit | Recent setup, claim, unregister, revoke, route provisioning, and profile switch events. | [REQ-OBS-004](../../sdd/spec/observability.md), [REQ-OBS-005](../../sdd/spec/observability.md) |
+| Audit | Recent setup, claim, unregister, revoke, route provisioning, and profile switch events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-004](../../sdd/spec/observability.md), [REQ-OBS-005](../../sdd/spec/observability.md) |
 | Metadata | Status generation timestamp. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 
 ## Node metrics

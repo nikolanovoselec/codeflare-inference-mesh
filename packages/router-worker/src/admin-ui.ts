@@ -69,17 +69,10 @@ export function adminUiHtml(workerOrigin: string): string {
         </aside>
       </section>
 
-      <section class="runway" aria-label="Operator workflow" data-flow="setup-enroll-route-operate">
-        <div><strong>~/setup</strong><span>Create credentials once</span></div>
-        <div><strong>~/enroll</strong><span>Generate installer + node token</span></div>
-        <div><strong>~/route</strong><span>Sync Gateway + custom domain</span></div>
-        <div><strong>~/operate</strong><span>Watch status, profiles, and revocation</span></div>
-      </section>
-
       <section class="workspace" aria-label="Admin configuration workspace" data-layout="operator-sequence" data-density="wide" data-panel-order="${ADMIN_UI_OPERATOR_FLOW.panelOrder.join(' ')}">
         <div class="panel command-panel" id="setup" data-form="setup" data-state="idle" data-step="1">
-          ${panelHeader('First-run setup', 'Create credentials once, copy them immediately, then store the admin token locally if this is your browser.', 'first-run-setup')}
-          <button class="primary" type="button" data-action="first-run-setup">Run first-run setup</button>
+          ${panelHeader('First-run setup', 'Only run this before setup has been completed. If this Worker is already locked, paste the existing admin token in the next section.', 'first-run-setup')}
+          <button class="primary" type="button" data-action="first-run-setup">Create first credentials</button>
           <div class="token-grid result surface" id="setup-output" data-output="setup-tokens" data-empty="Generated credentials will appear here once." aria-live="polite"></div>
         </div>
 
@@ -153,7 +146,8 @@ export function adminUiHtml(workerOrigin: string): string {
 
 function panelHeader(title: string, description: string, actionId: string): string {
   const action = ADMIN_UI_ACTIONS.find((item) => item.id === actionId)
-  const meta = action ? `<span>${action.method}</span><code>${escapeHtml(action.path)}</code><span>${action.auth}</span>` : ''
+  const authLabel = action?.id === 'first-run-setup' ? 'first run only' : action?.auth
+  const meta = action ? `<span>${action.method}</span><code>${escapeHtml(action.path)}</code><span>${escapeHtml(authLabel ?? '')}</span>` : ''
   return `<div class="panel-head"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div><div class="panel-state" aria-hidden="true"></div></div><div class="meta-row" aria-label="Route contract">${meta}</div>`
 }
 
@@ -201,10 +195,8 @@ body::after{content:'';position:fixed;z-index:-1;inset:0;background:linear-gradi
 a{color:var(--accent);text-decoration:none;transition:color .18s ease}
 a:hover{color:var(--accent-hover)}
 button,input,select{font:inherit}
-button{display:inline-flex;align-items:center;justify-content:center;gap:.38rem;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:transparent;color:var(--text-primary);font-size:.95rem;font-weight:650;line-height:1;padding:.78rem 1.1rem;white-space:nowrap;cursor:pointer;transition:transform .12s ease,background .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease}
-button:not(.primary):not(.danger):not(.secondary)::before{content:'[';color:var(--text-dimmed)}
-button:not(.primary):not(.danger):not(.secondary)::after{content:']';color:var(--text-dimmed)}
-button:hover{border-color:var(--text-muted);color:var(--text-primary)}
+button{display:inline-flex;align-items:center;justify-content:center;gap:.38rem;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--bg-elevated);color:var(--text-primary);font-size:.92rem;font-weight:650;line-height:1;padding:.72rem 1rem;white-space:nowrap;cursor:pointer;box-shadow:0 1px 0 rgb(255 255 255/.05) inset;transition:transform .12s ease,background .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease}
+button:hover{background:#1d1d25;border-color:var(--text-muted);color:var(--text-primary)}
 button:active{transform:translateY(1px)}
 button:disabled{cursor:not-allowed;opacity:.62}
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,pre:focus-visible{outline:none;box-shadow:var(--focus)}
@@ -238,37 +230,30 @@ code,pre{font-family:var(--font-mono)}
 .live-badge{align-items:center;display:inline-flex;gap:.38rem;justify-self:start;border:1px solid rgb(74 222 128/.34);border-radius:999px;background:rgb(74 222 128/.1);color:var(--term-green);font-size:.68rem;font-weight:700;letter-spacing:.08em;line-height:1;padding:.34rem .55rem}
 .status-dot{display:inline-block;width:.48rem;height:.48rem;border-radius:50%;background:var(--term-green);box-shadow:0 0 0 .18rem rgb(74 222 128/.12),0 0 16px rgb(74 222 128/.42)}
 #origin-label{display:block;max-width:100%;overflow:visible;color:var(--text-muted);white-space:normal;overflow-wrap:anywhere;word-break:break-word}
-.runway{display:flex;align-items:center;flex-wrap:wrap;gap:.55rem;margin:0 auto 1.5rem;max-width:68rem;padding:.25rem 0 .75rem;color:var(--text-muted);font-family:var(--font-mono);font-size:.72rem}
-.runway div{display:flex;align-items:center;gap:.45rem;min-width:0}
-.runway div+div::before{content:'→';color:var(--text-dimmed);margin-right:.2rem}
-.runway strong{color:var(--accent);font-weight:500;text-transform:lowercase}
-.runway span{color:var(--text-muted);font-family:var(--font-sans);font-size:.875rem}
-.workspace{counter-reset:admin-step;display:flex;flex-direction:column;gap:1.25rem;max-width:68rem;margin:0 auto}
-.panel{counter-increment:admin-step;display:flex;flex-direction:column;min-width:0;overflow:hidden;padding:0;width:100%}
+.workspace{counter-reset:admin-step;display:flex;flex-direction:column;gap:.85rem;max-width:66rem;margin:0 auto}
+.panel{counter-increment:admin-step;display:grid;grid-template-columns:minmax(14rem,18rem) minmax(0,1fr);gap:.8rem 1.25rem;min-width:0;overflow:hidden;padding:1rem;width:100%;align-items:start}
 .panel.wide,.command-panel{width:100%}
 .panel[data-state=loading]{border-color:var(--term-cyan)}
 .panel[data-state=ready]{border-color:rgb(74 222 128/.58)}
 .panel[data-state=error]{border-color:var(--accent-line)}
-.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--border-subtle);background:rgb(255 255 255/.015);padding:.9rem 1rem .75rem}
-.panel-head::before{content:counter(admin-step,decimal-leading-zero);flex:0 0 auto;width:2.35rem;color:var(--accent);font-family:var(--font-mono);font-size:.72rem;font-weight:500;line-height:1.35;margin-top:.08rem}
-.panel h2{color:var(--text-primary);font-size:1.05rem;font-weight:650;line-height:1.15;letter-spacing:-.01em;margin:0 0 .25rem}
-.panel p{max-width:68ch;color:var(--text-secondary);margin:0;text-wrap:pretty}
-.panel-state{flex:0 0 auto;border:1px solid var(--border-default);border-radius:999px;color:var(--text-muted);font-family:var(--font-mono);font-size:.65rem;font-weight:500;line-height:1;padding:.32rem .5rem;white-space:nowrap;text-transform:uppercase}
+.panel-head{display:grid;grid-column:1;gap:.5rem;padding:0}
+.panel-head::before{content:counter(admin-step,decimal-leading-zero);display:inline-flex;align-items:center;justify-content:center;width:2.1rem;height:1.45rem;border:1px solid var(--border-default);border-radius:999px;color:var(--accent);font-family:var(--font-mono);font-size:.68rem;font-weight:600;line-height:1}
+.panel h2{color:var(--text-primary);font-size:1.02rem;font-weight:650;line-height:1.2;letter-spacing:-.01em;margin:0 0 .25rem}
+.panel p{max-width:28ch;color:var(--text-secondary);margin:0;text-wrap:pretty}
+.panel-state{justify-self:start;border:1px solid var(--border-default);border-radius:999px;color:var(--text-muted);font-family:var(--font-mono);font-size:.63rem;font-weight:600;line-height:1;padding:.3rem .5rem;white-space:nowrap;text-transform:uppercase}
 .panel[data-state=idle] .panel-state::before{content:'READY'}
 .panel[data-state=loading] .panel-state::before{content:'RUNNING'}
 .panel[data-state=ready] .panel-state::before{content:'PASSED';color:var(--term-green)}
 .panel[data-state=error] .panel-state::before{content:'BLOCKED';color:var(--accent-hover)}
-.meta-row{align-items:center;display:flex;flex-wrap:wrap;gap:.4rem;border-bottom:1px solid var(--border-subtle);padding:.75rem 1rem;color:var(--text-muted);font-family:var(--font-mono);font-size:.72rem}
+.meta-row{align-items:center;display:flex;flex-wrap:wrap;gap:.35rem;grid-column:1;padding:0;color:var(--text-muted);font-family:var(--font-mono);font-size:.7rem}
 .meta-row span,.meta-row code{border:1px solid var(--border-default);border-radius:999px;background:rgb(255 255 255/.018);color:var(--text-muted);font-size:.72rem;font-weight:500;padding:.24rem .5rem}
 .meta-row span:first-child{color:var(--accent)}
 .meta-row code{max-width:100%;overflow:auto}
-.panel > button,.panel > label,.panel > .button-row,.panel > .result{margin-left:1.25rem;margin-right:1.25rem}
-.panel > button,.panel > .button-row{margin-bottom:1.25rem}
-.panel > button{align-self:flex-start}
-.panel > label:first-of-type{margin-top:1.25rem}
-.panel > label{max-width:42rem}
-label{display:grid;gap:.35rem;color:var(--text-muted);font-size:.875rem;font-weight:600;margin:.8rem 0}
-input,select{min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;width:100%;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--bg-terminal);color:var(--text-primary);padding:.68rem .8rem}
+.panel > button,.panel > label,.panel > .button-row,.panel > .result{grid-column:2;margin:0}
+.panel > button{justify-self:start}
+.panel > label{max-width:34rem;width:100%}
+label{display:grid;gap:.32rem;color:var(--text-muted);font-size:.84rem;font-weight:650;margin:0}
+input,select{min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;width:100%;max-width:34rem;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--bg-terminal);color:var(--text-primary);padding:.6rem .75rem}
 input::placeholder{color:var(--text-dimmed);opacity:1}
 .check{align-items:center;display:flex;font-weight:600}
 .check input{min-height:auto;width:auto;accent-color:var(--accent)}
@@ -284,8 +269,8 @@ input::placeholder{color:var(--text-dimmed);opacity:1}
 .command:not(:empty){color:var(--text-primary)}
 .toast{position:fixed;right:1rem;bottom:1rem;z-index:60;max-width:min(28rem,calc(100vw - 2rem));border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--bg-elevated);color:var(--text-primary);box-shadow:var(--shadow);opacity:0;pointer-events:none;padding:.85rem 1rem;transform:translateY(.5rem);transition:opacity .18s ease,transform .18s ease}
 .toast.show{opacity:1;transform:translateY(0)}
-@media (min-width:900px){.panel > .button-row{max-width:42rem}.result{min-height:4.25rem}}
-@media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){.topbar{position:static;align-items:flex-start;flex-direction:column}.nav{justify-content:flex-start;gap:.85rem;overflow-x:auto;width:100%;padding-bottom:.2rem}.hero{display:flex;flex-direction:column;padding-top:2.5rem}.hero h1{font-size:clamp(2.2rem,12vw,3.2rem);max-width:12ch}.health-panel{width:100%}.runway{display:grid;gap:.4rem;margin-bottom:1rem}.runway div+div::before{content:'';display:none}.panel-head{display:grid}.panel-head::before{width:auto}.button-row,button{width:100%}.panel > button{align-self:stretch}.panel-state{justify-self:start}}
+@media (min-width:900px){.panel > .button-row{max-width:34rem}.result{min-height:4.25rem}}
+@media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){.topbar{position:static;align-items:flex-start;flex-direction:column}.nav{justify-content:flex-start;gap:.85rem;overflow-x:auto;width:100%;padding-bottom:.2rem}.hero{display:flex;flex-direction:column;padding-top:2.5rem}.hero h1{font-size:clamp(2.2rem,12vw,3.2rem);max-width:12ch}.health-panel{width:100%}.panel{grid-template-columns:1fr;padding:.9rem}.panel-head,.meta-row,.panel > button,.panel > label,.panel > .button-row,.panel > .result{grid-column:1}.button-row,button{width:100%}.panel > button{justify-self:stretch}.panel-state{justify-self:start}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}`
 }
 
@@ -315,6 +300,11 @@ function adminUiScript(): string {
   const primaryOutput = (panel) => panel?.querySelector('[data-output]');
   const setOutput = (id, value, isError = false) => { const el = byId(id); el.classList.toggle('is-error', isError); el.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); };
   const showJson = (id, value) => setOutput(id, value);
+  const friendlyError = (action, error) => {
+    if (action === 'first-run-setup' && error.status === 401) return 'Setup is already complete for this Worker. Paste the existing admin token in the Admin token section, then use the authenticated controls below.';
+    if (error.status === 401) return 'Admin token missing or invalid. Paste the admin token, verify it, then try this action again.';
+    return error.body?.error || error.message || 'Request failed';
+  };
   const esc = (value) => String(value).replace(/[&<>\"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[char]));
   const copyButton = (value) => '<button type="button" data-copy="' + encodeURIComponent(value) + '">Copy</button>';
   function renderTokens(target, values) {
@@ -366,11 +356,11 @@ function adminUiScript(): string {
       }
       setPanelState(panel, 'ready');
     } catch (error) {
-      const message = error.body?.error || error.message;
+      const message = friendlyError(action, error);
       const output = primaryOutput(panel);
-      if (output) { output.classList.add('is-error'); output.textContent = JSON.stringify({ error: message, status: error.status || null }, null, 2); }
+      if (output) { output.classList.add('is-error'); output.textContent = message; }
       setPanelState(panel, 'error');
-      toast('Error: ' + message);
+      toast(message);
     } finally {
       button.disabled = false;
     }

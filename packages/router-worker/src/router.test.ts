@@ -553,13 +553,21 @@ describe('router worker behavioral contracts', () => {
   it('REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status', async () => {
     // AdminStatusRedactionTestAnchor
     const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode({ ...nodeFixture(), upstreamTokenVerifier: 'sha256:hidden' })
+    await store.appendAudit({ id: 'audit-a', type: 'profile_rollout', at: 1_700_000_000_000, actor: 'admin', target: 'qwen36-27b-256k-3090', detail: { rolloutPercent: 100 } })
 
     const response = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
-    const body = await response.json() as Record<string, unknown>
+    const body = await response.json() as { generatedAt?: number; nodes?: Array<Record<string, unknown>>; profiles?: Array<Record<string, unknown>>; audit?: Array<Record<string, unknown>> }
 
     expect(response.status).toBe(200)
     expect(body).toMatchObject({ generatedAt: 1_700_000_000_000 })
+    expect(body.nodes).toEqual([expect.objectContaining({ id: 'node-a', status: 'online', capacity: 2, inFlight: 0, lastSeenAt: 1_700_000_000_000 })])
+    expect(body.profiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'qwen36-27b-256k-3090', upstreamModel: 'qwen36-27b-256k-3090', version: 1, rolloutPercent: 100, active: true })
+    ]))
+    expect(body.profiles?.[0]).toHaveProperty('publicAliases')
+    expect(body.audit).toEqual([expect.objectContaining({ id: 'audit-a', type: 'profile_rollout', actor: 'admin', target: 'qwen36-27b-256k-3090' })])
     expect(new Set(valuesOf(body)).has('sha256:hidden')).toBe(false)
   })
 
