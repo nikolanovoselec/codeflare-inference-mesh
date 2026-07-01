@@ -12,7 +12,7 @@ export interface InstallerInput {
 export interface InstallScriptInput {
   readonly platform: InstallerPlatform
   readonly repository: string
-  readonly releaseTag: string
+  readonly releaseTag?: string
 }
 
 export interface InstallerPlan {
@@ -57,7 +57,7 @@ export function validateCustomDomain(hostname: string): boolean {
   return /^(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z]{2,63}$/i.test(hostname)
 }
 
-function unixInstallScript(platform: 'linux' | 'macos', repository: string, releaseTag: string): string {
+function unixInstallScript(platform: 'linux' | 'macos', repository: string, releaseTag?: string): string {
   const archExpression = platform === 'macos' ? '$(uname -m | sed s/x86_64/amd64/ | sed s/arm64/arm64/)' : '$(uname -m | sed s/x86_64/amd64/ | sed s/aarch64/arm64/)'
   const platformLiteral = platform === 'macos' ? 'macos' : 'linux'
   return `#!/bin/sh
@@ -69,7 +69,7 @@ PLATFORM="${platformLiteral}"
 if [ "$PLATFORM" = "macos" ]; then OS="darwin"; else OS="linux"; fi
 ASSET="inference-mesh-agent-$OS-$ARCH.tar.gz"
 BIN="inference-mesh-agent-$OS-$ARCH"
-BASE_URL="https://github.com/${repository}/releases/download/${releaseTag}"
+BASE_URL="${releaseDownloadBase(repository, releaseTag)}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 cd "$TMP_DIR"
@@ -113,14 +113,14 @@ fi
 `
 }
 
-function windowsInstallScript(repository: string, releaseTag: string): string {
+function windowsInstallScript(repository: string, releaseTag?: string): string {
   return `$ErrorActionPreference = 'Stop'
 if (-not $env:ROUTER_URL) { throw 'ROUTER_URL is required' }
 if (-not $env:SETUP_TOKEN) { throw 'SETUP_TOKEN is required' }
 $Arch = if ([Environment]::Is64BitOperatingSystem) { 'amd64' } else { throw 'unsupported architecture' }
 $Asset = "inference-mesh-agent-windows-$Arch.zip"
 $Bin = "inference-mesh-agent-windows-$Arch.exe"
-$BaseUrl = "https://github.com/${repository}/releases/download/${releaseTag}"
+$BaseUrl = "${releaseDownloadBase(repository, releaseTag)}"
 $Tmp = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $Tmp | Out-Null
 try {
@@ -143,6 +143,13 @@ try {
   Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
 }
 `
+}
+
+function releaseDownloadBase(repository: string, releaseTag?: string): string {
+  if (!releaseTag || releaseTag === 'latest' || releaseTag === 'agent-release-tag-placeholder') {
+    return `https://github.com/${repository}/releases/latest/download`
+  }
+  return `https://github.com/${repository}/releases/download/${releaseTag}`
 }
 
 function shellQuote(value: string): string {

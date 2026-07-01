@@ -38,7 +38,7 @@ export const ADMIN_UI_RESPONSIVE = {
 } as const
 
 export function adminUiHtml(workerOrigin: string): string {
-  const config = JSON.stringify({ workerOrigin, actions: ADMIN_UI_ACTIONS, responsive: ADMIN_UI_RESPONSIVE })
+  const config = scriptJson({ workerOrigin, actions: ADMIN_UI_ACTIONS, responsive: ADMIN_UI_RESPONSIVE })
   return `<!doctype html>
 <html lang="en" data-admin-ui="codeflare-inference-mesh">
 <head>
@@ -141,7 +141,7 @@ export function adminUiHtml(workerOrigin: string): string {
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </div>
-  <script type="application/json" id="admin-ui-config">${escapeHtml(config)}</script>
+  <script type="application/json" id="admin-ui-config">${config}</script>
   <script>${adminUiScript()}</script>
 </body>
 </html>`
@@ -227,6 +227,13 @@ function adminUiScript(): string {
   });
   const saved = token(); if (saved) byId('admin-token').value = saved;
 })();`
+}
+
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
 }
 
 function escapeHtml(value: string): string {

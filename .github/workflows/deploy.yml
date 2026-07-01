@@ -185,14 +185,6 @@ jobs:
           printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npm exec -- wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"
           printf '%s' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npm exec -- wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME "${args[@]}"
 
-      - name: Deploy Worker
-        working-directory: packages/router-worker
-        run: |
-          set -euo pipefail
-          args=()
-          if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
-          npm exec -- wrangler deploy "${args[@]}"
-
       - name: Build release artifacts and manifest
         working-directory: packages/node-agent
         run: |
@@ -236,6 +228,14 @@ jobs:
         with:
           name: inference-mesh-release-artifacts
           path: packages/node-agent/dist/*
+
+      - name: Deploy Worker
+        working-directory: packages/router-worker
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
+          npm exec -- wrangler deploy "${args[@]}"
 
       - name: Write deployment summary
         run: |

@@ -100,6 +100,9 @@ describe('workflow contract values', () => {
     expect(deployJob.if).toContain("github.event.workflow_run.event == 'push'")
     expect(deployJob.if).toContain('github.event.workflow_run.head_repository.full_name == github.repository')
     expect(deployJob.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}' })
+    const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
+    expect(stepNames.indexOf('Publish GitHub Release')).toBeGreaterThan(-1)
+    expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(deployJob).toHaveProperty('env.CLOUDFLARE_API_TOKEN', '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}')
     expect(deployText).toContain('Production deploys are only allowed from main')
     expect(deployText).toContain('for workflow in Security Fuzz; do')
@@ -141,13 +144,18 @@ describe('workflow contract values', () => {
 
   it('REQ-REL-003 builds cross-platform release assets, manifest, optional signature, and GitHub Release', () => {
     const deploy = workflow('deploy.yml')
-    const deployText = allRunText(deploy.jobs.deploy!)
+    const deployJob = deploy.jobs.deploy!
+    const deployText = allRunText(deployJob)
+    const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
 
     expect(deployText).toContain('for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do')
     expect(deployText).toContain('sha256sum *.tar.gz *.zip > checksums.txt')
     expect(deployText).toContain('sha256sum -c checksums.txt')
     expect(deployText).toContain('cosign sign-blob --key env://COSIGN_PRIVATE_KEY --output-signature checksums.txt.sig checksums.txt')
     expect(deployText).toContain('gh release create "${{ steps.settings.outputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ steps.settings.outputs.version_tag }}" --notes-file release-notes.md $PRERELEASE')
+    expect(deployJob.steps.find((step) => step.name === 'Resolve or create D1 database')?.env).toEqual({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' })
+    expect(deployText).toContain("replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG)")
+    expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
   })
 

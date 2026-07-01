@@ -61,7 +61,8 @@ function valuesOf(value: unknown): string[] {
 function adminUiConfig(html: string): { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; workerOrigin: string } {
   const match = html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)
   expect(match).not.toBeNull()
-  return JSON.parse(match![1]!.replaceAll('&quot;', '"').replaceAll('&amp;', '&')) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; workerOrigin: string }
+  expect(match![1]).not.toContain('&quot;')
+  return JSON.parse(match![1]!) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; workerOrigin: string }
 }
 
 describe('router worker behavioral contracts', () => {
@@ -381,6 +382,7 @@ describe('router worker behavioral contracts', () => {
     const scriptUrl = new URL(command.split(/\s+/).find((part) => part.startsWith('https://'))!)
     const scriptResponse = await router(new Request('https://router.test/install.sh?platform=linux'))
     const script = await scriptResponse.text()
+    const fallbackScript = await (await routerFixture().router(new Request('https://router.test/install.sh?platform=linux'))).text()
     const linuxPlan = installerPlan('linux', 'amd64')
     const windowsPlan = installerPlan('windows', 'amd64')
 
@@ -388,6 +390,7 @@ describe('router worker behavioral contracts', () => {
     expect(scriptUrl.pathname).toBe('/install.sh')
     expect(scriptUrl.searchParams.get('platform')).toBe('linux')
     expect(script).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/releases/download/v0.1.0-dev.1782860991')
+    expect(fallbackScript).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/releases/latest/download')
     expect(linuxPlan).toEqual({ assetName: 'inference-mesh-agent-linux-amd64.tar.gz', extractedBinary: 'inference-mesh-agent-linux-amd64', installedBinary: 'inference-mesh-agent', checksumFile: 'checksums.txt' })
     expect(windowsPlan).toEqual({ assetName: 'inference-mesh-agent-windows-amd64.zip', extractedBinary: 'inference-mesh-agent-windows-amd64.exe', installedBinary: 'inference-mesh-agent.exe', checksumFile: 'checksums.txt' })
     expect(store.tokens.filter((token) => token.kind === 'setup' && token.active).length).toBe(1)

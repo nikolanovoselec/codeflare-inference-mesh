@@ -30,6 +30,8 @@ GET /
 
 **Origin check:** n/a
 
+**Request:** No body.
+
 **Response:** Returns the responsive Admin configuration UI. Admin actions inside the UI still use bearer authentication after first-run setup completes.
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
@@ -43,6 +45,8 @@ GET /admin
 **Authentication:** None for the UI shell.
 
 **Origin check:** n/a
+
+**Request:** No body.
 
 **Response:** Returns the same responsive Admin configuration UI as `/`.
 
