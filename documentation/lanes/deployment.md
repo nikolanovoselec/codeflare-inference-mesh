@@ -51,7 +51,7 @@ Production releases use stable semantic tags such as `v0.1.0`. Integration relea
 gh workflow run Deploy --ref main -f environment=production -f version_tag=<new-rollback-tag>
 ```
 
-For integration rollback, restore the safe code onto the selected integration branch and run `gh workflow run Deploy --ref develop -f environment=integration -f version_tag=<new-rollback-tag>`. The current workflow publishes artifacts for the selected ref and tag; it does not redeploy an existing release tag.
+For integration rollback, restore the safe code onto the selected integration branch and run `gh workflow run Deploy --ref develop -f environment=integration -f version_tag=<new-rollback-tag>`. `.github/workflows/deploy.yml` publishes artifacts for the selected ref and tag; it does not redeploy an existing release tag.
 
 **Verifies:** After the workflow succeeds, call `GET /health` on the target Worker and confirm installer scripts reference the new rollback release tag.
 

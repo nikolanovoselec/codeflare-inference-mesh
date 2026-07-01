@@ -3,16 +3,22 @@
 ## Contents
 
 - [Conventions](#conventions)
-- [Endpoints](#endpoints)
+- [GET /health](#get-health)
+- [GET /v1/models](#get-v1models)
+- [POST /v1/chat/completions](#post-v1chatcompletions)
+- [POST /node/claim](#post-nodeclaim)
+- [POST /node/heartbeat](#post-nodeheartbeat)
+- [POST /node/unregister](#post-nodeunregister)
+- [GET /install.sh](#get-installsh)
+- [GET /install.ps1](#get-installps1)
+- [Node dashboard local routes](#node-dashboard-local-routes)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions
 
 All API responses that represent errors use an OpenAI-style `error` object when they are visible to AI Gateway or OpenAI-compatible clients. Provider routes require the provider token; node routes require setup or node credentials; installer routes contain no permanent secrets. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
-## Endpoints
-
-### GET /health ([REQ-RTR-001](../../sdd/spec/router-worker.md))
+## GET /health
 
 Returns Worker health for routing and deploy verification.
 
@@ -34,7 +40,7 @@ GET /health
 
 **Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md)
 
-### GET /v1/models ([REQ-GWY-001](../../sdd/spec/gateway.md)) ([REQ-RUN-001](../../sdd/spec/runtime-profiles.md))
+## GET /v1/models
 
 Lists public OpenAI-compatible model aliases exposed through the mesh.
 
@@ -57,7 +63,7 @@ GET /v1/models
 
 **Implements:** [REQ-GWY-001](../../sdd/spec/gateway.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md)
 
-### POST /v1/chat/completions ([REQ-RTR-002](../../sdd/spec/router-worker.md)) ([REQ-RTR-003](../../sdd/spec/router-worker.md))
+## POST /v1/chat/completions
 
 Forwards an OpenAI-compatible chat completion request to an eligible node.
 
@@ -81,7 +87,7 @@ POST /v1/chat/completions
 
 **Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md)
 
-### POST /node/claim ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-NODE-002](../../sdd/spec/node-agent.md))
+## POST /node/claim
 
 Claims a node with a one-time setup token and returns node credentials.
 
@@ -104,7 +110,7 @@ POST /node/claim
 
 **Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md)
 
-### POST /node/heartbeat ([REQ-NODE-002](../../sdd/spec/node-agent.md)) ([REQ-OBS-003](../../sdd/spec/observability.md))
+## POST /node/heartbeat
 
 Refreshes node lease, runtime metrics, and desired profile state.
 
@@ -127,7 +133,7 @@ POST /node/heartbeat
 
 **Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md)
 
-### POST /node/unregister ([REQ-OBS-005](../../sdd/spec/observability.md))
+## POST /node/unregister
 
 Lets an authenticated node remove itself from scheduling before shutdown.
 
@@ -150,7 +156,7 @@ POST /node/unregister
 
 **Implements:** [REQ-OBS-005](../../sdd/spec/observability.md)
 
-### GET /install.sh ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+## GET /install.sh
 
 Returns a Unix installer for Linux or macOS node agents.
 
@@ -172,7 +178,7 @@ GET /install.sh
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-### GET /install.ps1 ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+## GET /install.ps1
 
 Returns a Windows installer for node agents.
 
@@ -194,7 +200,7 @@ GET /install.ps1
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-### Node dashboard local routes ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-SEC-004](../../sdd/spec/security.md))
+## Node dashboard local routes
 
 Exposes localhost-only node status and runtime controls.
 

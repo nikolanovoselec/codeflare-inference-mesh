@@ -64,7 +64,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Admin can create a short-lived setup token with a 24h expiration for node enrollment. <!-- @impl: packages/router-worker/src/router.ts::handleSetupToken --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation) -->
+1. The Admin can create a short-lived setup token with a 24h expiration for node enrollment. <!-- @impl: packages/router-worker/src/router.ts::SETUP_TOKEN_TTL_MS = 24 * 60 * 60 * 1000 --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-003 creates setup tokens with a 24h expiration) -->
 2. The router stores only the setup token verifier and claim metadata in D1. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
 3. A setup token can be claimed at most once. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
 4. Expired, claimed, or invalid setup tokens are rejected. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->

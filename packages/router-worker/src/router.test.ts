@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_ACTIONS, ADMIN_UI_RESPONSIVE } from './admin-ui'
-import { hashToken, timingSafeEqualText } from './auth'
+import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan } from './installers'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
@@ -147,6 +147,21 @@ describe('router worker behavioral contracts', () => {
     expect(activeSetupTokens).toHaveLength(2)
     expect(new Set(activeSetupTokens.map((token) => token.verifier)).size).toBe(2)
     expect(store.audit.some((event) => event.type === 'setup_token_created' && event.actor === 'admin')).toBe(true)
+  })
+
+  it('REQ-ADM-003 creates setup tokens with a 24h expiration', async () => {
+    const { router, store } = routerFixture()
+    const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
+    const setup = await setupResponse.json() as { adminToken: string }
+
+    const response = await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(setup.adminToken) }))
+    const body = await response.json() as { setupToken: string; expiresAt: number }
+    const activeSetupTokens = store.tokens.filter((token) => token.kind === 'setup' && token.active)
+
+    expect(response.status).toBe(201)
+    expect(body.setupToken).toMatch(/^setup_/)
+    expect(body.expiresAt).toBe(1_700_086_400_000)
+    expect(activeSetupTokens.map((token) => token.expiresAt)).toEqual([1_700_086_400_000, 1_700_086_400_000])
   })
 
   it('REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families', async () => {
@@ -308,6 +323,12 @@ describe('router worker behavioral contracts', () => {
   it('REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim', async () => {
     // FirstRunSetupTokenTestAnchor
     const { router, store } = routerFixture()
+    await store.putToken(await createTokenRecord('setup', 'expired-setup', 1_699_913_599_999, undefined, 1_700_000_000_000))
+    const expired = await router(new Request('https://router.test/node/claim', {
+      method: 'POST',
+      headers: { ...bearer('expired-setup'), 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Expired Node', meshIp: '100.64.1.9', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1 })
+    }))
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const setup = await setupResponse.json() as { setupToken: string }
     const claim = await router(new Request('https://router.test/node/claim', {
@@ -315,8 +336,15 @@ describe('router worker behavioral contracts', () => {
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
       body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 2 })
     }))
+    const consumed = await router(new Request('https://router.test/node/claim', {
+      method: 'POST',
+      headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 2 })
+    }))
 
+    expect(expired.status).toBe(401)
     expect(claim.status).toBe(201)
+    expect(consumed.status).toBe(401)
     expect(store.tokens.filter((token) => token.kind === 'setup').every((token) => token.active === false)).toBe(true)
     expect(store.nodes.has('node-a-100-64-1-10')).toBe(true)
   })

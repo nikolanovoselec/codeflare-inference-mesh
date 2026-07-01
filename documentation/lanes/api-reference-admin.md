@@ -3,16 +3,24 @@
 ## Contents
 
 - [Conventions](#conventions)
-- [Endpoints](#endpoints)
+- [GET /](#get-)
+- [GET /admin](#get-admin)
+- [POST /admin/setup](#post-adminsetup)
+- [POST /admin/login](#post-adminlogin)
+- [GET /admin/status](#get-adminstatus)
+- [POST /admin/setup-tokens](#post-adminsetup-tokens)
+- [GET /admin/installers/:platform](#get-admininstallersplatform)
+- [POST /admin/nodes/:nodeId/revoke](#post-adminnodesnodeidrevoke)
+- [POST /admin/cloudflare/gateway/sync](#post-admincloudflaregatewaysync)
+- [POST /admin/custom-domain/validate](#post-admincustom-domainvalidate)
+- [POST /admin/profiles/rollout](#post-adminprofilesrollout)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions
 
 Admin routes use the MVP admin token or an admin session derived from it after first-run setup completes. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. Admin routes do not implement a dedicated Origin-header gate; bearer/admin authentication is the route guard. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
-## Endpoints
-
-### GET / ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
+## GET /
 
 Serves the responsive Admin configuration UI shell.
 
@@ -34,7 +42,7 @@ GET /
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
-### GET /admin ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
+## GET /admin
 
 Serves the same responsive Admin configuration UI shell as `/`.
 
@@ -56,7 +64,7 @@ GET /admin
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
-### POST /admin/setup ([REQ-ADM-001](../../sdd/spec/setup-admin.md))
+## POST /admin/setup
 
 Performs first-run setup and returns one-time-visible credentials.
 
@@ -79,7 +87,7 @@ POST /admin/setup
 
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md)
 
-### POST /admin/login ([REQ-ADM-002](../../sdd/spec/setup-admin.md))
+## POST /admin/login
 
 Validates an admin credential and returns the admin session contract.
 
@@ -102,7 +110,7 @@ POST /admin/login
 
 **Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
-### GET /admin/status ([REQ-OBS-002](../../sdd/spec/observability.md))
+## GET /admin/status
 
 Returns the admin dashboard status contract with secrets redacted.
 
@@ -125,7 +133,7 @@ GET /admin/status
 
 **Implements:** [REQ-OBS-002](../../sdd/spec/observability.md)
 
-### POST /admin/setup-tokens ([REQ-ADM-003](../../sdd/spec/setup-admin.md))
+## POST /admin/setup-tokens
 
 Creates a new one-time setup token for node enrollment.
 
@@ -137,18 +145,18 @@ POST /admin/setup-tokens
 
 **Origin check:** n/a
 
-**Request:** No body. Creates a setup token with a 24h expiration and stores only its verifier.
+**Request:** No body.
 
 **Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
-| `201` | Generated setup token | Displays the setup token once and stores only its verifier. |
+| `201` | `{ "setupToken": string, "expiresAt": number }` | Displays the setup token once, stores only its verifier, and sets `expiresAt` to creation time + 24h. |
 | `401` | Error object | Admin credential is missing or invalid. |
 
 **Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md)
 
-### GET /admin/installers/:platform ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+## GET /admin/installers/:platform
 
 Returns a one-line installer command for a supported node-agent platform.
 
@@ -171,7 +179,7 @@ GET /admin/installers/{platform}
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-### POST /admin/nodes/:nodeId/revoke ([REQ-SEC-002](../../sdd/spec/security.md))
+## POST /admin/nodes/:nodeId/revoke
 
 Revokes a node and removes it from eligible scheduling.
 
@@ -194,7 +202,7 @@ POST /admin/nodes/{nodeId}/revoke
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md)
 
-### POST /admin/cloudflare/gateway/sync ([REQ-GWY-003](../../sdd/spec/gateway.md))
+## POST /admin/cloudflare/gateway/sync
 
 Creates or updates the AI Gateway custom-provider route for the Worker origin.
 
@@ -217,7 +225,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md)
 
-### POST /admin/custom-domain/validate ([REQ-ADM-005](../../sdd/spec/setup-admin.md))
+## POST /admin/custom-domain/validate
 
 Validates and stores a custom-domain hostname and Cloudflare zone ID.
 
@@ -240,7 +248,7 @@ POST /admin/custom-domain/validate
 
 **Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md)
 
-### POST /admin/profiles/rollout ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
+## POST /admin/profiles/rollout
 
 Stores a versioned profile rollout percentage.
 
