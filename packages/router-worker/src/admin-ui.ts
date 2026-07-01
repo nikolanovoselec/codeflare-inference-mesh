@@ -19,18 +19,6 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'profile-rollout', method: 'POST', path: '/admin/profiles/rollout', auth: 'admin' }
 ] as const
 
-const ADMIN_FORMS = [
-  { id: 'setup', action: 'first-run-setup', title: 'First-run setup', description: 'Create admin, provider, setup, and upstream credentials for this Worker.' },
-  { id: 'login', action: 'admin-login', title: 'Admin token', description: 'Store an admin token in this browser and verify access before running protected actions.' },
-  { id: 'status', action: 'status-refresh', title: 'Status', description: 'Refresh redacted router state, nodes, profiles, and recent audit events.' },
-  { id: 'setup-token', action: 'setup-token-create', title: 'Setup token', description: 'Create a short-lived token for enrolling one node.' },
-  { id: 'installer', action: 'installer-linux', title: 'Installers', description: 'Generate Linux, macOS, or Windows install commands backed by release artifacts.' },
-  { id: 'gateway', action: 'gateway-sync', title: 'AI Gateway', description: 'Sync the custom provider, dynamic route, version, and deployment metadata.' },
-  { id: 'domain', action: 'custom-domain-validate', title: 'Custom domain', description: 'Validate a hostname before switching Gateway traffic to a custom origin.' },
-  { id: 'node', action: 'node-revoke', title: 'Node controls', description: 'Revoke a node from scheduling when it should no longer receive traffic.' },
-  { id: 'profile', action: 'profile-rollout', title: 'Profile rollout', description: 'Adjust an active profile rollout percentage with a versioned config update.' }
-] as const
-
 export const ADMIN_UI_RESPONSIVE = {
   mobileBreakpointPx: 760,
   desktopMinColumns: 1,
@@ -100,37 +88,37 @@ export function adminUiHtml(workerOrigin: string): string {
           </div>
         </div>
 
-        <div class="panel wide" id="status" data-form="status" data-state="idle" data-step="3">
-          ${panelHeader('Status', 'Redacted operational state from /admin/status. Plaintext credentials are never read back.', 'status-refresh')}
-          <button type="button" data-action="status-refresh">Refresh status</button>
-          <div class="status-grid result surface" id="status-output" data-output="status" data-empty="Refresh status to load redacted nodes, profiles, and audit events." aria-live="polite"></div>
-        </div>
-
-        <div class="panel" id="setup-token" data-form="setup-token" data-state="idle" data-step="4">
+        <div class="panel" id="setup-token" data-form="setup-token" data-state="idle" data-step="3">
           ${panelHeader('Setup token', 'Generate a one-time node enrollment token, then use an installer command before it expires.', 'setup-token-create')}
           <button type="button" data-action="setup-token-create">Create setup token</button>
           <div class="token-grid result surface" id="setup-token-output" data-output="setup-token" data-empty="A short-lived setup token will appear here." aria-live="polite"></div>
         </div>
 
-        <div class="panel" id="installer" data-form="installer" data-state="idle" data-step="5">
+        <div class="panel" id="installer" data-form="installer" data-state="idle" data-step="4">
           ${panelHeader('Installers', 'Generate Linux, macOS, or Windows install commands backed by release artifacts.', 'installer-linux')}
           <label>Platform<select name="platform" id="installer-platform"><option value="linux">Linux</option><option value="macos">macOS</option><option value="windows">Windows</option></select></label>
           <button type="button" data-action="installer-generate">Generate installer command</button>
           <pre class="result command" id="installer-output" data-output="installer-command" data-empty="Installer command output will appear here." tabindex="0"></pre>
         </div>
 
-        <div class="panel" id="gateway" data-form="gateway" data-state="idle" data-step="6">
+        <div class="panel" id="gateway" data-form="gateway" data-state="idle" data-step="5">
           ${panelHeader('AI Gateway', 'Sync the custom provider, dynamic route, version, and deployment metadata when runtime Cloudflare credentials are configured.', 'gateway-sync')}
           <button type="button" data-action="gateway-sync">Sync Gateway route</button>
           <pre class="result" id="gateway-output" data-output="gateway-sync" data-empty="Gateway sync response will appear here. Configuration errors stay visible." tabindex="0"></pre>
         </div>
 
-        <div class="panel" id="domain" data-form="custom-domain" data-state="idle" data-step="7">
+        <div class="panel" id="domain" data-form="custom-domain" data-state="idle" data-step="6">
           ${panelHeader('Custom domain', 'Validate a hostname before switching Gateway traffic to a custom origin.', 'custom-domain-validate')}
           <label>Hostname<input name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url"></label>
           <label>Zone ID<input name="zoneId" id="custom-domain-zone" placeholder="0123456789abcdef0123456789abcdef"></label>
           <button type="button" data-action="custom-domain-validate">Validate hostname</button>
           <pre class="result" id="domain-output" data-output="custom-domain" data-empty="Hostname validation response will appear here." tabindex="0"></pre>
+        </div>
+
+        <div class="panel wide" id="status" data-form="status" data-state="idle" data-step="7">
+          ${panelHeader('Status', 'Redacted operational state from /admin/status. Plaintext credentials are never read back.', 'status-refresh')}
+          <button type="button" data-action="status-refresh">Refresh status</button>
+          <div class="status-grid result surface" id="status-output" data-output="status" data-empty="Refresh status to load redacted nodes, profiles, and audit events." aria-live="polite"></div>
         </div>
 
         <div class="panel" id="node" data-form="node-revoke" data-state="idle" data-step="8">

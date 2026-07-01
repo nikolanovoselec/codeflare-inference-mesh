@@ -114,11 +114,21 @@ describe('router worker behavioral contracts', () => {
     const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
     const idlePanels = [...html.matchAll(/data-state="idle"/g)]
     const outputSurfaces = [...html.matchAll(/data-empty="[^"]+"/g)]
-    const operatorSteps = [...html.matchAll(/data-step="([1-9])"/g)].map((match) => Number(match[1]))
+    const operatorPanels = [...html.matchAll(/<div class="panel[^"]*" id="([^"]+)"[^>]*data-step="([1-9])"/g)].map((match) => ({ id: match[1], step: Number(match[2]) }))
     expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout']))
     expect(idlePanels).toHaveLength(9)
     expect(outputSurfaces).toHaveLength(8)
-    expect(operatorSteps).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(operatorPanels).toEqual([
+      { id: 'setup', step: 1 },
+      { id: 'login', step: 2 },
+      { id: 'setup-token', step: 3 },
+      { id: 'installer', step: 4 },
+      { id: 'gateway', step: 5 },
+      { id: 'domain', step: 6 },
+      { id: 'status', step: 7 },
+      { id: 'node', step: 8 },
+      { id: 'profile', step: 9 }
+    ])
     expect(html).toMatch(/data-responsive="desktop mobile"/)
     expect(html).toMatch(/data-layout="operator-sequence"/)
     expect(html).toMatch(/data-density="wide"/)

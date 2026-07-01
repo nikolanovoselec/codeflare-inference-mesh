@@ -22,7 +22,7 @@ Admin routes use the MVP admin token or an admin session derived from it after f
 
 ## GET /
 
-Serves the responsive Admin configuration UI shell.
+Serves the guided responsive Admin configuration UI shell.
 
 ```http
 GET /
@@ -38,13 +38,13 @@ GET /
 
 | Status | Body | Notes |
 | --- | --- | --- |
-| `200` | HTML | Responsive Admin configuration UI. Admin actions still require bearer authentication after setup completes. |
+| `200` | HTML | Guided responsive Admin configuration UI. Admin actions still require bearer authentication after setup completes. |
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
 ## GET /admin
 
-Serves the same responsive Admin configuration UI shell as `/`.
+Serves the same guided responsive Admin configuration UI shell as `/`.
 
 ```http
 GET /admin
@@ -60,7 +60,7 @@ GET /admin
 
 | Status | Body | Notes |
 | --- | --- | --- |
-| `200` | HTML | Same responsive Admin configuration UI as `/`. |
+| `200` | HTML | Same guided responsive Admin configuration UI as `/`. |
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
