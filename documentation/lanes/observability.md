@@ -18,9 +18,9 @@ Provider responses include request ID, session ID when present, and selected nod
 | Field group | Contents | REQs |
 | --- | --- | --- |
 | Nodes | Node status, public models, active profiles, capacity, in-flight count, last seen. | [REQ-OBS-002](../../sdd/spec/observability.md) |
-| Sessions | Session ID, node ID, public model, profile ID, upstream model. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md) |
-| Scheduler | Lease expiration, failure penalty, recent failures, scheduler miss state. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
-| Routes | Gateway, provider, dynamic route, version, deployment identifiers. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| Profiles | Public aliases, active profile IDs, rollout state, and fallback profile data. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
+| Audit | Recent setup, claim, unregister, revoke, route provisioning, and profile switch events. | [REQ-OBS-004](../../sdd/spec/observability.md), [REQ-OBS-005](../../sdd/spec/observability.md) |
+| Metadata | Status generation timestamp. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 
 ## Node metrics
 
@@ -35,7 +35,7 @@ Audit history records setup completion, provider route provisioning, setup-token
 | Failure | Expected state change | REQs |
 | --- | --- | --- |
 | Missed heartbeat | Lease expires and node becomes ineligible. | [REQ-OBS-004](../../sdd/spec/observability.md) |
-| Invalid Mesh data | Node is ineligible until healthy heartbeat returns. | [REQ-OBS-004](../../sdd/spec/observability.md) |
+| Unsafe Mesh target | Node is ineligible for scheduler selection. | [REQ-OBS-004](../../sdd/spec/observability.md) |
 | Scheduler miss | Router returns `429` for `no-node` scheduler misses and `404` for `no-profile`; responses include request ID. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | Mid-stream crash | Reservation releases and failure score increases. | [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-OBS-004](../../sdd/spec/observability.md) |
 | Invalid Mesh data | Node record is rejected or ineligible. | [REQ-RTR-004](../../sdd/spec/router-worker.md) |

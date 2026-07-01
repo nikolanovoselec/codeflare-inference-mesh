@@ -30,7 +30,7 @@
 
 **Symptom:** Client receives `429` with `no-node` plus a request ID.
 
-**Cause:** No eligible node has capacity for the requested public model and session policy.
+**Cause:** No eligible node can currently serve the requested public model.
 
 **Fix:** Use the request ID to inspect admin status, free an in-flight request, start another compatible node, or switch the public alias to a ready fallback profile. ([REQ-SCH-003](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
 
@@ -62,6 +62,6 @@
 
 | Surface | Specification | Source |
 |---|---|---|
-| Busy responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> |
+| Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::reserve` <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> |
 | Failure reporting | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Self-update recovery | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::UpdateAnchors` <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> |
