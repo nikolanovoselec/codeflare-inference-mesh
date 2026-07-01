@@ -62,6 +62,6 @@
 
 | Surface | Specification | Source |
 |---|---|---|
-| Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::reserve` <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> |
+| Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/router.ts::handleChat` <!-- @impl: packages/router-worker/src/router.ts::handleChat --> |
 | Failure reporting | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Self-update recovery | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::UpdateAnchors` <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> |

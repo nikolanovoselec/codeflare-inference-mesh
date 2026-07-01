@@ -10,7 +10,7 @@
 - Added [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui) so the Admin UI presents setup, enrollment, routing, and operations as a guided responsive workflow.
 - Updated [REQ-SEC-002](security.md#req-sec-002-secret-storage-and-rotation-readiness) so node revocation cannot be undone by later heartbeat or unregister calls.
 - Updated [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui), [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard), and [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) so Admin UI HTML rejects framing, dashboard runtime controls report unavailable managed runtimes safely, and workflow safety validates each workflow job/step structurally.
-- Updated [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses) and [REQ-OBS-004](observability.md#req-obs-004-failure-reporting) so scheduler miss responses identify no-profile as `404` and no-node as `429` with request IDs instead of a retry hint.
+- Updated [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-OBS-002](observability.md#req-obs-002-admin-status-surface), and [REQ-OBS-004](observability.md#req-obs-004-failure-reporting) so scheduler miss responses identify no-profile as `404` and no-node as `429`, and admin status matches its nodes/profiles/audit response.
 
 ## 2026-06-30
 

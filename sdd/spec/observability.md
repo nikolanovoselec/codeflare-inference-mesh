@@ -32,15 +32,15 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 ### REQ-OBS-002: Admin status surface
 
-**Intent:** Admins need a current fleet view to see node readiness, session placement, active profiles, and routing capacity.
+**Intent:** Admins need a current fleet view to see node readiness, configured profiles, recent audit events, and status freshness.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
 1. Admin status lists registered nodes with status, public models, active profiles, in-flight count, capacity, and last-seen age. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
-2. Admin status lists active session mappings with session ID, node ID, public model, profile ID, and upstream model name. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
-3. Admin status includes lease expiration and failure penalty state for each node. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
+2. Admin status lists configured profiles with public aliases, upstream model, version, rollout percent, and active flag. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
+3. Admin status includes recent audit events and a generation timestamp. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
 4. Admin status omits token hashes and plaintext credentials. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
 5. Admin status returns a machine-readable JSON shape for UI and automation use. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
 
