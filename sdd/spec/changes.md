@@ -3,13 +3,14 @@
 ## 2026-07-01
 
 - Added [REQ-OBS-005](observability.md#req-obs-005-node-self-unregistration) so node self-unregistration has a Node Agent actor scope separate from admin failure reporting.
-- Workflow safety rejects floating runner refs, floating action refs, and unsafe workflow-run checkouts.
-- Custom-domain selection is stored and reused when Gateway sync chooses the Worker origin.
-- Node revocation removes nodes from scheduling while setup-token staging keeps existing setup credentials active.
-- Setup tokens expire after 24 hours, and stored custom domains continue driving Gateway sync.
-- The Admin UI presents setup, enrollment, routing, and operations as a guided responsive workflow.
-- Node revocation now makes revoked nodes unable to restore scheduling through later heartbeat or unregister calls.
-- Admin UI HTML responses now reject framing, dashboard runtime controls report unavailable managed runtimes safely, and workflow safety validates each workflow job/step structurally.
+- Updated [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) so workflow safety rejects floating runner refs, floating action refs, reusable-workflow refs, and unsafe workflow-run checkouts.
+- Updated [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain) so custom-domain selection is stored and reused when Gateway sync chooses the Worker origin.
+- Updated [REQ-SEC-002](security.md#req-sec-002-secret-storage-and-rotation-readiness) so node revocation removes nodes from scheduling while setup-token staging keeps existing setup credentials active.
+- Updated [REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle) and [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain) so setup tokens expire after 24 hours and stored custom domains continue driving Gateway sync.
+- Added [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui) so the Admin UI presents setup, enrollment, routing, and operations as a guided responsive workflow.
+- Updated [REQ-SEC-002](security.md#req-sec-002-secret-storage-and-rotation-readiness) so node revocation cannot be undone by later heartbeat or unregister calls.
+- Updated [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui), [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard-and-operations), and [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) so Admin UI HTML rejects framing, dashboard runtime controls report unavailable managed runtimes safely, and workflow safety validates each workflow job/step structurally.
+- Updated [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-busy-response) so busy responses identify busy/no-node outcomes with request IDs instead of promising Retry-After.
 
 ## 2026-06-30
 

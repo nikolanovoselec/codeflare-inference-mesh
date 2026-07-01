@@ -72,7 +72,7 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | `runtimeModel` | n/a | no | `packages/node-agent/internal/agent/metrics.go::RuntimeMetrics` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `publicModels` | claim response | yes after claim | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
 | `activeProfileIds` | claim response | yes after claim | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/model.go::EnsureModel` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/runtime.go::EnsureModel` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `capacity` | `1` | no | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `dataDir` | `.inference-mesh` | no | `packages/node-agent/cmd/inference-mesh-agent/main.go::defaultDataDir` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `releaseUrl` | repository release API | no | `packages/node-agent/internal/agent/update.go` | [REQ-NODE-005](../../sdd/spec/node-agent.md) |

@@ -38,11 +38,11 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 **Acceptance Criteria:**
 
-1. The agent claims a setup token once and receives permanent node, upstream, and profile configuration. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimHeartbeatAndConfigPersistence) -->
-2. A claimed node stores credentials in the platform-specific service data directory. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimHeartbeatAndConfigPersistence) -->
-3. Heartbeats include node identity, detected Mesh IP, listener port, runtime status, ready profiles, and metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimHeartbeatAndConfigPersistence) -->
-4. The Worker persists heartbeat state to D1 and refreshes the scheduler's live lease. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimHeartbeatAndConfigPersistence) -->
-5. The heartbeat response may include desired profile actions for the node to prepare. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimHeartbeatAndConfigPersistence) -->
+1. The agent claims a setup token once and receives permanent node, upstream, and profile configuration. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
+2. A claimed node stores credentials in the platform-specific service data directory. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
+3. Heartbeats include node identity, detected Mesh IP, listener port, runtime status, ready profiles, and metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
+4. The Worker persists heartbeat state to D1 and refreshes the scheduler's live lease. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
+5. The heartbeat response may include desired profile actions for the node to prepare. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -64,7 +64,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 **Acceptance Criteria:**
 
-1. Mesh-facing `/v1/chat/completions` rejects requests without the configured upstream bearer token. <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
+1. Mesh-facing Mesh-facing inference requests rejects requests without the configured upstream bearer token. <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
 2. Valid requests are forwarded to the configured local OpenAI-compatible runtime. <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
 3. Streaming runtime responses are streamed back to the Worker without full buffering. <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
 4. Runtime failures return an OpenAI-style error envelope and preserve an appropriate HTTP status. <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->

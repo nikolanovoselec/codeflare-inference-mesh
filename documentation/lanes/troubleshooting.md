@@ -1,5 +1,15 @@
 # Troubleshooting
 
+## Contents
+
+- [AI Gateway returns authentication errors](#ai-gateway-returns-authentication-errors)
+- [Worker cannot reach node](#worker-cannot-reach-node)
+- [Requests return busy](#requests-return-busy)
+- [Session latency suddenly increases](#session-latency-suddenly-increases)
+- [Installer cannot verify artifact](#installer-cannot-verify-artifact)
+- [Node update is staged but not applied](#node-update-is-staged-but-not-applied)
+- [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
+
 ## AI Gateway returns authentication errors
 
 **Symptom:** Gateway calls reach the Worker but `/v1/*` responds with an auth error.

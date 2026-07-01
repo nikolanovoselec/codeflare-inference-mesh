@@ -3,15 +3,6 @@
 ## Contents
 
 - [Conventions](#conventions)
-- [GET /health](#get-health)
-- [GET /v1/models](#get-v1models)
-- [POST /v1/chat/completions](#post-v1chatcompletions)
-- [POST /node/claim](#post-nodeclaim)
-- [POST /node/heartbeat](#post-nodeheartbeat)
-- [POST /node/unregister](#post-nodeunregister)
-- [GET /install.sh](#get-installsh)
-- [GET /install.ps1](#get-installps1)
-- [Node dashboard local routes](#node-dashboard-local-routes)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions
@@ -82,7 +73,8 @@ POST /v1/chat/completions
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Selected node response is returned; streaming responses stay streamed. | Node response body. |
-| `429` | Busy or no eligible node; current handler does not emit `Retry-After`. | `{ "error": "busy" | "no-node", "requestId": string }` |
+| `404` | Public model alias has no configured profile. | `{ "error": "no-profile", "requestId": string }` |
+| `429` | No eligible node is available or all eligible nodes are busy; current handler does not emit `Retry-After`. | `{ "error": "no-node" | "busy", "requestId": string }` |
 | `5xx` | Upstream forwarding failed after releasing any reservation. | Gateway-style error. |
 
 **Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md)
@@ -173,6 +165,8 @@ GET /install.sh
 **Authentication:** None.
 
 **Origin check:** n/a
+
+**Query parameters:** Optional `platform=linux|macos`; defaults to `linux`.
 
 **Request body:** None.
 

@@ -3,17 +3,6 @@
 ## Contents
 
 - [Conventions](#conventions)
-- [GET /](#get-)
-- [GET /admin](#get-admin)
-- [POST /admin/setup](#post-adminsetup)
-- [POST /admin/login](#post-adminlogin)
-- [GET /admin/status](#get-adminstatus)
-- [POST /admin/setup-tokens](#post-adminsetup-tokens)
-- [GET /admin/installers/:platform](#get-admininstallersplatform)
-- [POST /admin/nodes/:nodeId/revoke](#post-adminnodesnodeidrevoke)
-- [POST /admin/cloudflare/gateway/sync](#post-admincloudflaregatewaysync)
-- [POST /admin/custom-domain/validate](#post-admincustom-domainvalidate)
-- [POST /admin/profiles/rollout](#post-adminprofilesrollout)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions

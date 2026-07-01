@@ -13,9 +13,9 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 **Acceptance Criteria:**
 
 1. A configured AI Gateway custom provider uses the router Worker HTTPS origin as its base URL. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
-2. The provider-specific Gateway endpoint appends `/v1/chat/completions` to the router origin when forwarding chat requests. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
+2. The Gateway routes chat requests to the router's provider chat-completion forwarding surface. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
 3. The custom provider slug is stable after setup so client configuration does not change across router releases. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
-4. The router exposes `/v1/models` using public aliases rather than per-node runtime names. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
+4. The router exposes provider model-listing surface using public aliases rather than per-node runtime names. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -37,7 +37,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Acceptance Criteria:**
 
-1. The router accepts `/v1/*` requests only when the provider bearer token verifies successfully. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation) -->
+1. The router accepts provider route-family requests only when the provider bearer token verifies successfully. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation) -->
 2. The setup flow displays the generated provider token once for manual AI Gateway BYOK/provider-key entry. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation) -->
 3. Durable router state stores only a verifier for the provider token unless a later rotation flow requires encrypted recovery. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation) -->
 4. Missing or invalid provider credentials produce an authentication error without revealing expected token material. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation) -->
@@ -90,7 +90,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 1. A temporary validation endpoint records header names received from AI Gateway without recording header values. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
 2. The validation endpoint is disabled or removed before production hardening completes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
-3. The verified provider-token header name becomes the only accepted provider-auth source for `/v1/*` routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
+3. The verified provider-token header name becomes the only accepted provider-auth source for provider route-family routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
 4. Validation logs redact any header whose name implies credentials or identity tokens. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface)

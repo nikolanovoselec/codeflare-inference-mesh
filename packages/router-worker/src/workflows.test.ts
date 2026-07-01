@@ -200,7 +200,7 @@ describe('workflow contract values', () => {
     expect(stepRuns(fuzz.jobs['agent-fuzz']!)).toEqual(expect.arrayContaining(['go test -run=^$ -fuzz=Fuzz -fuzztime=30s ./internal/agent']))
   })
 
-  it('REQ-REL-004 rejects unsafe workflow_run checkout, floating actions, and floating runners', () => {
+  it('REQ-REL-004 rejects unsafe workflow_run checkout, floating actions, reusable workflows, and floating runners', () => {
     const valid = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [resolve(repoRoot, '.github/workflows')] })
     expect(valid.status).toBe(0)
 
@@ -209,23 +209,29 @@ describe('workflow contract values', () => {
       const unsafeWorkflowDir = resolve(temp, 'unsafe-workflow-run')
       const unsafeActionDir = resolve(temp, 'unsafe-action')
       const unsafeRunnerDir = resolve(temp, 'unsafe-runner')
+      const unsafeReusableDir = resolve(temp, 'unsafe-reusable')
       mkdirSync(unsafeWorkflowDir, { recursive: true })
       mkdirSync(unsafeActionDir, { recursive: true })
       mkdirSync(unsafeRunnerDir, { recursive: true })
+      mkdirSync(unsafeReusableDir, { recursive: true })
       writeFileSync(resolve(unsafeWorkflowDir, 'deploy.yml'), `name: Deploy\non:\n  workflow_run:\n    workflows: [PR Checks]\njobs:\n  deploy:\n    if: github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@v7.0.0\n        with:\n          ref: \${{ github.event.workflow_run.head_sha || github.ref }}\n      - uses: actions/checkout@v7.0.0\n        with:\n          ref: \${{ github.ref }}\n`)
       writeFileSync(resolve(unsafeActionDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@main # hidden by comment in raw-line parsers\n`)
       writeFileSync(resolve(unsafeRunnerDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    runs-on:\n      - ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4.2.2\n`)
+      writeFileSync(resolve(unsafeReusableDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    uses: owner/repo/.github/workflows/reusable.yml@main\n`)
 
       const unsafeWorkflowRun = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeWorkflowDir] })
       const unsafeAction = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeActionDir] })
       const unsafeRunner = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeRunnerDir] })
+      const unsafeReusable = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeReusableDir] })
 
       expect(unsafeWorkflowRun.status).not.toBe(0)
       expect(unsafeAction.status).not.toBe(0)
       expect(unsafeRunner.status).not.toBe(0)
+      expect(unsafeReusable.status).not.toBe(0)
       expect(unsafeWorkflowRun.stderr).toContain('workflow_run checkout is missing exact head_sha ref')
       expect(unsafeAction.stderr).toContain('actions/checkout@main uses floating ref')
       expect(unsafeRunner.stderr).toContain('ubuntu-latest is a floating runner ref')
+      expect(unsafeReusable.stderr).toContain('owner/repo/.github/workflows/reusable.yml@main uses floating ref')
     } finally {
       rmSync(temp, { recursive: true, force: true })
     }
