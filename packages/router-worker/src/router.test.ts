@@ -110,14 +110,18 @@ describe('router worker behavioral contracts', () => {
       '/admin/nodes/{nodeId}/revoke',
       '/admin/profiles/rollout'
     ])
-    expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 2, minTouchTargetPx: 44 })
+    expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 1, minTouchTargetPx: 44 })
     const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
     const idlePanels = [...html.matchAll(/data-state="idle"/g)]
     const outputSurfaces = [...html.matchAll(/data-empty="[^"]+"/g)]
+    const operatorSteps = [...html.matchAll(/data-step="([1-9])"/g)].map((match) => Number(match[1]))
     expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout']))
     expect(idlePanels).toHaveLength(9)
     expect(outputSurfaces).toHaveLength(8)
+    expect(operatorSteps).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(html).toMatch(/data-responsive="desktop mobile"/)
+    expect(html).toMatch(/data-layout="operator-sequence"/)
+    expect(html).toMatch(/data-density="wide"/)
     expect(html).toMatch(/@media \(max-width:760px\)/)
     expect(html).toContain('sessionStorage.getItem(tokenKey)')
     expect(html).toContain('localStorage.getItem(tokenKey)')

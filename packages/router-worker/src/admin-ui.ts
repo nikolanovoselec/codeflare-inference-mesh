@@ -33,7 +33,7 @@ const ADMIN_FORMS = [
 
 export const ADMIN_UI_RESPONSIVE = {
   mobileBreakpointPx: 760,
-  desktopMinColumns: 2,
+  desktopMinColumns: 1,
   minTouchTargetPx: 44
 } as const
 
@@ -55,7 +55,10 @@ export function adminUiHtml(workerOrigin: string): string {
         <span><strong>codeflare</strong><small>Inference Mesh admin</small></span>
       </a>
       <nav class="nav" aria-label="Admin sections">
-        ${ADMIN_FORMS.map((form) => `<a href="#${form.id}">${form.title}</a>`).join('')}
+        <a href="#setup">Setup</a>
+        <a href="#setup-token">Enroll</a>
+        <a href="#gateway">Route</a>
+        <a href="#status">Operate</a>
       </nav>
     </header>
 
@@ -73,21 +76,21 @@ export function adminUiHtml(workerOrigin: string): string {
         </aside>
       </section>
 
-      <section class="runway" aria-label="Operator workflow">
+      <section class="runway" aria-label="Operator workflow" data-flow="setup-enroll-route-operate">
         <div><strong>~/setup</strong><span>Create credentials once</span></div>
         <div><strong>~/enroll</strong><span>Generate installer + node token</span></div>
         <div><strong>~/route</strong><span>Sync Gateway + custom domain</span></div>
         <div><strong>~/operate</strong><span>Watch status, profiles, and revocation</span></div>
       </section>
 
-      <section class="workspace" aria-label="Admin configuration workspace">
-        <div class="panel command-panel" id="setup" data-form="setup" data-state="idle">
+      <section class="workspace" aria-label="Admin configuration workspace" data-layout="operator-sequence" data-density="wide">
+        <div class="panel command-panel" id="setup" data-form="setup" data-state="idle" data-step="1">
           ${panelHeader('First-run setup', 'Create credentials once, copy them immediately, then store the admin token locally if this is your browser.', 'first-run-setup')}
           <button class="primary" type="button" data-action="first-run-setup">Run first-run setup</button>
           <div class="token-grid result surface" id="setup-output" data-output="setup-tokens" data-empty="Generated credentials will appear here once." aria-live="polite"></div>
         </div>
 
-        <div class="panel" id="login" data-form="login" data-state="idle">
+        <div class="panel" id="login" data-form="login" data-state="idle" data-step="2">
           ${panelHeader('Admin token', 'Paste the admin token generated during setup. It stays in browser storage, not D1 plaintext.', 'admin-login')}
           <label>Admin token<input name="adminToken" id="admin-token" autocomplete="off" type="password"></label>
           <label class="check"><input name="rememberToken" id="remember-token" type="checkbox"> Remember on this device</label>
@@ -97,32 +100,32 @@ export function adminUiHtml(workerOrigin: string): string {
           </div>
         </div>
 
-        <div class="panel wide" id="status" data-form="status" data-state="idle">
+        <div class="panel wide" id="status" data-form="status" data-state="idle" data-step="3">
           ${panelHeader('Status', 'Redacted operational state from /admin/status. Plaintext credentials are never read back.', 'status-refresh')}
           <button type="button" data-action="status-refresh">Refresh status</button>
           <div class="status-grid result surface" id="status-output" data-output="status" data-empty="Refresh status to load redacted nodes, profiles, and audit events." aria-live="polite"></div>
         </div>
 
-        <div class="panel" id="setup-token" data-form="setup-token" data-state="idle">
+        <div class="panel" id="setup-token" data-form="setup-token" data-state="idle" data-step="4">
           ${panelHeader('Setup token', 'Generate a one-time node enrollment token, then use an installer command before it expires.', 'setup-token-create')}
           <button type="button" data-action="setup-token-create">Create setup token</button>
           <div class="token-grid result surface" id="setup-token-output" data-output="setup-token" data-empty="A short-lived setup token will appear here." aria-live="polite"></div>
         </div>
 
-        <div class="panel" id="installer" data-form="installer" data-state="idle">
+        <div class="panel" id="installer" data-form="installer" data-state="idle" data-step="5">
           ${panelHeader('Installers', 'Generate Linux, macOS, or Windows install commands backed by release artifacts.', 'installer-linux')}
           <label>Platform<select name="platform" id="installer-platform"><option value="linux">Linux</option><option value="macos">macOS</option><option value="windows">Windows</option></select></label>
           <button type="button" data-action="installer-generate">Generate installer command</button>
           <pre class="result command" id="installer-output" data-output="installer-command" data-empty="Installer command output will appear here." tabindex="0"></pre>
         </div>
 
-        <div class="panel" id="gateway" data-form="gateway" data-state="idle">
+        <div class="panel" id="gateway" data-form="gateway" data-state="idle" data-step="6">
           ${panelHeader('AI Gateway', 'Sync the custom provider, dynamic route, version, and deployment metadata when runtime Cloudflare credentials are configured.', 'gateway-sync')}
           <button type="button" data-action="gateway-sync">Sync Gateway route</button>
           <pre class="result" id="gateway-output" data-output="gateway-sync" data-empty="Gateway sync response will appear here. Configuration errors stay visible." tabindex="0"></pre>
         </div>
 
-        <div class="panel" id="domain" data-form="custom-domain" data-state="idle">
+        <div class="panel" id="domain" data-form="custom-domain" data-state="idle" data-step="7">
           ${panelHeader('Custom domain', 'Validate a hostname before switching Gateway traffic to a custom origin.', 'custom-domain-validate')}
           <label>Hostname<input name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url"></label>
           <label>Zone ID<input name="zoneId" id="custom-domain-zone" placeholder="0123456789abcdef0123456789abcdef"></label>
@@ -130,14 +133,14 @@ export function adminUiHtml(workerOrigin: string): string {
           <pre class="result" id="domain-output" data-output="custom-domain" data-empty="Hostname validation response will appear here." tabindex="0"></pre>
         </div>
 
-        <div class="panel" id="node" data-form="node-revoke" data-state="idle">
+        <div class="panel" id="node" data-form="node-revoke" data-state="idle" data-step="8">
           ${panelHeader('Node controls', 'Revoke a node from scheduling when it should no longer receive traffic.', 'node-revoke')}
           <label>Node ID<input name="nodeId" id="node-id" autocomplete="off"></label>
           <button class="danger" type="button" data-action="node-revoke">Revoke node</button>
           <pre class="result" id="node-output" data-output="node-revoke" data-empty="Revocation result will appear here." tabindex="0"></pre>
         </div>
 
-        <div class="panel" id="profile" data-form="profile-rollout" data-state="idle">
+        <div class="panel" id="profile" data-form="profile-rollout" data-state="idle" data-step="9">
           ${panelHeader('Profile rollout', 'Set rollout percentage for an existing model profile.', 'profile-rollout')}
           <label>Profile ID<input name="profileId" id="profile-id" autocomplete="off" placeholder="gemma4-26b-a4b-256k-3090"></label>
           <label>Rollout percent<input name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100"></label>
@@ -235,27 +238,27 @@ code,pre{font-family:var(--font-mono)}
 .hero h1{max-width:15ch;color:var(--text-primary);font-size:clamp(2.5rem,1.6rem + 4.4vw,4.5rem);font-weight:680;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
 .hero h1 .flare{background:var(--flare-gradient);-webkit-background-clip:text;background-clip:text;color:transparent}
 .lede{max-width:48ch;margin-top:1.4rem;color:var(--text-primary);font-size:clamp(1.05rem,.98rem + .4vw,1.2rem);line-height:1.5;text-wrap:pretty}
-.health-panel,.panel,.runway{border:1px solid var(--border-default);border-radius:var(--radius);background:rgb(var(--bg-surface-rgb)/.92);box-shadow:var(--shadow)}
+.health-panel,.panel{border:1px solid var(--border-default);border-radius:var(--radius);background:rgb(var(--bg-surface-rgb)/.92);box-shadow:var(--shadow)}
 .health-panel{display:grid;gap:.5rem;align-self:end;overflow:hidden;padding:1rem;font-family:var(--font-mono);font-size:.8125rem}
 .health-panel::before{content:'';display:block;height:.7rem;width:.7rem;border-radius:50%;background:var(--border-strong);box-shadow:1.1rem 0 0 var(--border-strong),2.2rem 0 0 var(--accent);margin-bottom:.2rem}
 .health-panel span:not(.status-dot){color:var(--text-primary)}
 .status-dot{display:none}
 #origin-label{display:block;overflow:auto;color:var(--text-muted);white-space:nowrap}
-.runway{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;margin:0 0 1rem;overflow:hidden}
-.runway div{display:grid;gap:.25rem;min-width:0;padding:1rem;border-right:1px solid var(--border-subtle)}
-.runway div:last-child{border-right:0}
-.runway strong{color:var(--accent);font-family:var(--font-mono);font-size:.72rem;font-weight:500;text-transform:lowercase}
-.runway span{color:var(--text-muted);font-size:.875rem}
-.workspace{display:grid;grid-template-columns:repeat(${ADMIN_UI_RESPONSIVE.desktopMinColumns},minmax(0,1fr));gap:1rem}
-.panel{display:flex;flex-direction:column;min-width:0;overflow:hidden;padding:0}
-.panel.wide,.command-panel{grid-column:1/-1}
+.runway{display:flex;align-items:center;flex-wrap:wrap;gap:.55rem;margin:0 auto 1.5rem;max-width:68rem;padding:.25rem 0 .75rem;color:var(--text-muted);font-family:var(--font-mono);font-size:.72rem}
+.runway div{display:flex;align-items:center;gap:.45rem;min-width:0}
+.runway div+div::before{content:'→';color:var(--text-dimmed);margin-right:.2rem}
+.runway strong{color:var(--accent);font-weight:500;text-transform:lowercase}
+.runway span{color:var(--text-muted);font-family:var(--font-sans);font-size:.875rem}
+.workspace{counter-reset:admin-step;display:flex;flex-direction:column;gap:1.25rem;max-width:68rem;margin:0 auto}
+.panel{counter-increment:admin-step;display:flex;flex-direction:column;min-width:0;overflow:hidden;padding:0;width:100%}
+.panel.wide,.command-panel{width:100%}
 .panel[data-state=loading]{border-color:var(--term-cyan)}
 .panel[data-state=ready]{border-color:rgb(74 222 128/.58)}
 .panel[data-state=error]{border-color:var(--accent-line)}
 .panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;border-bottom:1px solid var(--border-subtle);background:rgb(255 255 255/.015);padding:.9rem 1rem .75rem}
-.panel-head::before{content:'';flex:0 0 auto;width:.7rem;height:.7rem;margin-top:.34rem;border-radius:50%;background:var(--border-strong);box-shadow:1.1rem 0 0 var(--border-strong),2.2rem 0 0 var(--accent)}
-.panel h2{color:var(--text-primary);font-size:1rem;font-weight:650;line-height:1.15;letter-spacing:-.01em;margin:0 0 .25rem;padding-left:2.8rem}
-.panel p{color:var(--text-secondary);margin:0;padding-left:2.8rem;text-wrap:pretty}
+.panel-head::before{content:counter(admin-step,decimal-leading-zero);flex:0 0 auto;width:2.35rem;color:var(--accent);font-family:var(--font-mono);font-size:.72rem;font-weight:500;line-height:1.35;margin-top:.08rem}
+.panel h2{color:var(--text-primary);font-size:1.05rem;font-weight:650;line-height:1.15;letter-spacing:-.01em;margin:0 0 .25rem}
+.panel p{max-width:68ch;color:var(--text-secondary);margin:0;text-wrap:pretty}
 .panel-state{flex:0 0 auto;border:1px solid var(--border-default);border-radius:999px;color:var(--text-muted);font-family:var(--font-mono);font-size:.65rem;font-weight:500;line-height:1;padding:.32rem .5rem;white-space:nowrap;text-transform:uppercase}
 .panel[data-state=idle] .panel-state::before{content:'READY'}
 .panel[data-state=loading] .panel-state::before{content:'RUNNING'}
@@ -265,9 +268,11 @@ code,pre{font-family:var(--font-mono)}
 .meta-row span,.meta-row code{border:1px solid var(--border-default);border-radius:999px;background:rgb(255 255 255/.018);color:var(--text-muted);font-size:.72rem;font-weight:500;padding:.24rem .5rem}
 .meta-row span:first-child{color:var(--accent)}
 .meta-row code{max-width:100%;overflow:auto}
-.panel > button,.panel > label,.panel > .button-row,.panel > .result{margin-left:1rem;margin-right:1rem}
-.panel > button,.panel > .button-row{margin-bottom:1rem}
-.panel > label:first-of-type{margin-top:1rem}
+.panel > button,.panel > label,.panel > .button-row,.panel > .result{margin-left:1.25rem;margin-right:1.25rem}
+.panel > button,.panel > .button-row{margin-bottom:1.25rem}
+.panel > button{align-self:flex-start}
+.panel > label:first-of-type{margin-top:1.25rem}
+.panel > label{max-width:42rem}
 label{display:grid;gap:.35rem;color:var(--text-muted);font-size:.875rem;font-weight:600;margin:.8rem 0}
 input,select{min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;width:100%;border:1px solid var(--border-default);border-radius:var(--radius-sm);background:var(--bg-terminal);color:var(--text-primary);padding:.68rem .8rem}
 input::placeholder{color:var(--text-dimmed);opacity:1}
@@ -285,8 +290,8 @@ input::placeholder{color:var(--text-dimmed);opacity:1}
 .command:not(:empty){color:var(--text-primary)}
 .toast{position:fixed;right:1rem;bottom:1rem;z-index:60;max-width:min(28rem,calc(100vw - 2rem));border:1px solid var(--border-strong);border-radius:var(--radius);background:var(--bg-elevated);color:var(--text-primary);box-shadow:var(--shadow);opacity:0;pointer-events:none;padding:.85rem 1rem;transform:translateY(.5rem);transition:opacity .18s ease,transform .18s ease}
 .toast.show{opacity:1;transform:translateY(0)}
-@media (min-width:900px){.command-panel{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr)}.command-panel .panel-head,.command-panel .meta-row{grid-column:1/-1}.command-panel button{align-self:start}.command-panel .result{margin-top:0}}
-@media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){.topbar{position:static;align-items:flex-start;flex-direction:column}.nav{justify-content:flex-start;gap:.85rem;overflow-x:auto;width:100%;padding-bottom:.2rem}.hero{display:flex;flex-direction:column;padding-top:2.5rem}.hero h1{font-size:clamp(2.2rem,12vw,3.2rem);max-width:12ch}.health-panel{width:100%}.runway{grid-template-columns:1fr}.runway div{border-right:0;border-bottom:1px solid var(--border-subtle)}.runway div:last-child{border-bottom:0}.workspace{grid-template-columns:1fr}.panel-head{display:grid}.panel h2,.panel p{padding-left:0}.panel-head::before{display:none}.button-row,button{width:100%}.panel-state{justify-self:start}}
+@media (min-width:900px){.panel > .button-row{max-width:42rem}.result{min-height:4.25rem}}
+@media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){.topbar{position:static;align-items:flex-start;flex-direction:column}.nav{justify-content:flex-start;gap:.85rem;overflow-x:auto;width:100%;padding-bottom:.2rem}.hero{display:flex;flex-direction:column;padding-top:2.5rem}.hero h1{font-size:clamp(2.2rem,12vw,3.2rem);max-width:12ch}.health-panel{width:100%}.runway{display:grid;gap:.4rem;margin-bottom:1rem}.runway div+div::before{content:'';display:none}.panel-head{display:grid}.panel-head::before{width:auto}.button-row,button{width:100%}.panel > button{align-self:stretch}.panel-state{justify-self:start}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}`
 }
 
