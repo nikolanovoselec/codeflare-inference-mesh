@@ -94,11 +94,11 @@ export function adminUiHtml(workerOrigin: string): string {
 
       <div class="command-grid">
         <aside class="workflow-rail" aria-label="Operator workflow" data-rail-order="${ADMIN_UI_COMMAND_CENTER.railOrder.join(' ')}">
-          ${railItem('setup', 'Setup', 'Locked')}
-          ${railItem('auth', 'Auth', 'Required')}
-          ${railItem('enroll', 'Enroll', 'Setup token')}
-          ${railItem('route', 'Route', 'Gateway + domain')}
-          ${railItem('operate', 'Operate', 'Status + controls')}
+          ${railItem('setup', 'setup', 'Setup', 'Locked')}
+          ${railItem('auth', 'login', 'Auth', 'Required')}
+          ${railItem('enroll', 'setup-token', 'Enroll', 'Setup token')}
+          ${railItem('route', 'gateway', 'Route', 'Gateway + domain')}
+          ${railItem('operate', 'status', 'Operate', 'Status + controls')}
         </aside>
 
         <section class="work-area" aria-label="Admin work area" data-layout="command-center-work-area" data-panel-order="${ADMIN_UI_OPERATOR_FLOW.panelOrder.join(' ')}">
@@ -171,8 +171,8 @@ function actionRow(options: ActionRowOptions): string {
   </div>`
 }
 
-function railItem(id: string, label: string, state: string): string {
-  return `<a class="rail-item" href="#${escapeHtml(id)}" data-rail-item="${escapeHtml(id)}"><span>${escapeHtml(label)}</span><small>${escapeHtml(state)}</small></a>`
+function railItem(stage: string, targetId: string, label: string, state: string): string {
+  return `<a class="rail-item" href="#${escapeHtml(targetId)}" data-rail-item="${escapeHtml(stage)}"><span>${escapeHtml(label)}</span><small>${escapeHtml(state)}</small></a>`
 }
 
 function statusItem(label: string, value: string, id: string): string {

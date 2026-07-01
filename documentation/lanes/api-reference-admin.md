@@ -27,7 +27,7 @@ GET /
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Command-center Admin UI shell is served with anti-framing headers; the shell loads without a bearer token, while admin action rows still require bearer authentication after setup completes. | HTML. |
+| `200` | Command-center Admin UI shell is served with anti-framing headers; the shell loads without a bearer token, while admin controls still require bearer authentication after setup completes. | HTML. |
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 

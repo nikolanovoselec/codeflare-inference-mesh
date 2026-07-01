@@ -147,6 +147,8 @@ describe('router worker behavioral contracts', () => {
     const html = await admin.text()
     const config = adminUiConfig(html)
     const rowContracts = [...html.matchAll(/data-action-row="([^"]+)"/g)].map((match) => match[1])
+    const railTargets = [...html.matchAll(/class="rail-item" href="#([^"]+)"/g)].map((match) => match[1])
+    const sectionIds = new Set([...html.matchAll(/<section class="work-section" id="([^"]+)"/g)].map((match) => match[1]))
     const railOrder = html.match(/data-rail-order="([^"]+)"/)?.[1]
     const statusStrip = html.match(/data-status-strip="([^"]+)"/)?.[1]
 
@@ -157,6 +159,7 @@ describe('router worker behavioral contracts', () => {
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     expect(railOrder).toBe('setup auth enroll route operate')
     expect(statusStrip).toBe('setup auth nodes profiles audit')
+    expect(railTargets.every((target) => sectionIds.has(target))).toBe(true)
     expect(rowContracts).toHaveLength(ADMIN_UI_COMMAND_CENTER.rowOrder.length)
     expect(rowContracts.every((contract) => contract === ADMIN_UI_ACTION_ROW_ANCHOR.slots.join(' '))).toBe(true)
     expect([...html.matchAll(/class="action-row"/g)]).toHaveLength(ADMIN_UI_COMMAND_CENTER.rowOrder.length)
