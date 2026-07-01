@@ -120,16 +120,12 @@ describe('router worker behavioral contracts', () => {
     const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
     const idleRows = [...html.matchAll(/data-state="idle"/g)]
     const outputSurfaces = [...html.matchAll(/data-empty="[^"]+"/g)]
-    const commandRows = [...html.matchAll(/data-row="([^"]+)"/g)].map((match) => match[1])
     expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout']))
-    expect(config.commandCenter).toEqual(ADMIN_UI_COMMAND_CENTER)
-    expect(config.setupLockedFeedback).toEqual(ADMIN_UI_SETUP_LOCKED_FEEDBACK)
     expect(idleRows).toHaveLength(9)
     expect(outputSurfaces).toHaveLength(9)
-    expect(commandRows).toEqual([...ADMIN_UI_COMMAND_CENTER.rowOrder])
     expect(html).toMatch(/data-responsive="desktop mobile"/)
-    expect(html).toMatch(/data-layout="command-center"/)
-    expect(html).toMatch(/data-density="operator"/)
+    expect(html).toMatch(/data-brand-title="codeflare-inference-mesh"/)
+    expect(html).not.toMatch(/<small>Inference Mesh admin<\/small>/)
     expect(html).toMatch(/data-panel-order="setup login setup-token installer gateway domain status node profile"/)
     expect(html).toMatch(/class="live-badge"/)
     expect(html).toMatch(/\.status-dot\{display:inline-block/)
@@ -140,13 +136,14 @@ describe('router worker behavioral contracts', () => {
     expect(() => new Function(adminUiScript(html))).not.toThrow()
   })
 
-  it('REQ-ADM-006 serves a command-center admin UI with consistent action rows', async () => {
+  it('REQ-ADM-007 serves a command-center admin UI with consistent action rows', async () => {
     // AdminCommandCenterUiTestAnchor
     const { router } = routerFixture()
     const admin = await router(new Request('https://router.test/admin'))
     const html = await admin.text()
     const config = adminUiConfig(html)
     const rowContracts = [...html.matchAll(/data-action-row="([^"]+)"/g)].map((match) => match[1])
+    const commandRows = [...html.matchAll(/data-row="([^"]+)"/g)].map((match) => match[1])
     const railTargets = [...html.matchAll(/class="rail-item" href="#([^"]+)"/g)].map((match) => match[1])
     const sectionIds = new Set([...html.matchAll(/<section class="work-section" id="([^"]+)"/g)].map((match) => match[1]))
     const railOrder = html.match(/data-rail-order="([^"]+)"/)?.[1]
@@ -159,6 +156,8 @@ describe('router worker behavioral contracts', () => {
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     expect(railOrder).toBe('setup auth enroll route operate')
     expect(statusStrip).toBe('setup auth nodes profiles audit')
+    expect(commandRows).toEqual([...ADMIN_UI_COMMAND_CENTER.rowOrder])
+    expect(railTargets).toEqual(['setup', 'login', 'setup-token', 'gateway', 'status'])
     expect(railTargets.every((target) => sectionIds.has(target))).toBe(true)
     expect(rowContracts).toHaveLength(ADMIN_UI_COMMAND_CENTER.rowOrder.length)
     expect(rowContracts.every((contract) => contract === ADMIN_UI_ACTION_ROW_ANCHOR.slots.join(' '))).toBe(true)
@@ -167,7 +166,7 @@ describe('router worker behavioral contracts', () => {
     expect(html).not.toMatch(/class="panel command-panel"/)
   })
 
-  it('REQ-ADM-006 renders setup-locked feedback instead of raw JSON', async () => {
+  it('REQ-ADM-007 renders setup-locked feedback instead of raw JSON', async () => {
     // AdminSetupLockedFeedbackTestAnchor
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()

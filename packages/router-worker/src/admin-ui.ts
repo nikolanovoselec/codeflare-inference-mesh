@@ -69,7 +69,7 @@ export function adminUiHtml(workerOrigin: string): string {
     <header class="topbar">
       <a class="brand" href="/admin" aria-label="Codeflare Inference Mesh admin home">
         <span class="brand-mark" aria-hidden="true"></span>
-        <span><strong>codeflare</strong><small>Inference Mesh admin</small></span>
+        <span><strong>codeflare</strong></span>
       </a>
       <div class="origin-pill" aria-label="Router health">
         <span class="live-badge"><span class="status-dot" aria-hidden="true"></span>LIVE</span>
@@ -80,7 +80,7 @@ export function adminUiHtml(workerOrigin: string): string {
     <main class="console" data-layout="command-center" data-density="operator" data-command-center="true">
       <section class="overview" aria-labelledby="admin-title">
         <div>
-          <h1 id="admin-title">Operate inference mesh</h1>
+          <h1 class="codeflare-headline" id="admin-title" data-brand-title="codeflare-inference-mesh"><span>Codeflare</span> <span class="flare-word">Inference Mesh</span></h1>
           <p>Set up credentials, enroll nodes, route traffic, and inspect state from one control surface.</p>
         </div>
         <div class="status-strip" aria-label="Admin status summary" data-status-strip="${ADMIN_UI_COMMAND_CENTER.statusStrip.join(' ')}">
@@ -227,7 +227,6 @@ code,pre{font-family:var(--font-mono)}
 .brand-mark{width:.7rem;height:.7rem;border-radius:3px;background:var(--accent);box-shadow:0 0 16px rgb(255 106 69/.42)}
 .brand span:last-child{display:grid;gap:.05rem}
 .brand strong{font-size:.98rem;line-height:1}
-.brand small{color:var(--dim);font-size:.76rem}
 .origin-pill{display:flex;align-items:center;justify-content:flex-end;gap:.65rem;min-width:0;max-width:58vw}
 .live-badge{display:inline-flex;align-items:center;gap:.35rem;border:1px solid rgb(74 222 128/.34);border-radius:999px;background:rgb(74 222 128/.1);color:var(--success);font-size:.68rem;font-weight:800;letter-spacing:.06em;padding:.28rem .48rem}
 .status-dot{display:inline-block;width:.45rem;height:.45rem;border-radius:50%;background:var(--success);box-shadow:0 0 0 .16rem rgb(74 222 128/.12),0 0 12px rgb(74 222 128/.4)}
@@ -235,7 +234,9 @@ code,pre{font-family:var(--font-mono)}
 .console{width:min(1180px,100%);margin:0 auto;padding:1.25rem clamp(1rem,3vw,1.5rem) 3rem}
 .overview{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:1rem}
 .overview h1{color:var(--text);font-size:1.55rem;font-weight:720;letter-spacing:-.02em;line-height:1.15;text-wrap:balance}
-.overview p{max-width:64ch;margin-top:.35rem;color:var(--muted)}
+.codeflare-headline{font-size:clamp(2.2rem,5.4vw,4.25rem)!important;font-weight:760!important;letter-spacing:-.04em!important;line-height:1!important;max-width:100%}
+.codeflare-headline .flare-word{color:var(--accent)}
+.overview p{max-width:64ch;margin-top:.75rem;color:var(--muted)}
 .status-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-sm)}
 .status-item{display:grid;gap:.2rem;border-right:1px solid var(--line);padding:.65rem .75rem;min-width:0}
 .status-item:last-child{border-right:0}

@@ -29,7 +29,7 @@ GET /
 | --- | --- | --- |
 | `200` | Command-center Admin UI shell is served with anti-framing headers; the shell loads without a bearer token, while admin controls still require bearer authentication after setup completes. | HTML. |
 
-**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md)
 
 ### GET /admin
 
@@ -51,7 +51,7 @@ GET /admin
 | --- | --- | --- |
 | `200` | Same command-center Admin UI shell and anti-framing headers as `/`. | HTML. |
 
-**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/setup
 
@@ -72,9 +72,9 @@ POST /admin/setup
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `201` | Credentials are generated once; durable storage keeps verifiers/config only. | Generated admin, provider, setup, and upstream credentials. |
-| `401` | Setup has completed and admin auth is missing or invalid; the command-center setup row renders this as inline setup-locked feedback instead of exposing raw JSON. | Error object. |
+| `401` | Setup has completed and admin auth is missing or invalid; the command-center setup control renders inline locked-state guidance instead of exposing raw JSON. | Error object. |
 
-**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/login
 

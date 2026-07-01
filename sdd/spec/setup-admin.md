@@ -120,15 +120,40 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 2. The UI exposes first-run setup, admin login, status refresh, setup-token creation, Linux/macOS/Windows installer generation, Gateway sync, custom-domain validation, node revocation, and profile rollout controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
 3. The UI stores admin tokens only in browser-controlled session/local storage and sends them as bearer credentials only when an admin action requires authentication. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
 4. The UI displays generated admin/provider/setup/upstream tokens only from creation responses and never reads plaintext credentials back from status. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-5. The UI groups the workflow as setup, authentication, enrollment, routing, and operations across desktop and mobile. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_COMMAND_CENTER --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_RESPONSIVE --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a command-center admin UI with consistent action rows) -->
-6. Related controls keep predictable label, input, feedback, and action placement; locked setup errors show inline guidance instead of raw JSON. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ACTION_ROW_ANCHOR --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_SETUP_LOCKED_FEEDBACK --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a command-center admin UI with consistent action rows) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 renders setup-locked feedback instead of raw JSON) -->
-7. Admin UI HTML responses prevent browser framing. <!-- @impl: packages/router-worker/src/router.ts::html --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
+5. The UI remains usable on desktop and mobile viewports. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_RESPONSIVE --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
+6. Admin UI HTML responses prevent browser framing. <!-- @impl: packages/router-worker/src/router.ts::html --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-ADM-001](#req-adm-001-first-run-setup), [REQ-ADM-002](#req-adm-002-mvp-admin-auth), [REQ-ADM-003](#req-adm-003-setup-token-lifecycle), [REQ-ADM-004](#req-adm-004-one-line-installers), [REQ-ADM-005](#req-adm-005-optional-custom-domain), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout-controls), [REQ-OBS-002](observability.md#req-obs-002-admin-status)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-007: Admin command center
+
+**Intent:** Admins need the browser surface to behave like an operator console, with a clear task hierarchy and consistent control feedback.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The UI summarizes setup, authentication, nodes, profiles, and audit state near the top of the page. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_COMMAND_CENTER --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
+2. The UI lists setup, authentication, enrollment, routing, and operations in persistent navigation order. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_COMMAND_CENTER --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
+3. Each workflow navigation link resolves to a rendered work section. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
+4. Related controls keep predictable label, input, feedback, and action placement. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ACTION_ROW_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
+5. Locked setup errors show inline guidance instead of raw JSON. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_SETUP_LOCKED_FEEDBACK --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 renders setup-locked feedback instead of raw JSON) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
 
 **Verification:** Automated test
 
