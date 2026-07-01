@@ -20,7 +20,9 @@
 
 Admin routes use the MVP admin token or an admin session derived from it after first-run setup completes. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. Admin routes do not implement a dedicated Origin-header gate; bearer/admin authentication is the route guard. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
-## GET / ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
+### GET / ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
+
+Serves the responsive Admin configuration UI shell.
 
 ```http
 GET /
@@ -32,7 +34,7 @@ GET /
 
 **Request:** No body.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -40,7 +42,9 @@ GET /
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
-## GET /admin ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
+### GET /admin ([REQ-ADM-006](../../sdd/spec/setup-admin.md))
+
+Serves the same responsive Admin configuration UI shell as `/`.
 
 ```http
 GET /admin
@@ -52,7 +56,7 @@ GET /admin
 
 **Request:** No body.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -60,7 +64,9 @@ GET /admin
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
-## POST /admin/setup ([REQ-ADM-001](../../sdd/spec/setup-admin.md))
+### POST /admin/setup ([REQ-ADM-001](../../sdd/spec/setup-admin.md))
+
+Performs first-run setup and returns one-time-visible credentials.
 
 ```http
 POST /admin/setup
@@ -72,7 +78,7 @@ POST /admin/setup
 
 **Request:** No required body fields in the current implementation.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -81,7 +87,9 @@ POST /admin/setup
 
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md)
 
-## POST /admin/login ([REQ-ADM-002](../../sdd/spec/setup-admin.md))
+### POST /admin/login ([REQ-ADM-002](../../sdd/spec/setup-admin.md))
+
+Validates an admin credential and returns the admin session contract.
 
 ```http
 POST /admin/login
@@ -93,7 +101,7 @@ POST /admin/login
 
 **Request:** No required body fields in the current implementation.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -102,7 +110,9 @@ POST /admin/login
 
 **Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
-## GET /admin/status ([REQ-OBS-002](../../sdd/spec/observability.md))
+### GET /admin/status ([REQ-OBS-002](../../sdd/spec/observability.md))
+
+Returns the admin dashboard status contract with secrets redacted.
 
 ```http
 GET /admin/status
@@ -114,7 +124,7 @@ GET /admin/status
 
 **Request:** No body.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -123,7 +133,9 @@ GET /admin/status
 
 **Implements:** [REQ-OBS-002](../../sdd/spec/observability.md)
 
-## POST /admin/setup-tokens ([REQ-ADM-003](../../sdd/spec/setup-admin.md))
+### POST /admin/setup-tokens ([REQ-ADM-003](../../sdd/spec/setup-admin.md))
+
+Creates a new one-time setup token for node enrollment.
 
 ```http
 POST /admin/setup-tokens
@@ -133,9 +145,9 @@ POST /admin/setup-tokens
 
 **Origin check:** n/a
 
-**Request:** Optional setup-token metadata such as expiration, display name, and profile allowlist.
+**Request:** No required body fields in the current implementation; the handler creates a 24h setup token and does not accept per-token metadata yet.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -144,7 +156,9 @@ POST /admin/setup-tokens
 
 **Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md)
 
-## GET /admin/installers/:platform ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+### GET /admin/installers/:platform ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+
+Returns a one-line installer command for a supported node-agent platform.
 
 ```http
 GET /admin/installers/{platform}
@@ -156,16 +170,18 @@ GET /admin/installers/{platform}
 
 **Path parameters:** `platform` must be `linux`, `macos`, or `windows`.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
 | `200` | One-line install command | Fetches `/install.sh` or `/install.ps1` and passes only router URL plus setup token. |
-| `400` | Error text | Unsupported platform. |
+| `404` | `{ "error": "unknown_platform" }` | Unsupported platform. |
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-## POST /admin/nodes/:nodeId/revoke ([REQ-SEC-002](../../sdd/spec/security.md))
+### POST /admin/nodes/:nodeId/revoke ([REQ-SEC-002](../../sdd/spec/security.md))
+
+Revokes a node and removes it from eligible scheduling.
 
 ```http
 POST /admin/nodes/{nodeId}/revoke
@@ -177,7 +193,7 @@ POST /admin/nodes/{nodeId}/revoke
 
 **Path parameters:** `nodeId` is the URL-encoded node identifier to revoke.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -186,7 +202,9 @@ POST /admin/nodes/{nodeId}/revoke
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md)
 
-## POST /admin/cloudflare/gateway/sync ([REQ-GWY-003](../../sdd/spec/gateway.md))
+### POST /admin/cloudflare/gateway/sync ([REQ-GWY-003](../../sdd/spec/gateway.md))
+
+Creates or updates the AI Gateway custom-provider route for the Worker origin.
 
 ```http
 POST /admin/cloudflare/gateway/sync
@@ -196,9 +214,9 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request:** No required body fields in the current implementation; account, gateway, token, and Worker URL come from Worker environment.
+**Request:** No required body fields in the current implementation; account, gateway, token, and Worker URL come from Worker environment unless a validated custom domain is stored.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -207,7 +225,9 @@ POST /admin/cloudflare/gateway/sync
 
 **Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md)
 
-## POST /admin/custom-domain/validate ([REQ-ADM-005](../../sdd/spec/setup-admin.md))
+### POST /admin/custom-domain/validate ([REQ-ADM-005](../../sdd/spec/setup-admin.md))
+
+Validates and stores a custom-domain hostname and Cloudflare zone ID.
 
 ```http
 POST /admin/custom-domain/validate
@@ -217,9 +237,9 @@ POST /admin/custom-domain/validate
 
 **Origin check:** n/a
 
-**Request:** JSON body with `hostname` and `zoneId` for the candidate custom-domain hostname.
+**Request:** JSON body with `hostname` and a 32-character hexadecimal Cloudflare `zoneId`.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -228,7 +248,9 @@ POST /admin/custom-domain/validate
 
 **Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md)
 
-## POST /admin/profiles/rollout ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
+### POST /admin/profiles/rollout ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
+
+Stores a versioned profile rollout percentage.
 
 ```http
 POST /admin/profiles/rollout
@@ -240,7 +262,7 @@ POST /admin/profiles/rollout
 
 **Request:** JSON body with `profileId` and numeric `rolloutPercent`.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |

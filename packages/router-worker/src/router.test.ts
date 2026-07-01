@@ -124,7 +124,7 @@ describe('router worker behavioral contracts', () => {
     expect((await router(new Request('https://router.test/missing'))).status).toBe(404)
   })
 
-  it('REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens and stores only verifiers', async () => {
+  it('REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation', async () => {
     // TokenVerifierStorageTestAnchor
     const { router, store } = routerFixture()
     const response = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
@@ -137,6 +137,16 @@ describe('router worker behavioral contracts', () => {
     expect(timingSafeEqualText('sha256:same', 'sha256:different')).toBe(false)
     const returnedValues = new Set(Object.values(body))
     expect(store.tokens.some((token) => returnedValues.has(token.verifier))).toBe(false)
+
+    const staged = await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(String(body.adminToken)) }))
+    const stagedBody = await staged.json() as { setupToken: string }
+    const activeSetupTokens = store.tokens.filter((token) => token.kind === 'setup' && token.active)
+
+    expect(staged.status).toBe(201)
+    expect(stagedBody.setupToken).not.toBe(body.setupToken)
+    expect(activeSetupTokens).toHaveLength(2)
+    expect(new Set(activeSetupTokens.map((token) => token.verifier)).size).toBe(2)
+    expect(store.audit.some((event) => event.type === 'setup_token_created' && event.actor === 'admin')).toBe(true)
   })
 
   it('REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families', async () => {
@@ -325,7 +335,7 @@ describe('router worker behavioral contracts', () => {
     expect((await store.getNode('node-a'))?.metrics?.gpuName).toBe('RTX 3090')
   })
 
-  it('REQ-OBS-004 lets an authenticated node remove itself from scheduling', async () => {
+  it('REQ-OBS-005 lets an authenticated node remove itself from scheduling', async () => {
     // NodeUnregisterAuthorizationTestAnchor
     const { router, store } = routerFixture()
     await store.upsertNode({ ...nodeFixture({ status: 'online', inFlight: 1 }), nodeTokenVerifier: await hashToken('node-secret') })
@@ -340,6 +350,19 @@ describe('router worker behavioral contracts', () => {
     expect(response.status).toBe(200)
     expect(node?.status).toBe('offline')
     expect(node?.inFlight).toBe(0)
+  })
+
+  it('REQ-SEC-002 lets an admin revoke a node and audit the action', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode(nodeFixture({ status: 'online' }))
+
+    const response = await router(new Request('https://router.test/admin/nodes/node-a/revoke', { method: 'POST', headers: bearer('admin-secret') }))
+    const node = await store.getNode('node-a')
+
+    expect(response.status).toBe(200)
+    expect(node?.status).toBe('revoked')
+    expect(node?.failurePenaltyUntil).toBeGreaterThan(1_700_000_000_000)
+    expect(store.audit.some((event) => event.type === 'node_revoked' && event.target === 'node-a')).toBe(true)
   })
 
   it('REQ-SCH-002 REQ-NODE-002 keeps scheduler reservation counts authoritative over heartbeats', async () => {
@@ -405,7 +428,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-GWY-003 automates provider, route, version, and deployment creation while leaving BYOK manual', async () => {
     const calls: string[] = []
-    const { router } = routerFixture({
+    const { router, store } = routerFixture({
       env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', AI_GATEWAY_ID: 'gateway-a', WORKER_BASE_URL: 'https://router.example.workers.dev' },
       cloudflareClient: {
         async syncCustomProvider(input) {
@@ -415,11 +438,13 @@ describe('router worker behavioral contracts', () => {
       }
     })
 
+    await store.putConfig('custom_domain', { hostname: 'ai.example.com', zoneId: '0123456789abcdef0123456789abcdef' })
+
     const response = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
     const body = await response.json() as { manualProviderKeyRequired: boolean; deploymentId: string }
 
     expect(response.status).toBe(200)
-    expect(calls).toEqual(['account-a', 'gateway-a', 'https://router.example.workers.dev'])
+    expect(calls).toEqual(['account-a', 'gateway-a', 'https://ai.example.com'])
     expect(body).toMatchObject({ deploymentId: 'deployment-a', manualProviderKeyRequired: true })
   })
 
@@ -453,13 +478,16 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-ADM-005 validates and stores optional custom-domain hostnames before accepting them', async () => {
     const { router, store } = routerFixture()
-    const good = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com', zoneId: 'zone-a' }) }))
-    const bad = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'http://bad', zoneId: 'zone-a' }) }))
+    const zoneId = '0123456789abcdef0123456789abcdef'
+    const good = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com', zoneId }) }))
+    const bad = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'http://bad', zoneId }) }))
+    const badZone = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com', zoneId: 'not-a-zone' }) }))
 
     expect(good.status).toBe(200)
-    expect(await store.getConfig('custom_domain')).toEqual({ hostname: 'ai.example.com', zoneId: 'zone-a' })
+    expect(await store.getConfig('custom_domain')).toEqual({ hostname: 'ai.example.com', zoneId })
     expect(store.audit.some((event) => event.type === 'custom_domain_validated' && event.target === 'ai.example.com')).toBe(true)
     expect(bad.status).toBe(400)
+    expect(badZone.status).toBe(400)
   })
 
   it('REQ-SEC-003 strips client authorization and Cloudflare headers before Worker-to-node forwarding', async () => {

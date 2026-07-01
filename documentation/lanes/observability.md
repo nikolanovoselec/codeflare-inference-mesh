@@ -19,7 +19,7 @@ Heartbeats report runtime state, active profile, in-flight count, last request d
 
 ## Audit events
 
-Audit history records setup completion, provider route provisioning, setup-token creation and claim, node revoke, profile switch, deployment, and update actions. Audit records redact token material and credential values. ([REQ-OBS-004](../../sdd/spec/observability.md)) ([REQ-SEC-002](../../sdd/spec/security.md))
+Audit history records setup completion, provider route provisioning, setup-token creation and claim, node unregister, node revoke, and profile switch actions. Audit records redact token material and credential values. ([REQ-OBS-004](../../sdd/spec/observability.md)) ([REQ-OBS-005](../../sdd/spec/observability.md)) ([REQ-SEC-002](../../sdd/spec/security.md))
 
 ## Failure states
 

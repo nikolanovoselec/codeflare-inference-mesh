@@ -45,7 +45,13 @@ Production releases use stable semantic tags such as `v0.1.0`. Integration relea
 
 **When:** The latest Worker deployment or release artifact is bad and a previous Git ref is known to be safe.
 
-**Command:** Run the manual Deploy workflow with `environment=integration` or `environment=production`, `version_tag` set to the known-good tag, and the workflow ref set to the known-good branch or commit. Production rollback still requires the selected ref to be `main`.
+**Command:**
+
+```bash
+gh workflow run Deploy --ref main -f environment=production -f version_tag=<known-good-tag>
+```
+
+For integration rollback, use `--ref develop -f environment=integration` with the known-good integration tag. Production rollback still requires the selected ref to be `main`.
 
 **Verifies:** After the workflow succeeds, call `GET /health` on the target Worker and confirm installer scripts reference the known-good release tag.
 

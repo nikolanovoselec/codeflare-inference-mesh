@@ -202,6 +202,7 @@ async function handleSetupToken(request: Request, deps: RouterDeps, requestId: s
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const setupToken = generateBearerToken('setup')
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
+  await deps.store.appendAudit({ id: requestId, type: 'setup_token_created', at: now, actor: 'admin', detail: {} })
   return json({ setupToken, expiresAt: now + SETUP_TOKEN_TTL_MS }, 201, requestId)
 }
 
@@ -226,7 +227,8 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
   const gatewayId = deps.env.AI_GATEWAY_ID ?? 'inference-mesh'
-  const workerUrl = deps.env.WORKER_BASE_URL
+  const customDomain = await deps.store.getConfig<{ hostname: string; zoneId: string }>('custom_domain')
+  const workerUrl = customDomain?.hostname ? `https://${customDomain.hostname}` : deps.env.WORKER_BASE_URL
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!accountId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
@@ -239,11 +241,13 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
 async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<{ hostname: string; zoneId: string }>(request)
-  const valid = Boolean(body?.hostname && body.zoneId && validateCustomDomain(body.hostname))
+  const hostname = typeof body?.hostname === 'string' ? body.hostname.trim() : ''
+  const zoneId = typeof body?.zoneId === 'string' ? body.zoneId.trim() : ''
+  const valid = Boolean(hostname && validateCustomDomain(hostname) && /^[a-f0-9]{32}$/i.test(zoneId))
   if (!valid) return json({ valid: false, hostname: body?.hostname }, 400, requestId)
-  const result = { valid: true, hostname: body.hostname, zoneId: body.zoneId }
-  await deps.store.putConfig('custom_domain', { hostname: body.hostname, zoneId: body.zoneId })
-  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_validated', at: now, actor: 'admin', target: body.hostname, detail: { zoneId: body.zoneId } })
+  const result = { valid: true, hostname, zoneId }
+  await deps.store.putConfig('custom_domain', { hostname, zoneId })
+  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_validated', at: now, actor: 'admin', target: hostname, detail: { zoneId } })
   return json(result, 200, requestId)
 }
 

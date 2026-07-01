@@ -118,7 +118,7 @@ export function adminUiHtml(workerOrigin: string): string {
         <div class="panel" id="domain" data-form="custom-domain">
           ${panelHeader('Custom domain', 'Validate a hostname before wiring it into Gateway or DNS automation.')}
           <label>Hostname<input name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url"></label>
-          <label>Zone ID<input name="zoneId" id="custom-domain-zone" placeholder="zone-id"></label>
+          <label>Zone ID<input name="zoneId" id="custom-domain-zone" placeholder="0123456789abcdef0123456789abcdef"></label>
           <button type="button" data-action="custom-domain-validate">Validate hostname</button>
           <pre id="domain-output" data-output="custom-domain" tabindex="0"></pre>
         </div>

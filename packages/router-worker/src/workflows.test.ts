@@ -200,7 +200,7 @@ describe('workflow contract values', () => {
     expect(stepRuns(fuzz.jobs['agent-fuzz']!)).toEqual(expect.arrayContaining(['go test -run=^$ -fuzz=Fuzz -fuzztime=30s ./internal/agent']))
   })
 
-  it('REQ-REL-004 rejects unsafe workflow_run checkout and floating action refs', () => {
+  it('REQ-REL-004 rejects unsafe workflow_run checkout, floating actions, and floating runners', () => {
     const valid = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [resolve(repoRoot, '.github/workflows')] })
     expect(valid.status).toBe(0)
 
@@ -209,7 +209,7 @@ describe('workflow contract values', () => {
       const unsafeDir = resolve(temp, 'workflows')
       mkdirSync(unsafeDir, { recursive: true })
       writeFileSync(resolve(unsafeDir, 'deploy.yml'), `name: Deploy\non:\n  workflow_run:\n    workflows: [PR Checks]\njobs:\n  deploy:\n    runs-on: ubuntu-24.04\n    steps:\n      # github.event.workflow_run.event == 'push'\n      - uses: actions/checkout@v7.0.0\n        with:\n          ref: \${{ github.ref }}\n`)
-      writeFileSync(resolve(unsafeDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@main\n`)
+      writeFileSync(resolve(unsafeDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@main\n`)
 
       const unsafe = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeDir] })
       expect(unsafe.status).not.toBe(0)

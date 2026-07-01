@@ -94,8 +94,7 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 2. Mid-stream node failures release reservations and increase the node's recent failure score. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 releases a reservation when Mesh fetch throws) -->
 3. WARP disconnect reports make the node ineligible until a healthy heartbeat returns. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
 4. Capacity exhaustion returns busy state rather than internal error state. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns busy when no eligible node has capacity) -->
-5. An authenticated node can unregister itself, marking the node offline and clearing live eligibility. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-004 lets an authenticated node remove itself from scheduling) -->
-6. Audit events record setup, claim, unregister, revoke, route provisioning, profile switch, and deployment actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 validates and stores optional custom-domain hostnames before accepting them) -->
+5. Audit events record setup, claim, unregister, revoke, route provisioning, and profile switch actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-005 lets an authenticated node remove itself from scheduling) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-002 lets an admin revoke a node and audit the action) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 automates provider, route, version, and deployment creation while leaving BYOK manual) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 updates profile rollout as versioned configuration) -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -109,8 +108,30 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 ---
 
+### REQ-OBS-005: Node self-unregistration
+
+**Intent:** Node agents need a safe way to remove themselves from routing when they are shutting down or leaving the mesh.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. An authenticated node can unregister itself, marking the node offline and clearing live eligibility. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-005 lets an authenticated node remove itself from scheduling) -->
+
+**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-busy-response), [REQ-SEC-002](security.md#req-sec-002-admin-and-node-credential-boundaries)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/observability.md](../../documentation/lanes/observability.md)
-- [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)
+- [documentation/lanes/api-reference.md](../../documentation/lanes/api-reference.md)
 - [documentation/lanes/troubleshooting.md](../../documentation/lanes/troubleshooting.md)

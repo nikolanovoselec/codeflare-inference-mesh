@@ -91,17 +91,28 @@ func (m *RuntimeManager) Stop(ctx context.Context) error {
 	cmd := m.cmd
 	done := m.done
 	cancel := m.cancel
-	if cmd == nil || cmd.Process == nil || done == nil {
+	if cmd == nil || cmd.Process == nil {
 		m.state = "stopped"
 		m.mu.Unlock()
 		return nil
 	}
+	if done == nil {
+		m.mu.Unlock()
+		return nil
+	}
+	m.done = nil
 	m.state = "stopping"
 	m.mu.Unlock()
 
 	if err := cmd.Process.Signal(os.Interrupt); err != nil {
 		if killErr := cmd.Process.Kill(); killErr != nil {
-			m.setState("failed")
+			m.mu.Lock()
+			if m.cmd == cmd {
+				m.done = done
+				m.cancel = cancel
+				m.state = "failed"
+			}
+			m.mu.Unlock()
 			return fmt.Errorf("stop runtime: %w", err)
 		}
 	}
@@ -112,17 +123,17 @@ func (m *RuntimeManager) Stop(ctx context.Context) error {
 			cancel()
 		}
 		_ = cmd.Process.Kill()
-		m.setState("failed")
+		m.finishStop(cmd, cancel, "failed")
 		return ctx.Err()
 	case err := <-done:
 		if cancel != nil {
 			cancel()
 		}
 		if err != nil && !strings.Contains(err.Error(), "signal") {
-			m.setState("failed")
+			m.finishStop(cmd, cancel, "failed")
 			return fmt.Errorf("wait runtime: %w", err)
 		}
-		m.setState("stopped")
+		m.finishStop(cmd, cancel, "stopped")
 		return nil
 	}
 }
@@ -142,11 +153,14 @@ func (m *RuntimeManager) State() string {
 }
 
 func (m *RuntimeManager) runningLocked() bool {
-	if m.cmd == nil || m.done == nil {
+	if m.cmd == nil {
 		if m.state == "" {
 			m.state = "stopped"
 		}
 		return false
+	}
+	if m.done == nil {
+		return true
 	}
 	select {
 	case err := <-m.done:
@@ -172,7 +186,7 @@ func (m *RuntimeManager) wait(cmd *exec.Cmd, done chan error) {
 	done <- err
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.cmd == cmd {
+	if m.cmd == cmd && m.done == done {
 		m.cmd = nil
 		m.done = nil
 		m.cancel = nil
@@ -182,6 +196,20 @@ func (m *RuntimeManager) wait(cmd *exec.Cmd, done chan error) {
 			m.state = "stopped"
 		}
 	}
+}
+
+func (m *RuntimeManager) finishStop(cmd *exec.Cmd, cancel context.CancelFunc, state string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cmd == cmd {
+		m.cmd = nil
+		m.done = nil
+		m.cancel = nil
+	}
+	if cancel != nil {
+		cancel()
+	}
+	m.state = state
 }
 
 func (m *RuntimeManager) setState(state string) {

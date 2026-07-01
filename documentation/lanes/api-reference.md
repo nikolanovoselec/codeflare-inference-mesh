@@ -8,7 +8,7 @@
 - [POST /v1/chat/completions](#post-v1chatcompletions-req-rtr-002-req-rtr-003)
 - [POST /node/claim](#post-nodeclaim-req-adm-003-req-node-002)
 - [POST /node/heartbeat](#post-nodeheartbeat-req-node-002-req-obs-003)
-- [POST /node/unregister](#post-nodeunregister-req-obs-004)
+- [POST /node/unregister](#post-nodeunregister-req-obs-005)
 - [GET /install.sh](#get-installsh-req-adm-004)
 - [GET /install.ps1](#get-installps1-req-adm-004)
 - [Node dashboard local routes](#node-dashboard-local-routes-req-node-004-req-sec-004)
@@ -18,7 +18,9 @@
 
 All API responses that represent errors use an OpenAI-style `error` object when they are visible to AI Gateway or OpenAI-compatible clients. Provider routes require the provider token; node routes require setup or node credentials; installer routes contain no permanent secrets. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
-## GET /health ([REQ-RTR-001](../../sdd/spec/router-worker.md))
+### GET /health ([REQ-RTR-001](../../sdd/spec/router-worker.md))
+
+Returns Worker health for routing and deploy verification.
 
 ```http
 GET /health
@@ -30,7 +32,7 @@ GET /health
 
 **Request:** No body.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -38,7 +40,9 @@ GET /health
 
 **Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md)
 
-## GET /v1/models ([REQ-GWY-001](../../sdd/spec/gateway.md)) ([REQ-RUN-001](../../sdd/spec/runtime-profiles.md))
+### GET /v1/models ([REQ-GWY-001](../../sdd/spec/gateway.md)) ([REQ-RUN-001](../../sdd/spec/runtime-profiles.md))
+
+Lists public OpenAI-compatible model aliases exposed through the mesh.
 
 ```http
 GET /v1/models
@@ -50,7 +54,7 @@ GET /v1/models
 
 **Request:** No body.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -59,7 +63,9 @@ GET /v1/models
 
 **Implements:** [REQ-GWY-001](../../sdd/spec/gateway.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md)
 
-## POST /v1/chat/completions ([REQ-RTR-002](../../sdd/spec/router-worker.md)) ([REQ-RTR-003](../../sdd/spec/router-worker.md))
+### POST /v1/chat/completions ([REQ-RTR-002](../../sdd/spec/router-worker.md)) ([REQ-RTR-003](../../sdd/spec/router-worker.md))
+
+Forwards an OpenAI-compatible chat completion request to an eligible node.
 
 ```http
 POST /v1/chat/completions
@@ -71,7 +77,7 @@ POST /v1/chat/completions
 
 **Request:** JSON chat completion body with a public model alias.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -81,7 +87,9 @@ POST /v1/chat/completions
 
 **Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md)
 
-## POST /node/claim ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-NODE-002](../../sdd/spec/node-agent.md))
+### POST /node/claim ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-NODE-002](../../sdd/spec/node-agent.md))
+
+Claims a node with a one-time setup token and returns node credentials.
 
 ```http
 POST /node/claim
@@ -93,7 +101,7 @@ POST /node/claim
 
 **Request:** JSON node claim body with display name, Mesh IP, inference port, capacity, public models, and active profiles.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -102,7 +110,9 @@ POST /node/claim
 
 **Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md)
 
-## POST /node/heartbeat ([REQ-NODE-002](../../sdd/spec/node-agent.md)) ([REQ-OBS-003](../../sdd/spec/observability.md))
+### POST /node/heartbeat ([REQ-NODE-002](../../sdd/spec/node-agent.md)) ([REQ-OBS-003](../../sdd/spec/observability.md))
+
+Refreshes node lease, runtime metrics, and desired profile state.
 
 ```http
 POST /node/heartbeat
@@ -114,7 +124,7 @@ POST /node/heartbeat
 
 **Request:** JSON heartbeat body with node status, Mesh address, capacity, active profiles, runtime state, and metrics.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -123,7 +133,9 @@ POST /node/heartbeat
 
 **Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md)
 
-## POST /node/unregister ([REQ-OBS-004](../../sdd/spec/observability.md))
+### POST /node/unregister ([REQ-OBS-005](../../sdd/spec/observability.md))
+
+Lets an authenticated node remove itself from scheduling before shutdown.
 
 ```http
 POST /node/unregister
@@ -135,16 +147,18 @@ POST /node/unregister
 
 **Request:** JSON body with `nodeId`.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
 | `200` | `{ "ok": true }` | Marks the node offline and clears live eligibility. |
 | `401` | Error object | Node token is invalid. |
 
-**Implements:** [REQ-OBS-004](../../sdd/spec/observability.md)
+**Implements:** [REQ-OBS-005](../../sdd/spec/observability.md)
 
-## GET /install.sh ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+### GET /install.sh ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+
+Returns a Unix installer for Linux or macOS node agents.
 
 ```http
 GET /install.sh
@@ -156,16 +170,17 @@ GET /install.sh
 
 **Request:** Optional `platform=linux` or `platform=macos` query parameter.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
 | `200` | Unix shell installer | Downloads from the configured `AGENT_RELEASE_TAG` release and verifies checksums. |
-| `400` | Error text | Unsupported platform. |
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-## GET /install.ps1 ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+### GET /install.ps1 ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+
+Returns a Windows installer for node agents.
 
 ```http
 GET /install.ps1
@@ -177,7 +192,7 @@ GET /install.ps1
 
 **Request:** No body.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |
@@ -185,7 +200,9 @@ GET /install.ps1
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-## Node dashboard local routes ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-SEC-004](../../sdd/spec/security.md))
+### Node dashboard local routes ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-SEC-004](../../sdd/spec/security.md))
+
+Exposes localhost-only node status and runtime controls.
 
 ```http
 GET /api/status
@@ -200,7 +217,7 @@ POST /api/runtime/restart
 
 **Request:** Runtime-control POSTs do not require a request body.
 
-**Response:**
+**Response**
 
 | Status | Body | Notes |
 | --- | --- | --- |

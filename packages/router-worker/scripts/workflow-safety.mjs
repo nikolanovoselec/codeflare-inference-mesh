@@ -47,6 +47,20 @@ function actionUses(lines) {
     .filter(Boolean)
 }
 
+function runnerPins(lines) {
+  return lines
+    .map((line) => line.match(/^\s*runs-on\s*:\s*(.+?)\s*(?:#.*)?$/)?.[1])
+    .filter(Boolean)
+    .flatMap((value) => value.replace(/[\[\]'\"]/g, '').split(',').map((item) => item.trim()).filter(Boolean))
+}
+
+function invalidRunnerPin(runner) {
+  if (runner === 'self-hosted') return ''
+  if (runner.endsWith('-latest')) return `${runner} is a floating runner ref`
+  if (/^(ubuntu|windows|macos)-\d+(?:\.\d+)?$/.test(runner)) return ''
+  return `${runner} is not pinned to a concrete runner version`
+}
+
 function invalidActionPin(use) {
   if (use.startsWith('./') || use.startsWith('docker://')) return ''
   const at = use.lastIndexOf('@')
@@ -68,6 +82,10 @@ export function validateWorkflowSafety(workflowDir = '.github/workflows') {
       }
       if (!hasHardenedWorkflowRunJob(lines)) errors.push(`${file} workflow_run job is missing push/repository guards`)
       if (!hasHardenedCheckoutRef(lines)) errors.push(`${file} workflow_run checkout is missing exact head_sha ref`)
+    }
+    for (const runner of runnerPins(lines)) {
+      const error = invalidRunnerPin(runner)
+      if (error) errors.push(`${file}: ${error}`)
     }
     for (const use of actionUses(lines)) {
       const error = invalidActionPin(use)
