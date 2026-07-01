@@ -379,7 +379,7 @@ function adminUiScript(): string {
       copyAll.textContent = 'Copy all';
       copyAll.setAttribute('data-copy-all', 'true');
       copyAll.addEventListener('click', async () => {
-        await navigator.clipboard.writeText(entries.map(([key, value]) => key + ': ' + value).join('\n'));
+        await navigator.clipboard.writeText(entries.map(([key, value]) => key + ': ' + value).join('\\n'));
         toast('Copied all');
       });
       el.appendChild(copyAll);
