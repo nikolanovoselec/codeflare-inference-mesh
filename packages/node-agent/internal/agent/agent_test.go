@@ -184,6 +184,24 @@ func TestREQNODE004DashboardRuntimeControlsUseController(t *testing.T) {
 	})
 }
 
+func TestREQNODE004DashboardRuntimeControlsReportUnavailableWithoutController(t *testing.T) {
+	t.Run("REQ-NODE-004 REQ-SEC-004", func(t *testing.T) {
+		handler := DashboardHandler(func() DashboardStatus {
+			return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("external", "mesh-default", 0), RuntimeState: "external", Version: "test"}
+		})
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/start", nil)
+		req.Header.Set("origin", "http://127.0.0.1:17777")
+		req.Header.Set("x-inference-mesh-dashboard-token", "dashboard-token")
+
+		handler.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusConflict {
+			t.Fatalf("expected missing runtime controller to return conflict, got %d", resp.Code)
+		}
+	})
+}
+
 func TestREQRUN003LlamaRuntimeCommandAndChecksum(t *testing.T) {
 	t.Run("REQ-RUN-003", func(t *testing.T) {
 	profile := ModelProfile{ID: "p", LocalFilename: "model.gguf", ContextWindow: 32768, Runtime: "llama.cpp"}

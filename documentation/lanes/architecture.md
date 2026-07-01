@@ -17,13 +17,13 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## Component map
 
-| Component | Planned path | Role | Implements |
+| Component | Responsibility | Source | Implements |
 | --- | --- | --- | --- |
-| Router Worker | `packages/router-worker/src/` | HTTP entry point, auth gates, setup/admin UI, Gateway provider endpoints. | [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-RTR-002](../../sdd/spec/router-worker.md) |
-| RegistryDO | `packages/router-worker/src/registry-do.ts` | Serialized reservations, leases, scoring, session affinity. | [REQ-SCH-002](../../sdd/spec/state-scheduling.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md) |
-| D1 migrations | `packages/router-worker/migrations/` | Durable schema for config, nodes, sessions, profiles, and audit. | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
-| Node Agent | `packages/node-agent/` | Local service, node claim, heartbeat, proxy, UI, runtime supervision. | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-NODE-002](../../sdd/spec/node-agent.md) |
-| GitHub workflows | `.github/workflows/` | CI, security checks, deploy, release artifacts. | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Router Worker | HTTP entry point, auth gates, setup/admin UI, Gateway provider endpoints. | `packages/router-worker/src/` | [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-RTR-002](../../sdd/spec/router-worker.md) |
+| RegistryDO | Serialized reservations, leases, scoring, session affinity. | `packages/router-worker/src/registry-do.ts` | [REQ-SCH-002](../../sdd/spec/state-scheduling.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md) |
+| D1 migrations | Durable schema for config, nodes, sessions, profiles, and audit. | `packages/router-worker/migrations/` | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
+| Node Agent | Local service, node claim, heartbeat, proxy, UI, runtime supervision. | `packages/node-agent/` | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| GitHub workflows | CI, security checks, deploy, release artifacts. | `.github/workflows/` | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-002](../../sdd/spec/release-ci.md) |
 
 ## Data plane lifecycle
 

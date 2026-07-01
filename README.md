@@ -149,7 +149,7 @@ Production tags must match `vX.Y.Z`. Integration tags must match `vX.Y.Z-dev.N`.
 
 ## Verification
 
-GitHub Actions runs on pull requests to `main` or `develop`, pushes to `main` or `develop`, and manual dispatch where the workflow supports it:
+GitHub Actions runs on pull requests to `main` or `develop`, pushes to `main`, and manual dispatch where the workflow supports it:
 
 - router lint, behavioral tests, type-check, Wrangler type generation, Worker dry-run;
 - Go tests, vet, race tests, and agent command build;

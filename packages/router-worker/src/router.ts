@@ -313,7 +313,15 @@ function json(body: unknown, status: number, requestId: string): Response {
 }
 
 function html(body: string, requestId: string): Response {
-  return new Response(body, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'x-inference-mesh-request-id': requestId } })
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'content-security-policy': "frame-ancestors 'none'",
+      'content-type': 'text/html; charset=utf-8',
+      'x-frame-options': 'DENY',
+      'x-inference-mesh-request-id': requestId
+    }
+  })
 }
 
 async function readJson<T>(request: Request): Promise<T> {

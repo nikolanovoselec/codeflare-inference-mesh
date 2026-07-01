@@ -1,5 +1,14 @@
 # Observability
 
+## Contents
+
+- [Response metadata](#response-metadata)
+- [Admin status](#admin-status)
+- [Node metrics](#node-metrics)
+- [Audit events](#audit-events)
+- [Failure states](#failure-states)
+- [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
+
 ## Response metadata
 
 Provider responses include request ID, session ID when present, and selected node identity when policy permits. Error responses include request ID so operators can correlate failures with audit and node logs. ([REQ-OBS-001](../../sdd/spec/observability.md))
@@ -27,7 +36,7 @@ Audit history records setup completion, provider route provisioning, setup-token
 | --- | --- | --- |
 | Missed heartbeat | Lease expires and node becomes ineligible. | [REQ-OBS-004](../../sdd/spec/observability.md) |
 | WARP disconnect | Node is ineligible until healthy heartbeat returns. | [REQ-OBS-004](../../sdd/spec/observability.md) |
-| Node busy | Router returns 429 with retry guidance. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
+| Node busy | Router returns 429 with the scheduler reason and request ID. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | Mid-stream crash | Reservation releases and failure score increases. | [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-OBS-004](../../sdd/spec/observability.md) |
 | Invalid Mesh data | Node record is rejected or ineligible. | [REQ-RTR-004](../../sdd/spec/router-worker.md) |
 

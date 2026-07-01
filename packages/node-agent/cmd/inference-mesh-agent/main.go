@@ -115,11 +115,15 @@ func runService() error {
 	if err != nil {
 		return err
 	}
+	dashboardControllers := []agent.RuntimeController{}
+	if runtimeManager != nil {
+		dashboardControllers = append(dashboardControllers, runtimeManager)
+	}
 	go func() {
 		_ = http.ListenAndServe(cfg.DashboardAddress, agent.DashboardHandler(func() agent.DashboardStatus {
 			metrics := agent.RuntimeMetrics(currentRuntimeState(), cfg.RuntimeModel, activeRequests.Value())
 			return agent.DashboardStatus{Config: cfg, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
-		}, runtimeManager))
+		}, dashboardControllers...))
 	}()
 	return http.ListenAndServe(agent.ListenerAddress(cfg.MeshIP, cfg.InferencePort, cfg.AllowAllInterfaces), proxy)
 }

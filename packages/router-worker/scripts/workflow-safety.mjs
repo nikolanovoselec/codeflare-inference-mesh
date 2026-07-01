@@ -2,9 +2,11 @@
 // REL004SecurityWorkflows
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import YAML from 'yaml'
 
 const versionRef = /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
 const shaRef = /^[a-f0-9]{40}$/i
+const workflowRunHeadRef = '${{ github.event.workflow_run.head_sha || github.ref }}'
 
 function workflowFiles(workflowDir) {
   return readdirSync(workflowDir)
@@ -12,66 +14,48 @@ function workflowFiles(workflowDir) {
     .map((name) => join(workflowDir, name))
 }
 
-function activeLines(text) {
-  return text.split('\n').filter((line) => !line.trimStart().startsWith('#'))
+function parseWorkflow(file) {
+  return YAML.parse(readFileSync(file, 'utf8')) ?? {}
 }
 
-function hasWorkflowRunTrigger(lines) {
-  return lines.some((line) => /^\s*workflow_run\s*:/.test(line))
+function workflowOn(workflow) {
+  return workflow.on ?? workflow.On ?? {}
 }
 
-function hasHardenedWorkflowRunJob(lines) {
-  const normalized = lines.join(' ')
-  return /\bif\s*:/.test(normalized) &&
-    /github\.event\.workflow_run\.event\s*==\s*'push'/.test(normalized) &&
-    /github\.event\.workflow_run\.head_repository\.full_name\s*==\s*github\.repository/.test(normalized)
+function jobsOf(workflow) {
+  return workflow.jobs && typeof workflow.jobs === 'object' ? workflow.jobs : {}
 }
 
-function hasHardenedCheckoutRef(lines) {
-  for (let index = 0; index < lines.length; index += 1) {
-    if (!/^\s*-\s+uses\s*:\s*actions\/checkout@/.test(lines[index] ?? '')) continue
-    const stepIndent = (lines[index] ?? '').match(/^\s*/)?.[0].length ?? 0
-    for (let next = index + 1; next < lines.length; next += 1) {
-      const line = lines[next] ?? ''
-      const indent = line.match(/^\s*/)?.[0].length ?? 0
-      if (indent <= stepIndent && /^\s*-\s+/.test(line)) break
-      if (/^\s*ref\s*:\s*\$\{\{\s*github\.event\.workflow_run\.head_sha\s*\|\|\s*github\.ref\s*\}\}\s*$/.test(line)) return true
-    }
-  }
-  return false
+function stepsOf(job) {
+  return Array.isArray(job?.steps) ? job.steps : []
 }
 
-function actionUses(lines) {
-  return lines
-    .map((line) => line.match(/^\s*(?:-\s*)?uses\s*:\s*([^\s#]+)\s*$/)?.[1])
-    .filter(Boolean)
+function hasWorkflowRunTrigger(workflow) {
+  return Boolean(workflowOn(workflow).workflow_run)
 }
 
-function runnerPins(lines) {
-  const pins = []
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? ''
-    const match = line.match(/^(\s*)runs-on\s*:\s*(.*?)\s*(?:#.*)?$/)
-    if (!match) continue
-    const [, indent = '', rawValue = ''] = match
-    if (rawValue) {
-      pins.push(...parseRunnerValue(rawValue))
-      continue
-    }
-    for (let next = index + 1; next < lines.length; next += 1) {
-      const child = lines[next] ?? ''
-      const childIndent = child.match(/^\s*/)?.[0].length ?? 0
-      if (child.trim() === '') continue
-      if (childIndent <= indent.length) break
-      const item = child.match(/^\s*-\s*(.+?)\s*(?:#.*)?$/)?.[1]
-      if (item) pins.push(...parseRunnerValue(item))
-    }
-  }
-  return pins
+function hasHardenedWorkflowRunJob(job) {
+  const condition = String(job?.if ?? '')
+  return condition.includes("github.event.workflow_run.event == 'push'") &&
+    condition.includes('github.event.workflow_run.head_repository.full_name == github.repository')
+}
+
+function checkoutSteps(job) {
+  return stepsOf(job).filter((step) => typeof step?.uses === 'string' && step.uses.startsWith('actions/checkout@'))
+}
+
+function actionUses(workflow) {
+  return Object.values(jobsOf(workflow)).flatMap((job) => stepsOf(job).map((step) => step?.uses).filter((use) => typeof use === 'string'))
+}
+
+function runnerPins(workflow) {
+  return Object.values(jobsOf(workflow)).flatMap((job) => parseRunnerValue(job?.['runs-on']))
 }
 
 function parseRunnerValue(value) {
-  return value.replace(/[\[\]'\"]/g, '').split(',').map((item) => item.trim()).filter(Boolean)
+  if (typeof value === 'string') return value.replace(/[\[\]'"]/g, '').split(',').map((item) => item.trim()).filter(Boolean)
+  if (Array.isArray(value)) return value.flatMap(parseRunnerValue)
+  return []
 }
 
 function invalidRunnerPin(runner) {
@@ -95,19 +79,23 @@ export function validateWorkflowSafety(workflowDir = '.github/workflows') {
   if (!existsSync(workflowDir)) return [`missing workflow directory: ${workflowDir}`]
   const errors = []
   for (const file of workflowFiles(workflowDir)) {
-    const lines = activeLines(readFileSync(file, 'utf8'))
-    if (hasWorkflowRunTrigger(lines)) {
+    const workflow = parseWorkflow(file)
+    if (hasWorkflowRunTrigger(workflow)) {
       if (!file.endsWith('/deploy.yml') && !file.endsWith('\\deploy.yml')) {
         errors.push(`${file} uses workflow_run outside deploy workflow`)
       }
-      if (!hasHardenedWorkflowRunJob(lines)) errors.push(`${file} workflow_run job is missing push/repository guards`)
-      if (!hasHardenedCheckoutRef(lines)) errors.push(`${file} workflow_run checkout is missing exact head_sha ref`)
+      for (const [jobName, job] of Object.entries(jobsOf(workflow))) {
+        if (!hasHardenedWorkflowRunJob(job)) errors.push(`${file} ${jobName} workflow_run job is missing push/repository guards`)
+        for (const step of checkoutSteps(job)) {
+          if (step.with?.ref !== workflowRunHeadRef) errors.push(`${file} ${jobName} workflow_run checkout is missing exact head_sha ref`)
+        }
+      }
     }
-    for (const runner of runnerPins(lines)) {
+    for (const runner of runnerPins(workflow)) {
       const error = invalidRunnerPin(runner)
       if (error) errors.push(`${file}: ${error}`)
     }
-    for (const use of actionUses(lines)) {
+    for (const use of actionUses(workflow)) {
       const error = invalidActionPin(use)
       if (error) errors.push(`${file}: ${error}`)
     }

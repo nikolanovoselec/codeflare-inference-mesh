@@ -14,25 +14,25 @@
 
 ## Worker secrets
 
-| Name | Purpose | REQs |
-| --- | --- | --- |
-| `ROUTER_PROVIDER_TOKEN` | Provider token verifier source during bootstrap or rotation. | [REQ-GWY-002](../../sdd/spec/gateway.md) |
-| `ADMIN_TOKEN` | MVP admin access credential before stronger admin sessions or Access hardening. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
-| `NODE_UPSTREAM_TOKEN` | MVP Worker-to-node bearer token before per-node upstream tokens. | [REQ-SEC-001](../../sdd/spec/security.md) |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | Runtime token used by setup UI for Gateway and optional custom domain provisioning. | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
-| `CLOUDFLARE_ACCOUNT_ID` | Account used by runtime Gateway setup; source reads this before `AI_GATEWAY_ACCOUNT_ID`. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| Variable | Default | Required | Consumed by | Implements |
+| --- | --- | --- | --- | --- |
+| `ROUTER_PROVIDER_TOKEN` | n/a | yes for seeded provider auth | `packages/router-worker/src/router.ts::authenticateKind` | [REQ-GWY-002](../../sdd/spec/gateway.md) |
+| `ADMIN_TOKEN` | n/a | no after browser setup creates admin token records | `packages/router-worker/src/router.ts::authenticateKind` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
+| `NODE_UPSTREAM_TOKEN` | generated during first setup when absent | no | `packages/router-worker/src/router.ts::resolveUpstreamToken` | [REQ-SEC-001](../../sdd/spec/security.md) |
+| `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
+| `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 
 ## Worker vars
 
-| Name | Purpose | REQs |
-| --- | --- | --- |
-| `AI_GATEWAY_ACCOUNT_ID` | Optional Gateway account override when it differs from the runtime Cloudflare account secret. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
-| `MAX_REQUEST_BYTES` | Maximum accepted chat request body size. | [REQ-RTR-002](../../sdd/spec/router-worker.md) |
-| `HEARTBEAT_TTL_SECONDS` | Node heartbeat freshness window. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
-| `AI_GATEWAY_ID` | AI Gateway instance used for route automation. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
-| `WORKER_BASE_URL` | Public Worker origin used when registering the AI Gateway custom provider. | [REQ-GWY-001](../../sdd/spec/gateway.md) |
-| `AGENT_RELEASE_TAG` | Deploy-selected GitHub Release tag used by `/install.sh` and `/install.ps1` so integration installers download prerelease artifacts from the exact release. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| `GITHUB_REPOSITORY` | Owner/repo used by installer commands and install scripts for GitHub Release asset URLs. | [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| Variable | Default | Required | Consumed by | Implements |
+| --- | --- | --- | --- | --- |
+| `AI_GATEWAY_ACCOUNT_ID` | `set-by-deploy-or-runtime-secret` | no | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `MAX_REQUEST_BYTES` | `16777216` | no | `packages/router-worker/src/router.ts::handleChat` | [REQ-RTR-002](../../sdd/spec/router-worker.md) |
+| `HEARTBEAT_TTL_SECONDS` | `45` | no | Declared in Wrangler but not consumed; live heartbeat TTL is hard-coded to 45s in `packages/router-worker/src/scheduler.ts` and `packages/router-worker/src/store.ts`. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
+| `AI_GATEWAY_ID` | `inference-mesh` | no | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `WORKER_BASE_URL` | Worker origin placeholder | yes for Gateway sync | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-001](../../sdd/spec/gateway.md) |
+| `AGENT_RELEASE_TAG` | `agent-release-tag-placeholder` | set by deploy for real installers | `packages/router-worker/src/installers.ts` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| `GITHUB_REPOSITORY` | `nikolanovoselec/codeflare-inference-mesh` | yes for installers | `packages/router-worker/src/installers.ts` | [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
 
 ## Wrangler bindings
 
@@ -55,40 +55,40 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 
 ## Node agent config
 
-| Field | Purpose | REQs |
-| --- | --- | --- |
-| `routerUrl` | Router origin used for claim and heartbeat. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
-| `setupToken` | Short-lived node enrollment token, cleared after claim. | [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md) |
-| `nodeId` | Stable node identifier assigned by the router after claim. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
-| `nodeToken` | Node-to-Worker heartbeat credential. | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
-| `upstreamToken` | Worker-to-node inference credential. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
-| `displayName` | Human-readable node label. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
-| `meshIp` | Cloudflare One interface IP advertised to the router. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
-| `listenAddress` | Concrete Mesh-facing listener address derived from `meshIp`, `inferencePort`, and fallback policy. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
-| `inferencePort` | Mesh-facing inference listener port. | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
-| `dashboardAddress` | Localhost dashboard bind address. | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
-| `dashboardToken` | Local dashboard CSRF/control token stored only in local config, redacted from status APIs, and backfilled on legacy config load when absent. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md), [REQ-SEC-005](../../sdd/spec/security.md) |
-| `runtimeUrl` | Local OpenAI-compatible runtime URL proxied by the node agent. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
-| `runtimeModel` | Active upstream runtime model identifier. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
-| `publicModels` | Public aliases this node can serve. | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
-| `activeProfileIds` | Desired profile IDs active on the node. | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| `profiles` | Desired profiles persisted from claim/heartbeat responses for model preparation and runtime command generation. | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
-| `capacity` | Router-facing concurrent request capacity advertised by the node. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
-| `dataDir` | Directory for config, model cache, staged updates, and service data. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
-| `releaseUrl` | GitHub Release API URL used by self-update. | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
-| `allowAllInterfaces` | Explicit fallback allowing `0.0.0.0` listener binding when Mesh IP binding is unavailable. | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
+| Variable | Default | Required | Consumed by | Implements |
+| --- | --- | --- | --- | --- |
+| `routerUrl` | n/a | yes | `packages/node-agent/internal/agent/config.go::Config` | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| `setupToken` | n/a | yes until claim | `packages/node-agent/internal/agent/client.go::Claim` | [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| `nodeId` | assigned by claim | yes after claim | `packages/node-agent/internal/agent/client.go::Heartbeat` | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| `nodeToken` | assigned by claim | yes after claim | `packages/node-agent/internal/agent/client.go::Heartbeat` | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
+| `upstreamToken` | assigned by claim | yes after claim | `packages/node-agent/internal/agent/proxy.go::ProxyHandler` | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
+| `displayName` | hostname-derived | no | `packages/node-agent/internal/agent/config.go::DefaultConfig` | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
+| `meshIp` | n/a | yes | `packages/node-agent/internal/agent/listener.go::ListenerAddress` | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
+| `listenAddress` | derived | no | `packages/node-agent/cmd/inference-mesh-agent/main.go` | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
+| `inferencePort` | `8080` | no | `packages/node-agent/internal/agent/listener.go::ListenerAddress` | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
+| `dashboardAddress` | `127.0.0.1:17777` | no | `packages/node-agent/internal/agent/dashboard.go::DashboardHandler` | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
+| `dashboardToken` | generated on config load | yes for dashboard controls | `packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed` | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md), [REQ-SEC-005](../../sdd/spec/security.md) |
+| `runtimeUrl` | n/a | yes | `packages/node-agent/internal/agent/proxy.go::ProxyHandler` | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
+| `runtimeModel` | n/a | no | `packages/node-agent/internal/agent/metrics.go::RuntimeMetrics` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `publicModels` | claim response | yes after claim | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
+| `activeProfileIds` | claim response | yes after claim | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
+| `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/model.go::EnsureModel` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `capacity` | `1` | no | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
+| `dataDir` | `.inference-mesh` | no | `packages/node-agent/cmd/inference-mesh-agent/main.go::defaultDataDir` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `releaseUrl` | repository release API | no | `packages/node-agent/internal/agent/update.go` | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
+| `allowAllInterfaces` | `false` | no | `packages/node-agent/internal/agent/listener.go::ListenerAddress` | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
 
 Legacy config loads persist a generated `dashboardToken` before dashboard controls are served. ([REQ-SEC-005](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
 
 ## GitHub secrets
 
-| Name | Purpose | REQs |
-| --- | --- | --- |
-| `CLOUDFLARE_ACCOUNT_ID` | Account ID for deployment workflow. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| `CLOUDFLARE_API_TOKEN_DEPLOY` | Scoped token for Worker deploy and D1 migration. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | Value written to Worker secrets for setup automation. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
-| `COSIGN_PRIVATE_KEY` | Optional Cosign private key for release checksum signing. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| `COSIGN_PASSWORD` | Optional password for `COSIGN_PRIVATE_KEY`. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| Variable | Default | Required | Consumed by | Implements |
+| --- | --- | --- | --- | --- |
+| `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| `CLOUDFLARE_API_TOKEN_DEPLOY` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain setup | `.github/workflows/deploy.yml` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `COSIGN_PRIVATE_KEY` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| `COSIGN_PASSWORD` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 
 ## SDD config
 

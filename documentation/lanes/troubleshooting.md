@@ -18,11 +18,11 @@
 
 ## Requests return busy
 
-**Symptom:** Client receives `429` with `inference_mesh_busy`.
+**Symptom:** Client receives `429` with `busy` or `no-node` plus a request ID.
 
 **Cause:** No eligible node has capacity for the requested public model and session policy.
 
-**Fix:** Wait for `Retry-After`, free an in-flight request, start another compatible node, or switch the public alias to a ready fallback profile. ([REQ-SCH-003](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
+**Fix:** Use the request ID to inspect admin status, free an in-flight request, start another compatible node, or switch the public alias to a ready fallback profile. ([REQ-SCH-003](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
 
 ## Session latency suddenly increases
 

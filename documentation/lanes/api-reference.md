@@ -18,7 +18,7 @@
 
 All API responses that represent errors use an OpenAI-style `error` object when they are visible to AI Gateway or OpenAI-compatible clients. Provider routes require the provider token; node routes require setup or node credentials; installer routes contain no permanent secrets. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
-## GET /health
+### GET /health
 
 Returns Worker health for routing and deploy verification.
 
@@ -30,17 +30,17 @@ GET /health
 
 **Origin check:** n/a
 
-**Request:** No body.
+**Request body:** None.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | JSON health object | Confirms the Worker route family is reachable. |
+| `200` | Worker route family is reachable. | JSON health object. |
 
 **Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md)
 
-## GET /v1/models
+### GET /v1/models
 
 Lists public OpenAI-compatible model aliases exposed through the mesh.
 
@@ -52,18 +52,18 @@ GET /v1/models
 
 **Origin check:** n/a
 
-**Request:** No body.
+**Request body:** None.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | OpenAI-compatible model list | Lists public aliases such as `mesh-default`, not internal runtime names. |
-| `401` | Error object | Provider token is missing or invalid. |
+| `200` | Public aliases are listed without exposing internal runtime names. | OpenAI-compatible model list. |
+| `401` | Provider token is missing or invalid. | Error object. |
 
 **Implements:** [REQ-GWY-001](../../sdd/spec/gateway.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md)
 
-## POST /v1/chat/completions
+### POST /v1/chat/completions
 
 Forwards an OpenAI-compatible chat completion request to an eligible node.
 
@@ -75,19 +75,19 @@ POST /v1/chat/completions
 
 **Origin check:** n/a
 
-**Request:** JSON chat completion body with a public model alias.
+**Request body:** JSON chat completion body with a public model alias.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Selected node response | Streams when the selected node streams. |
-| `429` | `inference_mesh_busy` error | Includes `Retry-After` when no eligible node has capacity. |
-| `5xx` | Gateway-style error | Releases any reservation before returning. |
+| `200` | Selected node response is returned; streaming responses stay streamed. | Node response body. |
+| `429` | Busy or no eligible node; current handler does not emit `Retry-After`. | `{ "error": "busy" | "no-node", "requestId": string }` |
+| `5xx` | Upstream forwarding failed after releasing any reservation. | Gateway-style error. |
 
 **Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md)
 
-## POST /node/claim
+### POST /node/claim
 
 Claims a node with a one-time setup token and returns node credentials.
 
@@ -99,18 +99,18 @@ POST /node/claim
 
 **Origin check:** n/a
 
-**Request:** JSON node claim body with display name, Mesh IP, inference port, capacity, public models, and active profiles.
+**Request body:** JSON node claim body with display name, Mesh IP, inference port, capacity, public models, and active profiles.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `201` | Node credentials and desired profile state | Setup token is consumed. |
-| `401` | Error object | Setup token is expired, claimed, missing, or invalid. |
+| `201` | Setup token is consumed and node credentials are created. | Node credentials and desired profile state. |
+| `401` | Setup token is expired, claimed, missing, or invalid. | Error object. |
 
 **Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md)
 
-## POST /node/heartbeat
+### POST /node/heartbeat
 
 Refreshes node lease, runtime metrics, and desired profile state.
 
@@ -122,18 +122,21 @@ POST /node/heartbeat
 
 **Origin check:** n/a
 
-**Request:** JSON heartbeat body with node status, Mesh address, capacity, active profiles, runtime state, and metrics.
+**Request body:** JSON heartbeat body with node status, Mesh address, capacity, active profiles, runtime state, and metrics.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Desired profile actions and alias state | Refreshes the node lease. |
-| `401` | Error object | Node token is invalid. |
+| `200` | Node lease and metrics are refreshed. | Desired profile actions and alias state. |
+| `400` | `nodeId` is missing. | `{ "error": "invalid_heartbeat" }` |
+| `401` | Node token is invalid. | `{ "error": "unauthorized" }` |
+| `403` | Node is revoked and cannot restore eligibility. | `{ "error": "node_revoked" }` |
+| `404` | Node record does not exist. | `{ "error": "unknown_node" }` |
 
 **Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md)
 
-## POST /node/unregister
+### POST /node/unregister
 
 Lets an authenticated node remove itself from scheduling before shutdown.
 
@@ -145,18 +148,21 @@ POST /node/unregister
 
 **Origin check:** n/a
 
-**Request:** JSON body with `nodeId`.
+**Request body:** JSON body with `nodeId`.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | `{ "ok": true }` | Marks the node offline and clears live eligibility. |
-| `401` | Error object | Node token is invalid. |
+| `200` | Node is marked offline and live eligibility is cleared. | `{ "ok": true }` |
+| `400` | `nodeId` is missing. | `{ "error": "invalid_unregister" }` |
+| `401` | Node token is invalid. | `{ "error": "unauthorized" }` |
+| `403` | Node is revoked and cannot overwrite terminal revocation. | `{ "error": "node_revoked" }` |
+| `404` | Node record does not exist. | `{ "error": "unknown_node" }` |
 
 **Implements:** [REQ-OBS-005](../../sdd/spec/observability.md)
 
-## GET /install.sh
+### GET /install.sh
 
 Returns a Unix installer for Linux or macOS node agents.
 
@@ -168,17 +174,17 @@ GET /install.sh
 
 **Origin check:** n/a
 
-**Request:** Optional `platform=linux` or `platform=macos` query parameter.
+**Request body:** None.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Unix shell installer | Downloads from the configured `AGENT_RELEASE_TAG` release and verifies checksums. |
+| `200` | Installer downloads from the configured `AGENT_RELEASE_TAG` release and verifies checksums. | Unix shell installer. |
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-## GET /install.ps1
+### GET /install.ps1
 
 Returns a Windows installer for node agents.
 
@@ -190,17 +196,17 @@ GET /install.ps1
 
 **Origin check:** n/a
 
-**Request:** No body.
+**Request body:** None.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Windows PowerShell installer | Downloads from the configured `AGENT_RELEASE_TAG` release and verifies checksums. |
+| `200` | Installer downloads from the configured `AGENT_RELEASE_TAG` release and verifies checksums. | Windows PowerShell installer. |
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-## Node dashboard local routes
+### Node dashboard local routes
 
 Exposes localhost-only node status and runtime controls.
 
@@ -215,15 +221,16 @@ POST /api/runtime/restart
 
 **Origin check:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
 
-**Request:** Runtime-control POSTs do not require a request body.
+**Request body:** Runtime-control POSTs do not require a request body.
 
 **Response**
 
-| Status | Body | Notes |
+| Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Dashboard status or runtime-control result | Local node dashboard only; not exposed by the public Worker. |
-| `401` | Error body | Runtime-control token is missing or invalid. |
-| `403` | Error body | Browser Origin does not match the dashboard origin. |
+| `200` | Dashboard status or runtime control succeeded. | Dashboard status or `{ "ok": true }`. |
+| `403` | Runtime-control token is missing/invalid, or browser Origin does not match the dashboard origin. | `forbidden` error body. |
+| `409` | Runtime control was requested when no managed runtime controller is available. | `runtime controller unavailable` error body. |
+| `502` | Runtime controller returned an error. | Controller error body. |
 
 **Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md)
 

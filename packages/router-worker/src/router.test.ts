@@ -84,6 +84,8 @@ describe('router worker behavioral contracts', () => {
     expect(root.status).toBe(200)
     expect(admin.status).toBe(200)
     expect(admin.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(admin.headers.get('content-security-policy')).toBe("frame-ancestors 'none'")
+    expect(admin.headers.get('x-frame-options')).toBe('DENY')
     expect(config.workerOrigin).toBe('https://router.test')
     expect(actionIds).toEqual([
       'first-run-setup',
