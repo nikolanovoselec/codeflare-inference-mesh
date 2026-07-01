@@ -327,7 +327,7 @@ describe('router worker behavioral contracts', () => {
     expect(isSafeMeshTarget('8.8.8.8', 8080)).toBe(false)
   })
 
-  it('REQ-SCH-003 returns busy when no eligible node has capacity', async () => {
+  it('REQ-SCH-003 returns no-node when no eligible node has capacity', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ capacity: 1, inFlight: 1 }))

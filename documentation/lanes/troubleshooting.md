@@ -28,7 +28,7 @@
 
 ## Requests return busy
 
-**Symptom:** Client receives `429` with `busy` or `no-node` plus a request ID.
+**Symptom:** Client receives `429` with `no-node` plus a request ID.
 
 **Cause:** No eligible node has capacity for the requested public model and session policy.
 

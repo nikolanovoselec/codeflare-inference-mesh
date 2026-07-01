@@ -74,7 +74,7 @@ POST /v1/chat/completions
 | --- | --- | --- |
 | `200` | Selected node response is returned; streaming responses stay streamed. | Node response body. |
 | `404` | Public model alias has no configured profile. | `{ "error": "no-profile", "requestId": string }` |
-| `429` | No eligible node is available or all eligible nodes are busy; current handler does not emit `Retry-After`. | `{ "error": "no-node" | "busy", "requestId": string }` |
+| `429` | No eligible node is available; current handler does not emit `Retry-After`. | `{ "error": "no-node", "requestId": string }` |
 | `5xx` | Upstream forwarding failed after releasing any reservation. | Gateway-style error. |
 
 **Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md)
