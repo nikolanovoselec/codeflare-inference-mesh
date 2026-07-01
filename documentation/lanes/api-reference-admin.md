@@ -3,11 +3,14 @@
 ## Contents
 
 - [Conventions](#conventions)
+- [Endpoints](#endpoints)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions
 
 Admin routes use the MVP admin token or an admin session derived from it after first-run setup completes. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. Admin routes do not implement a dedicated Origin-header gate; bearer/admin authentication is the route guard. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+
+## Endpoints
 
 ### GET /
 
@@ -17,7 +20,7 @@ Serves the responsive command-center Admin configuration UI shell.
 GET /
 ```
 
-**Authentication:** None for the UI shell.
+**Authentication:** none
 
 **Origin check:** n/a
 
@@ -39,7 +42,7 @@ Serves the same responsive command-center Admin configuration UI shell as `/`.
 GET /admin
 ```
 
-**Authentication:** None for the UI shell.
+**Authentication:** none
 
 **Origin check:** n/a
 
@@ -61,7 +64,7 @@ Performs first-run setup and returns one-time-visible credentials.
 POST /admin/setup
 ```
 
-**Authentication:** Open only while no active admin token exists; admin auth is required after setup completes.
+**Authentication:** none until first setup; admin bearer token after setup
 
 **Origin check:** n/a
 
@@ -84,7 +87,7 @@ Validates an admin credential and returns the admin session contract.
 POST /admin/login
 ```
 
-**Authentication:** Admin token or admin session.
+**Authentication:** admin bearer token
 
 **Origin check:** n/a
 
@@ -107,7 +110,7 @@ Returns the admin dashboard status contract with secrets redacted.
 GET /admin/status
 ```
 
-**Authentication:** Admin token or admin session.
+**Authentication:** admin bearer token
 
 **Origin check:** n/a
 
@@ -130,7 +133,7 @@ Creates a new one-time setup token for node enrollment.
 POST /admin/setup-tokens
 ```
 
-**Authentication:** Admin token or admin session.
+**Authentication:** admin bearer token
 
 **Origin check:** n/a
 
@@ -153,7 +156,7 @@ Returns a one-line installer command for a supported node-agent platform.
 GET /admin/installers/{platform}
 ```
 
-**Authentication:** Admin token or admin session.
+**Authentication:** admin bearer token
 
 **Origin check:** n/a
 
@@ -176,7 +179,7 @@ Revokes a node token and removes the node from eligible scheduling.
 POST /admin/nodes/{nodeId}/revoke
 ```
 
-**Authentication:** Admin token or admin session.
+**Authentication:** admin bearer token
 
 **Origin check:** n/a
 
@@ -199,7 +202,7 @@ Creates or updates the AI Gateway custom-provider route for the Worker origin.
 POST /admin/cloudflare/gateway/sync
 ```
 
-**Authentication:** Admin token or admin session.
+**Authentication:** admin bearer token
 
 **Origin check:** n/a
 
@@ -222,7 +225,7 @@ Validates and stores a custom-domain hostname and Cloudflare zone ID.
 POST /admin/custom-domain/validate
 ```
 
-**Authentication:** Admin token or admin session.
+**Authentication:** admin bearer token
 
 **Origin check:** n/a
 
@@ -245,7 +248,7 @@ Stores a versioned profile rollout percentage.
 POST /admin/profiles/rollout
 ```
 
-**Authentication:** Admin token or admin session.
+**Authentication:** admin bearer token
 
 **Origin check:** n/a
 

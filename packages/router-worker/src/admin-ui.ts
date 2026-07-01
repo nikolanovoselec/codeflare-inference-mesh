@@ -61,6 +61,7 @@ export function adminUiHtml(workerOrigin: string): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>Codeflare Inference Mesh Admin</title>
   <style>${adminUiCss()}</style>
 </head>
@@ -92,6 +93,10 @@ export function adminUiHtml(workerOrigin: string): string {
         </div>
       </section>
 
+      <div class="setup-banner" data-setup-banner hidden>
+        <p>Setup is already complete. <a href="#login" data-banner-action="go-to-auth">Go to Auth</a></p>
+      </div>
+
       <div class="command-grid">
         <aside class="workflow-rail" aria-label="Operator workflow" data-rail-order="${ADMIN_UI_COMMAND_CENTER.railOrder.join(' ')}">
           ${railItem('setup', 'setup', 'Setup', 'Locked')}
@@ -121,14 +126,14 @@ export function adminUiHtml(workerOrigin: string): string {
           <section class="work-section" id="gateway" data-flow-stage="route">
             ${sectionHeader('Route')}
             ${actionRow({ id: 'gateway-sync', actionId: 'gateway-sync', title: 'AI Gateway', description: 'Sync custom provider, dynamic route, version, and deployment metadata.', controls: '<button type="button" data-action="gateway-sync">Sync Gateway route</button>', outputId: 'gateway-output', outputKind: 'gateway-sync', empty: 'Gateway sync response appears here.', tag: 'pre' })}
-            ${actionRow({ id: 'custom-domain-validate', actionId: 'custom-domain-validate', title: 'Custom domain', description: 'Validate a hostname before switching Gateway traffic to a custom origin.', controls: '<div class="control-stack"><input class="control-input" name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url" aria-label="Hostname"><input class="control-input" name="zoneId" id="custom-domain-zone" placeholder="Zone ID" aria-label="Zone ID"><button type="button" data-action="custom-domain-validate">Validate hostname</button></div>', outputId: 'domain-output', outputKind: 'custom-domain', empty: 'Hostname validation response appears here.', tag: 'pre' })}
+            ${actionRow({ id: 'custom-domain-validate', actionId: 'custom-domain-validate', title: 'Custom domain', description: 'Validate a hostname before switching Gateway traffic to a custom origin.', controls: '<div class="control-stack"><input class="control-input" name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url" aria-label="Hostname"><input class="control-input" name="zoneId" id="custom-domain-zone" placeholder="Zone ID" aria-label="Zone ID"><button type="button" data-action="custom-domain-validate">Validate hostname</button></div>', outputId: 'domain-output', outputKind: 'custom-domain', empty: 'Hostname validation response appears here.', help: 'Use the Cloudflare zone ID for the hostname you want to validate.', tag: 'pre' })}
           </section>
 
           <section class="work-section" id="status" data-flow-stage="operate">
             ${sectionHeader('Operate')}
             ${actionRow({ id: 'status-refresh', actionId: 'status-refresh', title: 'Status', description: 'Load redacted nodes, profiles, audit events, and freshness metadata.', controls: '<button type="button" data-action="status-refresh">Refresh status</button>', outputId: 'status-output', outputKind: 'status', empty: 'Refresh status to load redacted state.', surfaceClass: 'status-grid' })}
             ${actionRow({ id: 'node-revoke', actionId: 'node-revoke', title: 'Node controls', description: 'Revoke a node when it should no longer receive traffic.', controls: '<div class="control-line"><input class="control-input" name="nodeId" id="node-id" autocomplete="off" aria-label="Node ID" placeholder="node id"><button class="danger" type="button" data-action="node-revoke">Revoke node</button></div>', outputId: 'node-output', outputKind: 'node-revoke', empty: 'Revocation result appears here.', tag: 'pre' })}
-            ${actionRow({ id: 'profile-rollout', actionId: 'profile-rollout', title: 'Profile rollout', description: 'Set rollout percentage for an existing model profile.', controls: '<div class="control-stack"><input class="control-input" name="profileId" id="profile-id" autocomplete="off" placeholder="gemma4-26b-a4b-256k-3090" aria-label="Profile ID"><div class="control-line compact"><input class="control-input short" name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100" aria-label="Rollout percent"><button type="button" data-action="profile-rollout">Update rollout</button></div></div>', outputId: 'profile-output', outputKind: 'profile-rollout', empty: 'Profile rollout result appears here.', tag: 'pre' })}
+            ${actionRow({ id: 'profile-rollout', actionId: 'profile-rollout', title: 'Profile rollout', description: 'Set rollout percentage for an existing model profile.', controls: '<div class="control-stack"><input class="control-input" name="profileId" id="profile-id" autocomplete="off" placeholder="gemma4-26b-a4b-256k-3090" aria-label="Profile ID"><div class="control-line compact"><input class="control-input short" name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100" aria-label="Rollout percent"><button type="button" data-action="profile-rollout">Update rollout</button></div></div>', outputId: 'profile-output', outputKind: 'profile-rollout', empty: 'Profile rollout result appears here.', help: 'Set how much traffic can use this model profile, from 0 to 100 percent.', tag: 'pre' })}
           </section>
         </section>
       </div>
@@ -151,6 +156,7 @@ interface ActionRowOptions {
   readonly outputId: string
   readonly outputKind: string
   readonly empty: string
+  readonly help?: string
   readonly tag?: 'div' | 'pre'
   readonly surfaceClass?: string
 }
@@ -165,9 +171,10 @@ function actionRow(options: ActionRowOptions): string {
   const surfaceClass = options.surfaceClass ? `result ${options.surfaceClass}` : 'result'
   const authLabel = action?.id === 'first-run-setup' ? 'first run only' : action?.auth
   const meta = action ? `<div class="row-meta"><span>${action.method}</span><code>${escapeHtml(action.path)}</code><span>${escapeHtml(authLabel ?? '')}</span></div>` : ''
+  const help = options.help ? `<div class="field-help">${escapeHtml(options.help)}</div>` : ''
   return `<div class="action-row" id="row-${escapeHtml(options.id)}" data-action-scope="${escapeHtml(options.id)}" data-row="${escapeHtml(options.id)}" data-state="idle" data-action-row="${ADMIN_UI_ACTION_ROW_ANCHOR.slots.join(' ')}">
     <div class="row-copy"><h3>${escapeHtml(options.title)}</h3><p>${escapeHtml(options.description)}</p>${meta}<span class="row-state" aria-hidden="true"></span></div>
-    <div class="row-controls">${options.controls}<${outputTag} class="${surfaceClass}" id="${escapeHtml(options.outputId)}" data-output="${escapeHtml(options.outputKind)}" data-empty="${escapeHtml(options.empty)}"${outputTag === 'pre' ? ' tabindex="0"' : ''} aria-live="polite"></${outputTag}></div>
+    <div class="row-controls">${options.controls}${help}<${outputTag} class="${surfaceClass}" id="${escapeHtml(options.outputId)}" data-output="${escapeHtml(options.outputKind)}" data-empty="${escapeHtml(options.empty)}" role="log"${outputTag === 'pre' ? ' tabindex="0"' : ''} aria-live="polite"></${outputTag}></div>
   </div>`
 }
 
@@ -207,6 +214,7 @@ function adminUiCss(): string {
 *{margin:0}
 html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:5rem}
 body{min-height:100vh;background:var(--bg);color:var(--muted);font:14px/1.5 var(--font-sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:var(--accent);color:#170b06}
 a{color:inherit;text-decoration:none}
 button,input,select{font:inherit}
 button{display:inline-flex;align-items:center;justify-content:center;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text);font-weight:650;padding:.62rem .9rem;white-space:nowrap;cursor:pointer;transition:background .16s ease,border-color .16s ease,transform .1s ease,opacity .16s ease}
@@ -237,6 +245,10 @@ code,pre{font-family:var(--font-mono)}
 .codeflare-headline{font-size:clamp(2.2rem,5.4vw,4.25rem)!important;font-weight:760!important;letter-spacing:-.04em!important;line-height:1!important;max-width:100%}
 .codeflare-headline .flare-word{color:var(--accent)}
 .overview p{max-width:64ch;margin-top:.75rem;color:var(--muted)}
+.setup-banner{border:1px solid var(--accent-line);border-radius:var(--radius-sm);background:rgb(255 106 69/.06);color:#ff9a7f;font-size:.85rem;margin-top:1rem;padding:.9rem 1rem}
+.setup-banner[hidden]{display:none}
+.setup-banner p{margin:0}
+.setup-banner a{color:#ff9a7f;font-weight:700;text-decoration:underline}
 .status-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-sm)}
 .status-item{display:grid;gap:.2rem;border-right:1px solid var(--line);padding:.65rem .75rem;min-width:0}
 .status-item:last-child{border-right:0}
@@ -269,6 +281,7 @@ code,pre{font-family:var(--font-mono)}
 .action-row[data-state=ready] .row-state::before{content:'done';color:var(--success)}
 .action-row[data-state=error] .row-state::before{content:'blocked';color:#ff9a7f}
 .row-controls{display:grid;gap:.6rem;min-width:0;align-content:start}
+.field-help{color:var(--dim);font-size:.72rem;margin-top:-.25rem}
 .control-line,.control-stack{display:flex;align-items:center;gap:.5rem;min-width:0}
 .control-stack{align-items:stretch;flex-wrap:wrap}
 .control-line.compact{justify-content:flex-start}
@@ -285,9 +298,14 @@ select{flex:0 0 10rem}
 .token strong,.metric strong{display:block;color:var(--dim);font-size:.68rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:.25rem}
 .token code,.metric code{display:block;overflow:auto;color:var(--text);font-family:var(--font-mono);white-space:nowrap}
 .token button{margin-top:.55rem;min-height:2.1rem;padding:.42rem .65rem}
-.toast{position:fixed;right:1rem;bottom:1rem;z-index:30;max-width:min(28rem,calc(100vw - 2rem));border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--surface-2);color:var(--text);box-shadow:0 20px 60px rgb(0 0 0/.45);opacity:0;pointer-events:none;padding:.8rem .95rem;transform:translateY(.5rem);transition:opacity .16s ease,transform .16s ease}
-.toast.show{opacity:1;transform:translateY(0)}
-@media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){.topbar{position:static;align-items:flex-start;flex-direction:column}.origin-pill{align-items:flex-start;flex-direction:column;max-width:100%}.console{padding-top:1rem}.status-strip{display:flex;overflow-x:auto}.status-item{min-width:7.5rem}.command-grid{grid-template-columns:1fr}.workflow-rail{position:static;display:flex;overflow-x:auto}.rail-item{min-width:8rem}.action-row{grid-template-columns:1fr}.row-copy p{max-width:65ch}.control-line,.control-stack{align-items:stretch;flex-direction:column}.control-input,.control-input.short,select,button{width:100%;max-width:none;min-width:0;flex-basis:auto}.result{max-height:none}}
+.copy-all{justify-self:start;min-height:2.1rem;padding:.42rem .65rem}
+.toast{position:fixed;right:1rem;bottom:1rem;z-index:30;display:flex;align-items:center;gap:.75rem;max-width:min(28rem,calc(100vw - 2rem));border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--surface-2);color:var(--text);box-shadow:0 20px 60px rgb(0 0 0/.45);opacity:0;pointer-events:none;padding:.8rem .95rem;transform:translateY(.5rem);transition:opacity .16s ease,transform .16s ease}
+.toast span{min-width:0}
+.toast button{min-height:2rem;padding:.35rem .55rem}
+.toast.show{opacity:1;pointer-events:auto;transform:translateY(0)}
+.toast.is-error{border-color:var(--accent-line);background:rgb(255 106 69/.1);color:#ff9a7f}
+@media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){.topbar{position:static;align-items:flex-start;flex-direction:column}.origin-pill{align-items:flex-start;flex-direction:column;max-width:100%}.console{padding-top:1rem}.status-strip{position:relative;display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch}.status-strip::after{content:'';position:absolute;right:0;top:0;bottom:0;width:2rem;background:linear-gradient(to right,transparent,var(--surface));pointer-events:none}.status-item{min-width:7.5rem}.command-grid{grid-template-columns:1fr}.workflow-rail{position:static;display:grid;gap:.35rem}.rail-item{min-width:0;text-align:center}.action-row{grid-template-columns:1fr}.row-copy p{max-width:65ch}.control-line,.control-stack{align-items:stretch;flex-direction:column}.control-input,.control-input.short,select,button{width:100%;max-width:none;min-width:0;flex-basis:auto}.result{max-height:none}}
+@media (max-width:480px){:root{--focus:0 0 0 2px rgb(255 106 69/.28)}button{min-height:48px}.control-input,select{min-height:48px}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important}}`
 }
 
@@ -303,7 +321,33 @@ function adminUiScript(): string {
     if (value) (remember ? localStorage : sessionStorage).setItem(tokenKey, value);
     byId('admin-token').value = value;
   };
-  const toast = (message) => { const el = byId('toast'); el.textContent = message; el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 3600); };
+  let toastTimer;
+  const toast = (message, isError = false) => {
+    const el = byId('toast');
+    if (toastTimer) clearTimeout(toastTimer);
+    el.textContent = '';
+    el.classList.remove('show', 'is-error');
+    el.classList.toggle('is-error', isError);
+    const text = document.createElement('span');
+    text.textContent = message;
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.textContent = 'Dismiss';
+    dismiss.setAttribute('data-toast-dismiss', 'true');
+    dismiss.addEventListener('click', () => {
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = undefined;
+      el.classList.remove('show');
+    });
+    el.append(text, dismiss);
+    el.classList.add('show');
+    toastTimer = setTimeout(() => { el.classList.remove('show'); toastTimer = undefined; }, isError ? 8000 : 3600);
+  };
+  const focusAuthSection = () => {
+    byId('login')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    byId('admin-token')?.focus({ preventScroll: true });
+  };
+  const showSetupBanner = () => { const banner = document.querySelector('[data-setup-banner]'); if (banner) banner.hidden = false; focusAuthSection(); };
   const headers = (auth, json = false) => ({ ...(json ? {'content-type':'application/json'} : {}), ...(auth ? {authorization: 'Bearer ' + token()} : {}) });
   async function request(path, options = {}) {
     const response = await fetch(path, options);
@@ -323,10 +367,39 @@ function adminUiScript(): string {
     return error.body?.error || error.message || 'Request failed';
   };
   const esc = (value) => String(value).replace(/[&<>\"]/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[char]));
-  const copyButton = (value) => '<button type="button" data-copy="' + encodeURIComponent(value) + '">Copy</button>';
   function renderTokens(target, values) {
-    byId(target).classList.remove('is-error');
-    byId(target).innerHTML = Object.entries(values).filter(([, value]) => typeof value === 'string').map(([key, value]) => '<div class="token"><strong>' + esc(key) + '</strong><code>' + esc(value) + '</code>' + copyButton(value) + '</div>').join('');
+    const el = byId(target);
+    const entries = Object.entries(values).filter(([, value]) => typeof value === 'string');
+    el.classList.remove('is-error');
+    el.innerHTML = '';
+    if (entries.length > 1) {
+      const copyAll = document.createElement('button');
+      copyAll.type = 'button';
+      copyAll.className = 'secondary copy-all';
+      copyAll.textContent = 'Copy all';
+      copyAll.setAttribute('data-copy-all', 'true');
+      copyAll.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(entries.map(([key, value]) => key + ': ' + value).join('\n'));
+        toast('Copied all');
+      });
+      el.appendChild(copyAll);
+    }
+    entries.forEach(([key, value]) => {
+      const token = document.createElement('div');
+      token.className = 'token';
+      const label = document.createElement('strong');
+      label.textContent = key;
+      token.appendChild(label);
+      const code = document.createElement('code');
+      code.textContent = value;
+      token.appendChild(code);
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.textContent = 'Copy';
+      copy.dataset.copy = value;
+      token.appendChild(copy);
+      el.appendChild(token);
+    });
   }
   function renderStatus(value) {
     const nodes = Array.isArray(value.nodes) ? value.nodes : [];
@@ -346,12 +419,20 @@ function adminUiScript(): string {
     ].join('');
   }
   document.addEventListener('click', async (event) => {
+    const bannerAction = event.target.closest('[data-banner-action="go-to-auth"]');
+    if (bannerAction) { event.preventDefault(); focusAuthSection(); return; }
     const copy = event.target.closest('[data-copy]');
-    if (copy) { await navigator.clipboard.writeText(decodeURIComponent(copy.dataset.copy)); toast('Copied'); return; }
+    if (copy) { await navigator.clipboard.writeText(copy.dataset.copy || ''); toast('Copied'); return; }
     const button = event.target.closest('[data-action]');
     const action = button?.dataset.action;
     if (!action) return;
     const scope = scopeFor(button);
+    if (action === 'node-revoke' && button.dataset.confirming !== 'true') {
+      button.dataset.confirming = 'true';
+      button.textContent = 'Are you sure?';
+      setScopeState(scope, 'idle');
+      return;
+    }
     try {
       setScopeState(scope, 'loading'); button.disabled = true;
       if (action === 'first-run-setup') {
@@ -382,12 +463,19 @@ function adminUiScript(): string {
       const output = primaryOutput(scope);
       if (output) {
         output.classList.add('is-error');
-        if (action === 'first-run-setup' && error.status === config.setupLockedFeedback.status) output.dataset.feedback = config.setupLockedFeedback.variant;
+        if (action === 'first-run-setup' && error.status === config.setupLockedFeedback.status) {
+          output.dataset.feedback = config.setupLockedFeedback.variant;
+          showSetupBanner();
+        }
         output.textContent = message;
       }
       setScopeState(scope, 'error');
-      toast(message);
+      toast(message, true);
     } finally {
+      if (action === 'node-revoke') {
+        delete button.dataset.confirming;
+        button.textContent = 'Revoke node';
+      }
       button.disabled = false;
     }
   });

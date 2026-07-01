@@ -3,11 +3,14 @@
 ## Contents
 
 - [Conventions](#conventions)
+- [Endpoints](#endpoints)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions
 
 All API responses that represent errors use an OpenAI-style `error` object when they are visible to AI Gateway or OpenAI-compatible clients. Provider routes require the provider token; node routes require setup or node credentials; installer routes contain no permanent secrets. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+
+## Endpoints
 
 ### GET /health
 
@@ -17,7 +20,7 @@ Returns Worker health for routing and deploy verification.
 GET /health
 ```
 
-**Authentication:** None.
+**Authentication:** none
 
 **Origin check:** n/a
 
@@ -39,7 +42,7 @@ Lists public OpenAI-compatible model aliases exposed through the mesh.
 GET /v1/models
 ```
 
-**Authentication:** Provider bearer token.
+**Authentication:** provider bearer token
 
 **Origin check:** n/a
 
@@ -62,7 +65,7 @@ Forwards an OpenAI-compatible chat completion request to an eligible node.
 POST /v1/chat/completions
 ```
 
-**Authentication:** Provider bearer token.
+**Authentication:** provider bearer token
 
 **Origin check:** n/a
 
@@ -87,7 +90,7 @@ Claims a node with a one-time setup token and returns node credentials.
 POST /node/claim
 ```
 
-**Authentication:** One-time setup bearer token.
+**Authentication:** setup bearer token
 
 **Origin check:** n/a
 
@@ -110,7 +113,7 @@ Refreshes node lease, runtime metrics, and desired profile state.
 POST /node/heartbeat
 ```
 
-**Authentication:** Node bearer token.
+**Authentication:** node bearer token
 
 **Origin check:** n/a
 
@@ -136,7 +139,7 @@ Lets an authenticated node remove itself from scheduling before shutdown.
 POST /node/unregister
 ```
 
-**Authentication:** Node bearer token.
+**Authentication:** node bearer token
 
 **Origin check:** n/a
 
@@ -162,7 +165,7 @@ Returns a Unix installer for Linux or macOS node agents.
 GET /install.sh
 ```
 
-**Authentication:** None.
+**Authentication:** none
 
 **Origin check:** n/a
 
@@ -186,7 +189,7 @@ Returns a Windows installer for node agents.
 GET /install.ps1
 ```
 
-**Authentication:** None.
+**Authentication:** none
 
 **Origin check:** n/a
 
@@ -200,31 +203,106 @@ GET /install.ps1
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
-### Node dashboard local routes
+### GET /api/status
 
-Exposes localhost-only node status and runtime controls.
+Returns redacted localhost dashboard status for the node agent.
 
 ```http
 GET /api/status
-POST /api/runtime/start
-POST /api/runtime/stop
-POST /api/runtime/restart
 ```
 
-**Authentication:** Local dashboard status is localhost-only. Runtime-control POSTs require the local dashboard token.
+**Authentication:** none
 
-**Origin check:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
+**Origin check:** n/a
 
-**Request body:** Runtime-control POSTs do not require a request body.
+**Request body:** None.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Dashboard status or runtime control succeeded. | Dashboard status or `{ "ok": true }`. |
-| `403` | Runtime-control token is missing/invalid, or browser Origin does not match the dashboard origin. | `forbidden` error body. |
+| `200` | Dashboard status is returned with sensitive config fields redacted. | Dashboard status JSON. |
+
+**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md)
+
+### POST /api/runtime/start
+
+Starts the managed local runtime from the node dashboard.
+
+```http
+POST /api/runtime/start
+```
+
+**Authentication:** dashboard token
+
+**Origin check:** applies
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Managed runtime start succeeded. | `{ "ok": true }`. |
+| `403` | Dashboard token is missing/invalid, or browser Origin does not match the dashboard origin. | `forbidden` error body. |
 | `409` | Runtime control was requested when no managed runtime controller is available. | `runtime controller unavailable` error body. |
 | `502` | Runtime controller returned an error. | Controller error body. |
+
+**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
+
+**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md)
+
+### POST /api/runtime/stop
+
+Stops the managed local runtime from the node dashboard.
+
+```http
+POST /api/runtime/stop
+```
+
+**Authentication:** dashboard token
+
+**Origin check:** applies
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Managed runtime stop succeeded. | `{ "ok": true }`. |
+| `403` | Dashboard token is missing/invalid, or browser Origin does not match the dashboard origin. | `forbidden` error body. |
+| `409` | Runtime control was requested when no managed runtime controller is available. | `runtime controller unavailable` error body. |
+| `502` | Runtime controller returned an error. | Controller error body. |
+
+**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
+
+**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md)
+
+### POST /api/runtime/restart
+
+Restarts the managed local runtime from the node dashboard.
+
+```http
+POST /api/runtime/restart
+```
+
+**Authentication:** dashboard token
+
+**Origin check:** applies
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Managed runtime restart succeeded. | `{ "ok": true }`. |
+| `403` | Dashboard token is missing/invalid, or browser Origin does not match the dashboard origin. | `forbidden` error body. |
+| `409` | Runtime control was requested when no managed runtime controller is available. | `runtime controller unavailable` error body. |
+| `502` | Runtime controller returned an error. | Controller error body. |
+
+**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
 
 **Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md)
 

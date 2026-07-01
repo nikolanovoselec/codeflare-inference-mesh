@@ -127,7 +127,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Priority:** P0
 
-**Dependencies:** [REQ-ADM-001](#req-adm-001-first-run-setup), [REQ-ADM-002](#req-adm-002-mvp-admin-auth), [REQ-ADM-003](#req-adm-003-setup-token-lifecycle), [REQ-ADM-004](#req-adm-004-one-line-installers), [REQ-ADM-005](#req-adm-005-optional-custom-domain), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout-controls), [REQ-OBS-002](observability.md#req-obs-002-admin-status)
+**Dependencies:** [REQ-ADM-001](#req-adm-001-first-run-setup), [REQ-ADM-002](#req-adm-002-mvp-admin-auth), [REQ-ADM-003](#req-adm-003-setup-token-lifecycle), [REQ-ADM-004](#req-adm-004-one-line-installers), [REQ-ADM-005](#req-adm-005-optional-custom-domain), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-OBS-002](observability.md#req-obs-002-admin-status-surface)
 
 **Verification:** Automated test
 

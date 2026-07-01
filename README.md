@@ -30,7 +30,7 @@ documentation/           architecture, API, config, deploy, security, observabil
 
 ## Current status
 
-The first implementation slice covers all 41 SDD requirements with source anchors and behavioral tests. CI is authoritative for full verification.
+The first implementation slice covers all 42 SDD requirements with source anchors and behavioral tests. CI is authoritative for full verification.
 
 - Product contract: [sdd/](sdd/)
 - Operational documentation: [documentation/](documentation/)

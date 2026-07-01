@@ -71,6 +71,92 @@ function adminUiScript(html: string): string {
   return match![1]!
 }
 
+type StubListener = (event?: unknown) => unknown
+
+interface StubElement {
+  textContent: string
+  innerHTML: string
+  value: string
+  checked: boolean
+  disabled: boolean
+  hidden: boolean
+  type: string
+  className: string
+  dataset: Record<string, string>
+  attributes: Record<string, string>
+  children: StubElement[]
+  listeners: Map<string, StubListener>
+  classList: {
+    add: (...names: string[]) => void
+    remove: (...names: string[]) => void
+    toggle: (name: string, enabled?: boolean) => boolean
+    contains: (name: string) => boolean
+  }
+  setAttribute: (name: string, value: string) => void
+  addEventListener: (name: string, listener: StubListener) => void
+  append: (...nodes: StubElement[]) => void
+  appendChild: (node: StubElement) => StubElement
+  prepend: (...nodes: StubElement[]) => void
+  querySelector: (selector: string) => StubElement | undefined
+  closest: (selector: string) => StubElement | null
+  scrollIntoView: (options?: unknown) => void
+  focus: (options?: unknown) => void
+}
+
+function elementStub(overrides: Partial<StubElement> = {}): StubElement {
+  const classes = new Set<string>()
+  const base: StubElement = {
+    textContent: '',
+    innerHTML: '',
+    value: '',
+    checked: false,
+    disabled: false,
+    hidden: false,
+    type: '',
+    className: '',
+    dataset: {},
+    attributes: {},
+    children: [],
+    listeners: new Map<string, StubListener>(),
+    classList: {
+      add: (...names: string[]) => { names.forEach((name) => classes.add(name)) },
+      remove: (...names: string[]) => { names.forEach((name) => classes.delete(name)) },
+      toggle: (name: string, enabled?: boolean) => {
+        const next = enabled ?? !classes.has(name)
+        if (next) classes.add(name)
+        else classes.delete(name)
+        return next
+      },
+      contains: (name: string) => classes.has(name)
+    },
+    setAttribute(name: string, value: string) {
+      this.attributes[name] = value
+      if (name.startsWith('data-')) {
+        const datasetKey = name.slice(5).replace(/-([a-z])/g, (_match, char: string) => char.toUpperCase())
+        this.dataset[datasetKey] = value
+      }
+    },
+    addEventListener(name: string, listener: StubListener) {
+      this.listeners.set(name, listener)
+    },
+    append(...nodes: StubElement[]) {
+      this.children.push(...nodes)
+    },
+    appendChild(node: StubElement) {
+      this.children.push(node)
+      return node
+    },
+    prepend(...nodes: StubElement[]) {
+      this.children.unshift(...nodes)
+    },
+    querySelector: () => undefined,
+    closest: () => null,
+    scrollIntoView: () => undefined,
+    focus: () => undefined
+  }
+  return Object.assign(base, overrides)
+}
+
 describe('router worker behavioral contracts', () => {
   it('REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function', async () => {
     // AdminConfigurationUiTestAnchor
@@ -120,9 +206,15 @@ describe('router worker behavioral contracts', () => {
     const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
     const idleRows = [...html.matchAll(/data-state="idle"/g)]
     const outputSurfaces = [...html.matchAll(/data-empty="[^"]+"/g)]
+    const liveOutputSurfaces = [...html.matchAll(/data-output="[^"]+"[^>]*role="log"[^>]*aria-live="polite"/g)]
+    const fieldHelp = [...html.matchAll(/class="field-help"/g)]
     expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout']))
     expect(idleRows).toHaveLength(9)
     expect(outputSurfaces).toHaveLength(9)
+    expect(liveOutputSurfaces).toHaveLength(outputSurfaces.length)
+    expect(fieldHelp).toHaveLength(2)
+    expect(html).toMatch(/<meta name="color-scheme" content="dark">/)
+    expect(html).toMatch(/data-setup-banner/)
     expect(html).toMatch(/data-responsive="desktop mobile"/)
     expect(html).toMatch(/data-brand-title="codeflare-inference-mesh"/)
     expect(html).not.toMatch(/<small>Inference Mesh admin<\/small>/)
@@ -166,36 +258,144 @@ describe('router worker behavioral contracts', () => {
     expect(html).not.toMatch(/class="panel command-panel"/)
   })
 
-  it('REQ-ADM-007 renders setup-locked feedback instead of raw JSON', async () => {
+  it('REQ-ADM-007 renders setup-locked recovery affordances instead of raw JSON', async () => {
     // AdminSetupLockedFeedbackTestAnchor
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
-    const listeners = new Map<string, (event: { target: { closest: (selector: string) => unknown } }) => Promise<void>>()
-    const classes = new Set<string>()
-    const setupOutput = { textContent: '', innerHTML: '', dataset: { feedback: '' }, classList: { add: (name: string) => classes.add(name), remove: (name: string) => classes.delete(name), toggle: (name: string, enabled: boolean) => enabled ? classes.add(name) : classes.delete(name) } }
-    const setupScope = { dataset: { state: 'idle' }, setAttribute: () => undefined, querySelector: (selector: string) => selector === '[data-output]' ? setupOutput : undefined }
-    const setupButton = { dataset: { action: 'first-run-setup' }, disabled: false, closest: (selector: string) => selector === '[data-action]' ? setupButton : selector === '[data-action-scope]' ? setupScope : null }
-    const elements = new Map<string, unknown>([
-      ['admin-ui-config', { textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] }],
-      ['origin-label', { textContent: '' }],
-      ['admin-token', { value: '' }],
-      ['remember-token', { checked: false }],
-      ['setup-status', { textContent: '' }],
-      ['auth-status', { textContent: '' }],
-      ['toast', { textContent: '', classList: { add: () => undefined, remove: () => undefined } }],
+    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
+    const timeouts: number[] = []
+    let authScrolled = false
+    let tokenFocused = false
+    const setupOutput = elementStub({ dataset: { feedback: '' } })
+    const setupScope = elementStub({ dataset: { state: 'idle' } })
+    setupScope.querySelector = (selector: string) => selector === '[data-output]' ? setupOutput : undefined
+    const setupButton = elementStub({ dataset: { action: 'first-run-setup' } })
+    setupButton.closest = (selector: string) => selector === '[data-action]' ? setupButton : selector === '[data-action-scope]' ? setupScope : null
+    const setupBanner = elementStub({ hidden: true })
+    const adminToken = elementStub()
+    adminToken.focus = () => { tokenFocused = true }
+    const loginSection = elementStub()
+    loginSection.scrollIntoView = () => { authScrolled = true }
+    const toast = elementStub()
+    const elements = new Map<string, StubElement>([
+      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
+      ['origin-label', elementStub()],
+      ['admin-token', adminToken],
+      ['remember-token', elementStub()],
+      ['setup-status', elementStub()],
+      ['auth-status', elementStub()],
+      ['toast', toast],
+      ['setup-output', setupOutput],
+      ['login', loginSection]
+    ])
+    const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
+    const documentStub = {
+      getElementById: (id: string) => elements.get(id),
+      querySelector: (selector: string) => selector === '[data-setup-banner]' ? setupBanner : undefined,
+      createElement: () => elementStub(),
+      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
+    }
+    const fetchStub = async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } })
+
+    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, (_callback: () => void, timeout: number) => { timeouts.push(timeout); return timeout })
+    await listeners.get('click')!({ target: setupButton })
+    const dismiss = toast.children.find((child) => child.dataset.toastDismiss === 'true')
+    dismiss?.listeners.get('click')?.()
+
+    expect(setupScope.dataset.state).toBe('error')
+    expect(setupOutput.classList.contains('is-error')).toBe(true)
+    expect(setupOutput.dataset.feedback).toBe('setup-locked')
+    expect(setupOutput.textContent).not.toMatch(/^\{/)
+    expect(setupBanner.hidden).toBe(false)
+    expect(authScrolled).toBe(true)
+    expect(tokenFocused).toBe(true)
+    expect(timeouts.at(-1)).toBe(8000)
+    expect(toast.classList.contains('is-error')).toBe(true)
+    expect(toast.classList.contains('show')).toBe(false)
+  })
+
+  it('REQ-SEC-002 asks for confirmation before revoking a node from the Admin UI', async () => {
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/admin'))).text()
+    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
+    const requests: string[] = []
+    const nodeOutput = elementStub()
+    const nodeScope = elementStub({ dataset: { state: 'idle' } })
+    nodeScope.querySelector = (selector: string) => selector === '[data-output]' ? nodeOutput : undefined
+    const revokeButton = elementStub({ dataset: { action: 'node-revoke' }, textContent: 'Revoke node' })
+    revokeButton.closest = (selector: string) => selector === '[data-action]' ? revokeButton : selector === '[data-action-scope]' ? nodeScope : null
+    const elements = new Map<string, StubElement>([
+      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
+      ['origin-label', elementStub()],
+      ['admin-token', elementStub({ value: 'admin-secret' })],
+      ['remember-token', elementStub()],
+      ['toast', elementStub()],
+      ['node-id', elementStub({ value: 'node/a' })],
+      ['node-output', nodeOutput]
+    ])
+    const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
+    const documentStub = {
+      getElementById: (id: string) => elements.get(id),
+      querySelector: () => undefined,
+      createElement: () => elementStub(),
+      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
+    }
+    const fetchStub = async (path: string) => {
+      requests.push(path)
+      return Response.json({ revoked: true })
+    }
+
+    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, () => undefined)
+    await listeners.get('click')!({ target: revokeButton })
+    expect(requests).toHaveLength(0)
+    expect(revokeButton.dataset.confirming).toBe('true')
+    expect(nodeScope.dataset.state).toBe('idle')
+
+    await listeners.get('click')!({ target: revokeButton })
+    expect(requests).toEqual(['/admin/nodes/node%2Fa/revoke'])
+    expect(nodeScope.dataset.state).toBe('ready')
+    expect(revokeButton.dataset.confirming).toBeUndefined()
+    expect(JSON.parse(nodeOutput.textContent) as { revoked: boolean }).toEqual({ revoked: true })
+  })
+
+  it('REQ-ADM-006 copies all generated setup tokens from rendered token controls', async () => {
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/admin'))).text()
+    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
+    let copied = ''
+    const setupOutput = elementStub()
+    const setupScope = elementStub({ dataset: { state: 'idle' } })
+    setupScope.querySelector = (selector: string) => selector === '[data-output]' ? setupOutput : undefined
+    const setupButton = elementStub({ dataset: { action: 'first-run-setup' } })
+    setupButton.closest = (selector: string) => selector === '[data-action]' ? setupButton : selector === '[data-action-scope]' ? setupScope : null
+    const elements = new Map<string, StubElement>([
+      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
+      ['origin-label', elementStub()],
+      ['admin-token', elementStub()],
+      ['remember-token', elementStub()],
+      ['setup-status', elementStub()],
+      ['auth-status', elementStub()],
+      ['toast', elementStub()],
       ['setup-output', setupOutput]
     ])
     const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
-    const documentStub = { getElementById: (id: string) => elements.get(id), addEventListener: (name: string, listener: (event: { target: { closest: (selector: string) => unknown } }) => Promise<void>) => listeners.set(name, listener) }
-    const fetchStub = async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } })
+    const documentStub = {
+      getElementById: (id: string) => elements.get(id),
+      querySelector: () => undefined,
+      createElement: () => elementStub(),
+      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
+    }
+    const setupTokens = { adminToken: 'admin-a', providerToken: 'provider-a', setupToken: 'setup-a', upstreamToken: 'upstream-a' }
+    const fetchStub = async () => Response.json(setupTokens, { status: 201 })
 
-    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, () => undefined)
+    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async (value: string) => { copied = value } } }, fetchStub, () => undefined)
     await listeners.get('click')!({ target: setupButton })
+    await setupOutput.children[0]!.listeners.get('click')?.()
 
-    expect(setupScope.dataset.state).toBe('error')
-    expect(classes.has('is-error')).toBe(true)
-    expect(setupOutput.dataset.feedback).toBe('setup-locked')
-    expect(setupOutput.textContent).not.toMatch(/^\{/)
+    expect(setupOutput.children[0]!.dataset.copyAll).toBe('true')
+    expect(setupOutput.children).toHaveLength(5)
+    expect(copied.split('\n')).toEqual(['adminToken: admin-a', 'providerToken: provider-a', 'setupToken: setup-a', 'upstreamToken: upstream-a'])
+    expect(elements.get('admin-token')?.value).toBe('admin-a')
   })
 
   it('REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families', async () => {

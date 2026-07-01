@@ -12,6 +12,7 @@
 - Updated [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui), [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard), and [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) so Admin UI HTML rejects framing, dashboard runtime controls report unavailable managed runtimes safely, and workflow safety validates each workflow job/step structurally.
 - Updated [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-OBS-002](observability.md#req-obs-002-admin-status-surface), and [REQ-OBS-004](observability.md#req-obs-004-failure-reporting) so scheduler miss responses identify no-profile as `404` and no-node as `429`, and admin status matches its nodes/profiles/audit response.
 - Added [REQ-ADM-007](setup-admin.md#req-adm-007-admin-command-center) so the Admin UI command center has state summary, workflow navigation, consistent controls, and inline setup-locked feedback.
+- Updated [REQ-RTR-001](router-worker.md#req-rtr-001-route-family-separation) so Admin UI shell loading and node self-unregistration are covered by the route-family authentication contract.
 
 ## 2026-06-30
 
