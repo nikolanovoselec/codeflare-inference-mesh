@@ -43,7 +43,15 @@ Production releases use stable semantic tags such as `v0.1.0`. Integration relea
 
 ## Rollback
 
-Worker rollback uses the prior deployment or prior workflow ref. Agent rollback uses the previous binary retained by the service update flow. Model profile rollback switches the public alias back to a previously ready profile. ([REQ-NODE-005](../../sdd/spec/node-agent.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
+**When:** The latest Worker deployment or release artifact is bad and a previous Git ref is known to be safe.
+
+**Command:** Run the manual Deploy workflow with `environment=integration` or `environment=production`, `version_tag` set to the known-good tag, and the workflow ref set to the known-good branch or commit. Production rollback still requires the selected ref to be `main`.
+
+**Verifies:** After the workflow succeeds, call `GET /health` on the target Worker and confirm installer scripts reference the known-good release tag.
+
+**Rollback:** If the rollback workflow fails before Worker deploy, the existing Worker remains active. If it fails after publishing a release but before deploy, delete the unused GitHub Release tag and rerun with the last known-good tag.
+
+Agent rollback uses the previous binary retained by the service update flow. Model profile rollback switches the public alias back to a previously ready profile. ([REQ-NODE-005](../../sdd/spec/node-agent.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
 
 ## CI verification policy
 

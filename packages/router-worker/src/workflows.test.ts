@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -55,6 +55,14 @@ function allRunText(job: Job): string {
   return stepRuns(job).join('\n')
 }
 
+function runScript(script: string, options: { input?: string; env?: Record<string, string>; args?: readonly string[] } = {}) {
+  return spawnSync(process.execPath, [resolve(repoRoot, script), ...(options.args ?? [])], {
+    input: options.input,
+    env: { ...process.env, ...options.env },
+    encoding: 'utf8'
+  })
+}
+
 describe('workflow contract values', () => {
   it('REQ-REL-001 runs PR, main-push, manual, router, agent, packaging, security, and aggregate test checks', () => {
     const ci = workflow('ci.yml')
@@ -105,7 +113,13 @@ describe('workflow contract values', () => {
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(deployJob).toHaveProperty('env.CLOUDFLARE_API_TOKEN', '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}')
     expect(deployText).toContain('Production deploys are only allowed from main')
-    expect(deployText).toContain('for workflow in Security Fuzz; do')
+    expect(runScript('packages/router-worker/scripts/deploy-gate.mjs', {
+      input: JSON.stringify([
+        { workflowName: 'Security', headSha: 'abc', event: 'workflow_dispatch', headBranch: 'develop', status: 'completed', conclusion: 'success', databaseId: 4 },
+        { workflowName: 'Security', headSha: 'abc', event: 'push', headBranch: 'main', status: 'completed', conclusion: 'failure', databaseId: 5, url: 'https://example.test/failing-run' }
+      ]),
+      env: { WORKFLOW_NAME: 'Security', GATE_SHA: 'abc', REQUIRED_EVENT: 'push', REQUIRED_BRANCH: 'main' }
+    }).stdout.startsWith('failure')).toBe(true)
     expect(deployJob.steps.find((step) => step.name === 'Resolve or create D1 database')).toMatchObject({ 'working-directory': 'packages/router-worker' })
     expect(runLines(deployJob)).toEqual(expect.arrayContaining([
       'npm exec -- wrangler d1 list --json > d1-list.json',
@@ -114,7 +128,6 @@ describe('workflow contract values', () => {
       '[ -n "$DB_ID" ] || { echo "::error::Could not resolve D1 database id"; exit 1; }'
     ]))
     expect(deployJob.steps.find((step) => step.name === 'Resolve or create D1 database')?.env).toEqual({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' })
-    expect(deployText).toContain("replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG)")
     expect(deployText).toContain('npm exec -- wrangler d1 migrations apply "${{ steps.settings.outputs.db_name }}" --remote "${args[@]}"')
     expect(deployText).toContain('printf \'%s\' "$CLOUDFLARE_ACCOUNT_ID" | npm exec -- wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"')
     expect(deployText).toContain('npm exec -- wrangler deploy "${args[@]}"')
@@ -152,9 +165,8 @@ describe('workflow contract values', () => {
     expect(deployText).toContain('sha256sum *.tar.gz *.zip > checksums.txt')
     expect(deployText).toContain('sha256sum -c checksums.txt')
     expect(deployText).toContain('cosign sign-blob --key env://COSIGN_PRIVATE_KEY --output-signature checksums.txt.sig checksums.txt')
-    expect(deployText).toContain('gh release create "${{ steps.settings.outputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ steps.settings.outputs.version_tag }}" --notes-file release-notes.md $PRERELEASE')
+    expect(deployJob.steps.find((step) => step.name === 'Publish GitHub Release')).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { GH_TOKEN: '${{ github.token }}' } })
     expect(deployJob.steps.find((step) => step.name === 'Resolve or create D1 database')?.env).toEqual({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' })
-    expect(deployText).toContain("replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG)")
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
   })
@@ -188,25 +200,21 @@ describe('workflow contract values', () => {
     expect(stepRuns(fuzz.jobs['agent-fuzz']!)).toEqual(expect.arrayContaining(['go test -run=^$ -fuzz=Fuzz -fuzztime=30s ./internal/agent']))
   })
 
-  it('REQ-REL-004 permits only the hardened deploy workflow_run checkout pattern', () => {
-    const ci = workflow('ci.yml')
-    const deploy = workflow('deploy.yml')
-    const security = workflow('security.yml')
-    const fuzz = workflow('fuzz.yml')
+  it('REQ-REL-004 rejects unsafe workflow_run checkout and floating action refs', () => {
+    const valid = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [resolve(repoRoot, '.github/workflows')] })
+    expect(valid.status).toBe(0)
 
-    expect(Object.hasOwn(deploy.on, 'workflow_run')).toBe(true)
-    expect(deploy.jobs.deploy!.if).toContain("github.event.workflow_run.event == 'push'")
-    expect(deploy.jobs.deploy!.if).toContain('github.event.workflow_run.head_repository.full_name == github.repository')
-    expect(deploy.jobs.deploy!.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}' })
-    for (const item of [ci, security, fuzz]) {
-      expect(Object.hasOwn(item.on, 'workflow_run')).toBe(false)
-      for (const job of Object.values(item.jobs)) {
-        for (const step of job.steps) {
-          if (step.uses?.startsWith('actions/checkout@')) {
-            expect(step.with?.ref).not.toBe('${{ github.event.workflow_run.head_sha || github.ref }}')
-          }
-        }
-      }
+    const temp = mkdtempSync(resolve(tmpdir(), 'workflow-safety-'))
+    try {
+      const unsafeDir = resolve(temp, 'workflows')
+      mkdirSync(unsafeDir, { recursive: true })
+      writeFileSync(resolve(unsafeDir, 'deploy.yml'), `name: Deploy\non:\n  workflow_run:\n    workflows: [PR Checks]\njobs:\n  deploy:\n    runs-on: ubuntu-24.04\n    steps:\n      # github.event.workflow_run.event == 'push'\n      - uses: actions/checkout@v7.0.0\n        with:\n          ref: \${{ github.ref }}\n`)
+      writeFileSync(resolve(unsafeDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@main\n`)
+
+      const unsafe = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeDir] })
+      expect(unsafe.status).not.toBe(0)
+    } finally {
+      rmSync(temp, { recursive: true, force: true })
     }
   })
 })

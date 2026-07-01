@@ -22,48 +22,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7.0.0
-      - name: Reject dangerous workflow-run checkout pattern
-        run: |
-          node <<'NODE'
-          const fs = require('fs')
-          const path = require('path')
-          const workflowDir = '.github/workflows'
-          const workflowRun = 'workflow' + '_run'
-          const headSha = `github.event.${workflowRun}.head_sha`
-          const eventGuard = `github.event.${workflowRun}.event == 'push'`
-          const repoGuard = `github.event.${workflowRun}.head_repository.full_name == github.repository`
-          const checkoutRef = `${headSha} || github.ref`
-          const files = fs.readdirSync(workflowDir).filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
-          const offenders = []
-          for (const name of files) {
-            const file = path.join(workflowDir, name)
-            const text = fs.readFileSync(file, 'utf8')
-            const usesWorkflowRun = text.includes(workflowRun)
-            const usesHeadSha = text.includes(headSha)
-            if (!usesWorkflowRun && !usesHeadSha) continue
-            const hardenedDeploy = name === 'deploy.yml' &&
-              text.includes(eventGuard) &&
-              text.includes(repoGuard) &&
-              text.includes(checkoutRef)
-            if (!hardenedDeploy) offenders.push(file)
-          }
-          if (offenders.length > 0) {
-            console.error(`::error::dangerous workflow event checkout pattern in ${offenders.join(', ')}`)
-            process.exit(1)
-          }
-          NODE
-      - name: Require pinned action and runner versions
-        run: |
-          floating_action='@''latest'
-          floating_runner='ubuntu-''latest'
-          if grep -R "$floating_action\|$floating_runner" .github/workflows; then
-            echo "::error::unversioned action or runner pin found"
-            exit 1
-          fi
-          if grep -RE "actions/(checkout|setup-node|setup-go|upload-artifact)@v[0-9]+([^0-9.]|$)" .github/workflows; then
-            echo "::error::major-only action pin found"
-            exit 1
-          fi
+      - name: Validate workflow safety structurally
+        run: node packages/router-worker/scripts/workflow-safety.mjs .github/workflows
 
   codeql:
     name: CodeQL

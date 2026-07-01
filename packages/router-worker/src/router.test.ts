@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_ACTIONS, ADMIN_UI_RESPONSIVE } from './admin-ui'
-import { hashToken } from './auth'
+import { hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan } from './installers'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
@@ -133,6 +133,8 @@ describe('router worker behavioral contracts', () => {
     expect(response.status).toBe(201)
     expect(new Set([body.adminToken, body.providerToken, body.setupToken, body.upstreamToken]).size).toBe(4)
     expect(store.tokens.every((token) => token.verifier.startsWith('sha256:'))).toBe(true)
+    expect(timingSafeEqualText('sha256:same', 'sha256:same')).toBe(true)
+    expect(timingSafeEqualText('sha256:same', 'sha256:different')).toBe(false)
     const returnedValues = new Set(Object.values(body))
     expect(store.tokens.some((token) => returnedValues.has(token.verifier))).toBe(false)
   })
@@ -140,8 +142,13 @@ describe('router worker behavioral contracts', () => {
   it('REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families', async () => {
     // CredentialBoundaryTestAnchor
     const { router } = routerFixture()
+    const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
+    const setup = await setupResponse.json() as { setupToken: string }
+
     expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: bearer('provider-secret'), body: JSON.stringify({ nodeId: 'node-a' }) }))).status).toBe(404)
     expect((await router(new Request('https://router.test/v1/models', { headers: bearer('admin-secret') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/admin/status', { headers: bearer(setup.setupToken) }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: bearer(setup.setupToken), body: JSON.stringify({ nodeId: 'node-a' }) }))).status).not.toBe(200)
   })
 
   it('REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API', async () => {
@@ -444,12 +451,14 @@ describe('router worker behavioral contracts', () => {
     expect(result).toEqual({ providerId: 'provider-a', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
   })
 
-  it('REQ-ADM-005 validates optional custom-domain hostnames before accepting them', async () => {
-    const { router } = routerFixture()
-    const good = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com' }) }))
-    const bad = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'http://bad' }) }))
+  it('REQ-ADM-005 validates and stores optional custom-domain hostnames before accepting them', async () => {
+    const { router, store } = routerFixture()
+    const good = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com', zoneId: 'zone-a' }) }))
+    const bad = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'http://bad', zoneId: 'zone-a' }) }))
 
     expect(good.status).toBe(200)
+    expect(await store.getConfig('custom_domain')).toEqual({ hostname: 'ai.example.com', zoneId: 'zone-a' })
+    expect(store.audit.some((event) => event.type === 'custom_domain_validated' && event.target === 'ai.example.com')).toBe(true)
     expect(bad.status).toBe(400)
   })
 

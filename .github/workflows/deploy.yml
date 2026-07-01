@@ -111,10 +111,12 @@ jobs:
           for workflow in Security Fuzz; do
             ok=""
             for attempt in $(seq 1 30); do
-              rows=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --commit "$GATE_SHA" --limit 10 --json status,conclusion,databaseId,url,name)
-              status=$(node -e "const rows=JSON.parse(process.argv[1]); if(rows.some((r)=>r.status==='completed' && r.conclusion==='success')) console.log('success'); else if(rows.some((r)=>r.status==='completed' && r.conclusion && r.conclusion !== 'success' && r.conclusion !== 'skipped')) console.log('failure'); else console.log('pending')" "$rows")
-              if [ "$status" = "success" ]; then ok="yes"; break; fi
-              if [ "$status" = "failure" ]; then echo "::error::$workflow failed for $GATE_SHA"; exit 1; fi
+              rows=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --commit "$GATE_SHA" --limit 20 --json status,conclusion,databaseId,url,name,workflowName,event,headBranch,headSha,createdAt)
+              status=$(WORKFLOW_NAME="$workflow" GATE_SHA="$GATE_SHA" REQUIRED_EVENT=push REQUIRED_BRANCH=main node packages/router-worker/scripts/deploy-gate.mjs <<< "$rows")
+              case "$status" in
+                success*) ok="yes"; break ;;
+                failure*) echo "::error::$workflow failed for $GATE_SHA: $status"; exit 1 ;;
+              esac
               sleep 20
             done
             if [ "$ok" != "yes" ]; then echo "::error::$workflow did not complete successfully for $GATE_SHA"; exit 1; fi

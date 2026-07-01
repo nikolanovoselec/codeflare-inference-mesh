@@ -30,7 +30,7 @@ documentation/           architecture, API, config, deploy, security, observabil
 
 ## Current status
 
-The first implementation slice covers all 38 SDD requirements with source anchors and behavioral tests. CI is authoritative for full verification.
+The first implementation slice covers all 40 SDD requirements with source anchors and behavioral tests. CI is authoritative for full verification.
 
 - Product contract: [sdd/](sdd/)
 - Operational documentation: [documentation/](documentation/)
@@ -107,7 +107,7 @@ Important bindings and values:
 | `CLOUDFLARE_ACCOUNT_ID` | Worker secret | Runtime account ID for setup automation |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | Worker secret | Runtime token for AI Gateway automation |
 
-The deploy workflow creates or resolves the D1 database, applies migrations, uncomments the required `[[vpc_networks]]` / `network_id = "cf1:network"` binding, writes runtime secrets, injects the selected `AGENT_RELEASE_TAG`, deploys the Worker, builds agent artifacts, creates checksums, optionally signs them, and publishes a GitHub Release.
+The deploy workflow creates or resolves the D1 database, applies migrations, uncomments the required `[[vpc_networks]]` / `network_id = "cf1:network"` binding, writes runtime secrets, injects the selected `AGENT_RELEASE_TAG`, builds agent artifacts, creates checksums, optionally signs them, publishes a GitHub Release, and then deploys the Worker.
 
 ## Cloudflare One / Mesh prerequisite
 

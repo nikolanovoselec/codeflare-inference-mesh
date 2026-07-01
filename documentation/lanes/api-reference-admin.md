@@ -32,7 +32,11 @@ GET /
 
 **Request:** No body.
 
-**Response:** Returns the responsive Admin configuration UI. Admin actions inside the UI still use bearer authentication after first-run setup completes.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | HTML | Responsive Admin configuration UI. Admin actions still require bearer authentication after setup completes. |
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
@@ -48,7 +52,11 @@ GET /admin
 
 **Request:** No body.
 
-**Response:** Returns the same responsive Admin configuration UI as `/`.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | HTML | Same responsive Admin configuration UI as `/`. |
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
@@ -62,10 +70,14 @@ POST /admin/setup
 
 **Origin check:** n/a
 
-
 **Request:** No required body fields in the current implementation.
 
-**Response:** Stores setup-complete state and displays generated admin, provider, setup, and upstream credentials once.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `201` | Generated admin, provider, setup, and upstream credentials | Credentials are displayed once; durable storage keeps verifiers/config only. |
+| `401` | Error object | Setup has completed and admin auth is missing or invalid. |
 
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md)
 
@@ -79,10 +91,14 @@ POST /admin/login
 
 **Origin check:** n/a
 
-
 **Request:** No required body fields in the current implementation.
 
-**Response:** Returns the MVP bearer-token session contract.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | Admin session contract | Confirms the presented admin credential. |
+| `401` | Error object | Admin credential is missing or invalid. |
 
 **Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
@@ -96,10 +112,14 @@ GET /admin/status
 
 **Origin check:** n/a
 
-
 **Request:** No body.
 
-**Response:** Returns nodes, profiles, recent audit entries, and generated timestamp with credentials redacted.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | Nodes, profiles, recent audit entries, and generated timestamp | Credentials are redacted. |
+| `401` | Error object | Admin credential is missing or invalid. |
 
 **Implements:** [REQ-OBS-002](../../sdd/spec/observability.md)
 
@@ -113,10 +133,14 @@ POST /admin/setup-tokens
 
 **Origin check:** n/a
 
+**Request:** Optional setup-token metadata such as expiration, display name, and profile allowlist.
 
-**Request:** No required body fields in the current implementation.
+**Response:**
 
-**Response:** Displays the setup token once and stores only its verifier.
+| Status | Body | Notes |
+| --- | --- | --- |
+| `201` | Generated setup token | Displays the setup token once and stores only its verifier. |
+| `401` | Error object | Admin credential is missing or invalid. |
 
 **Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md)
 
@@ -130,10 +154,14 @@ GET /admin/installers/{platform}
 
 **Origin check:** n/a
 
-
 **Path parameters:** `platform` must be `linux`, `macos`, or `windows`.
 
-**Response:** Returns a command that fetches `/install.sh` or `/install.ps1` and passes only router URL plus setup token.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | One-line install command | Fetches `/install.sh` or `/install.ps1` and passes only router URL plus setup token. |
+| `400` | Error text | Unsupported platform. |
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
@@ -147,10 +175,14 @@ POST /admin/nodes/{nodeId}/revoke
 
 **Origin check:** n/a
 
-
 **Path parameters:** `nodeId` is the URL-encoded node identifier to revoke.
 
-**Response:** Marks the node revoked and clears live eligibility.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | `{ "ok": true }` | Marks the node revoked and clears live eligibility. |
+| `401` | Error object | Admin credential is missing or invalid. |
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md)
 
@@ -164,10 +196,14 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-
 **Request:** No required body fields in the current implementation; account, gateway, token, and Worker URL come from Worker environment.
 
-**Response:** Stores provider, route, route version, and deployment identifiers in D1.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | Provider, route, route version, and deployment identifiers | Stores Cloudflare AI Gateway metadata in D1. |
+| `503` | Configuration error | Required runtime Cloudflare configuration is missing. |
 
 **Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md)
 
@@ -181,10 +217,14 @@ POST /admin/custom-domain/validate
 
 **Origin check:** n/a
 
+**Request:** JSON body with `hostname` and `zoneId` for the candidate custom-domain hostname.
 
-**Request:** JSON body with `hostname` as the candidate custom-domain hostname.
+**Response:**
 
-**Response:** Returns the hostname validation result without changing the active Worker origin.
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | `{ "valid": true, "hostname": string, "zoneId": string }` | Stores the selected hostname and zone ID for later Gateway/DNS operations. |
+| `400` | `{ "valid": false, "hostname": string }` | Hostname or zone ID is missing or invalid. |
 
 **Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md)
 
@@ -198,10 +238,14 @@ POST /admin/profiles/rollout
 
 **Origin check:** n/a
 
-
 **Request:** JSON body with `profileId` and numeric `rolloutPercent`.
 
-**Response:** Stores a versioned profile rollout update.
+**Response:**
+
+| Status | Body | Notes |
+| --- | --- | --- |
+| `200` | `{ "ok": true }` | Stores a versioned profile rollout update. |
+| `400` | Error object | Profile ID or rollout percentage is invalid. |
 
 **Implements:** [REQ-RUN-004](../../sdd/spec/runtime-profiles.md)
 

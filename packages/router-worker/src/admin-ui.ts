@@ -118,6 +118,7 @@ export function adminUiHtml(workerOrigin: string): string {
         <div class="panel" id="domain" data-form="custom-domain">
           ${panelHeader('Custom domain', 'Validate a hostname before wiring it into Gateway or DNS automation.')}
           <label>Hostname<input name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url"></label>
+          <label>Zone ID<input name="zoneId" id="custom-domain-zone" placeholder="zone-id"></label>
           <button type="button" data-action="custom-domain-validate">Validate hostname</button>
           <pre id="domain-output" data-output="custom-domain" tabindex="0"></pre>
         </div>
@@ -215,7 +216,7 @@ function adminUiScript(): string {
       } else if (action === 'gateway-sync') {
         showJson('gateway-output', await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true) }));
       } else if (action === 'custom-domain-validate') {
-        showJson('domain-output', await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ hostname: byId('custom-domain').value.trim() }) }));
+        showJson('domain-output', await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ hostname: byId('custom-domain').value.trim(), zoneId: byId('custom-domain-zone').value.trim() }) }));
       } else if (action === 'node-revoke') {
         const nodeId = encodeURIComponent(byId('node-id').value.trim()); showJson('node-output', await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(true) }));
       } else if (action === 'profile-rollout') {

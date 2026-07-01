@@ -238,9 +238,13 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
 
 async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ hostname: string }>(request)
-  const valid = Boolean(body?.hostname && validateCustomDomain(body.hostname))
-  return json({ valid, hostname: body?.hostname }, valid ? 200 : 400, requestId)
+  const body = await readJson<{ hostname: string; zoneId: string }>(request)
+  const valid = Boolean(body?.hostname && body.zoneId && validateCustomDomain(body.hostname))
+  if (!valid) return json({ valid: false, hostname: body?.hostname }, 400, requestId)
+  const result = { valid: true, hostname: body.hostname, zoneId: body.zoneId }
+  await deps.store.putConfig('custom_domain', { hostname: body.hostname, zoneId: body.zoneId })
+  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_validated', at: now, actor: 'admin', target: body.hostname, detail: { zoneId: body.zoneId } })
+  return json(result, 200, requestId)
 }
 
 async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {

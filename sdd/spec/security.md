@@ -12,11 +12,11 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. Client-to-Gateway, Gateway-to-Worker, setup, node-to-Worker, dashboard, Worker-to-node, admin, deploy, and runtime Cloudflare credentials are separate classes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
-2. Provider tokens cannot claim nodes or access admin routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-3. Node tokens cannot call provider endpoints or admin routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-4. Setup tokens cannot heartbeat, proxy inference, or access admin routes after claim. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-5. Upstream tokens are accepted only by node-agent Mesh-facing inference routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+1. Client-to-Gateway, Gateway-to-Worker, setup, node-to-Worker, dashboard, Worker-to-node, admin, deploy, and runtime Cloudflare credentials are separate classes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
+2. Provider tokens cannot claim nodes or access admin routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
+3. Node tokens cannot call provider endpoints or admin routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
+4. Setup tokens cannot heartbeat, proxy inference, or access admin routes after claim. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families) -->
+5. Upstream tokens are accepted only by node-agent Mesh-facing inference routes. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -38,12 +38,12 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. Setup, provider, admin, node, and upstream tokens are generated with enough entropy for bearer-token use. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-2. Durable token records store hashes or encrypted values. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-3. Router config keeps the generated Worker-to-node upstream token recoverable so the Worker can present it during node forwarding. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS -->
-4. Token verification uses constant-time comparison for hash matches. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-5. Admin can revoke a node token and remove the node from eligible scheduling. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-6. Credential rotation creates a new verifier before disabling the old credential where the flow requires continuity. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+1. Setup, provider, admin, node, and upstream tokens are generated with enough entropy for bearer-token use. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens and stores only verifiers) -->
+2. Durable token records store hashes or encrypted values. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens and stores only verifiers) -->
+3. Router config keeps the generated Worker-to-node upstream token recoverable so the Worker can present it during node forwarding. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SEC-001 reuses generated upstream token when no env secret exists) -->
+4. Token verification uses constant-time comparison for hash matches. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens and stores only verifiers) -->
+5. Admin can revoke a node token and remove the node from eligible scheduling. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-004 lets an authenticated node remove itself from scheduling) -->
+6. Credential rotation creates a new verifier before disabling the old credential where the flow requires continuity. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -65,11 +65,11 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. The Worker sends only the node upstream token and approved inference metadata to the selected node. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-2. The Worker strips client authorization, Cloudflare API tokens, admin credentials, node credentials, and setup credentials before node forwarding. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-3. The node agent strips upstream token headers before forwarding to the local runtime unless the runtime is explicitly configured to require them. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-4. Observability logs record credential-bearing header names only when values are redacted. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
-5. Header filtering applies to streaming and non-streaming requests. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
+1. The Worker sends only the node upstream token and approved inference metadata to the selected node. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-003 strips client authorization and Cloudflare headers before Worker-to-node forwarding) -->
+2. The Worker strips client authorization, Cloudflare API tokens, admin credentials, node credentials, and setup credentials before node forwarding. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-003 strips client authorization and Cloudflare headers before Worker-to-node forwarding) -->
+3. The node agent strips upstream token headers before forwarding to the local runtime unless the runtime is explicitly configured to require them. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
+4. Observability logs record credential-bearing header names only when values are redacted. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-003 strips client authorization and Cloudflare headers before Worker-to-node forwarding) -->
+5. Header filtering applies to streaming and non-streaming requests. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-003 strips client authorization and Cloudflare headers before Worker-to-node forwarding) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
@@ -91,13 +91,13 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. The node agent proxies only the configured inference and health endpoints to the runtime. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
-2. Local runtime built-in tools, file access, and unauthenticated web UI features are disabled for managed profiles unless explicitly allowed by an Admin profile. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
-3. The Mesh-facing listener requires upstream token verification before any inference proxy call. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
-4. Local dashboard endpoints bind to localhost and do not accept Worker upstream tokens as dashboard auth. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
-5. Runtime-control dashboard POSTs require the local dashboard token. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
-6. Runtime-control dashboard POSTs reject browser Origin headers that do not match the dashboard origin. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors -->
-7. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors -->
+1. The node agent proxies only the configured inference and health endpoints to the runtime. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
+2. Local runtime built-in tools, file access, and unauthenticated web UI features are disabled for managed profiles unless explicitly allowed by an Admin profile. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003LlamaRuntimeCommandAndChecksum) -->
+3. The Mesh-facing listener requires upstream token verification before any inference proxy call. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
+4. Local dashboard endpoints bind to localhost and do not accept Worker upstream tokens as dashboard auth. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
+5. Runtime-control dashboard POSTs require the local dashboard token. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE004DashboardRuntimeControlsUseController) -->
+6. Runtime-control dashboard POSTs reject browser Origin headers that do not match the dashboard origin. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
+7. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE004DashboardRedactsCredentials) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -119,9 +119,9 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. Newly generated node-agent configs include a non-empty `dashboardToken`. <!-- @impl: packages/node-agent/internal/agent/config.go::DefaultConfig -->
-2. Legacy node-agent configs without `dashboardToken` generate one during config load. <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
-3. A generated legacy backfill token is persisted so the dashboard token remains stable across reloads. <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
+1. Newly generated node-agent configs include a non-empty local dashboard token. <!-- @impl: packages/node-agent/internal/agent/config.go::DefaultConfig --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC005LegacyConfigBackfillsDashboardToken) -->
+2. Legacy node-agent configs without a local dashboard token generate one during config load. <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC005LegacyConfigBackfillsDashboardToken) -->
+3. A generated legacy backfill token is persisted so the dashboard token remains stable across reloads. <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC005LegacyConfigBackfillsDashboardToken) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 

@@ -20,17 +20,19 @@
 | `ADMIN_TOKEN` | MVP admin access credential before stronger admin sessions or Access hardening. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | `NODE_UPSTREAM_TOKEN` | MVP Worker-to-node bearer token before per-node upstream tokens. | [REQ-SEC-001](../../sdd/spec/security.md) |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | Runtime token used by setup UI for Gateway and optional custom domain provisioning. | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
+| `CLOUDFLARE_ACCOUNT_ID` | Account used by runtime Gateway setup; source reads this before `AI_GATEWAY_ACCOUNT_ID`. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 
 ## Worker vars
 
 | Name | Purpose | REQs |
 | --- | --- | --- |
-| `CLOUDFLARE_ACCOUNT_ID` | Account used for Gateway, D1, Workers, and Mesh resources. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `AI_GATEWAY_ACCOUNT_ID` | Optional Gateway account override when it differs from the runtime Cloudflare account secret. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `MAX_REQUEST_BYTES` | Maximum accepted chat request body size. | [REQ-RTR-002](../../sdd/spec/router-worker.md) |
 | `HEARTBEAT_TTL_SECONDS` | Node heartbeat freshness window. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `AI_GATEWAY_ID` | AI Gateway instance used for route automation. | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `WORKER_BASE_URL` | Public Worker origin used when registering the AI Gateway custom provider. | [REQ-GWY-001](../../sdd/spec/gateway.md) |
 | `AGENT_RELEASE_TAG` | Deploy-selected GitHub Release tag used by `/install.sh` and `/install.ps1` so integration installers download prerelease artifacts from the exact release. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| `GITHUB_REPOSITORY` | Owner/repo used by installer commands and install scripts for GitHub Release asset URLs. | [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
 
 ## Wrangler bindings
 

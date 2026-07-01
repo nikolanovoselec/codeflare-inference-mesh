@@ -91,21 +91,21 @@ func (m *RuntimeManager) Stop(ctx context.Context) error {
 	cmd := m.cmd
 	done := m.done
 	cancel := m.cancel
-	m.cmd = nil
-	m.done = nil
-	m.cancel = nil
-	m.state = "stopping"
-	m.mu.Unlock()
 	if cmd == nil || cmd.Process == nil || done == nil {
-		m.setState("stopped")
+		m.state = "stopped"
+		m.mu.Unlock()
 		return nil
 	}
+	m.state = "stopping"
+	m.mu.Unlock()
+
 	if err := cmd.Process.Signal(os.Interrupt); err != nil {
-		if cancel != nil {
-			cancel()
+		if killErr := cmd.Process.Kill(); killErr != nil {
+			m.setState("failed")
+			return fmt.Errorf("stop runtime: %w", err)
 		}
-		return fmt.Errorf("stop runtime: %w", err)
 	}
+
 	select {
 	case <-ctx.Done():
 		if cancel != nil {
