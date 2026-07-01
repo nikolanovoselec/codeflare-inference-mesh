@@ -405,6 +405,20 @@ describe('router worker behavioral contracts', () => {
     expect(result.reservation?.nodeId).toBe('node-b')
   })
 
+  it('REQ-SCH-004 ignores expired session mappings when choosing an eligible node', async () => {
+    const store = new MemoryStore()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 0, capacity: 2 }))
+    await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 1, capacity: 2 }))
+    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'mesh-default', profileId: 'qwen36-27b-256k-3090', upstreamModel: 'qwen36-27b-256k-3090', expiresAt: 1_699_999_999_999 })
+    const scheduler = new StoreScheduler(store, () => 'reservation-expired')
+
+    const result = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_000 })
+
+    expect(result.reservation?.nodeId).toBe('node-a')
+    expect(store.sessions.get('session-a')?.nodeId).toBe('node-a')
+  })
+
   it('REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim', async () => {
     // FirstRunSetupTokenTestAnchor
     const { router, store } = routerFixture()

@@ -40,7 +40,7 @@
 
 **Cause:** The session moved nodes, a lease expired, or the runtime cache was cleared during restart/profile switch.
 
-**Fix:** Check admin session mapping, node leases, recent failures, and runtime restarts; confirm another eligible node is available before moving the session. ([REQ-SCH-004](../../sdd/spec/state-scheduling.md)) ([REQ-OBS-004](../../sdd/spec/observability.md))
+**Fix:** Check node eligibility, recent failures, runtime restarts, and audit events; confirm another eligible node is available before moving the session. ([REQ-SCH-004](../../sdd/spec/state-scheduling.md)) ([REQ-OBS-004](../../sdd/spec/observability.md))
 
 ## Installer cannot verify artifact
 
