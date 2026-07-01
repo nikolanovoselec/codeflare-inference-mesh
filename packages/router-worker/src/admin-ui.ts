@@ -63,7 +63,7 @@ export function adminUiHtml(workerOrigin: string): string {
           <p class="lede">Start with setup, verify admin access, enroll nodes, then keep Gateway, profiles, and audit state in one governed run.</p>
         </div>
         <aside class="health-panel" aria-label="Router health">
-          <span class="status-dot" aria-hidden="true"></span>
+          <span class="live-badge"><span class="status-dot" aria-hidden="true"></span>LIVE</span>
           <span>Worker shell loaded</span>
           <code id="origin-label"></code>
         </aside>
@@ -235,8 +235,9 @@ code,pre{font-family:var(--font-mono)}
 .health-panel{display:grid;gap:.5rem;align-self:end;overflow:hidden;padding:1rem;font-family:var(--font-mono);font-size:.8125rem}
 .health-panel::before{content:'';display:block;height:.7rem;width:.7rem;border-radius:50%;background:var(--border-strong);box-shadow:1.1rem 0 0 var(--border-strong),2.2rem 0 0 var(--accent);margin-bottom:.2rem}
 .health-panel span:not(.status-dot){color:var(--text-primary)}
-.status-dot{display:none}
-#origin-label{display:block;overflow:auto;color:var(--text-muted);white-space:nowrap}
+.live-badge{align-items:center;display:inline-flex;gap:.38rem;justify-self:start;border:1px solid rgb(74 222 128/.34);border-radius:999px;background:rgb(74 222 128/.1);color:var(--term-green);font-size:.68rem;font-weight:700;letter-spacing:.08em;line-height:1;padding:.34rem .55rem}
+.status-dot{display:inline-block;width:.48rem;height:.48rem;border-radius:50%;background:var(--term-green);box-shadow:0 0 0 .18rem rgb(74 222 128/.12),0 0 16px rgb(74 222 128/.42)}
+#origin-label{display:block;max-width:100%;overflow:visible;color:var(--text-muted);white-space:normal;overflow-wrap:anywhere;word-break:break-word}
 .runway{display:flex;align-items:center;flex-wrap:wrap;gap:.55rem;margin:0 auto 1.5rem;max-width:68rem;padding:.25rem 0 .75rem;color:var(--text-muted);font-family:var(--font-mono);font-size:.72rem}
 .runway div{display:flex;align-items:center;gap:.45rem;min-width:0}
 .runway div+div::before{content:'→';color:var(--text-dimmed);margin-right:.2rem}
