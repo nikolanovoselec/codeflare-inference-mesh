@@ -181,7 +181,7 @@ GET /admin/installers/{platform}
 
 ## POST /admin/nodes/:nodeId/revoke
 
-Revokes a node and removes it from eligible scheduling.
+Revokes a node token and removes the node from eligible scheduling.
 
 ```http
 POST /admin/nodes/{nodeId}/revoke
@@ -197,7 +197,7 @@ POST /admin/nodes/{nodeId}/revoke
 
 | Status | Body | Notes |
 | --- | --- | --- |
-| `200` | `{ "ok": true }` | Marks the node revoked and clears live eligibility. |
+| `200` | `{ "ok": true }` | Marks the node revoked, revokes stored node credentials, and prevents later node heartbeats or unregister calls from restoring eligibility. |
 | `401` | Error object | Admin credential is missing or invalid. |
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md)

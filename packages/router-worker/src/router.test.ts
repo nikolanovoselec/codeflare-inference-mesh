@@ -415,15 +415,31 @@ describe('router worker behavioral contracts', () => {
     expect(node?.inFlight).toBe(0)
   })
 
-  it('REQ-SEC-002 lets an admin revoke a node and audit the action', async () => {
+  it('REQ-SEC-002 lets an admin revoke a node token and audit the action', async () => {
     const { router, store } = routerFixture()
-    await store.upsertNode(nodeFixture({ status: 'online' }))
+    await store.upsertNode({ ...nodeFixture({ status: 'online' }), nodeTokenVerifier: await hashToken('node-secret'), upstreamTokenVerifier: await hashToken('upstream-secret') })
+    await store.putToken(await createTokenRecord('node', 'node-secret', 1_700_000_000_000, 'node-a'))
 
     const response = await router(new Request('https://router.test/admin/nodes/node-a/revoke', { method: 'POST', headers: bearer('admin-secret') }))
+    const heartbeat = await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 2, inFlight: 0, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+    }))
+    const unregister = await router(new Request('https://router.test/node/unregister', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: 'node-a' })
+    }))
     const node = await store.getNode('node-a')
 
     expect(response.status).toBe(200)
+    expect(heartbeat.status).toBe(403)
+    expect(unregister.status).toBe(403)
     expect(node?.status).toBe('revoked')
+    expect(node?.nodeTokenVerifier).toBeUndefined()
+    expect(node?.upstreamTokenVerifier).toBeUndefined()
+    expect(store.tokens.filter((token) => token.kind === 'node' && token.nodeId === 'node-a').every((token) => token.active === false)).toBe(true)
     expect(node?.failurePenaltyUntil).toBeGreaterThan(1_700_000_000_000)
     expect(store.audit.some((event) => event.type === 'node_revoked' && event.target === 'node-a')).toBe(true)
   })

@@ -66,7 +66,10 @@ export class D1Store implements Store {
   async revokeNode(nodeId: string, now: number): Promise<void> {
     const node = await this.getNode(nodeId)
     if (!node) return
-    await this.upsertNode({ ...node, status: 'revoked', failurePenaltyUntil: now + 31536000000 })
+    const { nodeTokenVerifier, upstreamTokenVerifier, ...nodeWithoutCredentials } = node
+    void nodeTokenVerifier
+    void upstreamTokenVerifier
+    await this.upsertNode({ ...nodeWithoutCredentials, status: 'revoked', failurePenaltyUntil: now + 31536000000 })
   }
 
   async getSession(sessionId: string): Promise<SessionRecord | undefined> {

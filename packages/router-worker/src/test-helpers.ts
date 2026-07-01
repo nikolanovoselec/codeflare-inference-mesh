@@ -50,7 +50,11 @@ export class MemoryStore implements Store {
 
   async revokeNode(nodeId: string, now: number): Promise<void> {
     const node = this.nodes.get(nodeId)
-    if (node) this.nodes.set(nodeId, { ...node, status: 'revoked', failurePenaltyUntil: now + 31536000000 })
+    if (!node) return
+    const { nodeTokenVerifier, upstreamTokenVerifier, ...nodeWithoutCredentials } = node
+    void nodeTokenVerifier
+    void upstreamTokenVerifier
+    this.nodes.set(nodeId, { ...nodeWithoutCredentials, status: 'revoked', failurePenaltyUntil: now + 31536000000 })
   }
 
   async getSession(sessionId: string): Promise<SessionRecord | undefined> {
