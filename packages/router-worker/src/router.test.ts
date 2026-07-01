@@ -106,7 +106,11 @@ describe('router worker behavioral contracts', () => {
     ])
     expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 2, minTouchTargetPx: 44 })
     const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
+    const idlePanels = [...html.matchAll(/data-state="idle"/g)]
+    const outputSurfaces = [...html.matchAll(/data-empty="[^"]+"/g)]
     expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout']))
+    expect(idlePanels).toHaveLength(9)
+    expect(outputSurfaces).toHaveLength(8)
     expect(html).toMatch(/data-responsive="desktop mobile"/)
     expect(html).toMatch(/@media \(max-width:760px\)/)
     expect(html).toContain('sessionStorage.getItem(tokenKey)')
