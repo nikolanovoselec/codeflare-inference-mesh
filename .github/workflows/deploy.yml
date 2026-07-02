@@ -40,16 +40,32 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     environment: ${{ github.event_name == 'workflow_run' && 'production' || (github.ref == 'refs/heads/main' && inputs.environment == 'production' && 'production' || 'integration') }}
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
-      CLOUDFLARE_API_TOKEN_RUNTIME: ${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}
-      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
     steps:
+      - name: Guard deploy source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+          GITHUB_REF: ${{ github.ref }}
+          WORKFLOW_RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_RUN_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_ENVIRONMENT" = "production" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Production deploys are only allowed from main. Got ref: $GITHUB_REF"
+            exit 1
+          fi
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            [ "$WORKFLOW_RUN_CONCLUSION" = "success" ] || { echo "::error::PR Checks did not succeed"; exit 1; }
+            [ "$WORKFLOW_RUN_EVENT" = "push" ] || { echo "::error::Production deploys require a same-repository push"; exit 1; }
+            [ "$WORKFLOW_RUN_REPOSITORY" = "$EXPECTED_REPOSITORY" ] || { echo "::error::Production deploys require the same repository"; exit 1; }
+          fi
+
       - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          persist-credentials: false
 
       - name: Resolve deploy settings
         id: settings
@@ -88,6 +104,10 @@ jobs:
           done
 
       - name: Validate deploy secrets
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
+          CLOUDFLARE_API_TOKEN_RUNTIME: ${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}
         run: |
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$CLOUDFLARE_API_TOKEN"
@@ -107,6 +127,10 @@ jobs:
 
       - name: Resolve or create D1 database
         working-directory: packages/router-worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
+          AGENT_RELEASE_TAG: ${{ steps.settings.outputs.version_tag }}
         run: |
           set -euo pipefail
           DB_NAME="${{ steps.settings.outputs.db_name }}"
@@ -118,11 +142,12 @@ jobs:
           fi
           [ -n "$DB_ID" ] || { echo "::error::Could not resolve D1 database id"; exit 1; }
           DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID).replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG); fs.writeFileSync(p,text)"
-        env:
-          AGENT_RELEASE_TAG: ${{ steps.settings.outputs.version_tag }}
 
       - name: Apply D1 migrations
         working-directory: packages/router-worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
         run: |
           set -euo pipefail
           args=()
@@ -145,6 +170,10 @@ jobs:
 
       - name: Set Worker runtime secrets
         working-directory: packages/router-worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
+          CLOUDFLARE_API_TOKEN_RUNTIME: ${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}
         run: |
           set -euo pipefail
           args=()
@@ -176,9 +205,16 @@ jobs:
           node -e "const fs=require('fs'); const crypto=require('crypto'); const files=fs.readdirSync('.').filter((f)=>/\.(tar\.gz|zip)$/.test(f)); const artifacts=files.map((name)=>({name, sha256: crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')})); fs.writeFileSync('release-manifest.json', JSON.stringify({version:'${{ steps.settings.outputs.version_tag }}', channel:'${{ steps.settings.outputs.target_env }}', commit:process.env.GITHUB_SHA, publishedAt:new Date().toISOString(), artifacts}, null, 2)); fs.writeFileSync('release-notes.md', '# Inference Mesh Agent ${{ steps.settings.outputs.version_tag }}\n\nSee release-manifest.json and checksums.txt for artifact metadata.\n')"
 
       - name: Sign checksums when signing is configured
-        if: env.COSIGN_PRIVATE_KEY != ''
         working-directory: packages/node-agent/dist
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
+          set -euo pipefail
+          if [ -z "$COSIGN_PRIVATE_KEY" ]; then
+            echo "Cosign key not configured; skipping signature"
+            exit 0
+          fi
           go install github.com/sigstore/cosign/v2/cmd/cosign@v2.6.1
           cosign sign-blob --key env://COSIGN_PRIVATE_KEY --output-signature checksums.txt.sig checksums.txt
 
@@ -198,6 +234,9 @@ jobs:
 
       - name: Deploy Worker
         working-directory: packages/router-worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
         run: |
           set -euo pipefail
           args=()

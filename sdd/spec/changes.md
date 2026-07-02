@@ -6,6 +6,7 @@
 - Updated [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-llamacpp-runtime) and [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout) so node agents persist desired heartbeat profiles and restart managed runtimes after draining active requests when the selected profile version changes.
 - Updated [REQ-OBS-004](observability.md#req-obs-004-failure-reporting) and [REQ-RTR-003](router-worker.md#req-rtr-003-streaming-pass-through) so Mesh fetch and stream failures release reservations and apply a recent failure penalty to the node.
 - Updated [REQ-REL-002](release-ci.md#req-rel-002-deploy-workflow-gating) so deploy setting decisions are resolved by an executable script with fixture-backed behavioral tests.
+- Updated [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-OBS-003](observability.md#req-obs-003-node-metrics), [REQ-OBS-004](observability.md#req-obs-004-failure-reporting), and [REQ-RTR-003](router-worker.md#req-rtr-003-streaming-pass-through) so default-profile seeding, unambiguous Mesh IP persistence, metrics anchors, scheduler health gates, and stream failure reporting each have single-behavior ACs with matching source/test anchors.
 
 ## 2026-07-01
 

@@ -45,4 +45,4 @@ Audit history records setup completion, provider route provisioning, setup-token
 | Surface | Specification | Source |
 |---|---|---|
 | Provider metadata | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
-| Node metrics | [observability.md](../../sdd/spec/observability.md) | `packages/node-agent/internal/agent/metrics.go::MetricsAnchors` <!-- @impl: packages/node-agent/internal/agent/metrics.go::MetricsAnchors --> |
+| Node metrics | [observability.md](../../sdd/spec/observability.md) | `packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError` <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> |

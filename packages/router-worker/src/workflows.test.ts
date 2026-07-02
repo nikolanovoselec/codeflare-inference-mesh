@@ -93,12 +93,14 @@ describe('workflow contract values', () => {
     expect(deploy.concurrency).toMatchObject({ 'cancel-in-progress': true })
     expect(deployJob['timeout-minutes']).toBe(45)
     expect(deployJob.if).toBeDefined()
-    expect(deployJob.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}' })
+    expect(deployJob.env).toBeUndefined()
+    expect(deployJob.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}', 'persist-credentials': false })
     const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
+    expect(stepNames.indexOf('Guard deploy source')).toBeLessThan(stepNames.indexOf('actions/checkout@v7.0.0'))
+    expect(stepByName(deployJob, 'Guard deploy source')?.run).toContain('Production deploys are only allowed from main')
     expect(stepNames.indexOf('Resolve deploy settings')).toBeGreaterThan(stepNames.indexOf('actions/checkout@v7.0.0'))
     expect(stepNames.indexOf('Publish GitHub Release')).toBeGreaterThan(-1)
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
-    expect(deployJob).toHaveProperty('env.CLOUDFLARE_API_TOKEN', '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}')
     expect(stepByName(deployJob, 'Resolve deploy settings')).toMatchObject({
       run: 'node packages/router-worker/scripts/resolve-deploy-settings.mjs >> "$GITHUB_OUTPUT"',
       env: {
@@ -122,10 +124,10 @@ describe('workflow contract values', () => {
       ]),
       env: { WORKFLOW_NAME: 'Security', GATE_SHA: 'abc', REQUIRED_EVENT: 'push', REQUIRED_BRANCH: 'main' }
     }).stdout.startsWith('failure')).toBe(true)
-    expect(stepByName(deployJob, 'Resolve or create D1 database')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' } })
-    expect(stepByName(deployJob, 'Apply D1 migrations')).toMatchObject({ 'working-directory': 'packages/router-worker' })
-    expect(stepByName(deployJob, 'Set Worker runtime secrets')).toMatchObject({ 'working-directory': 'packages/router-worker' })
-    expect(stepByName(deployJob, 'Deploy Worker')).toMatchObject({ 'working-directory': 'packages/router-worker' })
+    expect(stepByName(deployJob, 'Resolve or create D1 database')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}', AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' } })
+    expect(stepByName(deployJob, 'Apply D1 migrations')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
+    expect(stepByName(deployJob, 'Set Worker runtime secrets')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN_RUNTIME: '${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}' } })
+    expect(stepByName(deployJob, 'Deploy Worker')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
   })
 
   it('REQ-REL-002 extracts Wrangler D1 create IDs and fails closed when the ID is absent', () => {
@@ -156,9 +158,10 @@ describe('workflow contract values', () => {
 
     expect(stepNames).toEqual(expect.arrayContaining(['Build release artifacts and manifest', 'Sign checksums when signing is configured', 'Publish GitHub Release', 'Deploy Worker', 'actions/upload-artifact@v7.0.1']))
     expect(stepByName(deployJob, 'Build release artifacts and manifest')).toMatchObject({ 'working-directory': 'packages/node-agent' })
-    expect(stepByName(deployJob, 'Sign checksums when signing is configured')).toMatchObject({ if: "env.COSIGN_PRIVATE_KEY != ''", 'working-directory': 'packages/node-agent/dist' })
+    expect(stepByName(deployJob, 'Sign checksums when signing is configured')).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}', COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}' } })
+    expect(stepByName(deployJob, 'Sign checksums when signing is configured')?.run).toContain('Cosign key not configured; skipping signature')
     expect(stepByName(deployJob, 'Publish GitHub Release')).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { GH_TOKEN: '${{ github.token }}' } })
-    expect(stepByName(deployJob, 'Resolve or create D1 database')?.env).toEqual({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' })
+    expect(stepByName(deployJob, 'Resolve or create D1 database')?.env).toMatchObject({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' })
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
   })

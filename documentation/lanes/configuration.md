@@ -63,7 +63,7 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | `nodeToken` | assigned by claim | yes after claim | `packages/node-agent/internal/agent/client.go::Heartbeat` | [REQ-NODE-002](../../sdd/spec/node-agent.md) |
 | `upstreamToken` | assigned by claim | yes after claim | `packages/node-agent/internal/agent/proxy.go::ProxyHandler` | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
 | `displayName` | hostname-derived | no | `packages/node-agent/internal/agent/config.go::DefaultConfig` | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
-| `meshIp` | n/a | yes | `packages/node-agent/internal/agent/config.go::ListenerAddress` | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
+| `meshIp` | auto-detected before claim when unambiguous | yes when detection is ambiguous | `packages/node-agent/internal/agent/config.go::DetectMeshIP`, `packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP`, `packages/node-agent/internal/agent/config.go::ListenerAddress` | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-NODE-002](../../sdd/spec/node-agent.md) |
 | `listenAddress` | derived | no | `packages/node-agent/cmd/inference-mesh-agent/main.go` | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
 | `inferencePort` | `8080` | no | `packages/node-agent/internal/agent/config.go::ListenerAddress` | [REQ-NODE-001](../../sdd/spec/node-agent.md) |
 | `dashboardAddress` | `127.0.0.1:17777` | no | `packages/node-agent/internal/agent/dashboard.go::DashboardHandler` | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
@@ -73,7 +73,7 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | `publicModels` | `["mesh-default"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
 | `activeProfileIds` | `["qwen36-35b-a3b-262k-mm-3090"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
 | `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles`, `packages/node-agent/internal/agent/runtime.go::EnsureModel`, `packages/node-agent/internal/agent/runtime.go::LlamaCommand` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
-| `HF_TOKEN` | node service environment | no, required only for gated Hugging Face profiles | `packages/node-agent/internal/agent/runtime.go::LlamaCommand` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `HF_TOKEN` | node service environment | no, required only for gated Hugging Face profiles | `packages/node-agent/internal/agent/runtime.go::cmd.Env` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `capacity` | `1` | no | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `dataDir` | `.inference-mesh` | no | `packages/node-agent/cmd/inference-mesh-agent/main.go::defaultDataDir` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `releaseUrl` | repository release API | no | `packages/node-agent/internal/agent/config.go::Config`, `packages/node-agent/internal/agent/config.go::DefaultConfig` | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
@@ -81,7 +81,9 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 
 Legacy config loads persist a generated `dashboardToken` before dashboard controls are served. ([REQ-SEC-005](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
 
-`HF_TOKEN` is not stored in router profiles. When a gated Hugging Face model is used, provide `HF_TOKEN` in the node service environment so `llama-server -hf` can resolve the model without the Worker returning secrets to nodes. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCommand -->
+Before first claim, config startup persists `meshIp` only when private-interface detection finds exactly one candidate; ambiguous hosts must supply it explicitly. ([REQ-NODE-002](../../sdd/spec/node-agent.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP -->
+
+`HF_TOKEN` is not stored in router profiles. When a gated Hugging Face model is used, provide `HF_TOKEN` in the node service environment so `llama-server -hf` can resolve the model without the Worker returning secrets to nodes. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/node-agent/internal/agent/runtime.go::cmd.Env -->
 
 ## GitHub secrets
 
