@@ -82,6 +82,7 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   }
 
   const rewritten = JSON.stringify({ ...body, model: result.reservation.upstreamModel })
+  const currentNow = deps.now ?? Date.now
   let upstream: Response
   try {
     upstream = await deps.mesh.fetch(meshUrl(result.node, '/v1/chat/completions'), {
@@ -90,15 +91,15 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
       body: rewritten
     })
   } catch (error) {
-    await deps.scheduler.recordFailure(result.reservation.reservationId, now)
+    await deps.scheduler.recordFailure(result.reservation.reservationId, currentNow())
     throw error
   }
   const headers = responseMetadataHeaders(upstream.headers, requestId, sessionId, result.node.id)
   return releaseOnCompletion(
     upstream,
     headers,
-    () => deps.scheduler.release(result.reservation!.reservationId, now),
-    () => deps.scheduler.recordFailure(result.reservation!.reservationId, now)
+    () => deps.scheduler.release(result.reservation!.reservationId, currentNow()),
+    () => deps.scheduler.recordFailure(result.reservation!.reservationId, currentNow())
   )
 }
 

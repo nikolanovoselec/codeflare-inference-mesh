@@ -24,6 +24,10 @@ func TestREQNODE001ServiceSkeletonAndListenerPolicy(t *testing.T) {
 	if !ok || meshIP != "100.64.1.10" {
 		t.Fatalf("expected CGNAT Mesh IP, got %q ok=%v", meshIP, ok)
 	}
+	lan := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(32, 32)}
+	if ambiguousIP, ok := DetectMeshIP([]net.Addr{addr, lan}); ok || ambiguousIP != "" {
+		t.Fatalf("ambiguous private Mesh IP detection should fail closed, got %q ok=%v", ambiguousIP, ok)
+	}
 	if got := ListenerAddress(meshIP, 8080, false); got != "100.64.1.10:8080" {
 		t.Fatalf("expected mesh listener, got %s", got)
 	}
@@ -170,6 +174,10 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 		}
 		if len(next.PublicModels) != 2 || next.PublicModels[0] != "mesh-default" || next.PublicModels[1] != "mesh-next" {
 			t.Fatalf("public aliases were not updated: %#v", next.PublicModels)
+		}
+		payload := HeartbeatFromConfig(next, RuntimeMetrics("ready", "old-upstream", 0), 0)
+		if payload.RuntimeModel != "old-upstream" {
+			t.Fatalf("heartbeat should report the actually loaded runtime model, got %q", payload.RuntimeModel)
 		}
 		if changedAgain || restartAgain || unchanged.RuntimeModel != next.RuntimeModel {
 			t.Fatalf("unchanged heartbeat response should not rewrite config or restart runtime")

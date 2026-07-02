@@ -471,6 +471,31 @@ describe('router worker behavioral contracts', () => {
     expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['mesh-default', 'qwen3.6-coder', 'mesh-smoke']))
   })
 
+  it('REQ-RUN-002 migrates changed default profile rows without keeping retired alias owners active', async () => {
+    const store = new MemoryStore()
+    await store.setProfile({
+      id: 'qwen36-27b-256k-3090',
+      publicAliases: ['mesh-default'],
+      upstreamModel: 'qwen36-27b-256k-3090',
+      sourceMode: 'direct-gguf',
+      localFilename: 'old.gguf',
+      contextWindow: 262144,
+      runtime: 'llama.cpp',
+      runtimeCommand: { executable: 'llama-server', args: ['--model', 'old.gguf'], env: {} },
+      version: 1,
+      rolloutPercent: 100,
+      active: true
+    })
+
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const profiles = await store.listProfiles()
+    const retired = profiles.find((profile) => profile.id === 'qwen36-27b-256k-3090')!
+    const current = await store.getProfileByPublicModel('mesh-default')
+
+    expect(retired).toMatchObject({ active: false, rolloutPercent: 0, version: 2 })
+    expect(current).toMatchObject({ id: 'qwen36-35b-a3b-262k-mm-3090', sourceMode: 'llama-hf' })
+  })
+
   it('REQ-RUN-002 exposes profile source modes and exact runtime flags', () => {
     const primary = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'qwen36-35b-a3b-262k-mm-3090')!
     const textOnly = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'qwen36-35b-a3b-262k-text-3090')!
@@ -527,10 +552,16 @@ describe('router worker behavioral contracts', () => {
     })
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const setup = await setupResponse.json() as { setupToken: string; upstreamToken: string }
-    await router(new Request('https://router.test/node/claim', {
+    const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
       body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 1 })
+    }))
+    const claimed = await claim.json() as { nodeId: string; nodeToken: string }
+    await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer(claimed.nodeToken), 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: claimed.nodeId, displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 1, inFlight: 0, runtime: 'llama.cpp', runtimeModel: 'qwen36-35b-a3b-262k-mm-3090', metrics: { runtimeState: 'ready', loadedModel: 'qwen36-35b-a3b-262k-mm-3090', activeRequests: 0 } })
     }))
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
@@ -593,6 +624,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-RTR-003 releases and penalizes stream failures', async () => {
+    let currentNow = 1_700_000_000_000
     const stream = new ReadableStream({
       pull() {
         throw new Error('stream failed')
@@ -602,7 +634,7 @@ describe('router worker behavioral contracts', () => {
       fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
       connect() { throw new Error('connect is not used by inference forwarding') }
     } as Fetcher
-    const { router, store } = routerFixture({ mesh })
+    const { router, store } = routerFixture({ mesh, now: () => currentNow })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture())
 
@@ -612,9 +644,10 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ model: 'mesh-default', stream: true, messages: [] })
     }))
 
+    currentNow = 1_700_000_120_000
     await expect(response.text()).rejects.toThrow('stream failed')
-    expect([...store.reservations.values()][0]?.releasedAt).toBe(1_700_000_000_000)
-    expect((await store.getNode('node-a'))?.failurePenaltyUntil).toBeGreaterThan(1_700_000_000_000)
+    expect([...store.reservations.values()][0]?.releasedAt).toBe(1_700_000_120_000)
+    expect((await store.getNode('node-a'))?.failurePenaltyUntil).toBeGreaterThan(1_700_000_120_000)
   })
 
   it('REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs', () => {

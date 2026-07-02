@@ -94,6 +94,7 @@ func runService() error {
 		}
 		cfg = next
 	}
+	loadState := &runtimeLoadState{}
 	var runtimeManager *agent.RuntimeManager
 	if profile, ok := agent.SelectedProfile(cfg); ok {
 		started, err := startRuntimeForProfile(serviceCtx, cfg, profile)
@@ -101,6 +102,9 @@ func runService() error {
 			return err
 		}
 		runtimeManager = started
+		if runtimeManager.State() == "ready" {
+			loadState.Set(profile)
+		}
 		defer func() {
 			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -113,7 +117,7 @@ func runService() error {
 		defer stateMu.RUnlock()
 		return cfg
 	}
-	go heartbeatLoop(serviceCtx, &stateMu, &cfg, runtimeManager, activeRequests)
+	go heartbeatLoop(serviceCtx, &stateMu, &cfg, runtimeManager, loadState, activeRequests)
 	proxy, err := agent.ProxyHandler(cfg.RuntimeURL, cfg.UpstreamToken, activeRequests)
 	if err != nil {
 		return err
@@ -124,7 +128,7 @@ func runService() error {
 	}
 	dashboardServer := &http.Server{Addr: cfg.DashboardAddress, Handler: agent.DashboardHandler(func() agent.DashboardStatus {
 		current := currentConfig()
-		metrics := runtimeMetrics(runtimeManager, current, activeRequests.Value())
+		metrics := runtimeMetrics(runtimeManager, loadState, current, activeRequests.Value())
 		return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
 	}, dashboardControllers...)}
 	go func() {
@@ -166,11 +170,8 @@ func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent
 	return manager, nil
 }
 
-func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config, runtimeManager *agent.RuntimeManager, activeRequests *agent.ActiveCounter) {
-	loadedProfile := ""
-	if runtimeManager != nil {
-		loadedProfile = selectedProfileKey(*cfg)
-	}
+func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config, runtimeManager *agent.RuntimeManager, loadState *runtimeLoadState, activeRequests *agent.ActiveCounter) {
+	loadedProfile := loadState.Key()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -181,7 +182,7 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 			stateMu.RLock()
 			current := *cfg
 			stateMu.RUnlock()
-			metrics := runtimeMetrics(runtimeManager, current, activeRequests.Value())
+			metrics := runtimeMetrics(runtimeManager, loadState, current, activeRequests.Value())
 			client := agent.Client{RouterURL: current.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 			response, err := client.Heartbeat(ctx, current.NodeToken, agent.HeartbeatFromConfig(current, metrics, activeRequests.Value()))
 			if err != nil {
@@ -196,7 +197,13 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 				nextProfile := selectedProfileKey(next)
 				if nextProfile != "" && nextProfile != loadedProfile {
 					if err := restartRuntimeForSelectedProfile(ctx, next, runtimeManager, activeRequests); err == nil {
-						loadedProfile = nextProfile
+						if profile, ok := agent.SelectedProfile(next); ok && runtimeManager.State() == "ready" {
+							loadState.Set(profile)
+							loadedProfile = profileKey(profile)
+						} else {
+							loadState.Clear()
+							loadedProfile = ""
+						}
 					}
 				}
 			}
@@ -233,17 +240,58 @@ func runtimeState(runtimeManager *agent.RuntimeManager) string {
 	return runtimeManager.State()
 }
 
-func runtimeMetrics(runtimeManager *agent.RuntimeManager, cfg agent.Config, active int) agent.NodeMetrics {
+func runtimeMetrics(runtimeManager *agent.RuntimeManager, loadState *runtimeLoadState, cfg agent.Config, active int) agent.NodeMetrics {
 	lastError := ""
 	if runtimeManager != nil {
 		lastError = runtimeManager.LastError()
 	}
-	metrics := agent.RuntimeMetricsWithError(runtimeState(runtimeManager), cfg.RuntimeModel, active, lastError)
-	if profile, ok := agent.SelectedProfile(cfg); ok {
+	profile, loaded := loadState.Snapshot()
+	loadedModel := ""
+	if loaded {
+		loadedModel = profile.UpstreamModel
+	} else if runtimeManager == nil {
+		loadedModel = cfg.RuntimeModel
+	}
+	metrics := agent.RuntimeMetricsWithError(runtimeState(runtimeManager), loadedModel, active, lastError)
+	if loaded {
 		metrics.LoadedProfileID = profile.ID
 		metrics.LoadedProfileVersion = profile.Version
 	}
 	return metrics
+}
+
+type runtimeLoadState struct {
+	mu      sync.RWMutex
+	profile agent.ModelProfile
+	loaded  bool
+}
+
+func (s *runtimeLoadState) Set(profile agent.ModelProfile) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.profile = profile
+	s.loaded = true
+}
+
+func (s *runtimeLoadState) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.profile = agent.ModelProfile{}
+	s.loaded = false
+}
+
+func (s *runtimeLoadState) Snapshot() (agent.ModelProfile, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.profile, s.loaded
+}
+
+func (s *runtimeLoadState) Key() string {
+	profile, loaded := s.Snapshot()
+	if !loaded {
+		return ""
+	}
+	return profileKey(profile)
 }
 
 func selectedProfileKey(cfg agent.Config) string {
@@ -251,6 +299,10 @@ func selectedProfileKey(cfg agent.Config) string {
 	if !ok {
 		return ""
 	}
+	return profileKey(profile)
+}
+
+func profileKey(profile agent.ModelProfile) string {
 	return fmt.Sprintf("%s:%d", profile.ID, profile.Version)
 }
 

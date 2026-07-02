@@ -114,16 +114,20 @@ func DetectHostMeshIP() (string, bool) {
 }
 
 func DetectMeshIP(addrs []net.Addr) (string, bool) {
+	candidates := []string{}
 	for _, addr := range addrs {
 		ip, ok := ipFromAddr(addr)
 		if !ok || ip.IsLoopback() || ip.To4() == nil {
 			continue
 		}
 		if isPrivateOrCGNAT(ip) {
-			return ip.String(), true
+			candidates = append(candidates, ip.String())
 		}
 	}
-	return "", false
+	if len(candidates) != 1 {
+		return "", false
+	}
+	return candidates[0], true
 }
 
 func ListenerAddress(meshIP string, port int, allowAllInterfaces bool) string {

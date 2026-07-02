@@ -154,7 +154,7 @@ func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int) Heartbea
 		Capacity:           cfg.Capacity,
 		InFlight:           inFlight,
 		Runtime:            "llama.cpp",
-		RuntimeModel:       cfg.RuntimeModel,
+		RuntimeModel:       metrics.LoadedModel,
 		Metrics:            metrics,
 	}
 }

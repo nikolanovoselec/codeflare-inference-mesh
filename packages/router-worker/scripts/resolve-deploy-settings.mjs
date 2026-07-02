@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+export const DEPLOY_SETTINGS_ANCHORS = ['manual production deploy guard', 'manual integration deploy settings']
+
 const eventName = process.env.GITHUB_EVENT_NAME ?? ''
 const githubRef = process.env.GITHUB_REF ?? ''
 const runNumber = process.env.GITHUB_RUN_NUMBER ?? ''

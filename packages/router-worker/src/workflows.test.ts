@@ -95,6 +95,7 @@ describe('workflow contract values', () => {
     expect(deployJob.if).toBeDefined()
     expect(deployJob.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}' })
     const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
+    expect(stepNames.indexOf('Resolve deploy settings')).toBeGreaterThan(stepNames.indexOf('actions/checkout@v7.0.0'))
     expect(stepNames.indexOf('Publish GitHub Release')).toBeGreaterThan(-1)
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(deployJob).toHaveProperty('env.CLOUDFLARE_API_TOKEN', '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}')

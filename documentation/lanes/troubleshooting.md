@@ -71,6 +71,6 @@
 
 | Surface | Specification | Source |
 |---|---|---|
-| Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::isEligible` <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> |
-| Failure reporting | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/scheduler.ts::StoreScheduler.recordFailure` <!-- @impl: packages/router-worker/src/scheduler.ts::StoreScheduler.recordFailure --> |
+| Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS`, `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
+| Failure reporting | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> |
 | Self-update checksum staging | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::StageUpdate` <!-- @impl: packages/node-agent/internal/agent/update.go::StageUpdate --> |

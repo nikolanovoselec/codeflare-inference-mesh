@@ -238,7 +238,7 @@ POST /admin/custom-domain/validate
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Hostname is stored for later Gateway operations; `zoneId` is included only when supplied and valid. | `{ "valid": true, "hostname": string, "zoneId"?: string }` |
-| `400` | Hostname is invalid, or supplied zone ID is invalid. | `{ "valid": false, "hostname": string }` |
+| `400` | Hostname is missing/invalid, or supplied zone ID is invalid. | `{ "valid": false, "hostname"?: string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 
 **Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md)

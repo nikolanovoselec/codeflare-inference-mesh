@@ -39,7 +39,7 @@ Production deployment is automatic after a merged `main` push has green PR Check
 
 ## Node runtime prerequisite
 
-The first managed-runtime version expects each node operator to install a CUDA-capable `llama-server` before starting the service. If the executable is missing from the service user's PATH, the node reports `dependency-missing` and remains ineligible for scheduling instead of failing the router. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md))
+The first managed-runtime version expects each node operator to install a CUDA-capable `llama-server` before starting the service. If the executable is missing from the service user's PATH, the node reports `dependency-missing` and remains ineligible for scheduling instead of failing the router. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
 
 ## Release channels
 
@@ -61,7 +61,7 @@ For integration rollback, restore the safe code onto the selected integration br
 
 **Rollback:** If the rollback workflow fails before Worker deploy, the existing Worker remains active. If it fails after publishing a release but before deploy, delete the unused rollback GitHub Release tag and rerun from the restored safe ref with a fresh tag.
 
-Model profile rollback switches the public alias back to a previously ready profile. ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
+Model profile rollback switches the public alias back to a previously ready profile. Node self-update rollback keeps the previous binary for one rollback attempt after an update is applied. ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-005](../../sdd/spec/node-agent.md))
 
 ## CI verification policy
 

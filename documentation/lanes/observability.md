@@ -24,7 +24,7 @@ Provider responses include request ID, session ID when present, and selected nod
 
 ## Node metrics
 
-Heartbeats report runtime state, loaded model, active profile ID/version, in-flight count, last runtime error, throughput fields when available, WARP status, and Mesh IP. GPU metrics start as best-effort platform probes and stay absent when unsupported. ([REQ-OBS-003](../../sdd/spec/observability.md))
+Heartbeats report runtime state, loaded model, active profile ID/version, in-flight count, last runtime error, and Mesh IP. GPU metrics start as best-effort platform probes and stay absent when unsupported. ([REQ-OBS-003](../../sdd/spec/observability.md))
 
 ## Audit events
 
