@@ -134,11 +134,13 @@ try {
   Expand-Archive (Join-Path $Tmp $Asset) -DestinationPath $InstallDir -Force
   Copy-Item (Join-Path $InstallDir $Bin) (Join-Path $InstallDir 'inference-mesh-agent.exe') -Force
   & (Join-Path $InstallDir 'inference-mesh-agent.exe') install --router $env:ROUTER_URL --setup-token $env:SETUP_TOKEN
-  if (-not (Get-Service inference-mesh-agent -ErrorAction SilentlyContinue)) {
-    $BinaryPath = '"' + (Join-Path $InstallDir 'inference-mesh-agent.exe') + '" run'
-    New-Service -Name inference-mesh-agent -DisplayName 'Codeflare Inference Mesh Agent' -BinaryPathName $BinaryPath -StartupType Automatic
-  }
-  Start-Service inference-mesh-agent
+  $TaskName = 'inference-mesh-agent'
+  $Action = New-ScheduledTaskAction -Execute (Join-Path $InstallDir 'inference-mesh-agent.exe') -Argument 'run'
+  $Trigger = New-ScheduledTaskTrigger -AtStartup
+  $Principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
+  $Settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+  Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
+  Start-ScheduledTask -TaskName $TaskName
 } finally {
   Remove-Item -Recurse -Force $Tmp -ErrorAction SilentlyContinue
 }

@@ -27,6 +27,7 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
         '--reasoning', 'on',
         '--reasoning-format', 'deepseek',
         '--reasoning-budget', '8192',
+        '--metrics',
         '--host', '{{HOST}}',
         '--port', '{{PORT}}'
       ],
@@ -62,6 +63,7 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
         '--reasoning', 'on',
         '--reasoning-format', 'deepseek',
         '--reasoning-budget', '8192',
+        '--metrics',
         '--host', '{{HOST}}',
         '--port', '{{PORT}}'
       ],
@@ -90,6 +92,7 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
         '-b', '2048',
         '-ub', '512',
         '--alias', 'mesh-smoke,smoke-test',
+        '--metrics',
         '--host', '{{HOST}}',
         '--port', '{{PORT}}'
       ],

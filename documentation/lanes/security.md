@@ -12,7 +12,7 @@
 
 ## Trust boundaries
 
-**Threat:** A leaked provider, setup, node, upstream, dashboard, admin, deploy, or Cloudflare runtime credential could be reused across another trust boundary.
+**Threat:** A leaked provider, setup, node, upstream, dashboard, admin, recovery, deploy, or Cloudflare runtime credential could be reused across another trust boundary.
 
 **Mitigation:** Each boundary uses a separate credential class with route-specific authorization.
 
@@ -25,6 +25,7 @@
 | Client to AI Gateway | Gateway auth token | Lets clients call the selected Gateway. | [REQ-SEC-001](../../sdd/spec/security.md) |
 | AI Gateway to Worker | Provider token | Lets Gateway call router `/v1/*` routes. | [REQ-GWY-002](../../sdd/spec/gateway.md), [REQ-SEC-001](../../sdd/spec/security.md) |
 | Admin to Worker | Admin token/session | Protects setup and admin routes after first-run setup completes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
+| Recovery to Worker | Admin recovery token | Replaces a lost admin token only on `POST /admin/recovery/reset`; not accepted for normal admin, provider, node, or setup routes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | Installer to Worker | Setup token | Claims one node once. | [REQ-ADM-003](../../sdd/spec/setup-admin.md) |
 | Node to Worker | Node token | Authorizes heartbeat and unregister. | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-005](../../sdd/spec/observability.md) |
 | Local dashboard to node agent | Dashboard token | Authorizes localhost runtime-control POSTs. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |

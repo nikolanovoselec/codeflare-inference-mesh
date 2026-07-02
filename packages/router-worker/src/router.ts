@@ -271,9 +271,13 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
   const customDomain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
   const settings = gatewaySettings({ env: deps.env, body, stored: storedSettings })
-  const workerUrl = settings.workerUrl ?? (customDomain?.status === 'provisioned' ? `https://${customDomain.hostname}` : deps.env.WORKER_BASE_URL)
+  const bodyWorkerUrl = cleanString(body?.workerUrl)
+  const storedWorkerUrl = cleanString(storedSettings?.workerUrl)
+  const storedWorkerUrlOverride = storedWorkerUrl && storedWorkerUrl !== deps.env.WORKER_BASE_URL ? storedWorkerUrl : undefined
+  const workerUrlOverride = bodyWorkerUrl ?? storedWorkerUrlOverride
+  const workerUrl = workerUrlOverride ?? (customDomain?.status === 'provisioned' ? `https://${customDomain.hostname}` : deps.env.WORKER_BASE_URL)
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
-  if (customDomain?.hostname && customDomain.status !== 'provisioned' && !settings.workerUrl) return json({ error: 'custom_domain_not_provisioned', hostname: customDomain.hostname }, 409, requestId)
+  if (customDomain?.hostname && customDomain.status !== 'provisioned' && !workerUrlOverride) return json({ error: 'custom_domain_not_provisioned', hostname: customDomain.hostname }, 409, requestId)
   if (!settings.accountId || !settings.gatewayId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
   const result = await client.syncCustomProvider({
@@ -285,7 +289,14 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
     publicModel: settings.publicModel,
     providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.'
   })
-  await deps.store.putConfig('cloudflare_gateway_settings', { ...settings, workerUrl })
+  await deps.store.putConfig('cloudflare_gateway_settings', {
+    accountId: settings.accountId,
+    gatewayId: settings.gatewayId,
+    providerName: settings.providerName,
+    routeName: settings.routeName,
+    publicModel: settings.publicModel,
+    ...(workerUrlOverride ? { workerUrl: workerUrlOverride } : {})
+  })
   await deps.store.putConfig('cloudflare_gateway', result)
   await deps.store.appendAudit({ id: requestId, type: 'gateway_sync', at: now, actor: 'admin', detail: { ...result } })
   return json(result, 200, requestId)
@@ -305,7 +316,11 @@ async function handleCustomDomain(request: Request, deps: RouterDeps, requestId:
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!accountId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
-  const provisioned = await client.provisionCustomDomain({ accountId, hostname, workerName, workerUrl, ...(zoneId ? { zoneId } : {}) })
+  const provisioned = await client.provisionCustomDomain({ accountId, hostname, workerName, workerUrl, ...(zoneId ? { zoneId } : {}) }).catch((error: unknown) => {
+    if (String(error).includes('DNS record conflict')) return undefined
+    throw error
+  })
+  if (!provisioned) return json({ error: 'dns_record_conflict', hostname }, 409, requestId)
   await deps.store.putConfig('custom_domain', provisioned)
   await deps.store.appendAudit({ id: requestId, type: 'custom_domain_provisioned', at: now, actor: 'admin', target: hostname, detail: { ...provisioned } })
   return json({ valid: true, ...provisioned }, 200, requestId)

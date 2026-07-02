@@ -137,6 +137,41 @@ func TestREQNODE002AppliesDetectedMeshIPBeforeClaim(t *testing.T) {
 	})
 }
 
+func TestREQRUN003ClaimAppliesDesiredProfilesBeforeRuntimeStart(t *testing.T) {
+	t.Run("REQ-RUN-003 REQ-RUN-004", func(t *testing.T) {
+		cfg := DefaultConfig(t.TempDir())
+		cfg.SetupToken = "setup-token"
+		profile := ModelProfile{
+			ID:             "router-profile",
+			PublicAliases:  []string{"mesh-router"},
+			UpstreamModel:  "router-upstream",
+			LocalFilename:  "router.gguf",
+			ContextWindow:  32768,
+			Runtime:        "llama.cpp",
+			Version:        2,
+			RolloutPercent: 100,
+			Active:         true,
+		}
+
+		next, err := ApplyClaim(cfg, ClaimResponse{
+			NodeID:        "node-a",
+			NodeToken:     "node-token",
+			UpstreamToken: "upstream-token",
+			Profiles:      []ModelProfile{profile},
+		}, filepath.Join(t.TempDir(), "config.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if next.RuntimeModel != "router-upstream" || len(next.ActiveProfileIDs) != 1 || next.ActiveProfileIDs[0] != "router-profile" {
+			t.Fatalf("claim did not select router profile before runtime start: %#v", next)
+		}
+		if len(next.PublicModels) != 1 || next.PublicModels[0] != "mesh-router" || next.SetupToken != "" {
+			t.Fatalf("claim did not persist profile aliases and clear setup token: %#v", next)
+		}
+	})
+}
+
 func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 	t.Run("REQ-RUN-003 REQ-RUN-004", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.json")
@@ -476,6 +511,68 @@ func TestREQRUN003RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
 	if manager.State() != "stopped" {
 		t.Fatalf("runtime should stop after explicit stop, got %s", manager.State())
 	}
+	})
+}
+
+func TestREQRUN003RuntimeStartDoesNotUseDashboardRequestDeadline(t *testing.T) {
+	t.Run("REQ-RUN-003 REQ-NODE-004", func(t *testing.T) {
+		if os.Getenv("INFERENCE_MESH_HELPER_PROCESS") == "1" {
+			time.Sleep(10 * time.Second)
+			return
+		}
+		readiness := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "loading", http.StatusServiceUnavailable)
+		}))
+		defer readiness.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		manager := NewRuntimeManager(RuntimeCommand{
+			Executable:   os.Args[0],
+			Args:         []string{"-test.run=TestREQRUN003RuntimeStartDoesNotUseDashboardRequestDeadline"},
+			Env:          map[string]string{"INFERENCE_MESH_HELPER_PROCESS": "1"},
+			ReadinessURL: readiness.URL,
+		})
+
+		if err := manager.Start(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if state := manager.State(); state != "starting" && state != "ready" {
+			t.Fatalf("runtime start should return while readiness continues asynchronously, got %s", state)
+		}
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		if err := manager.Stop(stopCtx); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestREQRUN003RuntimeReadinessFailsWhenProcessExits(t *testing.T) {
+	t.Run("REQ-RUN-003 REQ-OBS-003", func(t *testing.T) {
+		if os.Getenv("INFERENCE_MESH_EXIT_HELPER") == "1" {
+			return
+		}
+		readiness := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "loading", http.StatusServiceUnavailable)
+		}))
+		defer readiness.Close()
+		manager := NewRuntimeManager(RuntimeCommand{
+			Executable:   os.Args[0],
+			Args:         []string{"-test.run=TestREQRUN003RuntimeReadinessFailsWhenProcessExits"},
+			Env:          map[string]string{"INFERENCE_MESH_EXIT_HELPER": "1"},
+			ReadinessURL: readiness.URL,
+		})
+
+		if err := manager.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for manager.State() != "failed" && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if manager.State() != "failed" {
+			t.Fatalf("runtime should fail when the child exits before readiness, got %s", manager.State())
+		}
 	})
 }
 

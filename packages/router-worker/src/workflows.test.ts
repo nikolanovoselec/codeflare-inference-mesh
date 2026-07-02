@@ -101,6 +101,7 @@ describe('workflow contract values', () => {
     expect(deploy.on.workflow_run).toEqual({ workflows: ['PR Checks'], types: ['completed'], branches: ['main'] })
     expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.environment.default', 'integration')
     expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.version_tag.required', false)
+    expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.worker_base_url.required', false)
     expect(deploy.concurrency).toMatchObject({ 'cancel-in-progress': true })
     expect(deployJob['timeout-minutes']).toBe(45)
     expect(deployJob.if).toBeDefined()
@@ -122,16 +123,21 @@ describe('workflow contract values', () => {
       env: {
         INPUT_ENVIRONMENT: '${{ inputs.environment }}',
         INPUT_VERSION_TAG: '${{ inputs.version_tag }}',
-        WORKFLOW_RUN_HEAD_SHA: '${{ github.event.workflow_run.head_sha }}'
+        INPUT_WORKER_BASE_URL: '${{ inputs.worker_base_url }}',
+        WORKFLOW_RUN_HEAD_SHA: '${{ github.event.workflow_run.head_sha }}',
+        WORKER_BASE_URL: '${{ vars.WORKER_BASE_URL }}',
+        PRODUCTION_WORKER_BASE_URL: '${{ vars.PRODUCTION_WORKER_BASE_URL }}',
+        INTEGRATION_WORKER_BASE_URL: '${{ vars.INTEGRATION_WORKER_BASE_URL }}',
+        CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: '${{ vars.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN }}'
       }
     })
-    const integrationSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7' } })
-    const productionSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_run', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_HEAD_SHA: 'abc123', GITHUB_RUN_NUMBER: '8' } })
-    const rejectedProduction = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'production', GITHUB_RUN_NUMBER: '9' } })
+    const integrationSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7', CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: 'example-subdomain' } })
+    const productionSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_run', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_HEAD_SHA: 'abc123', GITHUB_RUN_NUMBER: '8', PRODUCTION_WORKER_BASE_URL: 'https://router.example.com' } })
+    const rejectedProduction = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'production', GITHUB_RUN_NUMBER: '9', WORKER_BASE_URL: 'https://router.example.com' } })
     expect(integrationSettings.status).toBe(0)
-    expect(outputValues(integrationSettings.stdout)).toEqual({ target_env: 'integration', deploy_ref: 'refs/heads/feature', version_tag: 'v0.1.0-dev.7', db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' })
+    expect(outputValues(integrationSettings.stdout)).toEqual({ target_env: 'integration', deploy_ref: 'refs/heads/feature', version_tag: 'v0.1.0-dev.7', worker_base_url: 'https://codeflare-inference-mesh-router-integration.example-subdomain.workers.dev', db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' })
     expect(productionSettings.status).toBe(0)
-    expect(outputValues(productionSettings.stdout)).toMatchObject({ target_env: 'production', deploy_ref: 'abc123', version_tag: 'v0.1.8', db_name: 'codeflare-inference-mesh' })
+    expect(outputValues(productionSettings.stdout)).toMatchObject({ target_env: 'production', deploy_ref: 'abc123', version_tag: 'v0.1.8', worker_base_url: 'https://router.example.com', db_name: 'codeflare-inference-mesh' })
     expect(rejectedProduction.status).toBe(1)
     expect(runScript('packages/router-worker/scripts/deploy-gate.mjs', {
       input: JSON.stringify([
@@ -140,9 +146,14 @@ describe('workflow contract values', () => {
       ]),
       env: { WORKFLOW_NAME: 'Security', GATE_SHA: 'abc', REQUIRED_EVENT: 'push', REQUIRED_BRANCH: 'main' }
     }).stdout.startsWith('failure')).toBe(true)
+    const d1Run = stepByName(deployJob, 'Resolve or create D1 database')!.run!
     expect(stepByName(deployJob, 'Resolve or create D1 database')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}', AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' } })
+    expect(d1Run).toContain('WORKER_BASE_URL="${{ steps.settings.outputs.worker_base_url }}"')
     expect(stepByName(deployJob, 'Apply D1 migrations')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
+    const secretsRun = stepByName(deployJob, 'Set Worker runtime secrets')!.run!
     expect(stepByName(deployJob, 'Set Worker runtime secrets')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN_RUNTIME: '${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}' } })
+    expect(secretsRun).toContain('wrangler secret bulk')
+    expect(secretsRun).toContain('ADMIN_RECOVERY_TOKEN: process.env.ADMIN_RECOVERY_TOKEN || null')
     expect(stepByName(deployJob, 'Deploy Worker')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
   })
 
@@ -173,7 +184,9 @@ describe('workflow contract values', () => {
     const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
 
     expect(stepNames).toEqual(expect.arrayContaining(['Build release artifacts and manifest', 'Sign checksums when signing is configured', 'Publish GitHub Release', 'Deploy Worker', 'actions/upload-artifact@v7.0.1']))
-    expect(stepByName(deployJob, 'Build release artifacts and manifest')).toMatchObject({ 'working-directory': 'packages/node-agent' })
+    const buildStep = stepByName(deployJob, 'Build release artifacts and manifest')!
+    expect(buildStep).toMatchObject({ 'working-directory': 'packages/node-agent' })
+    expect(buildStep.run).toContain('rm -f "$OUT"')
     const signStep = stepByName(deployJob, 'Sign checksums when signing is configured')!
     expect(signStep).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}', COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}' } })
     const skippedSign = runShellBlock(signStep.run!, { COSIGN_PRIVATE_KEY: '', COSIGN_PASSWORD: '' })

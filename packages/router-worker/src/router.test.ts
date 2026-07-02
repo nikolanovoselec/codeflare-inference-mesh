@@ -559,6 +559,7 @@ describe('router worker behavioral contracts', () => {
     expect(primary.runtimeCommand.args).toEqual(expect.arrayContaining(['-hf', primary.hfSpecifier!, '-ngl', '99', '-c', '262144', '--mmproj-auto', '--reasoning', 'on', '--host', '{{HOST}}', '--port', '{{PORT}}']))
     expect(primary.runtimeCommand.env).toMatchObject({ LLAMA_CACHE: '{{DATA_DIR}}/llama.cpp-cache', CUDA_VISIBLE_DEVICES: '0' })
     expect(textOnly.runtimeCommand.args).toEqual(expect.arrayContaining(['--no-mmproj']))
+    expect(DEFAULT_MODEL_PROFILES.every((profile) => profile.runtimeCommand.args.includes('--metrics'))).toBe(true)
     expect(smoke).toMatchObject({ sourceMode: 'direct-gguf', localFilename: 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf', contextWindow: 32768 })
     expect(smoke.runtimeCommand.args).toEqual(expect.arrayContaining(['--model', '{{MODEL_PATH}}']))
   })
@@ -982,6 +983,7 @@ describe('router worker behavioral contracts', () => {
     const scriptResponse = await router(new Request('https://router.test/install.sh?platform=linux'))
     const script = await scriptResponse.text()
     const fallbackScript = await (await routerFixture().router(new Request('https://router.test/install.sh?platform=linux'))).text()
+    const windowsScript = await (await router(new Request('https://router.test/install.ps1'))).text()
     const linuxPlan = installerPlan('linux', 'amd64')
     const windowsPlan = installerPlan('windows', 'amd64')
 
@@ -990,6 +992,8 @@ describe('router worker behavioral contracts', () => {
     expect(scriptUrl.searchParams.get('platform')).toBe('linux')
     expect(script).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/releases/download/v0.1.0-dev.1782860991')
     expect(fallbackScript).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/releases/latest/download')
+    expect(windowsScript).toContain('Register-ScheduledTask')
+    expect(windowsScript).not.toContain('New-Service')
     expect(linuxPlan).toEqual({ assetName: 'inference-mesh-agent-linux-amd64.tar.gz', extractedBinary: 'inference-mesh-agent-linux-amd64', installedBinary: 'inference-mesh-agent', checksumFile: 'checksums.txt' })
     expect(windowsPlan).toEqual({ assetName: 'inference-mesh-agent-windows-amd64.zip', extractedBinary: 'inference-mesh-agent-windows-amd64.exe', installedBinary: 'inference-mesh-agent.exe', checksumFile: 'checksums.txt' })
     expect(store.tokens.filter((token) => token.kind === 'setup' && token.active).length).toBe(1)
@@ -1084,6 +1088,24 @@ describe('router worker behavioral contracts', () => {
     expect(result).toMatchObject({ hostname: 'ai.example.com', status: 'provisioned', dnsRecordId: 'dns-a', routeId: 'route-a' })
   })
 
+  it('REQ-ADM-005 refuses to overwrite conflicting custom-domain DNS records', async () => {
+    const calls: Array<{ method: string; path: string }> = []
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      const method = init?.method ?? 'GET'
+      calls.push({ method, path: url.pathname })
+      if (url.pathname === '/client/v4/zones/0123456789abcdef0123456789abcdef') return Response.json({ success: true, result: { id: '0123456789abcdef0123456789abcdef', name: 'example.com' } })
+      if (url.pathname.endsWith('/dns_records') && method === 'GET') return Response.json({ success: true, result: [{ id: 'txt-a', type: 'TXT', name: 'ai.example.com', content: 'verification' }] })
+      throw new Error(`unexpected ${method} ${url.pathname}`)
+    }) as typeof fetch
+    const client = new CloudflareGatewayClient('runtime-token', fetcher)
+
+    const result = await client.provisionCustomDomain({ accountId: 'account-a', hostname: 'ai.example.com', zoneId: '0123456789abcdef0123456789abcdef', workerName: 'router-worker', workerUrl: 'https://router.example.workers.dev' }).then(() => 'resolved', () => 'rejected')
+
+    expect(result).toBe('rejected')
+    expect(calls.map((call) => call.method)).toEqual(['GET', 'GET'])
+  })
+
   it('REQ-GWY-003 refuses to sync Gateway to an unprovisioned custom domain', async () => {
     const { router, store } = routerFixture({ env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', WORKER_BASE_URL: 'https://router.example.workers.dev' } })
     await store.putConfig('custom_domain', { hostname: 'ai.example.com' })
@@ -1095,6 +1117,49 @@ describe('router worker behavioral contracts', () => {
     expect(body).toEqual({ error: 'custom_domain_not_provisioned', hostname: 'ai.example.com' })
   })
 
+  it('REQ-GWY-003 recomputes Gateway Worker URL after custom-domain provisioning', async () => {
+    const calls: string[] = []
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', AI_GATEWAY_ID: 'gateway-a', WORKER_BASE_URL: 'https://router.example.workers.dev' },
+      cloudflareClient: {
+        async syncCustomProvider(input) {
+          calls.push(input.workerUrl)
+          return { providerId: 'provider-a', providerSlug: 'provider-slug', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: input.gatewayId, routeName: input.routeName, publicModel: input.publicModel, workerUrl: input.workerUrl, manualProviderKeyRequired: true, providerTokenInstructions: 'manual' }
+        },
+        async provisionCustomDomain() { throw new Error('custom domain is not used in this test') }
+      }
+    })
+
+    await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    await store.putConfig('custom_domain', { hostname: 'ai.example.com', zoneId: '0123456789abcdef0123456789abcdef', zoneName: 'example.com', dnsRecordId: 'dns-a', dnsRecordType: 'CNAME', routeId: 'route-a', routePattern: 'ai.example.com/*', workerName: 'router-worker', status: 'provisioned' })
+    await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    const settings = await store.getConfig<Record<string, unknown>>('cloudflare_gateway_settings')
+
+    expect(calls).toEqual(['https://router.example.workers.dev', 'https://ai.example.com'])
+    expect(settings).not.toHaveProperty('workerUrl')
+  })
+
+  it('REQ-GWY-003 patches an existing Gateway provider when Worker URL drifts', async () => {
+    const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
+      calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
+      if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://old.example.com' }] })
+      if (url.pathname.endsWith('/custom-providers/provider-a') && method === 'PATCH') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: body!.name, base_url: body!.base_url } })
+      if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default', enabled: true }] } } })
+      if (url.pathname.endsWith('/versions')) return Response.json({ success: true, result: { data: { versions: [] } } })
+      if (url.pathname.endsWith('/deployments')) return Response.json({ success: true, result: { data: { deployments: [] } } })
+      return Response.json({ success: true, result: { id: 'created-a' } })
+    }) as typeof fetch
+    const client = new CloudflareGatewayClient('runtime-token', fetcher)
+
+    await client.syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev', providerName: 'Codeflare Inference Mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerTokenInstructions: 'manual' })
+
+    expect(calls.some((call) => call.method === 'PATCH' && call.path.endsWith('/custom-providers/provider-a') && call.body?.base_url === 'https://router.example.workers.dev')).toBe(true)
+  })
+
   it('REQ-GWY-003 reuses existing Cloudflare Gateway resources on repeat sync', async () => {
     const calls: string[] = []
     const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'mesh-default', retries: 1, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
@@ -1102,7 +1167,7 @@ describe('router worker behavioral contracts', () => {
       const url = new URL(String(input))
       const method = init?.method ?? 'GET'
       calls.push(`${method} ${url.pathname}`)
-      if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev' }] })
+      if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
       if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default', enabled: true }] } } })
       if (url.pathname.endsWith('/versions')) return Response.json({ success: true, result: { data: { versions: [{ id: 'version-a', elements }] } } })
       if (url.pathname.endsWith('/deployments')) return Response.json({ success: true, result: { data: { deployments: [{ deployment_id: 'deployment-a', version_id: 'version-a' }] } } })
@@ -1122,6 +1187,7 @@ describe('router worker behavioral contracts', () => {
       cloudflareClient: {
         async syncCustomProvider() { throw new Error('gateway sync is not used in this test') },
         async provisionCustomDomain(input) {
+          if (input.hostname === 'conflict.example.com') throw new Error('DNS record conflict for conflict.example.com')
           provisioned.push({ hostname: input.hostname, zoneId: input.zoneId })
           return { hostname: input.hostname, zoneId: input.zoneId ?? 'zone-a', zoneName: 'example.com', dnsRecordId: 'dns-a', dnsRecordType: 'CNAME', routeId: 'route-a', routePattern: `${input.hostname}/*`, workerName: input.workerName, status: 'provisioned' }
         }
@@ -1130,6 +1196,7 @@ describe('router worker behavioral contracts', () => {
     const good = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com', zoneId: '0123456789abcdef0123456789abcdef' }) }))
     const bad = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'http://bad' }) }))
     const badZone = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com', zoneId: 'not-a-zone' }) }))
+    const conflict = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'conflict.example.com' }) }))
 
     expect(good.status).toBe(200)
     expect(await store.getConfig('custom_domain')).toMatchObject({ hostname: 'ai.example.com', status: 'provisioned', routeId: 'route-a' })
@@ -1137,6 +1204,7 @@ describe('router worker behavioral contracts', () => {
     expect(store.audit.some((event) => event.type === 'custom_domain_provisioned' && event.target === 'ai.example.com')).toBe(true)
     expect(bad.status).toBe(400)
     expect(badZone.status).toBe(400)
+    expect(conflict.status).toBe(409)
   })
 
   it('REQ-ADM-002 recovers a lost admin token only with the recovery secret', async () => {

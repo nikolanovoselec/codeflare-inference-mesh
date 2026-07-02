@@ -198,7 +198,9 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 			stateMu.Unlock()
 			if err == nil && runtimeManager != nil {
 				nextProfile := selectedProfileKey(next)
-				if nextProfile != "" && nextProfile != loadState.Key() && beginRestart(&restartMu, &restartPending) {
+				runtimeState := runtimeManager.State()
+				busy := runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping"
+				if nextProfile != "" && nextProfile != loadState.Key() && !busy && beginRestart(&restartMu, &restartPending) {
 					loadState.Clear()
 					restartConfig := next
 					go func() {
@@ -290,14 +292,22 @@ func runtimeMetrics(runtimeManager *agent.RuntimeManager, loadState *runtimeLoad
 	if runtimeManager != nil {
 		lastError = runtimeManager.LastError()
 	}
+	state := runtimeState(runtimeManager)
 	profile, loaded := loadState.Snapshot()
+	if !loaded && state == "ready" {
+		if selected, ok := agent.SelectedProfile(cfg); ok {
+			loadState.Set(selected)
+			profile = selected
+			loaded = true
+		}
+	}
 	loadedModel := ""
 	if loaded {
 		loadedModel = profile.UpstreamModel
 	} else if runtimeManager == nil {
 		loadedModel = cfg.RuntimeModel
 	}
-	metrics := agent.RuntimeMetricsWithError(runtimeState(runtimeManager), loadedModel, active, lastError)
+	metrics := agent.RuntimeMetricsWithError(state, loadedModel, active, lastError)
 	if loaded {
 		metrics.LoadedProfileID = profile.ID
 		metrics.LoadedProfileVersion = profile.Version

@@ -118,7 +118,7 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 **Acceptance Criteria:**
 
-1. Audit events record setup, claim, unregister, revoke, route provisioning, and profile switch actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-006 records audit events for setup, claim, unregister, revoke, route provisioning, and profile switch actions) -->
+1. Audit events record setup, claim, unregister, revoke, admin recovery reset, route provisioning, and profile switch actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::handleAdminRecovery --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-006 records audit events for setup, claim, unregister, revoke, route provisioning, and profile switch actions) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 recovers a lost admin token only with the recovery secret) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 

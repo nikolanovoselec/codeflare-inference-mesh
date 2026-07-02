@@ -47,7 +47,7 @@ interface RouteRecord { readonly id: string; readonly name?: string; readonly en
 interface VersionRecord { readonly id?: string; readonly version_id?: string; readonly data?: unknown; readonly elements?: unknown }
 interface DeploymentRecord { readonly id?: string; readonly deployment_id?: string; readonly version_id?: string }
 interface ZoneRecord { readonly id: string; readonly name: string }
-interface DnsRecord { readonly id: string; readonly type: 'A' | 'CNAME'; readonly name: string; readonly content: string; readonly proxied?: boolean }
+interface DnsRecord { readonly id: string; readonly type: string; readonly name: string; readonly content: string; readonly proxied?: boolean }
 interface WorkerRouteRecord { readonly id: string; readonly pattern: string; readonly script?: string }
 
 export class CloudflareGatewayClient {
@@ -63,7 +63,7 @@ export class CloudflareGatewayClient {
       zoneId: zone.id,
       zoneName: zone.name,
       dnsRecordId: dns.id,
-      dnsRecordType: dns.type,
+      dnsRecordType: dns.type as 'A' | 'CNAME',
       routeId: route.id,
       routePattern,
       workerName: input.workerName,
@@ -80,8 +80,7 @@ export class CloudflareGatewayClient {
       description: 'Codeflare Inference Mesh OpenAI-compatible router',
       enable: true
     }
-    const provider = await this.findBySlug(await this.listProviders(input.accountId), providerSlug)
-      ?? await this.accountRequest<ProviderRecord>(input.accountId, '/ai-gateway/custom-providers', 'POST', providerBody)
+    const provider = await this.upsertCustomProvider(input.accountId, providerSlug, providerBody)
 
     const route = await this.upsertGatewayRoute(input.accountId, input.gatewayId, input.routeName)
     const elements = routeGraph(`custom-${provider.slug ?? providerSlug}`, input.publicModel)
@@ -107,6 +106,13 @@ export class CloudflareGatewayClient {
 
   private async listProviders(accountId: string): Promise<readonly ProviderRecord[]> {
     return listFrom(await this.accountRequest<unknown>(accountId, '/ai-gateway/custom-providers', 'GET'), 'providers')
+  }
+
+  private async upsertCustomProvider(accountId: string, slug: string, body: { name: string; slug: string; base_url: string; description: string; enable: boolean }): Promise<ProviderRecord> {
+    const existing = await this.findBySlug(await this.listProviders(accountId), slug)
+    if (!existing) return await this.accountRequest<ProviderRecord>(accountId, '/ai-gateway/custom-providers', 'POST', body)
+    if (existing.name === body.name && existing.base_url === body.base_url) return existing
+    return await this.accountRequest<ProviderRecord>(accountId, `/ai-gateway/custom-providers/${existing.id}`, 'PATCH', body)
   }
 
   private async upsertGatewayRoute(accountId: string, gatewayId: string, routeName: string): Promise<RouteRecord> {
@@ -145,11 +151,13 @@ export class CloudflareGatewayClient {
   }
 
   private async upsertDnsRecord(zone: ZoneRecord, hostname: string, workerUrl: string): Promise<DnsRecord> {
-    const existing = listFrom<DnsRecord>(await this.globalRequest<unknown>(`/zones/${zone.id}/dns_records?name=${encodeURIComponent(hostname)}`, 'GET'), 'dns_records')[0]
+    const records = listFrom<DnsRecord>(await this.globalRequest<unknown>(`/zones/${zone.id}/dns_records?name=${encodeURIComponent(hostname)}`, 'GET'), 'dns_records')
     const record = dnsRecordBody(zone, hostname, workerUrl)
-    if (!existing) return await this.globalRequest<DnsRecord>(`/zones/${zone.id}/dns_records`, 'POST', record)
-    if (existing.type === record.type && existing.content === record.content && existing.proxied === true) return existing
-    return await this.globalRequest<DnsRecord>(`/zones/${zone.id}/dns_records/${existing.id}`, 'PUT', record)
+    const existing = records.find((item) => item.type === record.type && item.content === record.content && item.proxied === true)
+    if (existing) return existing
+    const conflicting = records.some((item) => item.type === 'A' || item.type === 'CNAME' || record.type === 'CNAME')
+    if (conflicting) throw new Error(`DNS record conflict for ${hostname}`)
+    return await this.globalRequest<DnsRecord>(`/zones/${zone.id}/dns_records`, 'POST', record)
   }
 
   private async upsertWorkerRoute(zoneId: string, pattern: string, workerName: string): Promise<WorkerRouteRecord> {

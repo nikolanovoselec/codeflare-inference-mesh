@@ -38,7 +38,7 @@ AI Gateway and clients use stable public aliases. The router owns internal profi
 
 ## CON-REL-001: Release artifacts are verifiable
 
-Node-agent installers and self-update flows download platform-specific artifacts, verify checksums, verify signatures once signing is configured, and stage before replacing a service binary.
+Node-agent installers download platform-specific archives with checksums, and update candidates must be checksum-verified in a protected staging directory before an operator replaces a service binary.
 
 ## CON-CI-001: CI is the verification surface
 

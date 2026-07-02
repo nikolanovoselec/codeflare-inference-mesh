@@ -20,4 +20,4 @@
 | Node Token | Per-node credential used for heartbeat and unregister calls. |
 | Dashboard Token | Local node-agent credential required for localhost runtime-control POSTs. |
 | Upstream Token | Credential sent by the Worker to a node agent before it proxies to the local runtime. |
-| Agent Release | Signed node-agent artifact set published from the deploy workflow for self-update and installers. |
+| Agent Release | Signed node-agent artifact set published from the deploy workflow for installers and update staging. |

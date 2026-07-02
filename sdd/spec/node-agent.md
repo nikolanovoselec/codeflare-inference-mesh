@@ -110,20 +110,17 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ---
 
-### REQ-NODE-005: Agent self-update
+### REQ-NODE-005: Agent update staging
 
-**Intent:** Node-agent updates must be explicit, verifiable, and reversible enough to avoid silently replacing a running service with an untrusted or broken binary.
+**Intent:** Node-agent updates must be staged and checksum-verified before an operator replaces a running service binary.
 
 **Applies To:** Node Operator
 
 **Acceptance Criteria:**
 
-1. The agent can check the latest compatible GitHub Release for the configured update channel. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
-2. The agent selects only artifacts matching its OS and architecture. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
-3. The agent downloads the archive, checksums file, signature file when configured, and release manifest into a staging directory. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
-4. The agent verifies the archive checksum before marking an update ready. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
-5. The dashboard offers update-and-restart only after verification succeeds. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
-6. The service keeps the previous binary for one rollback attempt after update apply. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
+1. The agent can write an update candidate into a protected staging directory. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
+2. The agent verifies the candidate checksum before returning the staged path. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
+3. A checksum mismatch fails staging and does not mark an update ready. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 

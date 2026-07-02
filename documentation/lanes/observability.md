@@ -19,7 +19,7 @@ Provider responses include request ID, session ID when present, and selected nod
 | --- | --- | --- |
 | Nodes | Node status, public models, active profiles, runtime readiness, token throughput, GPU memory, capacity, in-flight count, and last seen. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 | Profiles | Public aliases, upstream model, source mode, version, rollout percent, active flag, and ready/downloading/failed node counts. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md), [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| Audit | Recent setup, claim, unregister, revoke, route provisioning, and profile switch events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-006](../../sdd/spec/observability.md) |
+| Audit | Recent setup, claim, unregister, revoke, admin recovery reset, route provisioning, and profile switch events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-006](../../sdd/spec/observability.md) |
 | Metadata | Status generation timestamp. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 
 ## Node metrics
@@ -28,7 +28,7 @@ Heartbeats report runtime state, loaded model, active profile ID/version, in-fli
 
 ## Audit events
 
-Audit history records setup completion, provider route provisioning, setup-token creation and claim, node unregister, node revoke, and profile switch actions. Audit records redact token material and credential values. ([REQ-OBS-006](../../sdd/spec/observability.md)) ([REQ-SEC-002](../../sdd/spec/security.md))
+Audit history records setup completion, provider route provisioning, setup-token creation and claim, admin recovery reset, node unregister, node revoke, and profile switch actions. Audit records redact token material and credential values. ([REQ-OBS-006](../../sdd/spec/observability.md)) ([REQ-SEC-002](../../sdd/spec/security.md))
 
 ## Failure states
 

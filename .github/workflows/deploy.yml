@@ -19,6 +19,9 @@ on:
       version_tag:
         description: Optional release tag. Production uses vX.Y.Z; integration uses vX.Y.Z-dev.N. Blank auto-generates one.
         required: false
+      worker_base_url:
+        description: Optional deployed Worker base URL. Blank uses environment/repository variables.
+        required: false
 
 concurrency:
   group: deploy-${{ github.event_name == 'workflow_run' && 'production' || inputs.environment }}
@@ -72,7 +75,12 @@ jobs:
         env:
           INPUT_ENVIRONMENT: ${{ inputs.environment }}
           INPUT_VERSION_TAG: ${{ inputs.version_tag }}
+          INPUT_WORKER_BASE_URL: ${{ inputs.worker_base_url }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
+          PRODUCTION_WORKER_BASE_URL: ${{ vars.PRODUCTION_WORKER_BASE_URL }}
+          INTEGRATION_WORKER_BASE_URL: ${{ vars.INTEGRATION_WORKER_BASE_URL }}
+          CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: ${{ vars.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN }}
         run: node packages/router-worker/scripts/resolve-deploy-settings.mjs >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v6.4.0
@@ -141,7 +149,7 @@ jobs:
             DB_ID=$(node scripts/d1-database-id.mjs d1-create.txt)
           fi
           [ -n "$DB_ID" ] || { echo "::error::Could not resolve D1 database id"; exit 1; }
-          DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID).replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG); fs.writeFileSync(p,text)"
+          DB_ID="$DB_ID" WORKER_BASE_URL="${{ steps.settings.outputs.worker_base_url }}" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID).replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG).replaceAll('https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL).replaceAll('https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL); fs.writeFileSync(p,text)"
 
       - name: Apply D1 migrations
         working-directory: packages/router-worker
@@ -179,9 +187,17 @@ jobs:
           set -euo pipefail
           args=()
           if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
-          printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npm exec -- wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"
-          printf '%s' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npm exec -- wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME "${args[@]}"
-          if [ -n "$ADMIN_RECOVERY_TOKEN" ]; then printf '%s' "$ADMIN_RECOVERY_TOKEN" | npm exec -- wrangler secret put ADMIN_RECOVERY_TOKEN "${args[@]}"; fi
+          secrets_json="$(node <<'NODE'
+          const payload = {
+            CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+            CLOUDFLARE_API_TOKEN_RUNTIME: process.env.CLOUDFLARE_API_TOKEN_RUNTIME,
+            ADMIN_RECOVERY_TOKEN: process.env.ADMIN_RECOVERY_TOKEN || null
+          }
+          process.stdout.write(JSON.stringify(payload))
+          NODE
+          )"
+          printf '%s' "$secrets_json" | npm exec -- wrangler secret bulk "${args[@]}"
+          unset secrets_json
 
       - name: Build release artifacts and manifest
         working-directory: packages/node-agent
@@ -200,6 +216,7 @@ jobs:
             else
               tar -C dist -czf "dist/inference-mesh-agent-${GOOS}-${GOARCH}.tar.gz" "inference-mesh-agent-${GOOS}-${GOARCH}"
             fi
+            rm -f "$OUT"
           done
           cd dist
           sha256sum *.tar.gz *.zip > checksums.txt

@@ -8,6 +8,20 @@ import (
 	"github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent/internal/agent"
 )
 
+func TestREQRUN003RuntimeMetricsMarksReadySelectedProfileLoaded(t *testing.T) {
+	profile := agent.ModelProfile{ID: "selected-profile", UpstreamModel: "selected-upstream", Version: 3}
+	cfg := agent.Config{RuntimeModel: "selected-upstream", ActiveProfileIDs: []string{"selected-profile"}, Profiles: []agent.ModelProfile{profile}}
+	manager := agent.NewRuntimeManager(agent.RuntimeCommand{Executable: "definitely-missing-llama-server-for-test"})
+	manager.SetState("ready")
+	loadState := &runtimeLoadState{}
+
+	metrics := runtimeMetrics(manager, loadState, cfg, 0)
+
+	if metrics.LoadedModel != "selected-upstream" || metrics.LoadedProfileID != "selected-profile" || metrics.LoadedProfileVersion != 3 {
+		t.Fatalf("ready runtime should report the selected loaded profile, got %#v", metrics)
+	}
+}
+
 func TestREQRUN003RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
 	loaded := agent.ModelProfile{ID: "loaded-profile", UpstreamModel: "loaded-upstream", Version: 2}
 	loadState := &runtimeLoadState{}

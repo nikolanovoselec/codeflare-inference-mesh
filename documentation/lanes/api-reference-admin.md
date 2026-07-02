@@ -230,7 +230,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON with `gatewayId`, `routeName`, `providerName`, `publicModel`, and `workerBaseUrl`. Omitted fields use Worker defaults, and a stored custom domain is used only after provisioning succeeds.
+**Request body:** Optional JSON with `gatewayId`, `routeName`, `providerName`, `publicModel`, and `workerUrl`. Omitted fields use Worker defaults, and a stored custom domain is used only after provisioning succeeds.
 
 **Response**
 
@@ -238,7 +238,8 @@ POST /admin/cloudflare/gateway/sync
 | --- | --- | --- |
 | `200` | Cloudflare AI Gateway metadata and selected sync settings are stored in D1. | Provider, route, route version, deployment identifiers, and selected settings. |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
-| `503` | Required runtime Cloudflare configuration is missing. | Configuration error. |
+| `409` | Stored custom domain is not provisioned and no `workerUrl` override was supplied. | `{ "error": "custom_domain_not_provisioned", "hostname": string }` |
+| `503` | Required runtime Cloudflare configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
 **Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md)
 
@@ -254,7 +255,7 @@ POST /admin/custom-domain/validate
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `hostname`; optional `zoneId` may identify the Cloudflare zone to provision.
+**Request body:** JSON body with `hostname`; optional `zoneId` must be a 32-character hexadecimal Cloudflare zone ID when present.
 
 **Response**
 
@@ -263,6 +264,8 @@ POST /admin/custom-domain/validate
 | `200` | DNS and Worker route provisioning succeeded, and the hostname is stored for later Gateway operations. | `{ "valid": true, "hostname": string, "status": "provisioned", "dnsRecordId": string, "routeId": string }` |
 | `400` | Hostname is missing/invalid, or supplied zone ID is invalid. | `{ "valid": false, "hostname"?: string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `409` | Existing DNS records conflict with the Worker route target. | `{ "error": "dns_record_conflict", "hostname": string }` |
+| `503` | Runtime Cloudflare account, Worker URL, or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
 **Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md)
 

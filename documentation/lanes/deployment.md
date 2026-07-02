@@ -5,6 +5,7 @@
 - [Delivery model](#delivery-model)
 - [PR checks](#pr-checks)
 - [Deploy workflow](#deploy-workflow)
+- [Node runtime prerequisite](#node-runtime-prerequisite)
 - [Release channels](#release-channels)
 - [Rollback](#rollback)
 - [CI verification policy](#ci-verification-policy)
@@ -32,9 +33,9 @@ Production deployment is automatic after a merged `main` push has green PR Check
 | Check gates | Production waits for exact-head Security and Fuzz success after PR Checks succeeds. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
 | Repeat checks | Critical router and agent checks pass before state changes. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Prepare D1 | The production or integration database is created or resolved and migrations are applied. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| Build artifacts | Platform agent archives, checksums, signature, and manifest exist. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| Build artifacts | Platform agent archives, checksums, signature, and manifest exist; raw binaries are removed before release upload. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Publish release | GitHub Release contains all installer/update assets. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG` set to the selected release tag. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG` and a resolved `WORKER_BASE_URL` set before deploy. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Summarize | Workflow summary lists ref, Worker, release tag, environment, and artifacts. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 
 ## Node runtime prerequisite
@@ -63,7 +64,7 @@ For integration rollback, restore the safe code onto the selected integration br
 
 **Rollback:** If the rollback workflow fails before Worker deploy, the existing Worker remains active. If it fails after publishing a release but before deploy, delete the unused rollback GitHub Release tag and rerun from the restored safe ref with a fresh tag.
 
-Model profile rollback switches the public alias back to a previously ready profile. Node self-update rollback keeps the previous binary for one rollback attempt after an update is applied. ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-005](../../sdd/spec/node-agent.md))
+Model profile rollback switches the public alias back to a previously ready profile. Node update rollback is not automatic in this version; operators should reinstall the previous verified release artifact if an update candidate is bad. ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-005](../../sdd/spec/node-agent.md))
 
 ## CI verification policy
 

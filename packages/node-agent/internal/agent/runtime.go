@@ -56,6 +56,7 @@ type RuntimeManager struct {
 	mu        sync.Mutex
 	cmd       *exec.Cmd
 	done      chan error
+	exited    chan struct{}
 	cancel    context.CancelFunc
 	state     string
 	lastError string
@@ -97,21 +98,16 @@ func (m *RuntimeManager) Start(ctx context.Context) error {
 	m.cmd = cmd
 	m.cancel = cancel
 	m.done = make(chan error, 1)
+	m.exited = make(chan struct{})
 	readinessURL := m.command.ReadinessURL
-	go m.wait(cmd, m.done)
-	m.mu.Unlock()
-	readyCtx, cancelReady := context.WithTimeout(ctx, 30*time.Minute)
-	defer cancelReady()
-	if err := waitForRuntimeReady(readyCtx, readinessURL, nil); err != nil {
-		_ = m.Stop(context.Background())
-		m.mu.Lock()
-		m.state = "failed"
-		m.lastError = err.Error()
+	exited := m.exited
+	go m.wait(cmd, m.done, exited)
+	if readinessURL == "" {
+		m.state = "ready"
 		m.mu.Unlock()
-		return fmt.Errorf("runtime readiness: %w", err)
+		return nil
 	}
-	m.mu.Lock()
-	m.state = "ready"
+	go m.awaitReadiness(cmd, exited, readinessURL)
 	m.mu.Unlock()
 	return nil
 }
@@ -216,7 +212,11 @@ func (m *RuntimeManager) runningLocked() bool {
 		}
 		m.cmd = nil
 		m.done = nil
+		m.exited = nil
 		m.cancel = nil
+		if m.state == "failed" {
+			return false
+		}
 		if err != nil && !strings.Contains(err.Error(), "signal") {
 			m.state = "failed"
 			m.lastError = err.Error()
@@ -229,15 +229,20 @@ func (m *RuntimeManager) runningLocked() bool {
 	}
 }
 
-func (m *RuntimeManager) wait(cmd *exec.Cmd, done chan error) {
+func (m *RuntimeManager) wait(cmd *exec.Cmd, done chan error, exited chan struct{}) {
 	err := cmd.Wait()
+	close(exited)
 	done <- err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cmd == cmd && m.done == done {
 		m.cmd = nil
 		m.done = nil
+		m.exited = nil
 		m.cancel = nil
+		if m.state == "failed" {
+			return
+		}
 		if err != nil && !strings.Contains(err.Error(), "signal") {
 			m.state = "failed"
 			m.lastError = err.Error()
@@ -247,12 +252,32 @@ func (m *RuntimeManager) wait(cmd *exec.Cmd, done chan error) {
 	}
 }
 
+func (m *RuntimeManager) awaitReadiness(cmd *exec.Cmd, exited <-chan struct{}, readinessURL string) {
+	readyCtx, cancelReady := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancelReady()
+	if err := waitForRuntimeReadyUntil(readyCtx, readinessURL, nil, exited); err != nil {
+		m.mu.Lock()
+		if m.cmd == cmd && m.state == "starting" {
+			m.state = "failed"
+			m.lastError = err.Error()
+		}
+		m.mu.Unlock()
+		return
+	}
+	m.mu.Lock()
+	if m.cmd == cmd && m.state == "starting" {
+		m.state = "ready"
+	}
+	m.mu.Unlock()
+}
+
 func (m *RuntimeManager) finishStop(cmd *exec.Cmd, cancel context.CancelFunc, state string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cmd == cmd {
 		m.cmd = nil
 		m.done = nil
+		m.exited = nil
 		m.cancel = nil
 	}
 	if cancel != nil {
@@ -340,6 +365,10 @@ func renderRuntimeValue(value string, values runtimeTemplateValues) string {
 }
 
 func waitForRuntimeReady(ctx context.Context, readinessURL string, client *http.Client) error {
+	return waitForRuntimeReadyUntil(ctx, readinessURL, client, nil)
+}
+
+func waitForRuntimeReadyUntil(ctx context.Context, readinessURL string, client *http.Client, exited <-chan struct{}) error {
 	if readinessURL == "" {
 		return nil
 	}
@@ -364,6 +393,8 @@ func waitForRuntimeReady(ctx context.Context, readinessURL string, client *http.
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-exited:
+			return errors.New("runtime process exited before readiness")
 		case <-ticker.C:
 		}
 	}

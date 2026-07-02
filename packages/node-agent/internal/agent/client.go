@@ -75,6 +75,14 @@ func ApplyClaim(cfg Config, claim ClaimResponse, path string) (Config, error) {
 	next.NodeToken = claim.NodeToken
 	next.UpstreamToken = claim.UpstreamToken
 	next.Profiles = append([]ModelProfile(nil), claim.Profiles...)
+	activeProfiles := activeDesiredProfiles(claim.Profiles)
+	if len(activeProfiles) > 0 {
+		next.ActiveProfileIDs = profileIDs(activeProfiles)
+		next.PublicModels = profileAliases(activeProfiles)
+	}
+	if selected, ok := SelectedProfile(next); ok {
+		next.RuntimeModel = selected.UpstreamModel
+	}
 	next.SetupToken = ""
 	if err := SaveConfig(path, next); err != nil {
 		return Config{}, err
