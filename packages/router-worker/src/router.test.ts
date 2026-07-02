@@ -434,6 +434,8 @@ describe('router worker behavioral contracts', () => {
     await Promise.resolve()
     installerPlatform.value = 'windows'
     await installerPlatform.listeners.get('change')?.()
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(requests).toContain('/admin/installers/linux')
     expect(requests).toContain('/admin/installers/windows')
