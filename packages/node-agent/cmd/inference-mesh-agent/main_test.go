@@ -30,6 +30,7 @@ func TestREQRUN003RuntimeMetricsMarksReadySelectedProfileLoaded(t *testing.T) {
 	manager := agent.NewRuntimeManager(agent.RuntimeCommand{Executable: "definitely-missing-llama-server-for-test"})
 	manager.SetState("ready")
 	loadState := &runtimeLoadState{}
+	loadState.SetStarting(profile)
 
 	metrics := runtimeMetrics(manager, loadState, cfg, 0)
 

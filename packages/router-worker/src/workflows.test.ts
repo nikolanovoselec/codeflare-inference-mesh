@@ -194,7 +194,7 @@ describe('workflow contract values', () => {
       ['secret-bulk.json', 'secret-delete.stdin', 'secret-delete.args']
     )
     expect(secretsExecution.result.status).toBe(0)
-    expect(JSON.parse(secretsExecution.outputs['secret-bulk.json'])).toEqual({ CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token' })
+    expect(JSON.parse(secretsExecution.outputs['secret-bulk.json']!)).toEqual({ CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token' })
     expect(secretsExecution.outputs['secret-delete.stdin']).toBe('y\n')
     expect(secretsExecution.outputs['secret-delete.args']).toContain('ADMIN_RECOVERY_TOKEN')
     expect(stepByName(deployJob, 'Deploy Worker')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
@@ -249,7 +249,7 @@ describe('workflow contract values', () => {
     expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.exe']).toBe('')
     expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.zip']).toBe('archive')
     expect(buildExecution.outputs['dist/checksums.txt']).toContain('.tar.gz')
-    expect(JSON.parse(buildExecution.outputs['dist/release-manifest.json'])).toMatchObject({ version: 'v0.1.0-dev.7', channel: 'integration', commit: 'abc123' })
+    expect(JSON.parse(buildExecution.outputs['dist/release-manifest.json']!)).toMatchObject({ version: 'v0.1.0-dev.7', channel: 'integration', commit: 'abc123' })
     const signStep = stepByName(deployJob, 'Sign checksums when signing is configured')!
     expect(signStep).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}', COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}' } })
     const skippedSign = runShellBlock(signStep.run!, { COSIGN_PRIVATE_KEY: '', COSIGN_PASSWORD: '' })
