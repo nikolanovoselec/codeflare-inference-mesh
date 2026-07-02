@@ -270,7 +270,11 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
   const body = await readOptionalObject<Partial<GatewaySettings>>(request)
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
   const customDomain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
-  const settings = gatewaySettings({ env: deps.env, body, stored: storedSettings })
+  const settings = gatewaySettings({
+    env: deps.env,
+    ...(body ? { body } : {}),
+    ...(storedSettings ? { stored: storedSettings } : {})
+  })
   const bodyWorkerUrl = cleanString(body?.workerUrl)
   const storedWorkerUrl = cleanString(storedSettings?.workerUrl)
   const storedWorkerUrlOverride = storedWorkerUrl && storedWorkerUrl !== deps.env.WORKER_BASE_URL ? storedWorkerUrl : undefined

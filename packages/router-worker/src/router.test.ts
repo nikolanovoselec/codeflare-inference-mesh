@@ -1188,7 +1188,7 @@ describe('router worker behavioral contracts', () => {
         async syncCustomProvider() { throw new Error('gateway sync is not used in this test') },
         async provisionCustomDomain(input) {
           if (input.hostname === 'conflict.example.com') throw new Error('DNS record conflict for conflict.example.com')
-          provisioned.push({ hostname: input.hostname, zoneId: input.zoneId })
+          provisioned.push({ hostname: input.hostname, ...(input.zoneId ? { zoneId: input.zoneId } : {}) })
           return { hostname: input.hostname, zoneId: input.zoneId ?? 'zone-a', zoneName: 'example.com', dnsRecordId: 'dns-a', dnsRecordType: 'CNAME', routeId: 'route-a', routePattern: `${input.hostname}/*`, workerName: input.workerName, status: 'provisioned' }
         }
       }

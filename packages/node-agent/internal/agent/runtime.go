@@ -217,6 +217,11 @@ func (m *RuntimeManager) runningLocked() bool {
 		if m.state == "failed" {
 			return false
 		}
+		if m.state == "starting" {
+			m.state = "failed"
+			m.lastError = "runtime process exited before readiness"
+			return false
+		}
 		if err != nil && !strings.Contains(err.Error(), "signal") {
 			m.state = "failed"
 			m.lastError = err.Error()
@@ -241,6 +246,11 @@ func (m *RuntimeManager) wait(cmd *exec.Cmd, done chan error, exited chan struct
 		m.exited = nil
 		m.cancel = nil
 		if m.state == "failed" {
+			return
+		}
+		if m.state == "starting" {
+			m.state = "failed"
+			m.lastError = "runtime process exited before readiness"
 			return
 		}
 		if err != nil && !strings.Contains(err.Error(), "signal") {
