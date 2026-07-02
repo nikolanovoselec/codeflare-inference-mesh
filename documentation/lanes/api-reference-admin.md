@@ -239,7 +239,7 @@ POST /admin/cloudflare/gateway/sync
 | `routeName` | string | no | Dynamic route display name. Falls back to stored settings, then `AI_GATEWAY_ROUTE_NAME`, then `mesh-default`. |
 | `providerName` | string | no | Custom-provider display name. Falls back to stored settings, then `AI_GATEWAY_PROVIDER_NAME`, then `codeflare-inference-mesh`. |
 | `publicModel` | string | no | Public model alias exposed through Gateway. Falls back to stored settings, then `AI_GATEWAY_PUBLIC_MODEL`, then `mesh-default`. |
-| `workerUrl` | string | no | Advanced explicit router origin override. When omitted, Gateway sync uses the provisioned custom domain. |
+| `workerUrl` | string | no | Advanced explicit router origin override. When omitted, Gateway sync reuses a stored explicit override, then falls back to the provisioned custom domain. |
 
 **Response**
 

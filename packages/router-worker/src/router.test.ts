@@ -963,9 +963,11 @@ describe('router worker behavioral contracts', () => {
 
     await router(new Request('https://router.test/node/unregister', { method: 'POST', headers: { ...bearer(claimed.nodeToken), 'content-type': 'application/json' }, body: JSON.stringify({ nodeId: claimed.nodeId }) }))
     await router(new Request(`https://router.test/admin/nodes/${claimed.nodeId}/revoke`, { method: 'POST', headers: bearer('admin-secret') }))
-    await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    await store.putConfig('custom_domain', { hostname: 'ai.example.com', zoneId: '0123456789abcdef0123456789abcdef', zoneName: 'example.com', dnsRecordId: 'dns-a', dnsRecordType: 'CNAME', routeId: 'route-a', routePattern: 'ai.example.com/*', workerName: 'router-worker', status: 'provisioned' })
+    const gatewaySync = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
     await router(new Request('https://router.test/admin/profiles/rollout', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'qwen36-35b-a3b-262k-mm-3090', rolloutPercent: 50 }) }))
 
+    expect(gatewaySync.status).toBe(200)
     expect(store.audit.map((event) => event.type)).toEqual(expect.arrayContaining(['first_setup', 'node_claimed', 'node_unregistered', 'node_revoked', 'gateway_sync', 'profile_rollout']))
   })
 
@@ -1156,6 +1158,28 @@ describe('router worker behavioral contracts', () => {
     expect(response.status).toBe(200)
     expect(calls).toEqual(['https://bootstrap.example.workers.dev', 'ai.example.com', 'router-worker'])
     expect(stored).toMatchObject({ hostname: 'ai.example.com', status: 'provisioned' })
+  })
+
+  it('REQ-ADM-005 leaves the existing Worker origin usable when custom-domain provisioning fails', async () => {
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', WORKER_NAME: 'router-worker', WORKER_BASE_URL: 'https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev' },
+      cloudflareClient: {
+        async syncCustomProvider() { throw new Error('Gateway sync is not used in this test') },
+        async provisionCustomDomain() { throw new Error('DNS record conflict for ai.example.com') }
+      }
+    })
+
+    const failure = await router(new Request('https://bootstrap.example.workers.dev/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com' }) }))
+    const installer = await router(new Request('https://bootstrap.example.workers.dev/admin/installers/linux', { headers: bearer('admin-secret') }))
+    const command = await installer.text()
+    const scriptUrl = command.match(/curl -fsSL (?<script>\S+)/)?.groups?.script
+    const routerUrl = command.match(/ROUTER_URL='(?<router>[^']+)'/)?.groups?.router
+
+    expect(failure.status).toBe(409)
+    expect(await store.getConfig('custom_domain')).toBeUndefined()
+    expect(installer.status).toBe(200)
+    expect(scriptUrl).toBe('https://bootstrap.example.workers.dev/install.sh?platform=linux')
+    expect(routerUrl).toBe('https://bootstrap.example.workers.dev')
   })
 
   it('REQ-ADM-005 refuses to overwrite conflicting custom-domain DNS records', async () => {
