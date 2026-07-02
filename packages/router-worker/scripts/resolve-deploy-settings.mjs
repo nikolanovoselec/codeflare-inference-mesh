@@ -30,7 +30,7 @@ const settings = targetEnv === 'production'
   : { db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' }
 
 const workerBaseUrl = resolveWorkerBaseUrl(targetEnv, settings.worker_name)
-if (!/^https:\/\/[^\s/]+(?:\.[^\s/]+)+$/.test(workerBaseUrl)) {
+if (!validWorkerBaseUrl(workerBaseUrl)) {
   console.error(`Invalid ${targetEnv} worker_base_url: ${workerBaseUrl || '(empty)'}`)
   process.exit(1)
 }
@@ -50,6 +50,32 @@ function resolveWorkerBaseUrl(environment, workerName) {
   if (process.env.WORKER_BASE_URL) return process.env.WORKER_BASE_URL
   if (process.env.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN) return `https://${workerName}.${process.env.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN}.workers.dev`
   return ''
+}
+
+function validWorkerBaseUrl(value) {
+  try {
+    const url = new URL(value)
+    const labels = url.hostname.split('.')
+    return url.protocol === 'https:'
+      && url.username === ''
+      && url.password === ''
+      && url.pathname === '/'
+      && url.search === ''
+      && url.hash === ''
+      && url.hostname.length <= 253
+      && labels.length >= 2
+      && labels.every(validHostnameLabel)
+  } catch {
+    return false
+  }
+}
+
+function validHostnameLabel(label) {
+  return label.length > 0
+    && label.length <= 63
+    && !label.startsWith('-')
+    && !label.endsWith('-')
+    && [...label].every((char) => char === '-' || (char >= '0' && char <= '9') || (char >= 'a' && char <= 'z'))
 }
 
 for (const [key, value] of Object.entries(output)) {
