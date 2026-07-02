@@ -424,8 +424,11 @@ describe('router worker behavioral contracts', () => {
       createElement: () => elementStub(),
       addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
     }
+    let releaseLinux: (() => void) | undefined
+    const linuxWait = new Promise<void>((resolve) => { releaseLinux = resolve })
     const fetchStub = async (path: string) => {
       requests.push(path)
+      if (path.endsWith('/linux')) await linuxWait
       return new Response('install command for ' + path, { status: 200, headers: { 'content-type': 'text/plain' } })
     }
 
@@ -434,6 +437,9 @@ describe('router worker behavioral contracts', () => {
     await Promise.resolve()
     installerPlatform.value = 'windows'
     await installerPlatform.listeners.get('change')?.()
+    await Promise.resolve()
+    await Promise.resolve()
+    releaseLinux?.()
     await Promise.resolve()
     await Promise.resolve()
 

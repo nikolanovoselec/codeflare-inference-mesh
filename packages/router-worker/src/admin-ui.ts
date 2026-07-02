@@ -365,8 +365,8 @@ function adminUiScript(): string {
   async function loadInstallerCommand(copyToClipboard = false) {
     const platform = byId('installer-platform').value;
     const command = await request('/admin/installers/' + platform, { headers: headers(true) });
-    setOutput('installer-output', command);
-    if (copyToClipboard) { await navigator.clipboard.writeText(command); toast('Install command copied'); }
+    if (byId('installer-platform').value === platform) setOutput('installer-output', command);
+    if (copyToClipboard && byId('installer-platform').value === platform) { await navigator.clipboard.writeText(command); toast('Install command copied'); }
     return command;
   }
   const gatewayPayload = () => Object.fromEntries(Object.entries({
