@@ -1,6 +1,6 @@
 # Setup And Admin
 
-This domain covers first-run setup, admin access, node setup tokens, Cloudflare resource setup, and install-script delivery.
+This domain covers first-run setup, admin access, node setup tokens, Cloudflare resource setup, install-script delivery, and fleet agent-version management.
 
 ---
 
@@ -119,11 +119,14 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. The Worker origin and Admin entry point serve the Admin configuration UI as HTML with no bearer token required to load the shell. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-2. The UI exposes initial setup, admin login, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain validation, node revocation, profile readiness, and profile rollout controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
+2. The UI exposes initial setup, admin login, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain validation, node revocation, the mesh health panel, mesh-profile readiness, profile activation, mesh-secret rotation, and profile rollout controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 exposes mesh health, rotation, and activation controls) -->
 3. The UI stores admin tokens only in browser-controlled session/local storage and sends them as bearer credentials only when an admin action requires authentication. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-4. The UI displays generated admin/provider/setup/upstream tokens only from creation responses and never reads plaintext credentials back from status. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
+4. The UI displays generated admin/provider/setup/upstream tokens only from creation responses, surfaces mesh invite tokens only as presence, status, and age, and never reads plaintext credential values back from status. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 shows mesh invite tokens as presence, status, and age only) -->
 5. The UI remains usable on desktop and mobile viewports. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_RESPONSIVE --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
 6. Admin UI HTML responses prevent browser framing. <!-- @impl: packages/router-worker/src/router.ts::html --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
+7. The UI provides a one-click "Rotate mesh secret" action that submits `POST /admin/mesh/rotate` for the selected mesh profile. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 wires the one-click rotate action to the mesh rotate endpoint) -->
+8. The UI presents the single-node and split serving profiles as one activation selection control that submits `POST /admin/profiles/activate`. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 renders the profile activation selection control) -->
+9. Activating a profile atomically deactivates every active profile that shares a public alias with it and records a `profile_activated` audit event. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 activates profiles alias-exclusively and records the audit event) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -148,7 +151,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 1. The UI summarizes setup, authentication, nodes, profiles, and audit state near the top of the page. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_COMMAND_CENTER --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
 2. The UI lists setup, authentication, enrollment, routing, and operations in persistent navigation order. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_COMMAND_CENTER --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
 3. Each workflow navigation link resolves to a rendered work section. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
-4. Related controls keep predictable label, input, feedback, and action placement while using operator-facing labels for install commands, Gateway configuration, custom domains, and profile readiness. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ACTION_ROW_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
+4. Related controls keep predictable label, input, feedback, and action placement while using operator-facing labels for install commands, Gateway configuration, custom domains, and mesh-profile readiness. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ACTION_ROW_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
 5. Locked setup errors show inline guidance instead of raw JSON. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_SETUP_LOCKED_FEEDBACK --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 renders setup-locked recovery affordances instead of raw JSON) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
@@ -160,6 +163,33 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Verification:** Automated test
 
 **Status:** Implemented
+
+---
+
+### REQ-ADM-008: Agent version management
+
+**Intent:** Operators should select one fleet-wide node-agent version from published releases in the Admin UI and have nodes converge on it through heartbeats, with no channels or per-node targeting.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. `GET /admin/agent-versions` returns node-agent release tags fetched from the repository's GitHub releases API and cached in `router_config` with an approximately 10-minute TTL. <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 lists release tags from the cached GitHub releases response) -->
+2. When the releases fetch fails, the endpoint serves the last cached tag list marked stale. <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 serves the stale cached tag list when the releases fetch fails) -->
+3. `POST /admin/agent-version` rejects tags absent from the cached release list. <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 rejects agent-version selections absent from the cached release list) -->
+4. Accepting a version selection stores it as the single fleet-wide `desired_agent_version` and records an `agent_version_selected` audit event. <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 stores the fleet-wide desired version and audits the selection) -->
+5. Every heartbeat response carries `desiredAgentVersion` while a desired version is set. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 heartbeat responses carry the desired agent version when set) -->
+6. The Admin UI offers a release-tag dropdown with the current selection and shows each node's reported agent version against the desired version. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-008 renders the agent-version dropdown and per-node reported-versus-desired view) -->
+
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-NODE-005](node-agent.md#req-node-005-agent-update-staging), [REQ-REL-003](release-ci.md#req-rel-003-node-agent-release-artifacts)
+
+**Verification:** Automated test
+
+**Status:** Planned
 
 ---
 

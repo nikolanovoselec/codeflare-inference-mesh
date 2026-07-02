@@ -6,17 +6,34 @@ This ledger records binding technical choices for the first implementation. It i
 
 | ID | Status | Decision | Related requirements |
 | --- | --- | --- | --- |
-| [AD-001](#ad-001-cloudflare-router-plane) | Accepted | Use Cloudflare Workers, AI Gateway, Workers VPC, Mesh, D1, and Durable Objects for the router plane. | [REQ-GWY-001](../../sdd/spec/gateway.md#req-gwy-001), [REQ-RTR-002](../../sdd/spec/router-worker.md#req-rtr-002), [REQ-SCH-001](../../sdd/spec/state-scheduling.md#req-sch-001) |
-| [AD-002](#ad-002-app-level-bearer-token-auth-first) | Accepted | Use app-level bearer-token classes instead of Cloudflare Access as the MVP auth spine. | [REQ-SEC-001](../../sdd/spec/security.md#req-sec-001), [REQ-ADM-002](../../sdd/spec/setup-admin.md#req-adm-002) |
-| [AD-003](#ad-003-d1-plus-durable-object-scheduler) | Accepted | Use D1 for durable truth and a Durable Object for live scheduling. | [REQ-SCH-001](../../sdd/spec/state-scheduling.md#req-sch-001), [REQ-SCH-002](../../sdd/spec/state-scheduling.md#req-sch-002) |
-| [AD-004](#ad-004-go-service-with-localhost-ui) | Accepted | Use Go for the node agent and a localhost web UI instead of a native desktop shell. | [REQ-NODE-001](../../sdd/spec/node-agent.md#req-node-001), [REQ-NODE-004](../../sdd/spec/node-agent.md#req-node-004) |
-| [AD-005](#ad-005-llamacpp-first-runtime) | Accepted | Use `llama-server` as the first managed runtime. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003) |
-| [AD-006](#ad-006-default-model-profile-set) | Accepted | Make Qwen3.6 27B the primary `mesh-default` profile, Gemma 4 26B-A4B the fallback benchmark profile, and a small smoke-test profile available. | [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002) |
-| [AD-007](#ad-007-gateway-route-automation-with-manual-byok) | Accepted | Automate Gateway provider and dynamic route creation, but keep BYOK/provider-key entry manual in v1. | [REQ-GWY-002](../../sdd/spec/gateway.md#req-gwy-002), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003) |
-| [AD-008](#ad-008-node-listener-binding-policy) | Accepted | Bind the node listener to Mesh IP when possible and allow `0.0.0.0` fallback only with strict token auth. | [REQ-NODE-001](../../sdd/spec/node-agent.md#req-node-001), [REQ-RTR-004](../../sdd/spec/router-worker.md#req-rtr-004) |
-| [AD-009](#ad-009-best-effort-hardware-metrics-first) | Accepted | Start hardware metrics with best-effort platform probes rather than native GPU libraries. | [REQ-OBS-003](../../sdd/spec/observability.md#req-obs-003) |
+| [AD-001](#ad-001-cloudflare-router-plane) | Accepted | Use Cloudflare Workers, AI Gateway, Workers VPC, Mesh, D1, and Durable Objects for the router plane. | [REQ-GWY-001](../../sdd/spec/gateway.md#req-gwy-001-gateway-custom-provider), [REQ-RTR-002](../../sdd/spec/router-worker.md#req-rtr-002-chat-completion-forwarding), [REQ-SCH-001](../../sdd/spec/state-scheduling.md#req-sch-001-durable-router-state) |
+| [AD-002](#ad-002-app-level-bearer-token-auth-first) | Accepted | Use app-level bearer-token classes instead of Cloudflare Access as the MVP auth spine. | [REQ-SEC-001](../../sdd/spec/security.md#req-sec-001-credential-boundaries), [REQ-ADM-002](../../sdd/spec/setup-admin.md#req-adm-002-mvp-admin-auth) |
+| [AD-003](#ad-003-d1-plus-durable-object-scheduler) | Accepted | Use D1 for durable truth and a Durable Object for live scheduling. | [REQ-SCH-001](../../sdd/spec/state-scheduling.md#req-sch-001-durable-router-state), [REQ-SCH-002](../../sdd/spec/state-scheduling.md#req-sch-002-node-reservations) |
+| [AD-004](#ad-004-go-service-with-localhost-ui) | Accepted | Use Go for the node agent and a localhost web UI instead of a native desktop shell. | [REQ-NODE-001](../../sdd/spec/node-agent.md#req-node-001-cross-platform-service), [REQ-NODE-004](../../sdd/spec/node-agent.md#req-node-004-local-dashboard) |
+| [AD-005](#ad-005-llamacpp-first-runtime) | Superseded by AD-012 | Use `llama-server` as the first managed runtime. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime) |
+| [AD-006](#ad-006-default-model-profile-set) | Superseded by AD-012 | Make Qwen3.6 27B the primary `mesh-default` profile, Gemma 4 26B-A4B the fallback benchmark profile, and a small smoke-test profile available. | [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles) |
+| [AD-007](#ad-007-gateway-route-automation-with-manual-byok) | Accepted | Automate Gateway provider and dynamic route creation, but keep BYOK/provider-key entry manual in v1. | [REQ-GWY-002](../../sdd/spec/gateway.md#req-gwy-002-provider-token-contract), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation) |
+| [AD-008](#ad-008-node-listener-binding-policy) | Accepted | Bind the node listener to Mesh IP when possible and allow `0.0.0.0` fallback only with strict token auth. | [REQ-NODE-001](../../sdd/spec/node-agent.md#req-node-001-cross-platform-service), [REQ-RTR-004](../../sdd/spec/router-worker.md#req-rtr-004-mesh-destination-safety) |
+| [AD-009](#ad-009-best-effort-hardware-metrics-first) | Accepted | Start hardware metrics with best-effort platform probes rather than native GPU libraries. | [REQ-OBS-003](../../sdd/spec/observability.md#req-obs-003-node-metrics) |
 | [AD-010](#ad-010-public-release-artifacts-after-mesh-proof) | Accepted | Publish public GitHub Release artifacts for installers and update staging after the first Worker path is proven. | [REQ-REL-003](../../sdd/spec/release-ci.md#req-rel-003-node-agent-release-artifacts), [REQ-NODE-005](../../sdd/spec/node-agent.md#req-node-005-agent-update-staging) |
-| [AD-011](#ad-011-first-run-setup-is-the-one-time-bootstrap-gate) | Accepted | Keep first-run setup open until completed; do not require a separate initial setup token. | [REQ-ADM-001](../../sdd/spec/setup-admin.md#req-adm-001), [REQ-ADM-002](../../sdd/spec/setup-admin.md#req-adm-002) |
+| [AD-011](#ad-011-first-run-setup-is-the-one-time-bootstrap-gate) | Accepted | Keep first-run setup open until completed; do not require a separate initial setup token. | [REQ-ADM-001](../../sdd/spec/setup-admin.md#req-adm-001-first-run-setup), [REQ-ADM-002](../../sdd/spec/setup-admin.md#req-adm-002-mvp-admin-auth) |
+| [AD-012](#ad-012-meshllm-only-private-inference-backend) | Accepted | Remove llama.cpp from the product contract; the agent installs and supervises a pinned `mesh-llm` as the only runtime, with router-owned private-mesh membership and private-only shipped profiles. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation), [REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update), [REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle) |
+
+## AD-012: MeshLLM-only private inference backend
+
+**Status:** Accepted
+
+**Context:** The llama.cpp path required an operator-installed CUDA `llama-server` on every node and bound each node to one loaded model process. MeshLLM is a supervisable Apache-2.0 Rust binary with an OpenAI-compatible API, invite-token private meshes that run over WARP CGNAT unicast, and Skippy split serving across nodes. AD-006 had also drifted: it names Qwen3.6 27B and Gemma 4 profiles while the shipped defaults were already Qwen3.6-35B.
+
+**Decision:** Remove llama.cpp from the product contract entirely. The agent installs and supervises a pinned `mesh-llm` as the only managed runtime. Mesh membership is router-owned: the invite-token set, AES-GCM-encrypted mesh state, and a rotation counter live in the Worker. Shipped profiles are private-only with zero public discovery, publishing, Nostr, or relay/STUN egress. Fleet agent versions are router-driven.
+
+**Alternatives considered:** Keeping llama.cpp as a fallback runtime; a dual-runtime adapter layer. Both rejected — the plan removes llama.cpp rather than keeping it beside MeshLLM.
+
+**Rationale:** One supervised binary removes the operator-installed CUDA prerequisite and the one-model-per-node limit, the OpenAI-compatible API keeps the proxy and Gateway path unchanged, and invite-token private meshes fit the existing WARP overlay.
+
+**Consequences:** Profile schema, eligibility, heartbeat metrics, dashboards, and installers move to MeshLLM semantics in one coupled spec, test, and doc change. AD-005 and AD-006 are superseded. The mesh invite token becomes a new stored credential class. The darwin/amd64 agent lane is dropped.
+
+**Related requirements:** [REQ-RUN-003](../../sdd/spec/runtime-profiles.md), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md), [REQ-RUN-007](../../sdd/spec/runtime-profiles.md), [REQ-NODE-006](../../sdd/spec/node-agent.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-REL-003](../../sdd/spec/release-ci.md)
 
 ## AD-011: First-run setup is the one-time bootstrap gate
 
@@ -100,7 +117,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 ## AD-005: llama.cpp first runtime
 
-**Status:** Accepted
+**Status:** Superseded by AD-012
 
 **Context:** The first runtime must work across Windows, macOS, and Linux and expose OpenAI-compatible chat endpoints. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors -->
 
@@ -116,7 +133,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 ## AD-006: Default model profile set
 
-**Status:** Accepted
+**Status:** Superseded by AD-012
 
 **Context:** The original plan had an open question about whether `mesh-default` should start with Qwen, Gemma, or a smoke-test profile. <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES -->
 

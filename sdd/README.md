@@ -29,7 +29,7 @@ Codeflare Inference Mesh provides one stable AI Gateway route for private local 
 | Router Worker | [router-worker.md](spec/router-worker.md) | Worker routes, auth gates, request rewriting, Mesh forwarding, and streaming. | P0 |
 | State And Scheduling | [state-scheduling.md](spec/state-scheduling.md) | D1 records, Durable Object reservations, node eligibility, and session affinity. | P0 |
 | Node Agent | [node-agent.md](spec/node-agent.md) | Node claim, heartbeat, local UI, upstream proxy, and service lifecycle. | P0 |
-| Runtime Profiles | [runtime-profiles.md](spec/runtime-profiles.md) | Stable public aliases, managed model profiles, runtime supervision, and model validation. | P1 |
+| Runtime Profiles | [runtime-profiles.md](spec/runtime-profiles.md) | Stable public aliases, MeshLLM mesh profiles, private mesh formation, split serving, and runtime supervision. | P1 |
 | Setup And Admin | [setup-admin.md](spec/setup-admin.md) | First-run setup, admin session, setup tokens, and one-line installation. | P0 |
 | Security | [security.md](spec/security.md) | Credential classes, route-level authorization, token storage, and header filtering. | P0 |
 | Release And CI | [release-ci.md](spec/release-ci.md) | PR checks, deploy workflow, signed node-agent artifacts, and update metadata. | P1 |
@@ -50,7 +50,9 @@ Codeflare Inference Mesh provides one stable AI Gateway route for private local 
 - AI Gateway routing directly to individual nodes.
 - Native desktop shells for the first node UI.
 - Automatic BYOK secret creation in the first implementation.
-- Automatic node-agent update apply without explicit operator replacement of a verified staged artifact.
+- Automatic agent-version selection, release channels, and partial-fleet version targeting; the operator chooses one fleet-wide version.
+- Public MeshLLM discovery, public mesh publishing, and Nostr discovery.
+- Direct MeshLLM cloud routing.
 
 ## Documentation
 

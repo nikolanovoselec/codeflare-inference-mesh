@@ -1,6 +1,6 @@
 # Observability
 
-This domain covers response metadata, admin status, node metrics, audit events, and failure reporting.
+This domain covers response metadata, admin status, node metrics, mesh health, audit events, and failure reporting.
 
 ---
 
@@ -32,17 +32,19 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 ### REQ-OBS-002: Admin status surface
 
-**Intent:** Admins need a current fleet view to see node readiness, configured profiles, recent audit events, and status freshness.
+**Intent:** Admins need a current fleet view to see node readiness, mesh membership, configured profiles, recent audit events, and status freshness.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
 1. Admin status lists registered nodes with status, public models, active profiles, runtime readiness, in-flight count, capacity, and last-seen age. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
-2. Admin status lists configured profiles with public aliases, upstream model, source mode, version, rollout percent, active flag, and readiness counts. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 reports profile readiness in admin status) -->
-3. Admin status includes recent audit events, persisted setup/gateway/domain state, and a generation timestamp. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
-4. Admin status omits token hashes and plaintext credentials. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
-5. Admin status returns a machine-readable JSON shape for UI and automation use. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
+2. Each node entry includes mesh ID, mesh role, peer count, ready models, split and stage state, MeshLLM version, and API and console readiness. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-002 reports node mesh membership and readiness fields in admin status) -->
+3. Each node entry includes the node's reported agent version alongside the selected desired agent version. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-002 reports node agent versions and the desired agent version in admin status) -->
+4. Admin status lists configured profiles with public aliases, upstream model, the `meshllm-ref` source mode, version, rollout percent, active flag, and readiness counts. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 reports profile readiness in admin status) -->
+5. Admin status includes recent audit events, persisted setup/gateway/domain state, and a generation timestamp. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
+6. Admin status omits token hashes and plaintext credentials. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
+7. Admin status returns a machine-readable JSON shape for UI and automation use. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -64,13 +66,18 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 **Acceptance Criteria:**
 
-1. Heartbeat metrics include runtime state, loaded model, active profile ID/version, and in-flight requests. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
-2. Heartbeat metrics include the last runtime error when the runtime manager reports one. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeDependencyMissingState) -->
-3. GPU metrics are best-effort from platform tools first and absent rather than fabricated when unavailable. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseNvidiaSMI --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS003BestEffortHardwareMetrics) -->
-4. Token-throughput metrics are calculated from llama.cpp token and duration metrics when the runtime exposes them. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseLlamaMetrics --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS003ParsesLlamaTokenMetrics) -->
-5. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
+1. Heartbeat metrics include runtime state, ready models, active profile ID/version, and in-flight requests. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
+2. Heartbeat metrics include mesh ID, mesh role, peer count, split and stage state, MeshLLM API and console readiness, and the MeshLLM version. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
+3. Node runtime metrics are decoded from the MeshLLM console status through a tolerant parser that reads the needed subset and ignores unknown fields. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
+4. Heartbeat metrics include the last runtime error when the runtime manager reports one. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS003ReportsLastRuntimeError) -->
+5. GPU metrics are best-effort from platform tools first and absent rather than fabricated when unavailable. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseNvidiaSMI --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS003BestEffortHardwareMetrics) -->
+6. Token-throughput metrics are read from the MeshLLM console status `tok_per_sec` value when the console exposes it. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
+7. Prompt-versus-generation throughput splits are absent rather than fabricated when the MeshLLM status does not expose them. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
+8. A node reports runtime state ready only while the console reports serving and the selected profile's upstream model is routable in the node's own model list. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003MapsMeshLLMNodeStates) -->
+9. Console state loading is reported as downloading, standby is reported as starting, and an unreachable console after grace or a process exit is reported as failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003MapsMeshLLMNodeStates) -->
+10. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 
-**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime)
+**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
 **Priority:** P1
 
@@ -84,15 +91,15 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 ### REQ-OBS-004: Failure reporting
 
-**Intent:** Normal operational failures should produce actionable state transitions and errors rather than ambiguous `500` responses.
+**Intent:** Normal operational failures should produce actionable state transitions and errors rather than ambiguous `500` responses. When a session's sticky node becomes ineligible, routing falls back to another eligible node silently; local runtime cache warmth is lost while correctness is preserved.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
 1. Missed heartbeats expire a node lease and remove the node from eligible scheduling. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
-2. Non-ready runtime state removes a node from eligible scheduling. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
-3. Loaded-profile mismatch removes a node from eligible scheduling. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
+2. Non-ready runtime state, including a MeshLLM API that is not ready, removes a node from eligible scheduling. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
+3. A requested model absent from the node's ready-model list removes the node from eligible scheduling. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
 4. Mid-stream node failures release reservations. <!-- @impl: packages/router-worker/src/router.ts::releaseOnCompletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 releases and penalizes stream failures) -->
 5. Mid-stream node failures increase the node's recent failure score. <!-- @impl: packages/router-worker/src/scheduler.ts::recordFailure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 releases and penalizes stream failures) -->
 6. Invalid Mesh connection data makes the node ineligible for scheduling. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
@@ -112,13 +119,16 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 ### REQ-OBS-006: Audit history
 
-**Intent:** Admin-visible audit history should identify high-impact setup and routing actions without mixing those records into scheduler failure handling.
+**Intent:** Admin-visible audit history should identify high-impact setup, routing, and mesh lifecycle actions without mixing those records into scheduler failure handling.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
 1. Audit events record setup, claim, unregister, revoke, admin recovery reset, route provisioning, and profile switch actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::handleAdminRecovery --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-006 records audit events for setup, claim, unregister, revoke, route provisioning, and profile switch actions) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 recovers a lost admin token only with the recovery secret) -->
+2. Audit events record mesh state stored, mesh token rotated, mesh state cleared, and mesh token removed (on node revoke) actions. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-OBS-006 records mesh lifecycle audit events without token material) -->
+3. Audit events record profile activation and agent version selection actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-006 records profile activation audit events) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-OBS-006 records agent version selection audit events) -->
+4. Audit event payloads carry node and mesh identifiers and never include invite token material. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-OBS-006 records mesh lifecycle audit events without token material) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -151,6 +161,32 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 **Verification:** Automated test
 
 **Status:** Implemented
+
+---
+
+### REQ-OBS-007: Mesh health surface
+
+**Intent:** Operators need a per-profile mesh health view to confirm the mesh formed, identify its coordinator, and diagnose failing members without exposing mesh secret material.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Admin status includes a mesh health entry for each MeshLLM profile naming the current coordinator and the joined peers. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-007 reports per-profile mesh coordinator and peers in admin status) -->
+2. Each mesh health entry lists the mesh's ready models and its failed nodes. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-007 reports ready models and failed nodes per mesh) -->
+3. Each mesh health entry includes the most recent MeshLLM error reported by a member node. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-007 surfaces the last MeshLLM error per mesh) -->
+4. Each mesh health entry shows the mesh rotation counter and secret presence and age, never secret values. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-007 shows rotation counter and secret presence without values) -->
+5. The admin UI renders a mesh health panel for each MeshLLM profile from admin status data. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-OBS-007 renders the mesh health panel from admin status data) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-OBS-002](#req-obs-002-admin-status-surface), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle)
+
+**Verification:** Automated test
+
+**Status:** Planned
 
 ---
 

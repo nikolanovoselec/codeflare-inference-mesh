@@ -20,6 +20,10 @@ Client, provider, setup, node, dashboard, upstream, admin, deploy, and runtime C
 
 Durable token records avoid plaintext unless a component must recover and present that credential across its trust boundary.
 
+## CON-SEC-003: Mesh secret custody and rotation
+
+Mesh state, including invite tokens, is stored only AES-GCM envelope-encrypted via WebCrypto under the `MESH_STATE_KEY` Worker secret. A mesh token rotation must redistribute tokens and reform the mesh within two minutes under idle or short-stream load; model readiness restoration additionally depends on model reload time.
+
 ## CON-STATE-001: D1 is durable truth
 
 D1 stores setup state, Cloudflare resource IDs, model profiles, aliases, nodes, sessions, reservations, and audit records. Durable Objects may cache hot state but must rebuild from D1.
@@ -28,9 +32,9 @@ D1 stores setup state, Cloudflare resource IDs, model profiles, aliases, nodes, 
 
 A Durable Object owns scheduling decisions that modify in-flight counts, sticky session mappings, and node reservations.
 
-## CON-RUNTIME-001: llama.cpp first runtime
+## CON-RUNTIME-001: MeshLLM-only runtime
 
-The first managed runtime is `llama-server`. Ollama, LM Studio, and vLLM are adapter targets after the Mesh and llama.cpp path works.
+The only managed runtime is MeshLLM (`mesh-llm`), forming a private mesh over WARP CGNAT unicast. Shipped profiles never enable public discovery, public mesh publishing, or Nostr, and produce zero relay, STUN, or Nostr egress; the `mdns` discovery mode is the public-egress kill switch.
 
 ## CON-MODEL-001: Stable Gateway aliases
 
