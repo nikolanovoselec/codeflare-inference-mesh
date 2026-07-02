@@ -113,7 +113,7 @@ describe('workflow contract values', () => {
     expect(ci.jobs['vulnerability-checks']!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['npm audit', 'Go vulnerability check']))
   })
 
-  it('REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch', () => {
+  it('REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch', () => {
     const deploy = workflow('deploy.yml')
     const deployJob = deploy.jobs.deploy!
 
@@ -234,7 +234,7 @@ describe('workflow contract values', () => {
     expect(summaryValues).toEqual({ Environment: 'integration', Ref: 'refs/heads/feature', Worker: 'codeflare-inference-mesh-router-integration', 'Release tag': 'v0.1.0-dev.7', Artifacts: 'inference-mesh-release-artifacts' })
   })
 
-  it('REQ-REL-002 extracts Wrangler D1 create IDs and fails closed when the ID is absent', () => {
+  it('REQ-REL-005 extracts Wrangler D1 create IDs and fails closed when the ID is absent', () => {
     const temp = mkdtempSync(resolve(tmpdir(), 'd1-id-'))
     try {
       const script = resolve(repoRoot, 'packages/router-worker/scripts/d1-database-id.mjs')

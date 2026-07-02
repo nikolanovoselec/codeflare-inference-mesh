@@ -214,7 +214,7 @@ describe('router worker behavioral contracts', () => {
     expect(liveOutputSurfaces).toHaveLength(outputSurfaces.length)
     expect(fieldHelp).toHaveLength(3)
     expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(1)
-    expect([...html.matchAll(/id="gateway-(id|route-name|public-model|provider-name|worker-url)"/g)]).toHaveLength(5)
+    expect([...html.matchAll(/id="gateway-(account-id|id|route-name|public-model|provider-name|worker-url)"/g)]).toHaveLength(6)
     expect(html).toContain('data-installer-platform="true"')
     expect(html).toMatch(/<meta name="color-scheme" content="dark">/)
     expect(html).toMatch(/data-setup-banner/)
@@ -315,6 +315,54 @@ describe('router worker behavioral contracts', () => {
     expect(timeouts.at(-1)).toBe(8000)
     expect(toast.classList.contains('is-error')).toBe(true)
     expect(toast.classList.contains('show')).toBe(false)
+  })
+
+  it('REQ-GWY-003 sends selected Gateway account from the Admin UI', async () => {
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/admin'))).text()
+    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
+    const requests: Array<{ path: string; init?: RequestInit }> = []
+    const gatewayOutput = elementStub()
+    const gatewayScope = elementStub({ dataset: { state: 'idle' } })
+    gatewayScope.querySelector = (selector: string) => selector === '[data-output]' ? gatewayOutput : undefined
+    const gatewayButton = elementStub({ dataset: { action: 'gateway-sync' } })
+    gatewayButton.closest = (selector: string) => selector === '[data-action]' ? gatewayButton : selector === '[data-action-scope]' ? gatewayScope : null
+    const elements = new Map<string, StubElement>([
+      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
+      ['origin-label', elementStub()],
+      ['admin-token', elementStub({ value: 'admin-secret' })],
+      ['remember-token', elementStub()],
+      ['toast', elementStub()],
+      ['gateway-account-id', elementStub({ value: ' account-admin ' })],
+      ['gateway-id', elementStub({ value: 'gateway-admin' })],
+      ['gateway-route-name', elementStub({ value: 'mesh-admin' })],
+      ['gateway-public-model', elementStub({ value: 'mesh-smoke' })],
+      ['gateway-provider-name', elementStub({ value: 'provider-admin' })],
+      ['gateway-worker-url', elementStub({ value: 'https://router.example.workers.dev' })],
+      ['gateway-output', gatewayOutput]
+    ])
+    const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
+    const documentStub = {
+      getElementById: (id: string) => elements.get(id),
+      querySelector: () => undefined,
+      createElement: () => elementStub(),
+      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
+    }
+    const fetchStub = async (path: string, init?: RequestInit) => {
+      requests.push(init ? { path, init } : { path })
+      return Response.json({ deploymentId: 'deployment-a' })
+    }
+
+    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, () => undefined)
+    await listeners.get('click')!({ target: gatewayButton })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.path).toBe('/admin/cloudflare/gateway/sync')
+    expect(requests[0]!.init?.method).toBe('POST')
+    expect(requests[0]!.init?.headers).toMatchObject({ authorization: 'Bearer admin-secret', 'content-type': 'application/json' })
+    expect(JSON.parse(String(requests[0]!.init?.body))).toEqual({ accountId: 'account-admin', gatewayId: 'gateway-admin', routeName: 'mesh-admin', publicModel: 'mesh-smoke', providerName: 'provider-admin', workerUrl: 'https://router.example.workers.dev' })
+    expect(gatewayScope.dataset.state).toBe('ready')
+    expect(JSON.parse(gatewayOutput.textContent) as { deploymentId: string }).toEqual({ deploymentId: 'deployment-a' })
   })
 
   it('REQ-SEC-002 asks for confirmation before revoking a node from the Admin UI', async () => {

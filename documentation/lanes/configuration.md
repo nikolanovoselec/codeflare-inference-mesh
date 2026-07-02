@@ -35,7 +35,7 @@
 | `AI_GATEWAY_ROUTE_NAME` | `mesh-default` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `AI_GATEWAY_PROVIDER_NAME` | `codeflare-inference-mesh` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `AI_GATEWAY_PUBLIC_MODEL` | `mesh-default` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
-| `WORKER_BASE_URL` | resolved by deploy workflow | yes for Gateway sync, custom-domain provisioning, and installer commands | `packages/router-worker/src/router.ts::handleGatewaySync`, `packages/router-worker/src/router.ts::handleCustomDomain`, `packages/router-worker/src/router.ts::handleInstaller` | [REQ-GWY-001](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| `WORKER_BASE_URL` | resolved by deploy workflow | yes for Gateway sync, custom-domain provisioning, and installer commands | `packages/router-worker/src/router.ts::handleGatewaySync`, `packages/router-worker/src/router.ts::handleCustomDomain`, `packages/router-worker/src/router.ts::handleInstaller` | [REQ-GWY-001](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | `WORKER_NAME` | `codeflare-inference-mesh-router` (`codeflare-inference-mesh-router-integration` in integration) | no | `packages/router-worker/src/router.ts::handleCustomDomain` | [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
 | `AGENT_RELEASE_TAG` | `agent-release-tag-placeholder` | set by deploy for real installers | `packages/router-worker/src/router.ts::handleInstallScript` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | `GITHUB_REPOSITORY` | `nikolanovoselec/codeflare-inference-mesh` | yes for installers | `packages/router-worker/src/router.ts::handleInstaller`, `packages/router-worker/src/router.ts::handleInstallScript` | [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
@@ -89,7 +89,7 @@ Legacy config loads persist a generated `dashboardToken` before dashboard contro
 
 Before first claim, config startup persists `meshIp` only when private-interface detection finds exactly one candidate; ambiguous hosts must supply it explicitly. ([REQ-NODE-002](../../sdd/spec/node-agent.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP -->
 
-The router calls `seedDefaultProfiles(DEFAULT_MODEL_PROFILES)` at request entry, so D1 deployments receive and refresh shipped defaults before setup/status/provider/admin reads. `seedDefaultProfiles` refreshes changed managed defaults and retires stale managed defaults that still own a shipped public alias. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles -->
+The router calls `seedDefaultProfiles(DEFAULT_MODEL_PROFILES)` at request entry, so D1 deployments receive and refresh shipped defaults before setup/status/provider/admin reads. Shipped llama.cpp profile definitions include the metrics runtime flag used for token-throughput reporting. `seedDefaultProfiles` refreshes changed managed defaults and retires stale managed defaults that still own a shipped public alias. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles -->
 
 `HF_TOKEN` is not stored in router profiles. When a gated Hugging Face model is used, provide `HF_TOKEN` in the node service environment; `runtimeEnvironment` inherits that service environment and appends only profile-specific runtime variables so `llama-server -hf` can resolve the model without the Worker returning secrets to nodes. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/node-agent/internal/agent/runtime.go::runtimeEnvironment -->
 
@@ -108,10 +108,10 @@ The router calls `seedDefaultProfiles(DEFAULT_MODEL_PROFILES)` at request entry,
 
 | Variable | Default | Required | Consumed by | Implements |
 | --- | --- | --- | --- | --- |
-| `WORKER_BASE_URL` | n/a | one Worker URL source is required for deploy | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| `PRODUCTION_WORKER_BASE_URL` | n/a | required for production when neither workflow input nor `WORKER_BASE_URL` is set | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| `INTEGRATION_WORKER_BASE_URL` | n/a | required for integration when neither workflow input nor `WORKER_BASE_URL` is set | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| `CLOUDFLARE_WORKERS_DEV_SUBDOMAIN` | n/a | alternative to explicit Worker URL variables | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| `WORKER_BASE_URL` | n/a | one HTTPS origin-only Worker URL source is required for deploy | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+| `PRODUCTION_WORKER_BASE_URL` | n/a | required for production when neither workflow input nor `WORKER_BASE_URL` is set; must be HTTPS origin-only | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+| `INTEGRATION_WORKER_BASE_URL` | n/a | required for integration when neither workflow input nor `WORKER_BASE_URL` is set; must be HTTPS origin-only | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+| `CLOUDFLARE_WORKERS_DEV_SUBDOMAIN` | n/a | alternative to explicit Worker URL variables | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 
 ## SDD config
 

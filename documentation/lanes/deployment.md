@@ -31,16 +31,16 @@ Production deployment is automatic after a merged `main` push has green PR Check
 | --- | --- | --- |
 | Resolve target | Production comes from the green `main` merge SHA; integration uses the manually selected branch. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Check gates | Production waits for exact-head Security and Fuzz success after PR Checks succeeds. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
-| Repeat checks | Critical router and agent checks pass before state changes. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| Prepare D1 | The production or integration database is created or resolved and migrations are applied. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Repeat checks | Critical router and agent checks pass before state changes. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+| Prepare D1 | The production or integration database is created or resolved and migrations are applied. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | Build artifacts | Platform agent archives, checksums, signature, and manifest exist; raw binaries are removed before release upload. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Publish release | GitHub Release contains all installer/update assets. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG` and a resolved `WORKER_BASE_URL` set before deploy. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| Summarize | Workflow summary lists ref, Worker, release tag, environment, and artifacts. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG` and a validated HTTPS origin-only `WORKER_BASE_URL` set before deploy. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety), [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| Summarize | Workflow summary lists ref, Worker, release tag, environment, and artifacts. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 
 ## Node runtime prerequisite
 
-The first managed-runtime version expects each node operator to install a CUDA-capable `llama-server` before starting the service. If the executable is missing from the service user's PATH, the node reports `dependency-missing` and remains ineligible for scheduling instead of failing the router. When a runtime starts, the agent waits for the local `/v1/models` readiness endpoint before reporting the profile as loaded, so scheduling sees only ready runtimes. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
+The first managed-runtime version expects each node operator to install a CUDA-capable `llama-server` before starting the service. If the executable is missing from the service user's PATH, the node reports `dependency-missing` and remains ineligible for scheduling instead of failing the router. When a runtime starts, the agent waits for the local `/v1/models` readiness endpoint before reporting the profile as loaded, so scheduling sees only ready runtimes. ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
 
 Optional custom-domain provisioning uses the runtime Cloudflare token after deploy; give that token DNS and Worker route permissions for the target zone before asking the Admin UI to provision a hostname. ([REQ-ADM-005](../../sdd/spec/setup-admin.md))
 

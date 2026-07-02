@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent/internal/agent"
 )
 
-func TestREQRUN003RuntimeMetricsMarksLaunchedProfileLoaded(t *testing.T) {
+func TestREQRUN005RuntimeMetricsMarksLaunchedProfileLoaded(t *testing.T) {
 	launched := agent.ModelProfile{ID: "launched-profile", UpstreamModel: "launched-upstream", Version: 2}
 	desired := agent.ModelProfile{ID: "desired-profile", UpstreamModel: "desired-upstream", Version: 3}
 	cfg := agent.Config{RuntimeModel: "desired-upstream", ActiveProfileIDs: []string{"desired-profile"}, Profiles: []agent.ModelProfile{desired}}
@@ -24,22 +25,29 @@ func TestREQRUN003RuntimeMetricsMarksLaunchedProfileLoaded(t *testing.T) {
 	}
 }
 
-func TestREQRUN004RuntimeMetricsDoesNotRoutePendingProfileWhileDownloading(t *testing.T) {
-	profile := agent.ModelProfile{ID: "pending-profile", UpstreamModel: "pending-upstream", Version: 4}
-	cfg := agent.Config{RuntimeModel: "pending-upstream", ActiveProfileIDs: []string{"pending-profile"}, Profiles: []agent.ModelProfile{profile}}
+func TestREQRUN005RuntimeRestartMarksPendingProfileNotReady(t *testing.T) {
+	loaded := agent.ModelProfile{ID: "loaded-profile", UpstreamModel: "loaded-upstream", Version: 2}
+	pending := agent.ModelProfile{ID: "pending-profile", UpstreamModel: "pending-upstream", Version: 4}
+	cfg := agent.Config{RuntimeModel: "pending-upstream", ActiveProfileIDs: []string{"pending-profile"}, Profiles: []agent.ModelProfile{pending}}
 	manager := agent.NewRuntimeManager(agent.RuntimeCommand{Executable: "definitely-missing-llama-server-for-test"})
-	manager.SetState("downloading")
+	manager.SetState("ready")
 	loadState := &runtimeLoadState{}
-	loadState.SetStarting(profile)
+	loadState.Set(loaded)
+	restartMu := &sync.Mutex{}
+	restartPending := false
 
+	_, started := beginRuntimeProfileRestart(cfg, manager, loadState, restartMu, &restartPending)
 	metrics := runtimeMetrics(manager, loadState, cfg, 0)
 
+	if !started || manager.State() != "downloading" || !restartPending {
+		t.Fatalf("expected restart initiation to mark runtime downloading and pending, started=%v state=%q pending=%v", started, manager.State(), restartPending)
+	}
 	if metrics.LoadedModel != "" || metrics.LoadedProfileID != "" || metrics.LoadedProfileVersion != 0 {
-		t.Fatalf("downloading runtime should not report the pending profile as loaded, got %#v", metrics)
+		t.Fatalf("downloading restart should not report the pending profile as loaded, got %#v", metrics)
 	}
 }
 
-func TestREQRUN003RuntimeMetricsMarksReadySelectedProfileLoaded(t *testing.T) {
+func TestREQRUN005RuntimeMetricsMarksReadySelectedProfileLoaded(t *testing.T) {
 	profile := agent.ModelProfile{ID: "selected-profile", UpstreamModel: "selected-upstream", Version: 3}
 	cfg := agent.Config{RuntimeModel: "selected-upstream", ActiveProfileIDs: []string{"selected-profile"}, Profiles: []agent.ModelProfile{profile}}
 	manager := agent.NewRuntimeManager(agent.RuntimeCommand{Executable: "definitely-missing-llama-server-for-test"})
@@ -54,7 +62,7 @@ func TestREQRUN003RuntimeMetricsMarksReadySelectedProfileLoaded(t *testing.T) {
 	}
 }
 
-func TestREQRUN003RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
+func TestREQRUN005RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
 	loaded := agent.ModelProfile{ID: "loaded-profile", UpstreamModel: "loaded-upstream", Version: 2}
 	loadState := &runtimeLoadState{}
 	loadState.Set(loaded)

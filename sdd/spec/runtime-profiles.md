@@ -70,17 +70,38 @@ This domain covers stable aliases, concrete model profiles, profile rollout, and
 2. Direct-GGUF profiles download model files into the configured model cache directory, while `llama-hf` profiles delegate model resolution to `llama-server -hf`. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003SourceModesAndChecksum) -->
 3. The agent verifies model checksums when a direct-GGUF profile pins a checksum. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003SourceModesAndChecksum) -->
 4. The agent starts `llama-server` from the profile's `runtimeCommand`, preserving exact args/env except for safe local substitutions. <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCommand --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeCommandUsesProfileTemplate) -->
-5. The agent waits for the runtime readiness endpoint before reporting a managed profile as loaded. <!-- @impl: packages/node-agent/internal/agent/runtime.go::waitForRuntimeReady --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeReadinessProbeWaitsForModelEndpoint) -->
-6. Dashboard start requests return after launch while readiness continues outside the request deadline. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeStartDoesNotUseDashboardRequestDeadline) -->
-7. Child-process exit before readiness marks the runtime failed. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeReadinessFailsWhenProcessExits) -->
-8. The agent drains and stops the runtime before shutdown, update, or profile switch. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeManagerUsesProcessLifetimeContext) -->
-9. The agent reports runtime state, loaded model, active profile ID/version, and dependency-missing errors on heartbeat/dashboard status. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN003RuntimeMetricsMarksLaunchedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN003RuntimeMetricsMarksReadySelectedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN003RuntimeMetricsReportsActualLoadedProfile) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN004RuntimeMetricsDoesNotRoutePendingProfileWhileDownloading) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-002](#req-run-002-default-model-profiles)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-005: Runtime readiness and status reporting
+
+**Intent:** Managed runtimes should only look schedulable after the local server is ready, and status surfaces must describe the live runtime state honestly.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. The agent waits for the runtime readiness endpoint before reporting a managed profile as loaded. <!-- @impl: packages/node-agent/internal/agent/runtime.go::waitForRuntimeReady --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeReadinessProbeWaitsForModelEndpoint) -->
+2. Dashboard start requests return after launch while readiness continues outside the request deadline. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline) -->
+3. Child-process exit before readiness marks the runtime failed. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeReadinessFailsWhenProcessExits) -->
+4. The agent drains and stops the runtime before shutdown, update, or profile switch. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeManagerUsesProcessLifetimeContext) -->
+5. The agent reports runtime state, loaded model, active profile ID/version, and dependency-missing errors on heartbeat/dashboard status. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsMarksLaunchedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsMarksReadySelectedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsReportsActualLoadedProfile) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeRestartMarksPendingProfileNotReady) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-RUN-003](#req-run-003-managed-llamacpp-runtime)
 
 **Verification:** Automated test
 
@@ -108,7 +129,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, and
 
 **Priority:** P1
 
-**Dependencies:** [REQ-RUN-001](#req-run-001-public-model-aliases), [REQ-RUN-003](#req-run-003-managed-llamacpp-runtime)
+**Dependencies:** [REQ-RUN-001](#req-run-001-public-model-aliases), [REQ-RUN-003](#req-run-003-managed-llamacpp-runtime), [REQ-RUN-005](#req-run-005-runtime-readiness-and-status-reporting)
 
 **Verification:** Automated test
 

@@ -74,7 +74,7 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 
 **Priority:** P1
 
-**Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-llamacpp-runtime)
+**Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-005](runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)
 
 **Verification:** Automated test
 

@@ -38,20 +38,41 @@ This domain covers GitHub Actions checks, deploy gating, release packaging, arti
 
 **Acceptance Criteria:**
 
-1. Production deploy starts automatically only from a successful `PR Checks` workflow run on a same-repository push to `main`. <!-- @impl: .github/workflows/deploy.yml::REL002AutoProductionDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch) -->
-2. Production deploy waits for exact-head `Security` and `Fuzz` workflows to complete successfully before changing Cloudflare state. <!-- @impl: .github/workflows/deploy.yml::REL002AutoProductionDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch) -->
-3. Manual production deploy refuses to run unless the selected ref is `main`. <!-- @impl: packages/router-worker/scripts/resolve-deploy-settings.mjs::DEPLOY_SETTINGS_ANCHORS --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch) -->
-4. Manual integration deploy can run from any branch and targets the integration Worker and D1 database. <!-- @impl: packages/router-worker/scripts/resolve-deploy-settings.mjs::DEPLOY_SETTINGS_ANCHORS --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch) -->
-5. Deploy repeats critical router and agent checks before changing Cloudflare state. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch) -->
-6. Deploy creates or resolves the target D1 database and applies D1 migrations before Worker deployment. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 extracts Wrangler D1 create IDs and fails closed when the ID is absent) -->
-7. Deploy writes a non-placeholder HTTPS Worker origin URL without credentials, path, query, fragment, or invalid hostname labels into Wrangler vars before Worker deployment. <!-- @impl: packages/router-worker/scripts/resolve-deploy-settings.mjs::DEPLOY_SETTINGS_ANCHORS --> <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch) -->
-8. Deploy writes a summary containing ref, Worker, release tag, environment, and artifacts. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 auto-deploys production only after green main gates and allows manual integration from any branch) -->
+1. Production deploy starts automatically only from a successful `PR Checks` workflow run on a same-repository push to `main`. <!-- @impl: .github/workflows/deploy.yml::REL002AutoProductionDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch) -->
+2. Production deploy waits for exact-head `Security` and `Fuzz` workflows to complete successfully before changing Cloudflare state. <!-- @impl: .github/workflows/deploy.yml::REL002AutoProductionDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch) -->
+3. Manual production deploy refuses to run unless the selected ref is `main`. <!-- @impl: packages/router-worker/scripts/resolve-deploy-settings.mjs::DEPLOY_SETTINGS_ANCHORS --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch) -->
+4. Manual integration deploy can run from any branch and targets the integration Worker and D1 database. <!-- @impl: packages/router-worker/scripts/resolve-deploy-settings.mjs::DEPLOY_SETTINGS_ANCHORS --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch) -->
 
 **Constraints:** [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface), [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-REL-001](#req-rel-001-pull-request-checks), [REQ-SCH-001](state-scheduling.md#req-sch-001-durable-router-state)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-REL-005: Deploy execution safety
+
+**Intent:** Once deploy is authorized, the workflow must repeat critical checks and write exact runtime settings before it changes Cloudflare state.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Deploy repeats critical router and agent checks before changing Cloudflare state. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch) -->
+2. Deploy creates or resolves the target D1 database and applies D1 migrations before Worker deployment. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-005 extracts Wrangler D1 create IDs and fails closed when the ID is absent) -->
+3. Deploy writes a non-placeholder HTTPS Worker origin URL without credentials, path, query, fragment, or invalid hostname labels into Wrangler vars before Worker deployment. <!-- @impl: packages/router-worker/scripts/resolve-deploy-settings.mjs::DEPLOY_SETTINGS_ANCHORS --> <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch) -->
+4. Deploy writes a summary containing ref, Worker, release tag, environment, and artifacts. <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> <!-- @test: packages/router-worker/src/workflows.test.ts (REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch) -->
+
+**Constraints:** [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface), [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-REL-002](#req-rel-002-deploy-workflow-gating), [REQ-SCH-001](state-scheduling.md#req-sch-001-durable-router-state)
 
 **Verification:** Automated test
 

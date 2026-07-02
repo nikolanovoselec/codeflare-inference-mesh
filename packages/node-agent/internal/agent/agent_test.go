@@ -446,7 +446,7 @@ func TestREQRUN003SourceModesAndChecksum(t *testing.T) {
 	})
 }
 
-func TestREQRUN003RuntimeReadinessProbeWaitsForModelEndpoint(t *testing.T) {
+func TestREQRUN005RuntimeReadinessProbeWaitsForModelEndpoint(t *testing.T) {
 	t.Run("REQ-RUN-003", func(t *testing.T) {
 		attempts := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -488,14 +488,14 @@ func TestREQRUN003RuntimeDependencyMissingState(t *testing.T) {
 	})
 }
 
-func TestREQRUN003RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
+func TestREQRUN005RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
 	t.Run("REQ-RUN-003 REQ-NODE-004", func(t *testing.T) {
 	if os.Getenv("INFERENCE_MESH_HELPER_PROCESS") == "1" {
 		time.Sleep(10 * time.Second)
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	manager := NewRuntimeManager(RuntimeCommand{Executable: os.Args[0], Args: []string{"-test.run=TestREQRUN003RuntimeManagerUsesProcessLifetimeContext"}, Env: map[string]string{"INFERENCE_MESH_HELPER_PROCESS": "1"}})
+	manager := NewRuntimeManager(RuntimeCommand{Executable: os.Args[0], Args: []string{"-test.run=TestREQRUN005RuntimeManagerUsesProcessLifetimeContext"}, Env: map[string]string{"INFERENCE_MESH_HELPER_PROCESS": "1"}})
 	if err := manager.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -514,7 +514,7 @@ func TestREQRUN003RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
 	})
 }
 
-func TestREQRUN003RuntimeStartDoesNotUseDashboardRequestDeadline(t *testing.T) {
+func TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline(t *testing.T) {
 	t.Run("REQ-RUN-003 REQ-NODE-004", func(t *testing.T) {
 		if os.Getenv("INFERENCE_MESH_HELPER_PROCESS") == "1" {
 			time.Sleep(10 * time.Second)
@@ -528,7 +528,7 @@ func TestREQRUN003RuntimeStartDoesNotUseDashboardRequestDeadline(t *testing.T) {
 		defer cancel()
 		manager := NewRuntimeManager(RuntimeCommand{
 			Executable:   os.Args[0],
-			Args:         []string{"-test.run=TestREQRUN003RuntimeStartDoesNotUseDashboardRequestDeadline"},
+			Args:         []string{"-test.run=TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline"},
 			Env:          map[string]string{"INFERENCE_MESH_HELPER_PROCESS": "1"},
 			ReadinessURL: readiness.URL,
 		})
@@ -547,7 +547,7 @@ func TestREQRUN003RuntimeStartDoesNotUseDashboardRequestDeadline(t *testing.T) {
 	})
 }
 
-func TestREQRUN003RuntimeReadinessFailsWhenProcessExits(t *testing.T) {
+func TestREQRUN005RuntimeReadinessFailsWhenProcessExits(t *testing.T) {
 	t.Run("REQ-RUN-003 REQ-OBS-003", func(t *testing.T) {
 		if os.Getenv("INFERENCE_MESH_EXIT_HELPER") == "1" {
 			return
@@ -558,7 +558,7 @@ func TestREQRUN003RuntimeReadinessFailsWhenProcessExits(t *testing.T) {
 		defer readiness.Close()
 		manager := NewRuntimeManager(RuntimeCommand{
 			Executable:   os.Args[0],
-			Args:         []string{"-test.run=TestREQRUN003RuntimeReadinessFailsWhenProcessExits"},
+			Args:         []string{"-test.run=TestREQRUN005RuntimeReadinessFailsWhenProcessExits"},
 			Env:          map[string]string{"INFERENCE_MESH_EXIT_HELPER": "1"},
 			ReadinessURL: readiness.URL,
 		})

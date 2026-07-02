@@ -230,16 +230,16 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON. Omitted fields use Worker defaults, and a stored custom domain is used only after provisioning succeeds.
+**Request body:** Optional JSON. For account and Gateway fields, request body values override stored settings, then environment defaults apply. For `workerUrl`, request body overrides a stored explicit Worker URL; if neither exists, a provisioned custom domain wins before `WORKER_BASE_URL`.
 
-| Field | Required | Default | Purpose |
+| Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `accountId` | no | runtime Cloudflare account binding | Cloudflare account used for Gateway API calls. |
-| `gatewayId` | no | configured Gateway ID | Gateway to receive the dynamic route. |
-| `routeName` | no | configured route name | Dynamic route display name. |
-| `providerName` | no | configured provider name | Custom-provider display name. |
-| `publicModel` | no | configured public alias | Public model alias exposed through Gateway. |
-| `workerUrl` | no | provisioned custom domain or Worker URL | Router origin used by the custom provider. |
+| `accountId` | string | no | Cloudflare account used for Gateway API calls. Falls back to stored settings, then `CLOUDFLARE_ACCOUNT_ID`, then `AI_GATEWAY_ACCOUNT_ID`. |
+| `gatewayId` | string | no | Gateway to receive the dynamic route. Falls back to stored settings, then `AI_GATEWAY_ID`, then `inference-mesh`. |
+| `routeName` | string | no | Dynamic route display name. Falls back to stored settings, then `AI_GATEWAY_ROUTE_NAME`, then `mesh-default`. |
+| `providerName` | string | no | Custom-provider display name. Falls back to stored settings, then `AI_GATEWAY_PROVIDER_NAME`, then `codeflare-inference-mesh`. |
+| `publicModel` | string | no | Public model alias exposed through Gateway. Falls back to stored settings, then `AI_GATEWAY_PUBLIC_MODEL`, then `mesh-default`. |
+| `workerUrl` | string | no | Router origin used by the custom provider. Falls back to a stored explicit override, then a provisioned custom domain, then `WORKER_BASE_URL`. |
 
 **Response**
 

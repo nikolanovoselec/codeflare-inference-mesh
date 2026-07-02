@@ -198,17 +198,7 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 			}
 			stateMu.Unlock()
 			if err == nil && runtimeManager != nil {
-				nextProfile := selectedProfileKey(next)
-				runtimeState := runtimeManager.State()
-				busy := runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping"
-				if nextProfile != "" && nextProfile != loadState.Key() && !busy && beginRestart(&restartMu, &restartPending) {
-					restartConfig := next
-					runtimeManager.SetState("downloading")
-					if profile, ok := agent.SelectedProfile(restartConfig); ok {
-						loadState.SetStarting(profile)
-					} else {
-						loadState.Clear()
-					}
+				if restartConfig, ok := beginRuntimeProfileRestart(next, runtimeManager, loadState, &restartMu, &restartPending); ok {
 					go func() {
 						defer finishRestart(&restartMu, &restartPending)
 						if err := restartRuntimeForSelectedProfile(ctx, restartConfig, runtimeManager, activeRequests); err != nil {
@@ -223,6 +213,22 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 			}
 		}
 	}
+}
+
+func beginRuntimeProfileRestart(cfg agent.Config, runtimeManager *agent.RuntimeManager, loadState *runtimeLoadState, restartMu *sync.Mutex, restartPending *bool) (agent.Config, bool) {
+	nextProfile := selectedProfileKey(cfg)
+	runtimeState := runtimeManager.State()
+	busy := runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping"
+	if nextProfile == "" || nextProfile == loadState.Key() || busy || !beginRestart(restartMu, restartPending) {
+		return agent.Config{}, false
+	}
+	runtimeManager.SetState("downloading")
+	if profile, ok := agent.SelectedProfile(cfg); ok {
+		loadState.SetStarting(profile)
+	} else {
+		loadState.Clear()
+	}
+	return cfg, true
 }
 
 func beginRestart(mu *sync.Mutex, pending *bool) bool {
