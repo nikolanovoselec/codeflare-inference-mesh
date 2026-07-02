@@ -230,7 +230,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON with `gatewayId`, `routeName`, `providerName`, `publicModel`, and `workerUrl`. Omitted fields use Worker defaults, and a stored custom domain is used only after provisioning succeeds.
+**Request body:** Optional JSON with `accountId`, `gatewayId`, `routeName`, `providerName`, `publicModel`, and `workerUrl`. Omitted fields use Worker defaults, and a stored custom domain is used only after provisioning succeeds.
 
 **Response**
 
@@ -241,7 +241,7 @@ POST /admin/cloudflare/gateway/sync
 | `409` | Stored custom domain is not provisioned and no `workerUrl` override was supplied. | `{ "error": "custom_domain_not_provisioned", "hostname": string }` |
 | `503` | Required runtime Cloudflare configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
-**Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md)
+**Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/custom-domain/validate
 

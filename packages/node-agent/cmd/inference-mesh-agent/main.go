@@ -97,6 +97,7 @@ func runService() error {
 	loadState := &runtimeLoadState{}
 	var runtimeManager *agent.RuntimeManager
 	if profile, ok := agent.SelectedProfile(cfg); ok {
+		loadState.SetStarting(profile)
 		started, err := startRuntimeForProfile(serviceCtx, cfg, profile)
 		if err != nil {
 			return err
@@ -201,8 +202,12 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 				runtimeState := runtimeManager.State()
 				busy := runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping"
 				if nextProfile != "" && nextProfile != loadState.Key() && !busy && beginRestart(&restartMu, &restartPending) {
-					loadState.Clear()
 					restartConfig := next
+					if profile, ok := agent.SelectedProfile(restartConfig); ok {
+						loadState.SetStarting(profile)
+					} else {
+						loadState.Clear()
+					}
 					go func() {
 						defer finishRestart(&restartMu, &restartPending)
 						if err := restartRuntimeForSelectedProfile(ctx, restartConfig, runtimeManager, activeRequests); err != nil {
@@ -294,12 +299,9 @@ func runtimeMetrics(runtimeManager *agent.RuntimeManager, loadState *runtimeLoad
 	}
 	state := runtimeState(runtimeManager)
 	profile, loaded := loadState.Snapshot()
-	if !loaded && state == "ready" {
-		if selected, ok := agent.SelectedProfile(cfg); ok {
-			loadState.Set(selected)
-			profile = selected
-			loaded = true
-		}
+	if !loaded && state == "ready" && profile.ID != "" {
+		loadState.Set(profile)
+		loaded = true
 	}
 	loadedModel := ""
 	if loaded {
@@ -319,6 +321,13 @@ type runtimeLoadState struct {
 	mu      sync.RWMutex
 	profile agent.ModelProfile
 	loaded  bool
+}
+
+func (s *runtimeLoadState) SetStarting(profile agent.ModelProfile) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.profile = profile
+	s.loaded = false
 }
 
 func (s *runtimeLoadState) Set(profile agent.ModelProfile) {

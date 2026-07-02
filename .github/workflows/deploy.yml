@@ -139,6 +139,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
           AGENT_RELEASE_TAG: ${{ steps.settings.outputs.version_tag }}
+          WORKER_BASE_URL: ${{ steps.settings.outputs.worker_base_url }}
         run: |
           set -euo pipefail
           DB_NAME="${{ steps.settings.outputs.db_name }}"
@@ -149,7 +150,7 @@ jobs:
             DB_ID=$(node scripts/d1-database-id.mjs d1-create.txt)
           fi
           [ -n "$DB_ID" ] || { echo "::error::Could not resolve D1 database id"; exit 1; }
-          DB_ID="$DB_ID" WORKER_BASE_URL="${{ steps.settings.outputs.worker_base_url }}" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID).replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG).replaceAll('https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL).replaceAll('https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL); fs.writeFileSync(p,text)"
+          DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID).replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG).replaceAll('https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL).replaceAll('https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL); fs.writeFileSync(p,text)"
 
       - name: Apply D1 migrations
         working-directory: packages/router-worker
@@ -190,14 +191,15 @@ jobs:
           secrets_json="$(node <<'NODE'
           const payload = {
             CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
-            CLOUDFLARE_API_TOKEN_RUNTIME: process.env.CLOUDFLARE_API_TOKEN_RUNTIME,
-            ADMIN_RECOVERY_TOKEN: process.env.ADMIN_RECOVERY_TOKEN || null
+            CLOUDFLARE_API_TOKEN_RUNTIME: process.env.CLOUDFLARE_API_TOKEN_RUNTIME
           }
+          if (process.env.ADMIN_RECOVERY_TOKEN) payload.ADMIN_RECOVERY_TOKEN = process.env.ADMIN_RECOVERY_TOKEN
           process.stdout.write(JSON.stringify(payload))
           NODE
           )"
           printf '%s' "$secrets_json" | npm exec -- wrangler secret bulk "${args[@]}"
           unset secrets_json
+          if [ -z "$ADMIN_RECOVERY_TOKEN" ]; then printf 'y\n' | npm exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN "${args[@]}" || true; fi
 
       - name: Build release artifacts and manifest
         working-directory: packages/node-agent

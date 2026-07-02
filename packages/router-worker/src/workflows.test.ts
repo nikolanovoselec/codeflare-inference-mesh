@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -60,11 +60,31 @@ function runScript(script: string, options: { input?: string; env?: Record<strin
 }
 
 function runShellBlock(block: string, env: Record<string, string>) {
+  return runShellBlockWithFiles(block, env).result
+}
+
+function runShellBlockWithFiles(block: string, env: Record<string, string>, files: Record<string, string> = {}, binFiles: Record<string, string> = {}, readBack: readonly string[] = []) {
   const dir = mkdtempSync(resolve(tmpdir(), 'workflow-shell-'))
+  const bin = resolve(dir, 'bin')
+  mkdirSync(bin, { recursive: true })
+  for (const [file, content] of Object.entries(files)) {
+    const path = resolve(dir, file)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, content)
+  }
+  for (const [file, content] of Object.entries(binFiles)) {
+    const path = resolve(bin, file)
+    writeFileSync(path, content, { mode: 0o755 })
+  }
   const script = resolve(dir, 'step.sh')
   writeFileSync(script, block)
   try {
-    return spawnSync('bash', [script], { cwd: dir, env: { PATH: process.env.PATH ?? '', ...env }, encoding: 'utf8' })
+    const result = spawnSync('bash', [script], { cwd: dir, env: { PATH: `${bin}:${process.env.PATH ?? ''}`, ...env }, encoding: 'utf8' })
+    const outputs = Object.fromEntries(readBack.map((file) => {
+      const path = resolve(dir, file)
+      return [file, existsSync(path) ? readFileSync(path, 'utf8') : '']
+    }))
+    return { result, outputs }
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -135,12 +155,14 @@ describe('workflow contract values', () => {
     const productionSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_run', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_HEAD_SHA: 'abc123', GITHUB_RUN_NUMBER: '8', PRODUCTION_WORKER_BASE_URL: 'https://router.example.com' } })
     const rejectedProduction = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'production', GITHUB_RUN_NUMBER: '9', WORKER_BASE_URL: 'https://router.example.com' } })
     const rejectedWorkerUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '10', WORKER_BASE_URL: 'https://router.example.com/path' } })
+    const rejectedShellUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '11', WORKER_BASE_URL: 'https://$(id).example.com' } })
     expect(integrationSettings.status).toBe(0)
     expect(outputValues(integrationSettings.stdout)).toEqual({ target_env: 'integration', deploy_ref: 'refs/heads/feature', version_tag: 'v0.1.0-dev.7', worker_base_url: 'https://codeflare-inference-mesh-router-integration.example-subdomain.workers.dev', db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' })
     expect(productionSettings.status).toBe(0)
     expect(outputValues(productionSettings.stdout)).toMatchObject({ target_env: 'production', deploy_ref: 'abc123', version_tag: 'v0.1.8', worker_base_url: 'https://router.example.com', db_name: 'codeflare-inference-mesh' })
     expect(rejectedProduction.status).toBe(1)
     expect(rejectedWorkerUrl.status).toBe(1)
+    expect(rejectedShellUrl.status).toBe(1)
     expect(runScript('packages/router-worker/scripts/deploy-gate.mjs', {
       input: JSON.stringify([
         { workflowName: 'Security', headSha: 'abc', event: 'workflow_dispatch', headBranch: 'develop', status: 'completed', conclusion: 'success', databaseId: 4 },
@@ -148,14 +170,33 @@ describe('workflow contract values', () => {
       ]),
       env: { WORKFLOW_NAME: 'Security', GATE_SHA: 'abc', REQUIRED_EVENT: 'push', REQUIRED_BRANCH: 'main' }
     }).stdout.startsWith('failure')).toBe(true)
-    const d1Run = stepByName(deployJob, 'Resolve or create D1 database')!.run!
-    expect(stepByName(deployJob, 'Resolve or create D1 database')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}', AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}' } })
-    expect(d1Run).toContain('WORKER_BASE_URL="${{ steps.settings.outputs.worker_base_url }}"')
+    const d1Step = stepByName(deployJob, 'Resolve or create D1 database')!
+    const d1Run = d1Step.run!
+    expect(d1Step).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}', AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', WORKER_BASE_URL: '${{ steps.settings.outputs.worker_base_url }}' } })
+    const d1Execution = runShellBlockWithFiles(
+      d1Run.replaceAll('${{ steps.settings.outputs.db_name }}', 'codeflare-inference-mesh-integration'),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', AGENT_RELEASE_TAG: 'v0.1.0-dev.7', WORKER_BASE_URL: 'https://router.example.com' },
+      { 'wrangler.toml': 'database_id = "create-via-deploy-workflow"\nAGENT_RELEASE_TAG = "agent-release-tag-placeholder"\nWORKER_BASE_URL = "https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev"\n' },
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler d1 list --json" ]; then printf \'[{"name":"codeflare-inference-mesh-integration","uuid":"11111111-2222-4333-8444-555555555555"}]\'; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
+      ['wrangler.toml']
+    )
+    expect(d1Execution.result.status).toBe(0)
+    expect(d1Execution.outputs['wrangler.toml']).toContain('https://router.example.com')
+    expect(d1Execution.outputs['wrangler.toml']).not.toContain('<your-subdomain>')
     expect(stepByName(deployJob, 'Apply D1 migrations')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
     const secretsRun = stepByName(deployJob, 'Set Worker runtime secrets')!.run!
     expect(stepByName(deployJob, 'Set Worker runtime secrets')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN_RUNTIME: '${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}' } })
-    expect(secretsRun).toContain('wrangler secret bulk')
-    expect(secretsRun).toContain('ADMIN_RECOVERY_TOKEN: process.env.ADMIN_RECOVERY_TOKEN || null')
+    const secretsExecution = runShellBlockWithFiles(
+      secretsRun.replaceAll('${{ steps.settings.outputs.wrangler_env }}', ''),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', ADMIN_RECOVERY_TOKEN: '' },
+      {},
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5" = "exec -- wrangler secret bulk" ]; then cat > secret-bulk.json; exit 0; fi\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN" ]; then cat > secret-delete.stdin; printf \'%s\' "$*" > secret-delete.args; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
+      ['secret-bulk.json', 'secret-delete.stdin', 'secret-delete.args']
+    )
+    expect(secretsExecution.result.status).toBe(0)
+    expect(JSON.parse(secretsExecution.outputs['secret-bulk.json'])).toEqual({ CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token' })
+    expect(secretsExecution.outputs['secret-delete.stdin']).toBe('y\n')
+    expect(secretsExecution.outputs['secret-delete.args']).toContain('ADMIN_RECOVERY_TOKEN')
     expect(stepByName(deployJob, 'Deploy Worker')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
   })
 
@@ -188,7 +229,27 @@ describe('workflow contract values', () => {
     expect(stepNames).toEqual(expect.arrayContaining(['Build release artifacts and manifest', 'Sign checksums when signing is configured', 'Publish GitHub Release', 'Deploy Worker', 'actions/upload-artifact@v7.0.1']))
     const buildStep = stepByName(deployJob, 'Build release artifacts and manifest')!
     expect(buildStep).toMatchObject({ 'working-directory': 'packages/node-agent' })
-    expect(buildStep.run).toContain('rm -f "$OUT"')
+    const buildExecution = runShellBlockWithFiles(
+      buildStep.run!
+        .replaceAll('${{ steps.settings.outputs.version_tag }}', 'v0.1.0-dev.7')
+        .replaceAll('${{ steps.settings.outputs.target_env }}', 'integration'),
+      { GITHUB_SHA: 'abc123' },
+      {},
+      {
+        go: '#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "-o" ]; then shift; out="$1"; fi; shift || true; done\nmkdir -p "$(dirname "$out")"\nprintf binary > "$out"\n',
+        zip: '#!/bin/sh\nprintf archive > "$1"\n',
+        tar: '#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "-czf" ]; then shift; out="$1"; fi; shift || true; done\nprintf archive > "$out"\n',
+        sha256sum: '#!/bin/sh\nif [ "$1" = "-c" ]; then exit 0; fi\nfor file in "$@"; do printf "abc  %s\\n" "$file"; done\n'
+      },
+      ['dist/inference-mesh-agent-linux-amd64', 'dist/inference-mesh-agent-linux-amd64.tar.gz', 'dist/inference-mesh-agent-windows-amd64.exe', 'dist/inference-mesh-agent-windows-amd64.zip', 'dist/checksums.txt', 'dist/release-manifest.json']
+    )
+    expect(buildExecution.result.status).toBe(0)
+    expect(buildExecution.outputs['dist/inference-mesh-agent-linux-amd64']).toBe('')
+    expect(buildExecution.outputs['dist/inference-mesh-agent-linux-amd64.tar.gz']).toBe('archive')
+    expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.exe']).toBe('')
+    expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.zip']).toBe('archive')
+    expect(buildExecution.outputs['dist/checksums.txt']).toContain('.tar.gz')
+    expect(JSON.parse(buildExecution.outputs['dist/release-manifest.json'])).toMatchObject({ version: 'v0.1.0-dev.7', channel: 'integration', commit: 'abc123' })
     const signStep = stepByName(deployJob, 'Sign checksums when signing is configured')!
     expect(signStep).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}', COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}' } })
     const skippedSign = runShellBlock(signStep.run!, { COSIGN_PRIVATE_KEY: '', COSIGN_PASSWORD: '' })

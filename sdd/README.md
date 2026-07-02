@@ -50,7 +50,7 @@ Codeflare Inference Mesh provides one stable AI Gateway route for private local 
 - AI Gateway routing directly to individual nodes.
 - Native desktop shells for the first node UI.
 - Automatic BYOK secret creation in the first implementation.
-- Silent node-agent self-update without explicit verification and operator approval.
+- Automatic node-agent update apply without explicit operator replacement of a verified staged artifact.
 
 ## Documentation
 
