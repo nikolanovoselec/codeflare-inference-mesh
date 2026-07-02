@@ -624,7 +624,9 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-RTR-003 releases and penalizes stream failures', async () => {
-    let currentNow = 1_700_000_000_000
+    const times = [1_700_000_000_000, 1_700_000_120_000]
+    let timeIndex = 0
+    const nextNow = () => times[Math.min(timeIndex++, times.length - 1)]!
     const stream = new ReadableStream({
       pull() {
         throw new Error('stream failed')
@@ -634,7 +636,7 @@ describe('router worker behavioral contracts', () => {
       fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
       connect() { throw new Error('connect is not used by inference forwarding') }
     } as Fetcher
-    const { router, store } = routerFixture({ mesh, now: () => currentNow })
+    const { router, store } = routerFixture({ mesh, now: nextNow })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture())
 
@@ -644,7 +646,6 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ model: 'mesh-default', stream: true, messages: [] })
     }))
 
-    currentNow = 1_700_000_120_000
     await expect(response.text()).rejects.toThrow('stream failed')
     expect([...store.reservations.values()][0]?.releasedAt).toBe(1_700_000_120_000)
     expect((await store.getNode('node-a'))?.failurePenaltyUntil).toBeGreaterThan(1_700_000_120_000)
