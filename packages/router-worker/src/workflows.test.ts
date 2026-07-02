@@ -197,7 +197,41 @@ describe('workflow contract values', () => {
     expect(JSON.parse(secretsExecution.outputs['secret-bulk.json']!)).toEqual({ CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token' })
     expect(secretsExecution.outputs['secret-delete.stdin']).toBe('y\n')
     expect(secretsExecution.outputs['secret-delete.args']).toContain('ADMIN_RECOVERY_TOKEN')
+    const missingSecretExecution = runShellBlockWithFiles(
+      secretsRun.replaceAll('${{ steps.settings.outputs.wrangler_env }}', ''),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', ADMIN_RECOVERY_TOKEN: '' },
+      {},
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5" = "exec -- wrangler secret bulk" ]; then cat >/dev/null; exit 0; fi\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN" ]; then cat >/dev/null; printf "Secret not found" >&2; exit 1; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' }
+    )
+    const failedDeleteExecution = runShellBlockWithFiles(
+      secretsRun.replaceAll('${{ steps.settings.outputs.wrangler_env }}', ''),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', ADMIN_RECOVERY_TOKEN: '' },
+      {},
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5" = "exec -- wrangler secret bulk" ]; then cat >/dev/null; exit 0; fi\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN" ]; then cat >/dev/null; printf "network down" >&2; exit 1; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' }
+    )
+    expect(missingSecretExecution.result.status).toBe(0)
+    expect(failedDeleteExecution.result.status).toBe(1)
     expect(stepByName(deployJob, 'Deploy Worker')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
+    const summaryStep = stepByName(deployJob, 'Write deployment summary')!
+    const summaryExecution = runShellBlockWithFiles(
+      summaryStep.run!
+        .replaceAll('${{ steps.settings.outputs.target_env }}', 'integration')
+        .replaceAll('${{ steps.settings.outputs.deploy_ref }}', 'refs/heads/feature')
+        .replaceAll('${{ steps.settings.outputs.worker_name }}', 'codeflare-inference-mesh-router-integration')
+        .replaceAll('${{ steps.settings.outputs.version_tag }}', 'v0.1.0-dev.7'),
+      { GITHUB_STEP_SUMMARY: 'summary.md' },
+      {},
+      {},
+      ['summary.md']
+    )
+    const summaryValues = Object.fromEntries(summaryExecution.outputs['summary.md']!.split('\n').flatMap((line): [string, string][] => {
+      const match = /^- ([^:]+): (.+)$/.exec(line)
+      if (!match) return []
+      const [, key, value] = match
+      return key && value ? [[key, value]] : []
+    }))
+    expect(summaryExecution.result.status).toBe(0)
+    expect(summaryValues).toEqual({ Environment: 'integration', Ref: 'refs/heads/feature', Worker: 'codeflare-inference-mesh-router-integration', 'Release tag': 'v0.1.0-dev.7', Artifacts: 'inference-mesh-release-artifacts' })
   })
 
   it('REQ-REL-002 extracts Wrangler D1 create IDs and fails closed when the ID is absent', () => {

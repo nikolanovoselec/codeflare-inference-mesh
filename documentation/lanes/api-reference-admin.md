@@ -230,7 +230,16 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON with `accountId`, `gatewayId`, `routeName`, `providerName`, `publicModel`, and `workerUrl`. Omitted fields use Worker defaults, and a stored custom domain is used only after provisioning succeeds.
+**Request body:** Optional JSON. Omitted fields use Worker defaults, and a stored custom domain is used only after provisioning succeeds.
+
+| Field | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `accountId` | no | runtime Cloudflare account binding | Cloudflare account used for Gateway API calls. |
+| `gatewayId` | no | configured Gateway ID | Gateway to receive the dynamic route. |
+| `routeName` | no | configured route name | Dynamic route display name. |
+| `providerName` | no | configured provider name | Custom-provider display name. |
+| `publicModel` | no | configured public alias | Public model alias exposed through Gateway. |
+| `workerUrl` | no | provisioned custom domain or Worker URL | Router origin used by the custom provider. |
 
 **Response**
 

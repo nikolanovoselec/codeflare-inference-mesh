@@ -1014,11 +1014,11 @@ describe('router worker behavioral contracts', () => {
 
     await store.putConfig('custom_domain', { hostname: 'ai.example.com', zoneId: '0123456789abcdef0123456789abcdef', status: 'provisioned' })
 
-    const response = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ gatewayId: 'gateway-admin', routeName: 'mesh-admin', publicModel: 'mesh-smoke' }) }))
+    const response = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ accountId: 'account-admin', gatewayId: 'gateway-admin', routeName: 'mesh-admin', publicModel: 'mesh-smoke' }) }))
     const body = await response.json() as { manualProviderKeyRequired: boolean; deploymentId: string }
 
     expect(response.status).toBe(200)
-    expect(calls).toEqual(['account-a', 'gateway-admin', 'https://ai.example.com', 'mesh-admin', 'mesh-smoke'])
+    expect(calls).toEqual(['account-admin', 'gateway-admin', 'https://ai.example.com', 'mesh-admin', 'mesh-smoke'])
     expect(body).toMatchObject({ deploymentId: 'deployment-a', manualProviderKeyRequired: true })
   })
 

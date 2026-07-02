@@ -199,7 +199,14 @@ jobs:
           )"
           printf '%s' "$secrets_json" | npm exec -- wrangler secret bulk "${args[@]}"
           unset secrets_json
-          if [ -z "$ADMIN_RECOVERY_TOKEN" ]; then printf 'y\n' | npm exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN "${args[@]}" || true; fi
+          if [ -z "$ADMIN_RECOVERY_TOKEN" ]; then
+            if ! delete_output="$(printf 'y\n' | npm exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN "${args[@]}" 2>&1)"; then
+              if ! printf '%s' "$delete_output" | grep -Eiq 'not found|does not exist|no secret'; then
+                printf '%s\n' "$delete_output" >&2
+                exit 1
+              fi
+            fi
+          fi
 
       - name: Build release artifacts and manifest
         working-directory: packages/node-agent

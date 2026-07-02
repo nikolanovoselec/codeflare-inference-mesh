@@ -203,6 +203,7 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 				busy := runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping"
 				if nextProfile != "" && nextProfile != loadState.Key() && !busy && beginRestart(&restartMu, &restartPending) {
 					restartConfig := next
+					runtimeManager.SetState("downloading")
 					if profile, ok := agent.SelectedProfile(restartConfig); ok {
 						loadState.SetStarting(profile)
 					} else {

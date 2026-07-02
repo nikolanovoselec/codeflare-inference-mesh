@@ -24,6 +24,21 @@ func TestREQRUN003RuntimeMetricsMarksLaunchedProfileLoaded(t *testing.T) {
 	}
 }
 
+func TestREQRUN004RuntimeMetricsDoesNotRoutePendingProfileWhileDownloading(t *testing.T) {
+	profile := agent.ModelProfile{ID: "pending-profile", UpstreamModel: "pending-upstream", Version: 4}
+	cfg := agent.Config{RuntimeModel: "pending-upstream", ActiveProfileIDs: []string{"pending-profile"}, Profiles: []agent.ModelProfile{profile}}
+	manager := agent.NewRuntimeManager(agent.RuntimeCommand{Executable: "definitely-missing-llama-server-for-test"})
+	manager.SetState("downloading")
+	loadState := &runtimeLoadState{}
+	loadState.SetStarting(profile)
+
+	metrics := runtimeMetrics(manager, loadState, cfg, 0)
+
+	if metrics.LoadedModel != "" || metrics.LoadedProfileID != "" || metrics.LoadedProfileVersion != 0 {
+		t.Fatalf("downloading runtime should not report the pending profile as loaded, got %#v", metrics)
+	}
+}
+
 func TestREQRUN003RuntimeMetricsMarksReadySelectedProfileLoaded(t *testing.T) {
 	profile := agent.ModelProfile{ID: "selected-profile", UpstreamModel: "selected-upstream", Version: 3}
 	cfg := agent.Config{RuntimeModel: "selected-upstream", ActiveProfileIDs: []string{"selected-profile"}, Profiles: []agent.ModelProfile{profile}}
