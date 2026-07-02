@@ -230,7 +230,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON. For account and Gateway fields, request body values override stored settings, then environment defaults apply. For `workerUrl`, request body overrides a stored explicit Worker URL; otherwise Gateway sync uses the provisioned custom domain.
+**Request body:** Optional JSON. For account and Gateway fields, request body values override stored settings, then environment defaults apply. For `workerUrl`, request body overrides a stored explicit Worker URL; when neither exists, Gateway sync uses the provisioned custom domain.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |

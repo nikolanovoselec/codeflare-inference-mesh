@@ -1139,6 +1139,27 @@ describe('router worker behavioral contracts', () => {
     expect(result).toMatchObject({ hostname: 'ai.example.com', status: 'provisioned', dnsRecordId: 'dns-a', routeId: 'route-a' })
   })
 
+  it('REQ-ADM-005 provisions custom domains from the configured Worker origin when deploy URL is usable', async () => {
+    const calls: string[] = []
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', WORKER_NAME: 'router-worker', WORKER_BASE_URL: 'https://configured.example.com' },
+      cloudflareClient: {
+        async syncCustomProvider() { throw new Error('Gateway sync is not used in this test') },
+        async provisionCustomDomain(input) {
+          calls.push(input.workerUrl, input.hostname, input.workerName)
+          return { hostname: input.hostname, zoneId: 'zone-a', zoneName: 'example.com', dnsRecordId: 'dns-a', dnsRecordType: 'CNAME', routeId: 'route-a', routePattern: `${input.hostname}/*`, workerName: input.workerName, status: 'provisioned' }
+        }
+      }
+    })
+
+    const response = await router(new Request('https://bootstrap.example.workers.dev/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com' }) }))
+    const stored = await store.getConfig<{ hostname: string; status: string }>('custom_domain')
+
+    expect(response.status).toBe(200)
+    expect(calls).toEqual(['https://configured.example.com', 'ai.example.com', 'router-worker'])
+    expect(stored).toMatchObject({ hostname: 'ai.example.com', status: 'provisioned' })
+  })
+
   it('REQ-ADM-005 provisions custom domains from the bootstrap request origin when deploy URL is a placeholder', async () => {
     const calls: string[] = []
     const { router, store } = routerFixture({
