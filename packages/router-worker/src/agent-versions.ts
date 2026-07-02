@@ -1,5 +1,7 @@
 import type { RouterEnv, Store } from './types'
 
+export type AgentVersionsEnv = Pick<Partial<RouterEnv>, 'GITHUB_REPOSITORY'>
+
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const AGENT_VERSIONS_CACHE_KEY = 'agent_versions_cache'
 const DESIRED_AGENT_VERSION_KEY = 'desired_agent_version'
@@ -12,7 +14,7 @@ interface AgentVersionsCache {
   readonly tags: readonly string[]
 }
 
-export async function handleAgentVersionsList(request: Request, store: Store, env: RouterEnv, fetcher: typeof fetch = globalThis.fetch): Promise<Response> {
+export async function handleAgentVersionsList(request: Request, store: Store, env: AgentVersionsEnv, fetcher: typeof fetch = globalThis.fetch): Promise<Response> {
   void request
   const now = Date.now()
   const desired = await desiredAgentVersion(store)
@@ -23,7 +25,7 @@ export async function handleAgentVersionsList(request: Request, store: Store, en
   return json({ tags: served.tags, fetchedAt: served.fetchedAt, stale: !fresh, desired }, 200)
 }
 
-export async function handleAgentVersionSelect(request: Request, store: Store, env: RouterEnv, fetcher: typeof fetch = globalThis.fetch): Promise<Response> {
+export async function handleAgentVersionSelect(request: Request, store: Store, env: AgentVersionsEnv, fetcher: typeof fetch = globalThis.fetch): Promise<Response> {
   const body = await request.json() as { version?: unknown } | null
   const version = typeof body?.version === 'string' ? body.version : ''
   if (!version) return json({ error: 'invalid_version' }, 400)
@@ -52,7 +54,7 @@ function extractReleaseTags(payload: unknown): readonly string[] | undefined {
   })
 }
 
-async function refreshCache(store: Store, env: RouterEnv, fetcher: typeof fetch, now: number): Promise<AgentVersionsCache | undefined> {
+async function refreshCache(store: Store, env: AgentVersionsEnv, fetcher: typeof fetch, now: number): Promise<AgentVersionsCache | undefined> {
   const tags = await fetchReleaseTags(env, fetcher)
   if (!tags) return undefined
   const cache: AgentVersionsCache = { fetchedAt: now, tags }
@@ -60,7 +62,7 @@ async function refreshCache(store: Store, env: RouterEnv, fetcher: typeof fetch,
   return cache
 }
 
-async function fetchReleaseTags(env: RouterEnv, fetcher: typeof fetch): Promise<readonly string[] | undefined> {
+async function fetchReleaseTags(env: AgentVersionsEnv, fetcher: typeof fetch): Promise<readonly string[] | undefined> {
   const repository = env.GITHUB_REPOSITORY ?? DEFAULT_REPOSITORY
   try {
     const response = await fetcher(`https://api.github.com/repos/${repository}/releases?per_page=100`, {

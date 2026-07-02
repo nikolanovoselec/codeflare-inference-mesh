@@ -2,6 +2,8 @@ import { bearerToken, verifyPlainOrHashed, verifyToken } from './auth'
 import { decryptJson, encryptJson, importMeshStateKey, type EncryptedEnvelope } from './mesh-crypto'
 import type { HeartbeatRequest, MeshBootstrap, ModelProfile, NodeRecord, RouterEnv, Store } from './types'
 
+export type MeshStateEnv = Pick<Partial<RouterEnv>, 'REGISTRY' | 'MESH_STATE_KEY' | 'ADMIN_TOKEN'>
+
 const HEARTBEAT_INTERVAL_MS = 15_000
 const SEED_TOKEN_DEADLINE_MS = 4 * HEARTBEAT_INTERVAL_MS
 const SEED_FRESHNESS_MS = 45_000
@@ -37,7 +39,7 @@ export interface MeshHealthEntry {
   lastError?: string
 }
 
-export async function handleMeshRotate(request: Request, store: Store, env: RouterEnv, now: number): Promise<Response> {
+export async function handleMeshRotate(request: Request, store: Store, env: MeshStateEnv, now: number): Promise<Response> {
   if (!(await adminAuthorized(request, store, env, now))) return meshJson({ error: 'unauthorized' }, 401)
   const profileId = await rotateProfileId(request)
   if (!profileId) return meshJson({ error: 'invalid_rotate' }, 400)
@@ -56,7 +58,7 @@ export async function handleMeshRotate(request: Request, store: Store, env: Rout
   return meshJson({ ok: true, profileId, rotation: next.rotation }, 200)
 }
 
-export async function applyHeartbeatMeshState(store: Store, env: RouterEnv, node: NodeRecord, heartbeat: HeartbeatRequest, now: number): Promise<void> {
+export async function applyHeartbeatMeshState(store: Store, env: MeshStateEnv, node: NodeRecord, heartbeat: HeartbeatRequest, now: number): Promise<void> {
   const key = await meshKeyFor(env)
   if (!key || node.status === 'revoked') return
   const profile = selectedMeshProfile(await store.listProfiles(), heartbeat.activeProfileIds)
@@ -95,7 +97,7 @@ export async function applyHeartbeatMeshState(store: Store, env: RouterEnv, node
   }
 }
 
-export async function meshBootstrapFor(store: Store, env: RouterEnv, node: NodeRecord, profile: ModelProfile, now: number): Promise<MeshBootstrap | undefined> {
+export async function meshBootstrapFor(store: Store, env: MeshStateEnv, node: NodeRecord, profile: ModelProfile, now: number): Promise<MeshBootstrap | undefined> {
   const key = await meshKeyFor(env)
   if (!key) return undefined
   if (node.status !== 'online' || node.runtime !== 'meshllm' || !profile.active || !node.activeProfileIds.includes(profile.id)) return undefined
@@ -108,7 +110,7 @@ export async function meshBootstrapFor(store: Store, env: RouterEnv, node: NodeR
   return bootstrapFromState(state, node.id)
 }
 
-export async function meshHealth(store: Store, env: RouterEnv, profiles: readonly ModelProfile[], nodes: readonly NodeRecord[], now: number): Promise<readonly MeshHealthEntry[]> {
+export async function meshHealth(store: Store, env: MeshStateEnv, profiles: readonly ModelProfile[], nodes: readonly NodeRecord[], now: number): Promise<readonly MeshHealthEntry[]> {
   const meshProfiles = profiles.filter((profile) => profile.runtime === 'meshllm')
   const key = await meshKeyFor(env)
   const entries: MeshHealthEntry[] = []
@@ -123,7 +125,7 @@ export async function meshHealth(store: Store, env: RouterEnv, profiles: readonl
   return entries
 }
 
-export async function removeNodeMeshTokens(store: Store, env: RouterEnv, nodeId: string, now: number): Promise<void> {
+export async function removeNodeMeshTokens(store: Store, env: MeshStateEnv, nodeId: string, now: number): Promise<void> {
   const key = await meshKeyFor(env)
   if (!key) return
   for (const profile of await store.listProfiles()) {
@@ -152,7 +154,7 @@ export async function removeNodeMeshTokens(store: Store, env: RouterEnv, nodeId:
   }
 }
 
-export async function electSeedIfAbsent(store: Store, env: RouterEnv, profileId: string, nodeId: string, now: number): Promise<{ seedNodeId: string | null; rotation: number }> {
+export async function electSeedIfAbsent(store: Store, env: MeshStateEnv, profileId: string, nodeId: string, now: number): Promise<{ seedNodeId: string | null; rotation: number }> {
   const key = await meshKeyFor(env)
   if (!key) return { seedNodeId: null, rotation: 0 }
   const stored = (await loadMeshState(store, key, profileId)) ?? emptyMeshState(0)
@@ -287,7 +289,7 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
   }
 }
 
-async function runElection(store: Store, env: RouterEnv, profileId: string, nodeId: string, now: number): Promise<void> {
+async function runElection(store: Store, env: MeshStateEnv, profileId: string, nodeId: string, now: number): Promise<void> {
   const registry: DurableObjectNamespace | undefined = env.REGISTRY
   if (!registry) {
     await electSeedIfAbsent(store, env, profileId, nodeId, now)
@@ -331,7 +333,7 @@ async function saveMeshState(store: Store, key: CryptoKey, profileId: string, st
   await store.putConfig(meshStateConfigKey(profileId), await encryptJson(key, state))
 }
 
-async function meshKeyFor(env: RouterEnv): Promise<CryptoKey | undefined> {
+async function meshKeyFor(env: MeshStateEnv): Promise<CryptoKey | undefined> {
   return env.MESH_STATE_KEY ? await importMeshStateKey(env.MESH_STATE_KEY) : undefined
 }
 
@@ -339,7 +341,7 @@ async function appendMeshAudit(store: Store, type: string, actor: string, target
   await store.appendAudit({ id: crypto.randomUUID(), type, at, actor, target, detail })
 }
 
-async function adminAuthorized(request: Request, store: Store, env: RouterEnv, now: number): Promise<boolean> {
+async function adminAuthorized(request: Request, store: Store, env: MeshStateEnv, now: number): Promise<boolean> {
   const presented = bearerToken(request)
   if (await verifyPlainOrHashed(env.ADMIN_TOKEN, presented)) return true
   for (const token of await store.listTokens('admin')) {

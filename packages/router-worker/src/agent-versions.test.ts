@@ -215,7 +215,7 @@ describe('agent version management behavioral contracts', () => {
     const router = createRouter({
       store,
       scheduler: new StoreScheduler(store, () => 'reservation-a'),
-      mesh: { fetch: async () => new Response('{}', { status: 200 }) } as Fetcher,
+      mesh: { fetch: async (_input: RequestInfo | URL) => new Response('{}', { status: 200 }) } as Fetcher,
       env: {}
     })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
