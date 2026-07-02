@@ -1,9 +1,12 @@
 import { adminUiHtml } from './admin-ui'
+import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewaySyncRequest, type GatewaySyncResult } from './cloudflare-api'
 import { installerCommand, installScript, validateCustomDomain, type InstallerPlatform } from './installers'
+import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { meshUrl } from './scheduler'
+import { aliasExclusiveActivation } from './store'
 import type { ClaimRequest, CredentialKind, HeartbeatRequest, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store, TokenRecord } from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
@@ -18,6 +21,7 @@ export interface RouterDeps {
   readonly now?: () => number
   readonly requestId?: () => string
   readonly cloudflareClient?: { syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult>; provisionCustomDomain(input: CustomDomainProvisionRequest): Promise<CustomDomainProvisionResult> }
+  readonly releasesFetcher?: typeof fetch
 }
 
 export function createRouter(deps: RouterDeps): (request: Request) => Promise<Response> {
@@ -47,6 +51,10 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/custom-domain/validate' && request.method === 'POST') return await handleCustomDomain(request, deps, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/revoke$/) && request.method === 'POST') return await handleNodeRevoke(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
+      if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
+      if (url.pathname === '/admin/mesh/rotate' && request.method === 'POST') return await handleAdminMeshRotate(request, deps, id, now())
+      if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
+      if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
@@ -58,7 +66,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
 async function handleModels(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'provider', now, deps.env.ROUTER_PROVIDER_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const profiles = await deps.store.listProfiles()
-  return json({ object: 'list', data: profiles.flatMap((profile) => profile.publicAliases.map((id) => ({ id, object: 'model', owned_by: 'codeflare-inference-mesh' }))) }, 200, requestId)
+  return json({ object: 'list', data: profiles.filter((profile) => profile.active).flatMap((profile) => profile.publicAliases.map((id) => ({ id, object: 'model', owned_by: 'codeflare-inference-mesh' }))) }, 200, requestId)
 }
 
 async function handleChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -125,7 +133,7 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
     capacity: body.capacity,
     inFlight: 0,
     lastSeenAt: now,
-    runtime: 'llama.cpp' as const,
+    runtime: 'meshllm' as const,
     nodeTokenVerifier: await hashToken(nodeToken),
     upstreamTokenVerifier: await hashToken(upstreamToken)
   }
@@ -133,7 +141,17 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
   await deps.store.putToken(await createTokenRecord('node', nodeToken, now, nodeId))
   await deps.store.revokeToken('setup', setupToken.id, now)
   await deps.store.appendAudit({ id: requestId, type: 'node_claimed', at: now, actor: 'setup', target: nodeId, detail: { displayName: body.displayName } })
-  return json({ nodeId, nodeToken, upstreamToken, profiles: await deps.store.listProfiles() }, 201, requestId)
+  const meshProfile = await selectedMeshProfile(deps.store, body.activeProfileIds)
+  const meshBootstrap = meshProfile ? await meshBootstrapFor(deps.store, deps.env, nodeRecord, meshProfile, now) : undefined
+  const desiredVersion = await desiredAgentVersion(deps.store)
+  return json({
+    nodeId,
+    nodeToken,
+    upstreamToken,
+    profiles: await deps.store.listProfiles(),
+    ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
+    ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
+  }, 201, requestId)
 }
 
 async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -159,10 +177,29 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     lastSeenAt: now,
     runtime: body.runtime,
     ...(body.runtimeModel !== undefined ? { runtimeModel: body.runtimeModel } : {}),
+    ...(body.agentVersion !== undefined ? { agentVersion: body.agentVersion } : {}),
     ...(body.metrics !== undefined ? { metrics: body.metrics } : {})
   }
   await deps.store.updateNodeHeartbeat(next)
-  return json({ ok: true, desiredProfiles: await deps.store.listProfiles() }, 200, requestId)
+  await applyHeartbeatMeshState(deps.store, deps.env, next, body, now)
+  const meshProfile = await selectedMeshProfile(deps.store, next.activeProfileIds)
+  const meshBootstrap = meshProfile ? await meshBootstrapFor(deps.store, deps.env, next, meshProfile, now) : undefined
+  const desiredVersion = await desiredAgentVersion(deps.store)
+  return json({
+    ok: true,
+    desiredProfiles: await deps.store.listProfiles(),
+    ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
+    ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
+  }, 200, requestId)
+}
+
+async function selectedMeshProfile(store: Store, activeProfileIds: readonly string[]): Promise<ModelProfile | undefined> {
+  const profiles = await store.listProfiles()
+  for (const profileId of activeProfileIds) {
+    const profile = profiles.find((item) => item.id === profileId)
+    if (profile?.active) return profile
+  }
+  return undefined
 }
 
 async function handleNodeUnregister(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -218,7 +255,15 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   const setup = await deps.store.getConfig('setup_state')
   const gateway = await deps.store.getConfig('cloudflare_gateway')
   const customDomain = await deps.store.getConfig('custom_domain')
-  return json(redactSecrets({ nodes, profiles, profileReadiness: profileReadiness(profiles, nodes), setup, gateway, customDomain, audit: await deps.store.listAudit(20), generatedAt: now }), 200, requestId)
+  const desiredVersion = await desiredAgentVersion(deps.store)
+  const redacted = redactSecrets({ nodes, profiles, profileReadiness: profileReadiness(profiles, nodes), setup, gateway, customDomain, audit: await deps.store.listAudit(20), generatedAt: now }) as Record<string, unknown>
+  // meshHealth is composed after redaction: its contract carries token presence/age/count
+  // fields (never values), which the key-name redactor would otherwise blank out.
+  return json({
+    ...redacted,
+    meshHealth: await meshHealth(deps.store, deps.env, profiles, nodes, now),
+    ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
+  }, 200, requestId)
 }
 
 function profileReadiness(profiles: readonly ModelProfile[], nodes: readonly NodeRecord[]): Array<{ profileId: string; version: number; ready: number; downloading: number; failed: number }> {
@@ -236,8 +281,9 @@ function profileReadiness(profiles: readonly ModelProfile[], nodes: readonly Nod
 
 function nodeReadyForProfile(node: NodeRecord, profile: ModelProfile): boolean {
   const runtimeState = node.metrics?.runtimeState
-  const loadedModel = node.metrics?.loadedModel ?? node.runtimeModel
-  return (runtimeState === 'ready' || runtimeState === 'running') && loadedModel === profile.upstreamModel
+  if (runtimeState !== 'ready' && runtimeState !== 'running') return false
+  if (node.metrics?.apiReady !== true) return false
+  return node.metrics?.readyModels?.includes(profile.upstreamModel) === true
 }
 
 async function handleSetupToken(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -338,6 +384,7 @@ async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, re
   await deps.store.revokeNode(nodeId, now)
   const nodeTokens = await deps.store.listTokens('node')
   await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))
+  await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
   await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor: 'admin', target: nodeId, detail: {} })
   return json({ ok: true }, 200, requestId)
 }
@@ -346,9 +393,42 @@ async function handleProfileRollout(request: Request, deps: RouterDeps, requestI
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<{ profileId: string; rolloutPercent: number }>(request)
   if (!body || typeof body.profileId !== 'string' || typeof body.rolloutPercent !== 'number') return json({ error: 'invalid_rollout' }, 400, requestId)
+  if (body.rolloutPercent > 0) {
+    // Alias-exclusive invariant: rollout activation must never leave an alias with two active owners.
+    const activation = aliasExclusiveActivation(await deps.store.listProfiles(), body.profileId)
+    for (const profile of activation?.deactivated ?? []) await deps.store.setProfile(profile)
+  }
   await deps.store.setActiveProfile(body.profileId, body.rolloutPercent)
   await deps.store.appendAudit({ id: requestId, type: 'profile_rollout', at: now, actor: 'admin', target: body.profileId, detail: { rolloutPercent: body.rolloutPercent } })
   return json({ ok: true }, 200, requestId)
+}
+
+async function handleProfileActivate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ profileId?: string }>(request)
+  if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_activation', requestId }, 400, requestId)
+  const activation = aliasExclusiveActivation(await deps.store.listProfiles(), body.profileId)
+  if (!activation) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  for (const profile of activation.deactivated) await deps.store.setProfile(profile)
+  await deps.store.setProfile(activation.activated)
+  const deactivatedIds = activation.deactivated.map((profile) => profile.id)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_activated', at: now, actor: 'admin', target: body.profileId, detail: { deactivated: deactivatedIds } })
+  return json({ ok: true, activated: activation.activated.id, deactivated: deactivatedIds }, 200, requestId)
+}
+
+async function handleAdminMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleMeshRotate(request, deps.store, deps.env, now)
+}
+
+async function handleAdminAgentVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleAgentVersionsList(request, deps.store, deps.env, deps.releasesFetcher)
+}
+
+async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher)
 }
 
 interface GatewaySettings {
@@ -532,9 +612,12 @@ export const ROUTER_ANCHORS = {
   REQ_OBS_001: 'REQ-OBS-001',
   REQ_OBS_002: 'REQ-OBS-002',
   REQ_OBS_004: 'REQ-OBS-004',
+  REQ_OBS_006: 'REQ-OBS-006',
   REQ_ADM_001: 'REQ-ADM-001',
   REQ_ADM_002: 'REQ-ADM-002',
   REQ_ADM_003: 'REQ-ADM-003',
   REQ_ADM_006: 'REQ-ADM-006',
-  REQ_SEC_002: 'REQ-SEC-002'
+  REQ_ADM_008: 'REQ-ADM-008',
+  REQ_SEC_002: 'REQ-SEC-002',
+  REQ_SEC_006: 'REQ-SEC-006'
 } as const

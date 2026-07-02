@@ -24,8 +24,12 @@ func (c *ActiveCounter) Value() int {
 	return int(atomic.LoadInt64(&c.value))
 }
 
-func ProxyHandler(runtimeURL string, upstreamToken string, counters ...*ActiveCounter) (http.Handler, error) {
-	target, err := url.Parse(strings.TrimRight(runtimeURL, "/"))
+// ProxyHandler guards the local MeshLLM API: only /v1/chat/completions is
+// forwarded, only with the upstream bearer token, and never with credential
+// headers. targetURL is the node-local MeshLLM API base derived from the
+// configured MeshLLM API port.
+func ProxyHandler(targetURL string, upstreamToken string, counters ...*ActiveCounter) (http.Handler, error) {
+	target, err := url.Parse(strings.TrimRight(targetURL, "/"))
 	if err != nil {
 		return nil, err
 	}

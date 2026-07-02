@@ -294,7 +294,14 @@ describe('workflow contract values', () => {
     expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.exe']).toBe('')
     expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.zip']).toBe('archive')
     expect(buildExecution.outputs['dist/checksums.txt']).toContain('.tar.gz')
-    expect(JSON.parse(buildExecution.outputs['dist/release-manifest.json']!)).toMatchObject({ version: 'v0.1.0-dev.7', channel: 'integration', commit: 'abc123' })
+    const releaseManifest = JSON.parse(buildExecution.outputs['dist/release-manifest.json']!) as { version: string; channel: string; commit: string; artifacts: readonly { name: string }[] }
+    expect(releaseManifest).toMatchObject({ version: 'v0.1.0-dev.7', channel: 'integration', commit: 'abc123' })
+    expect(releaseManifest.artifacts.map((artifact) => artifact.name).sort()).toEqual([
+      'inference-mesh-agent-darwin-arm64.tar.gz',
+      'inference-mesh-agent-linux-amd64.tar.gz',
+      'inference-mesh-agent-linux-arm64.tar.gz',
+      'inference-mesh-agent-windows-amd64.zip'
+    ])
     const signStep = stepByName(deployJob, 'Sign checksums when signing is configured')!
     expect(signStep).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}', COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}' } })
     const skippedSign = runShellBlock(signStep.run!, { COSIGN_PRIVATE_KEY: '', COSIGN_PASSWORD: '' })
@@ -304,6 +311,50 @@ describe('workflow contract values', () => {
     expect(stepByName(deployJob, 'Resolve or create D1 database')?.env).toMatchObject({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' })
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
+  })
+
+  it('REQ-SEC-006 pushes the MESH_STATE_KEY Worker secret during deploy and fails closed when the GitHub secret is absent', () => {
+    const deploy = workflow('deploy.yml')
+    const deployJob = deploy.jobs.deploy!
+    const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
+
+    const validateStep = stepByName(deployJob, 'Validate deploy secrets')!
+    expect(validateStep.env).toMatchObject({ MESH_STATE_KEY: '${{ secrets.MESH_STATE_KEY }}' })
+    const validateEnv = { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token' }
+    expect(runShellBlock(validateStep.run!, { ...validateEnv, MESH_STATE_KEY: 'mesh-state-key-value' }).status).toBe(0)
+    expect(runShellBlock(validateStep.run!, { ...validateEnv, MESH_STATE_KEY: '' }).status).toBe(1)
+
+    const meshKeyStep = stepByName(deployJob, 'Set Worker mesh state key')!
+    expect(meshKeyStep).toMatchObject({
+      'working-directory': 'packages/router-worker',
+      env: {
+        CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+        CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}',
+        MESH_STATE_KEY: '${{ secrets.MESH_STATE_KEY }}'
+      }
+    })
+    expect(stepNames.indexOf('Set Worker mesh state key')).toBeGreaterThan(stepNames.indexOf('Set Worker runtime secrets'))
+    expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Set Worker mesh state key'))
+    const meshKeyRun = meshKeyStep.run!.replaceAll('${{ steps.settings.outputs.wrangler_env }}', '')
+    const meshKeyExecution = runShellBlockWithFiles(
+      meshKeyRun,
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', MESH_STATE_KEY: 'mesh-state-key-value' },
+      {},
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler secret put MESH_STATE_KEY" ]; then cat > secret-put.stdin; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
+      ['secret-put.stdin']
+    )
+    expect(meshKeyExecution.result.status).toBe(0)
+    expect(meshKeyExecution.outputs['secret-put.stdin']).toBe('mesh-state-key-value')
+    const missingMeshKeyExecution = runShellBlockWithFiles(
+      meshKeyRun,
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', MESH_STATE_KEY: '' },
+      {},
+      { npm: '#!/bin/sh\ncat > secret-put.stdin\nexit 0\n' },
+      ['secret-put.stdin']
+    )
+    expect(missingMeshKeyExecution.result.status).toBe(1)
+    expect(missingMeshKeyExecution.outputs['secret-put.stdin']).toBe('')
+    expect(missingMeshKeyExecution.result.stdout).toContain('::error::MESH_STATE_KEY')
   })
 
   it('REQ-REL-004 enables Security and Fuzz gates with stable aggregate checks and explicit timeouts', () => {

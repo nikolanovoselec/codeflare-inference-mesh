@@ -127,7 +127,10 @@ function retiredDefaultProfiles(existing: readonly ModelProfile[], defaults: rea
   const defaultIds = new Set(defaults.map((profile) => profile.id))
   const defaultAliases = new Set(defaults.flatMap((profile) => [...profile.publicAliases]))
   return existing
-    .filter((profile) => profile.active && profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
+    .filter((profile) => profile.active && (
+      (profile.runtime as string) !== 'meshllm' ||
+      (profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
+    ))
     .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
 }
 
@@ -140,13 +143,19 @@ export function nodeFixture(overrides: Partial<NodeRecord> = {}): NodeRecord {
     localDashboardPort: 17777,
     status: 'online',
     publicModels: ['mesh-default'],
-    activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'],
+    activeProfileIds: ['mesh-default-qwen36-35b'],
     capacity: 2,
     inFlight: 0,
     lastSeenAt: 1_700_000_000_000,
-    runtime: 'llama.cpp',
-    runtimeModel: 'qwen36-35b-a3b-262k-mm-3090',
-    metrics: { runtimeState: 'ready', loadedModel: 'qwen36-35b-a3b-262k-mm-3090', activeRequests: 0 },
+    runtime: 'meshllm',
+    runtimeModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
+    metrics: {
+      runtimeState: 'ready',
+      loadedModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
+      activeRequests: 0,
+      apiReady: true,
+      readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S']
+    },
     ...overrides
   }
 }

@@ -1,3 +1,5 @@
+import { DEFAULT_MODEL_PROFILES } from './profiles'
+
 export interface AdminUiAction {
   readonly id: string
   readonly method: 'GET' | 'POST'
@@ -16,7 +18,11 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'gateway-sync', method: 'POST', path: '/admin/cloudflare/gateway/sync', auth: 'admin' },
   { id: 'custom-domain-validate', method: 'POST', path: '/admin/custom-domain/validate', auth: 'admin' },
   { id: 'node-revoke', method: 'POST', path: '/admin/nodes/{nodeId}/revoke', auth: 'admin' },
-  { id: 'profile-rollout', method: 'POST', path: '/admin/profiles/rollout', auth: 'admin' }
+  { id: 'profile-rollout', method: 'POST', path: '/admin/profiles/rollout', auth: 'admin' },
+  { id: 'profile-activate', method: 'POST', path: '/admin/profiles/activate', auth: 'admin' },
+  { id: 'agent-versions-refresh', method: 'GET', path: '/admin/agent-versions', auth: 'admin' },
+  { id: 'agent-version-set', method: 'POST', path: '/admin/agent-version', auth: 'admin' },
+  { id: 'mesh-rotate', method: 'POST', path: '/admin/mesh/rotate', auth: 'admin' }
 ] as const
 
 export const ADMIN_UI_RESPONSIVE = {
@@ -27,14 +33,14 @@ export const ADMIN_UI_RESPONSIVE = {
 
 export const ADMIN_UI_OPERATOR_FLOW = {
   stages: ['setup/authentication', 'enrollment/installers', 'Gateway/domain routing', 'status/node/profile operations'],
-  panelOrder: ['setup', 'login', 'setup-token', 'installer', 'gateway', 'domain', 'status', 'node', 'profile']
+  panelOrder: ['setup', 'login', 'setup-token', 'installer', 'gateway', 'domain', 'status', 'node', 'profile', 'activation', 'version', 'mesh', 'rotation']
 } as const
 
 export const ADMIN_UI_COMMAND_CENTER = {
   layout: 'command-center',
   statusStrip: ['setup', 'auth', 'nodes', 'profiles', 'audit'],
   railOrder: ['setup', 'auth', 'enroll', 'route', 'operate'],
-  rowOrder: ['first-run-setup', 'admin-login', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'status-refresh', 'node-revoke', 'profile-rollout']
+  rowOrder: ['first-run-setup', 'admin-login', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'status-refresh', 'node-revoke', 'profile-rollout', 'profile-activate', 'agent-version', 'mesh-health', 'mesh-rotate']
 } as const
 
 export const ADMIN_UI_ACTION_ROW_ANCHOR = {
@@ -47,6 +53,148 @@ export const ADMIN_UI_SETUP_LOCKED_FEEDBACK = {
   variant: 'setup-locked'
 } as const
 
+export const ADMIN_UI_MESH_HEALTH = {
+  panelId: 'mesh-health-output',
+  rotateSelectId: 'mesh-rotate-profile',
+  bannerId: 'mesh-key-banner',
+  keyMissingError: 'mesh_state_key_missing',
+  fields: ['coordinator', 'peers', 'ready-models', 'failed-nodes', 'last-error', 'rotation', 'secret']
+} as const
+
+export const ADMIN_UI_AGENT_VERSION = {
+  selectId: 'agent-version-select',
+  slotId: 'agent-version-slot',
+  staleAttribute: 'data-stale'
+} as const
+
+export const ADMIN_UI_PROFILE_ACTIVATION = {
+  selectId: 'profile-activate-select',
+  slotId: 'profile-activate-slot'
+} as const
+
+/** Mirrors the admin-status meshHealth contract from router.ts; carries no secret values by shape. */
+export interface MeshHealthEntry {
+  readonly profileId: string
+  readonly meshId?: string
+  readonly rotation: number
+  readonly seedNodeId?: string
+  readonly coordinatorNodeId?: string
+  readonly peerNodeIds: readonly string[]
+  readonly readyModels?: readonly string[]
+  readonly failedNodeIds?: readonly string[]
+  readonly tokenCount: number
+  readonly secretAgeMs?: number
+  readonly lastError?: string
+}
+
+/** Mirrors the GET /admin/agent-versions response contract. */
+export interface AgentVersionsView {
+  readonly tags: readonly string[]
+  readonly fetchedAt?: number
+  readonly stale: boolean
+  readonly desired?: string
+}
+
+/** Structural subset of an admin-status node used by the mesh renderers. */
+export interface MeshUiStatusNode {
+  readonly id: string
+  readonly status?: string
+  readonly agentVersion?: string
+  readonly metrics?: {
+    readonly runtimeState?: string
+    readonly readyModels?: readonly string[]
+  }
+}
+
+/** Structural subset of a ModelProfile used by the activation and rotation selects. */
+export interface ActivationProfileView {
+  readonly id: string
+  readonly publicAliases: readonly string[]
+  readonly active: boolean
+  readonly meshllm: { readonly split: boolean }
+}
+
+export interface MeshUiRenderers {
+  renderProfileOptions(profiles: readonly ActivationProfileView[], selectedId?: string): string
+  renderProfileActivationControl(profiles: readonly ActivationProfileView[], selectId: string): string
+  renderAgentVersionSelect(view: AgentVersionsView, selectId: string): string
+  renderNodeAgentVersions(nodes: readonly MeshUiStatusNode[], desiredVersion?: string): string
+  renderMeshHealthPanel(entries: readonly MeshHealthEntry[], fields: readonly string[]): string
+}
+
+/**
+ * Isomorphic mesh renderers: the same factory renders the server-side initial controls
+ * and is serialized verbatim (`createMeshUiRenderers.toString()`) into the admin script,
+ * so client re-renders reuse the exact tested markup. Must stay fully self-contained:
+ * no references to module-scope helpers, no syntax that transpiles to shared helpers.
+ */
+export function createMeshUiRenderers(): MeshUiRenderers {
+  const esc = (value: unknown): string =>
+    String(value).replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[char]!)
+  const fmtAge = (ms: number): string => {
+    if (ms < 60000) return Math.max(1, Math.floor(ms / 1000)) + 's'
+    if (ms < 3600000) return Math.floor(ms / 60000) + 'm'
+    return Math.floor(ms / 3600000) + 'h'
+  }
+  const renderProfileOptions = (profiles: readonly ActivationProfileView[], selectedId?: string): string =>
+    profiles
+      .map((profile) => {
+        const split = profile.meshllm && profile.meshllm.split ? 'true' : 'false'
+        const selected = profile.id === selectedId ? ' selected' : ''
+        const mode = split === 'true' ? ' — split' : ' — single-node'
+        return '<option value="' + esc(profile.id) + '" data-profile-option="' + esc(profile.id) + '" data-split="' + split + '"' + selected + '>' + esc(profile.id + mode) + '</option>'
+      })
+      .join('')
+  const renderProfileActivationControl = (profiles: readonly ActivationProfileView[], selectId: string): string => {
+    const shares = (a: ActivationProfileView, b: ActivationProfileView): boolean => a.publicAliases.some((alias) => b.publicAliases.indexOf(alias) >= 0)
+    const choices = profiles.filter((profile) => profiles.some((other) => other.id !== profile.id && shares(profile, other)))
+    const active = choices.filter((profile) => profile.active)[0]
+    return '<select id="' + selectId + '" name="activateProfileId" aria-label="Activate serving profile" data-profile-activate-select="true"' + (choices.length === 0 ? ' disabled' : '') + '>' + renderProfileOptions(choices, active ? active.id : undefined) + '</select>'
+  }
+  const renderAgentVersionSelect = (view: AgentVersionsView, selectId: string): string => {
+    const tags = (view && view.tags) || []
+    const options = tags
+      .map((tag) => '<option value="' + esc(tag) + '" data-agent-version-option="' + esc(tag) + '"' + (view.desired === tag ? ' data-desired="true" selected' : '') + '>' + esc(tag) + '</option>')
+      .join('')
+    return '<select id="' + selectId + '" name="agentVersion" aria-label="Node agent version" data-agent-version-select="true" data-stale="' + (view && view.stale ? 'true' : 'false') + '"' + (tags.length === 0 ? ' disabled' : '') + '>' + options + '</select>'
+  }
+  const renderNodeAgentVersions = (nodes: readonly MeshUiStatusNode[], desiredVersion?: string): string => {
+    const rows = nodes
+      .map((node) => {
+        const reported = node.agentVersion || 'unreported'
+        const match = Boolean(desiredVersion) && node.agentVersion === desiredVersion
+        return '<code data-node-version="' + esc(node.id) + '" data-reported="' + esc(reported) + '" data-desired-match="' + (match ? 'true' : 'false') + '">' + esc(node.id + ' ' + reported + (match || !desiredVersion ? '' : ' → ' + desiredVersion)) + '</code>'
+      })
+      .join('')
+    return '<div class="metric" data-node-versions="true" data-desired-version="' + esc(desiredVersion || '') + '"><strong>Agent versions</strong>' + rows + '</div>'
+  }
+  const meshFieldValue = (field: string, entry: MeshHealthEntry): string => {
+    if (field === 'coordinator') return entry.coordinatorNodeId || '—'
+    if (field === 'peers') return String((entry.peerNodeIds || []).length)
+    if (field === 'ready-models') return (entry.readyModels || []).join(', ') || '—'
+    if (field === 'failed-nodes') return (entry.failedNodeIds || []).join(', ') || '—'
+    if (field === 'last-error') return entry.lastError || '—'
+    if (field === 'rotation') return 'r' + entry.rotation
+    if (field === 'secret') {
+      if (entry.tokenCount > 0) return 'present' + (entry.secretAgeMs != null ? ' · ' + fmtAge(entry.secretAgeMs) : '')
+      return 'absent'
+    }
+    return '—'
+  }
+  const renderMeshHealthPanel = (entries: readonly MeshHealthEntry[], fields: readonly string[]): string =>
+    entries
+      .map((entry) => {
+        const body = fields
+          .map((field) => '<code data-mesh-field="' + field + '">' + field.replace(/-/g, ' ') + ': ' + esc(meshFieldValue(field, entry)) + '</code>')
+          .join('')
+        return '<div class="metric" data-mesh-entry="' + esc(entry.profileId) + '" data-mesh-rotation="' + esc(String(entry.rotation)) + '" data-secret-present="' + (entry.tokenCount > 0 ? 'true' : 'false') + '"><strong>' + esc(entry.profileId) + '</strong>' + body + '</div>'
+      })
+      .join('')
+  return { renderProfileOptions, renderProfileActivationControl, renderAgentVersionSelect, renderNodeAgentVersions, renderMeshHealthPanel }
+}
+
+const meshUi = createMeshUiRenderers()
+
 export function adminUiHtml(workerOrigin: string): string {
   const config = scriptJson({
     workerOrigin,
@@ -54,8 +202,12 @@ export function adminUiHtml(workerOrigin: string): string {
     responsive: ADMIN_UI_RESPONSIVE,
     operatorFlow: ADMIN_UI_OPERATOR_FLOW,
     commandCenter: ADMIN_UI_COMMAND_CENTER,
-    setupLockedFeedback: ADMIN_UI_SETUP_LOCKED_FEEDBACK
+    setupLockedFeedback: ADMIN_UI_SETUP_LOCKED_FEEDBACK,
+    meshHealth: ADMIN_UI_MESH_HEALTH,
+    agentVersion: ADMIN_UI_AGENT_VERSION,
+    profileActivation: ADMIN_UI_PROFILE_ACTIVATION
   })
+  const activeMeshProfileId = DEFAULT_MODEL_PROFILES.find((profile) => profile.active)?.id
   return `<!doctype html>
 <html lang="en" data-admin-ui="codeflare-inference-mesh">
 <head>
@@ -97,6 +249,10 @@ export function adminUiHtml(workerOrigin: string): string {
         <p>Setup is already complete. <a href="#login" data-banner-action="go-to-auth">Go to Auth</a></p>
       </div>
 
+      <div class="setup-banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner hidden>
+        <p>Mesh secret key missing: set the <code>MESH_STATE_KEY</code> Worker secret so mesh bootstrap and rotation can run.</p>
+      </div>
+
       <div class="command-grid">
         <aside class="workflow-rail" aria-label="Operator workflow" data-rail-order="${ADMIN_UI_COMMAND_CENTER.railOrder.join(' ')}">
           ${railItem('setup', 'setup', 'Setup', 'Locked')}
@@ -133,7 +289,15 @@ export function adminUiHtml(workerOrigin: string): string {
             ${sectionHeader('Operate')}
             ${actionRow({ id: 'status-refresh', actionId: 'status-refresh', title: 'Status', description: 'Load redacted nodes, profiles, audit events, and freshness metadata.', controls: '<button type="button" data-action="status-refresh">Refresh status</button>', outputId: 'status-output', outputKind: 'status', empty: 'Refresh status to load redacted state.', surfaceClass: 'status-grid' })}
             ${actionRow({ id: 'node-revoke', actionId: 'node-revoke', title: 'Node controls', description: 'Revoke a node when it should no longer receive traffic.', controls: '<div class="control-line"><input class="control-input" name="nodeId" id="node-id" autocomplete="off" aria-label="Node ID" placeholder="node id"><button class="danger" type="button" data-action="node-revoke">Revoke node</button></div>', outputId: 'node-output', outputKind: 'node-revoke', empty: 'Revocation result appears here.', tag: 'pre' })}
-            ${actionRow({ id: 'profile-rollout', actionId: 'profile-rollout', title: 'Profile readiness and rollout', description: 'Check profile readiness in Status, then set rollout percentage for an existing model profile.', controls: '<div class="control-stack"><input class="control-input" name="profileId" id="profile-id" autocomplete="off" placeholder="qwen36-35b-a3b-262k-text-3090" aria-label="Profile ID"><div class="control-line compact"><input class="control-input short" name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100" aria-label="Rollout percent"><button type="button" data-action="profile-rollout">Update rollout</button></div></div>', outputId: 'profile-output', outputKind: 'profile-rollout', empty: 'Profile rollout result appears here.', help: 'Set how much traffic can use this model profile, from 0 to 100 percent.', tag: 'pre' })}
+            ${actionRow({ id: 'profile-rollout', actionId: 'profile-rollout', title: 'Profile readiness and rollout', description: 'Check profile readiness in Status, then set rollout percentage for an existing model profile.', controls: '<div class="control-stack"><input class="control-input" name="profileId" id="profile-id" autocomplete="off" placeholder="mesh-split-qwen36-35b" aria-label="Profile ID"><div class="control-line compact"><input class="control-input short" name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100" aria-label="Rollout percent"><button type="button" data-action="profile-rollout">Update rollout</button></div></div>', outputId: 'profile-output', outputKind: 'profile-rollout', empty: 'Profile rollout result appears here.', help: 'Set how much traffic can use this model profile, from 0 to 100 percent.', tag: 'pre' })}
+            ${actionRow({ id: 'profile-activate', actionId: 'profile-activate', title: 'Serving profile activation', description: 'Activate the single-node or split serving profile. Activation atomically deactivates the alias-sharing pair.', controls: '<div class="control-line compact"><span class="control-slot" id="' + ADMIN_UI_PROFILE_ACTIVATION.slotId + '">' + meshUi.renderProfileActivationControl(DEFAULT_MODEL_PROFILES, ADMIN_UI_PROFILE_ACTIVATION.selectId) + '</span><button type="button" data-action="profile-activate">Activate profile</button></div>', outputId: 'profile-activate-output', outputKind: 'profile-activate', empty: 'Activation result appears here.', tag: 'pre' })}
+            ${actionRow({ id: 'agent-version', actionId: 'agent-version-set', title: 'Node agent version', description: 'Pick one fleet-wide agent release; nodes converge through heartbeats.', controls: '<div class="control-line compact"><span class="control-slot" id="' + ADMIN_UI_AGENT_VERSION.slotId + '">' + meshUi.renderAgentVersionSelect({ tags: [], stale: false }, ADMIN_UI_AGENT_VERSION.selectId) + '</span><button class="secondary" type="button" data-action="agent-versions-refresh">Load versions</button><button type="button" data-action="agent-version-set">Set version</button></div>', outputId: 'agent-version-output', outputKind: 'agent-version', empty: 'Load release tags after login to pick the fleet version.', tag: 'pre' })}
+          </section>
+
+          <section class="work-section" id="mesh" data-flow-stage="operate">
+            ${sectionHeader('Mesh')}
+            ${actionRow({ id: 'mesh-health', actionId: 'status-refresh', title: 'Mesh health', description: 'Per-profile mesh formation: coordinator, peers, ready models, failed nodes, rotation, and secret presence.', controls: '<button type="button" data-action="status-refresh">Refresh status</button>', outputId: ADMIN_UI_MESH_HEALTH.panelId, outputKind: 'mesh-health', empty: 'Refresh status to load mesh health.', surfaceClass: 'status-grid' })}
+            ${actionRow({ id: 'mesh-rotate', actionId: 'mesh-rotate', title: 'Rotate mesh secret', description: 'One click rotates the selected profile mesh secret; members drain and rejoin within about two minutes.', controls: '<div class="control-line compact"><span class="control-slot" id="mesh-rotate-slot"><select id="' + ADMIN_UI_MESH_HEALTH.rotateSelectId + '" name="meshProfileId" aria-label="Mesh profile" data-mesh-profile-select="true">' + meshUi.renderProfileOptions(DEFAULT_MODEL_PROFILES, activeMeshProfileId) + '</select></span><button class="danger" type="button" data-action="mesh-rotate">Rotate mesh secret</button></div>', outputId: 'mesh-rotate-output', outputKind: 'mesh-rotate', empty: 'Rotation result appears here.', tag: 'pre' })}
           </section>
         </section>
       </div>
@@ -287,6 +451,7 @@ code,pre{font-family:var(--font-mono)}
 .control-line.compact{justify-content:flex-start}
 .control-input{flex:1 1 18rem;max-width:30rem;min-width:10rem}
 .control-input.short{flex:0 0 8rem;min-width:8rem}
+.control-slot{display:contents}
 select{flex:0 0 10rem}
 .check{display:inline-flex;align-items:center;gap:.45rem;color:var(--muted);font-size:.85rem;font-weight:600}
 .check input{min-height:auto;width:auto;accent-color:var(--accent)}
@@ -312,6 +477,7 @@ select{flex:0 0 10rem}
 function adminUiScript(): string {
   return `(() => {
   const config = JSON.parse(document.getElementById('admin-ui-config').textContent);
+  const meshUi = (${createMeshUiRenderers.toString()})();
   const byId = (id) => document.getElementById(id);
   const tokenKey = 'codeflareInferenceMeshAdminToken';
   byId('origin-label').textContent = config.workerOrigin;
@@ -435,8 +601,13 @@ function adminUiScript(): string {
       '<div class="metric"><strong>Generated</strong><code>' + (value.generatedAt || 'unknown') + '</code></div>',
       '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status + ':' + (node.metrics?.runtimeState || 'unknown')).join('\\n')) + '</code></div>',
       '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '% ' + (profile.sourceMode || 'unknown')).join('\\n')) + '</code></div>',
-      '<div class="metric"><strong>Profile readiness</strong><code>' + esc(readiness.map((item) => item.profileId + ' ready=' + item.ready + ' downloading=' + item.downloading + ' failed=' + item.failed).join('\\n')) + '</code></div>'
+      '<div class="metric"><strong>Profile readiness</strong><code>' + esc(readiness.map((item) => item.profileId + ' ready=' + item.ready + ' downloading=' + item.downloading + ' failed=' + item.failed).join('\\n')) + '</code></div>',
+      meshUi.renderNodeAgentVersions(nodes, value.desiredAgentVersion)
     ].join('');
+    const meshHealth = Array.isArray(value.meshHealth) ? value.meshHealth : [];
+    byId(config.meshHealth.panelId).innerHTML = meshUi.renderMeshHealthPanel(meshHealth, config.meshHealth.fields);
+    byId(config.meshHealth.bannerId).hidden = !meshHealth.some((entry) => entry.lastError === config.meshHealth.keyMissingError);
+    byId(config.profileActivation.slotId).innerHTML = meshUi.renderProfileActivationControl(profiles, config.profileActivation.selectId);
   }
   document.addEventListener('click', async (event) => {
     const bannerAction = event.target.closest('[data-banner-action="go-to-auth"]');
@@ -476,6 +647,16 @@ function adminUiScript(): string {
         const nodeId = encodeURIComponent(byId('node-id').value.trim()); showJson('node-output', await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(true) }));
       } else if (action === 'profile-rollout') {
         showJson('profile-output', await request('/admin/profiles/rollout', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ profileId: byId('profile-id').value.trim(), rolloutPercent: Number(byId('rollout-percent').value) }) }));
+      } else if (action === 'profile-activate') {
+        showJson('profile-activate-output', await request('/admin/profiles/activate', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ profileId: byId(config.profileActivation.selectId).value }) }));
+      } else if (action === 'agent-versions-refresh') {
+        const versions = await request('/admin/agent-versions', { headers: headers(true) });
+        byId(config.agentVersion.slotId).innerHTML = meshUi.renderAgentVersionSelect(versions, config.agentVersion.selectId);
+        setOutput('agent-version-output', 'Loaded ' + ((versions.tags || []).length) + ' release tags' + (versions.stale ? ' (stale cache)' : ''));
+      } else if (action === 'agent-version-set') {
+        showJson('agent-version-output', await request('/admin/agent-version', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ version: byId(config.agentVersion.selectId).value }) }));
+      } else if (action === 'mesh-rotate') {
+        showJson('mesh-rotate-output', await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ profileId: byId(config.meshHealth.rotateSelectId).value }) }));
       }
       setScopeState(scope, 'ready');
     } catch (error) {
@@ -517,7 +698,13 @@ function escapeHtml(value: string): string {
 
 export const ADMIN_UI_ANCHORS = {
   REQ_ADM_006: 'REQ-ADM-006',
+  REQ_ADM_008: 'REQ-ADM-008',
+  REQ_OBS_007: 'REQ-OBS-007',
+  REQ_SEC_006: 'REQ-SEC-006',
   COMMAND_CENTER: 'ADMIN_UI_COMMAND_CENTER',
   ACTION_ROW: 'ADMIN_UI_ACTION_ROW_ANCHOR',
-  SETUP_LOCKED_FEEDBACK: 'ADMIN_UI_SETUP_LOCKED_FEEDBACK'
+  SETUP_LOCKED_FEEDBACK: 'ADMIN_UI_SETUP_LOCKED_FEEDBACK',
+  MESH_HEALTH: 'ADMIN_UI_MESH_HEALTH',
+  AGENT_VERSION: 'ADMIN_UI_AGENT_VERSION',
+  PROFILE_ACTIVATION: 'ADMIN_UI_PROFILE_ACTIVATION'
 } as const

@@ -1,0 +1,318 @@
+package agent
+
+import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+)
+
+// MeshLLMPinnedVersion is the exact MeshLLM release every node runs. Re-pinning
+// means updating this tag and every checksum in meshLLMAssets together.
+const MeshLLMPinnedVersion = "v0.72.2"
+
+const meshLLMReleaseBaseURL = "https://github.com/Mesh-LLM/mesh-llm/releases/download/" + MeshLLMPinnedVersion
+
+// MeshLLMAsset names one pinned release artifact and its expected SHA-256.
+type MeshLLMAsset struct {
+	AssetName string
+	SHA256    string
+}
+
+// meshLLMAssets is the build-time pin map, keyed goos/goarch/flavor. Checksums
+// are the upstream per-asset .sha256 values for MeshLLMPinnedVersion. Flavor
+// keys use the agent's canonical vocabulary (cpu, cuda-12, metal) as produced
+// by DetectMeshLLMFlavor; the windows CUDA build maps to upstream's single
+// unversioned "-cuda" asset.
+var meshLLMAssets = map[string]MeshLLMAsset{
+	"linux/amd64/cpu":       {AssetName: "mesh-llm-" + MeshLLMPinnedVersion + "-x86_64-unknown-linux-gnu.tar.gz", SHA256: "ab941e2402fa4a8d9ec52926d3aaea9b44d67ad35e600a16f117420782dff33d"},
+	"linux/amd64/cuda-12":   {AssetName: "mesh-llm-" + MeshLLMPinnedVersion + "-x86_64-unknown-linux-gnu-cuda-12.tar.gz", SHA256: "01df88c87717e734babe079a9455bdb3c1dd713fff5f7eed0b1e990192adfa98"},
+	"linux/arm64/cpu":       {AssetName: "mesh-llm-" + MeshLLMPinnedVersion + "-aarch64-unknown-linux-gnu.tar.gz", SHA256: "ed7c1a4b6af87a4283ba128a5cc3d6539ba17f2d83da873ce5a693b4b7d65399"},
+	"linux/arm64/cuda-12":   {AssetName: "mesh-llm-" + MeshLLMPinnedVersion + "-aarch64-unknown-linux-gnu-cuda-12.tar.gz", SHA256: "5a9b794802cc8c18e2f2f1d7bd765659df169a640dadd62b8c477165197ff7c8"},
+	"windows/amd64/cpu":     {AssetName: "mesh-llm-" + MeshLLMPinnedVersion + "-x86_64-pc-windows-msvc.zip", SHA256: "c09903fc7e693972299cf518fc5c68fc5f77787a876c8724c7751b0cdd279bb2"},
+	"windows/amd64/cuda-12": {AssetName: "mesh-llm-" + MeshLLMPinnedVersion + "-x86_64-pc-windows-msvc-cuda.zip", SHA256: "339dbc8cecd734c29c371b4b9461fd870f2d046342b42dfb5da14304afc62ad2"},
+	"darwin/arm64/metal":    {AssetName: "mesh-llm-" + MeshLLMPinnedVersion + "-aarch64-apple-darwin.tar.gz", SHA256: "5068494934df975a30c97f37f72e543e940dac81ecae795daf62b9b91b96ac72"},
+}
+
+// MeshLLMAssetFor resolves the pinned release artifact for a platform and
+// flavor, or errors when the agent ships no MeshLLM build for it.
+func MeshLLMAssetFor(goos, goarch, flavor string) (MeshLLMAsset, error) {
+	asset, ok := meshLLMAssets[goos+"/"+goarch+"/"+flavor]
+	if !ok {
+		return MeshLLMAsset{}, fmt.Errorf("no pinned mesh-llm asset for %s/%s flavor %q", goos, goarch, flavor)
+	}
+	return asset, nil
+}
+
+// DetectMeshLLMFlavor picks the MeshLLM build flavor for a platform: the Metal
+// asset on darwin/arm64, cuda-12 when nvidia-smi is present, cpu otherwise.
+func DetectMeshLLMFlavor(goos, goarch string, hasNvidiaSMI func() bool) string {
+	if goos == "darwin" && goarch == "arm64" {
+		return "metal"
+	}
+	if hasNvidiaSMI != nil && hasNvidiaSMI() {
+		return "cuda-12"
+	}
+	return "cpu"
+}
+
+type meshLLMInstallOptions struct {
+	goos         string
+	goarch       string
+	asset        *MeshLLMAsset
+	lookPath     func(file string) (string, error)
+	queryVersion func(binaryPath string) (string, error)
+	download     func(assetURL string) ([]byte, error)
+}
+
+// MeshLLMInstallOption customizes EnsureMeshLLM, primarily for test injection.
+type MeshLLMInstallOption func(*meshLLMInstallOptions)
+
+// WithMeshLLMPlatform overrides the platform the install resolves assets for.
+func WithMeshLLMPlatform(goos, goarch string) MeshLLMInstallOption {
+	return func(options *meshLLMInstallOptions) {
+		options.goos = goos
+		options.goarch = goarch
+	}
+}
+
+// WithMeshLLMAssetOverride bypasses the embedded pin map with an explicit
+// asset, so tests can serve archives whose checksums they control.
+func WithMeshLLMAssetOverride(asset MeshLLMAsset) MeshLLMInstallOption {
+	return func(options *meshLLMInstallOptions) {
+		options.asset = &asset
+	}
+}
+
+// WithMeshLLMLookPath overrides PATH resolution (also used to probe nvidia-smi).
+func WithMeshLLMLookPath(lookPath func(file string) (string, error)) MeshLLMInstallOption {
+	return func(options *meshLLMInstallOptions) {
+		options.lookPath = lookPath
+	}
+}
+
+// WithMeshLLMVersionQuery overrides how a candidate binary's version is read.
+func WithMeshLLMVersionQuery(queryVersion func(binaryPath string) (string, error)) MeshLLMInstallOption {
+	return func(options *meshLLMInstallOptions) {
+		options.queryVersion = queryVersion
+	}
+}
+
+// WithMeshLLMDownload overrides how release asset bytes are fetched.
+func WithMeshLLMDownload(download func(assetURL string) ([]byte, error)) MeshLLMInstallOption {
+	return func(options *meshLLMInstallOptions) {
+		options.download = download
+	}
+}
+
+// EnsureMeshLLM returns the path of a MeshLLM binary matching the pinned
+// release, installing it when necessary. A mesh-llm binary on PATH is accepted
+// only when its version output matches the pin (allowUnpinned accepts it
+// regardless); otherwise the pinned release asset is downloaded from GitHub
+// releases into <dataDir>/bin, SHA-256 verified against the embedded map,
+// extracted, and installed by atomic rename. The agent supervises the binary
+// itself and never installs MeshLLM's upstream service units. Any failure
+// wraps ErrRuntimeDependencyMissing so the node stays up but never eligible.
+func EnsureMeshLLM(dataDir, flavorOverride string, allowUnpinned bool, opts ...MeshLLMInstallOption) (string, error) {
+	options := meshLLMInstallOptions{
+		goos:         runtime.GOOS,
+		goarch:       runtime.GOARCH,
+		lookPath:     exec.LookPath,
+		queryVersion: queryMeshLLMVersion,
+		download:     downloadMeshLLMAsset,
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	if pathBinary, err := options.lookPath("mesh-llm"); err == nil {
+		if allowUnpinned {
+			return pathBinary, nil
+		}
+		if version, versionErr := options.queryVersion(pathBinary); versionErr == nil && meshLLMVersionMatches(version, MeshLLMPinnedVersion) {
+			return pathBinary, nil
+		}
+	}
+
+	binaryName := meshLLMBinaryName(options.goos)
+	target := filepath.Join(dataDir, "bin", binaryName)
+	if _, err := os.Stat(target); err == nil {
+		if version, versionErr := options.queryVersion(target); versionErr == nil && meshLLMVersionMatches(version, MeshLLMPinnedVersion) {
+			return target, nil
+		}
+	}
+
+	asset := MeshLLMAsset{}
+	if options.asset != nil {
+		asset = *options.asset
+	} else {
+		flavor := flavorOverride
+		if flavor == "" {
+			flavor = DetectMeshLLMFlavor(options.goos, options.goarch, func() bool {
+				_, err := options.lookPath("nvidia-smi")
+				return err == nil
+			})
+		}
+		resolved, err := MeshLLMAssetFor(options.goos, options.goarch, flavor)
+		if err != nil {
+			return "", fmt.Errorf("%w: %v", ErrRuntimeDependencyMissing, err)
+		}
+		asset = resolved
+	}
+
+	data, err := options.download(meshLLMReleaseBaseURL + "/" + asset.AssetName)
+	if err != nil {
+		return "", fmt.Errorf("%w: download %s: %v", ErrRuntimeDependencyMissing, asset.AssetName, err)
+	}
+	if !VerifyBytesSHA256(data, asset.SHA256) {
+		return "", fmt.Errorf("%w: checksum mismatch for %s", ErrRuntimeDependencyMissing, asset.AssetName)
+	}
+	binary, err := extractMeshLLMBinary(data, asset.AssetName, binaryName)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrRuntimeDependencyMissing, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return "", fmt.Errorf("%w: create bin dir: %v", ErrRuntimeDependencyMissing, err)
+	}
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, binary, 0o700); err != nil {
+		return "", fmt.Errorf("%w: stage mesh-llm binary: %v", ErrRuntimeDependencyMissing, err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		_ = os.Remove(tmp)
+		return "", fmt.Errorf("%w: install mesh-llm binary: %v", ErrRuntimeDependencyMissing, err)
+	}
+	return target, nil
+}
+
+func meshLLMBinaryName(goos string) string {
+	if goos == "windows" {
+		return "mesh-llm.exe"
+	}
+	return "mesh-llm"
+}
+
+// meshLLMVersionMatches reports whether a --version output names exactly the
+// pinned release, comparing whitespace-separated tokens with an optional
+// leading "v" so "mesh-llm 0.72.2" matches pin "v0.72.2" but "0.72.21" never does.
+func meshLLMVersionMatches(output, pinned string) bool {
+	want := strings.TrimPrefix(pinned, "v")
+	for _, field := range strings.Fields(output) {
+		if strings.TrimPrefix(field, "v") == want {
+			return true
+		}
+	}
+	return false
+}
+
+// extractMeshLLMBinary pulls only the mesh-llm binary entry out of a release
+// archive; upstream service units and other bundle files are never extracted.
+func extractMeshLLMBinary(archive []byte, assetName, binaryName string) ([]byte, error) {
+	switch {
+	case strings.HasSuffix(assetName, ".tar.gz"):
+		return extractMeshLLMTarGz(archive, binaryName)
+	case strings.HasSuffix(assetName, ".zip"):
+		return extractMeshLLMZip(archive, binaryName)
+	default:
+		return nil, fmt.Errorf("unsupported mesh-llm archive type: %s", assetName)
+	}
+}
+
+func extractMeshLLMTarGz(archive []byte, binaryName string) ([]byte, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(archive))
+	if err != nil {
+		return nil, fmt.Errorf("open mesh-llm archive: %w", err)
+	}
+	defer gz.Close()
+	reader := tar.NewReader(gz)
+	for {
+		header, err := reader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read mesh-llm archive: %w", err)
+		}
+		if header.Typeflag != tar.TypeReg || archiveEntryBase(header.Name) != binaryName {
+			continue
+		}
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, fmt.Errorf("read mesh-llm binary entry: %w", err)
+		}
+		return data, nil
+	}
+	return nil, fmt.Errorf("binary %s not found in mesh-llm archive", binaryName)
+}
+
+func extractMeshLLMZip(archive []byte, binaryName string) ([]byte, error) {
+	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		return nil, fmt.Errorf("open mesh-llm archive: %w", err)
+	}
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() || archiveEntryBase(file.Name) != binaryName {
+			continue
+		}
+		entry, err := file.Open()
+		if err != nil {
+			return nil, fmt.Errorf("open mesh-llm binary entry: %w", err)
+		}
+		data, err := io.ReadAll(entry)
+		closeErr := entry.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read mesh-llm binary entry: %w", err)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close mesh-llm binary entry: %w", closeErr)
+		}
+		return data, nil
+	}
+	return nil, fmt.Errorf("binary %s not found in mesh-llm archive", binaryName)
+}
+
+// archiveEntryBase returns an archive entry's final path segment; upstream
+// windows zips use backslash separators, so both separators are handled.
+func archiveEntryBase(name string) string {
+	return path.Base(strings.ReplaceAll(name, `\`, "/"))
+}
+
+func downloadMeshLLMAsset(assetURL string) ([]byte, error) {
+	client := &http.Client{Timeout: 30 * time.Minute}
+	response, err := client.Get(assetURL)
+	if err != nil {
+		return nil, fmt.Errorf("download mesh-llm asset: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("download mesh-llm asset returned %d", response.StatusCode)
+	}
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read mesh-llm asset: %w", err)
+	}
+	return data, nil
+}
+
+func queryMeshLLMVersion(binaryPath string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, binaryPath, "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("query mesh-llm version: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+const MeshLLMInstallAnchors = "REQ-NODE-006"

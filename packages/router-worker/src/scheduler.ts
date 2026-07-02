@@ -102,13 +102,13 @@ export function isEligible(node: NodeRecord, profile: ModelProfile, now: number)
   if (node.status !== 'online') return false
   if (now - node.lastSeenAt > HEARTBEAT_TTL_MS) return false
   if (node.failurePenaltyUntil !== undefined && node.failurePenaltyUntil > now) return false
+  if ((node.runtime as string) !== 'meshllm') return false
   if (!node.publicModels.some((model) => profile.publicAliases.includes(model))) return false
   if (!node.activeProfileIds.includes(profile.id)) return false
   const runtimeState = node.metrics?.runtimeState
   if (runtimeState !== 'ready' && runtimeState !== 'running') return false
-  const loadedModel = node.metrics?.loadedModel ?? node.runtimeModel
-  if (loadedModel !== profile.upstreamModel) return false
-  if (node.runtimeModel !== undefined && node.runtimeModel !== profile.upstreamModel) return false
+  if (node.metrics?.apiReady !== true) return false
+  if (node.metrics?.readyModels?.includes(profile.upstreamModel) !== true) return false
   if (node.inFlight >= node.capacity) return false
   if (!isSafeMeshTarget(node.meshIp, node.inferencePort)) return false
   return true

@@ -1,3 +1,4 @@
+import { electSeedIfAbsent } from './mesh-state'
 import { StoreScheduler } from './scheduler'
 import { D1Store } from './store'
 import type { RouterEnv } from './types'
@@ -21,6 +22,10 @@ export class RegistryDO implements DurableObject {
       const body = await request.json() as { reservationId: string; now: number }
       await scheduler.recordFailure(body.reservationId, body.now)
       return Response.json({ ok: true })
+    }
+    if (request.method === 'POST' && url.pathname === '/mesh-election') {
+      const body = await request.json() as { profileId: string; nodeId: string; now: number }
+      return Response.json(await electSeedIfAbsent(new D1Store(this.env.DB), this.env, body.profileId, body.nodeId, body.now))
     }
     return Response.json({ error: 'not_found' }, { status: 404 })
   }

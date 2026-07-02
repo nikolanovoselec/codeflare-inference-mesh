@@ -13,43 +13,45 @@ import (
 )
 
 type Config struct {
-	RouterURL          string         `json:"routerUrl"`
-	SetupToken         string         `json:"setupToken,omitempty"`
-	NodeID             string         `json:"nodeId,omitempty"`
-	NodeToken          string         `json:"nodeToken,omitempty"`
-	UpstreamToken      string         `json:"upstreamToken,omitempty"`
-	DisplayName        string         `json:"displayName"`
-	MeshIP             string         `json:"meshIp"`
-	ListenAddress      string         `json:"listenAddress"`
-	InferencePort      int            `json:"inferencePort"`
-	DashboardAddress   string         `json:"dashboardAddress"`
-	DashboardToken     string         `json:"dashboardToken,omitempty"`
-	RuntimeURL         string         `json:"runtimeUrl"`
-	RuntimeModel       string         `json:"runtimeModel"`
-	PublicModels       []string       `json:"publicModels"`
-	ActiveProfileIDs   []string       `json:"activeProfileIds"`
-	Profiles           []ModelProfile `json:"profiles,omitempty"`
-	Capacity           int            `json:"capacity"`
-	DataDir            string         `json:"dataDir"`
-	ReleaseURL         string         `json:"releaseUrl"`
-	AllowAllInterfaces bool           `json:"allowAllInterfaces"`
+	RouterURL            string         `json:"routerUrl"`
+	SetupToken           string         `json:"setupToken,omitempty"`
+	NodeID               string         `json:"nodeId,omitempty"`
+	NodeToken            string         `json:"nodeToken,omitempty"`
+	UpstreamToken        string         `json:"upstreamToken,omitempty"`
+	DisplayName          string         `json:"displayName"`
+	MeshIP               string         `json:"meshIp"`
+	ListenAddress        string         `json:"listenAddress"`
+	InferencePort        int            `json:"inferencePort"`
+	DashboardAddress     string         `json:"dashboardAddress"`
+	DashboardToken       string         `json:"dashboardToken,omitempty"`
+	MeshLLMAPIPort       int            `json:"meshllmApiPort"`
+	MeshLLMConsolePort   int            `json:"meshllmConsolePort"`
+	MeshLLMFlavor        string         `json:"meshllmFlavor,omitempty"`
+	MeshLLMAllowUnpinned bool           `json:"meshllmAllowUnpinned,omitempty"`
+	RuntimeModel         string         `json:"runtimeModel"`
+	PublicModels         []string       `json:"publicModels"`
+	ActiveProfileIDs     []string       `json:"activeProfileIds"`
+	Profiles             []ModelProfile `json:"profiles,omitempty"`
+	Capacity             int            `json:"capacity"`
+	DataDir              string         `json:"dataDir"`
+	AllowAllInterfaces   bool           `json:"allowAllInterfaces"`
 }
 
 func DefaultConfig(dataDir string) Config {
 	return Config{
-		DisplayName:      hostname(),
-		ListenAddress:    "",
-		InferencePort:    8080,
-		DashboardAddress: "127.0.0.1:17777",
-		DashboardToken:   dashboardToken(),
-		RuntimeURL:       "http://127.0.0.1:8081",
-		RuntimeModel:     "qwen36-35b-a3b-262k-mm-3090",
-		PublicModels:     []string{"mesh-default"},
-		ActiveProfileIDs: []string{"qwen36-35b-a3b-262k-mm-3090"},
-		Profiles:         nil,
-		Capacity:         1,
-		DataDir:          dataDir,
-		ReleaseURL:       "https://api.github.com/repos/nikolanovoselec/codeflare-inference-mesh/releases/latest",
+		DisplayName:        hostname(),
+		ListenAddress:      "",
+		InferencePort:      8080,
+		DashboardAddress:   "127.0.0.1:17777",
+		DashboardToken:     dashboardToken(),
+		MeshLLMAPIPort:     9337,
+		MeshLLMConsolePort: 3131,
+		RuntimeModel:       "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
+		PublicModels:       []string{"mesh-default"},
+		ActiveProfileIDs:   []string{"mesh-default-qwen36-35b"},
+		Profiles:           nil,
+		Capacity:           1,
+		DataDir:            dataDir,
 	}
 }
 
@@ -153,26 +155,28 @@ func ConfigPath() string {
 
 func RedactedConfig(cfg Config) Config {
 	return Config{
-		RouterURL:          cfg.RouterURL,
-		SetupToken:         redact(cfg.SetupToken),
-		NodeID:             cfg.NodeID,
-		NodeToken:          redact(cfg.NodeToken),
-		UpstreamToken:      redact(cfg.UpstreamToken),
-		DisplayName:        cfg.DisplayName,
-		MeshIP:             cfg.MeshIP,
-		ListenAddress:      cfg.ListenAddress,
-		InferencePort:      cfg.InferencePort,
-		DashboardAddress:   cfg.DashboardAddress,
-		DashboardToken:     redact(cfg.DashboardToken),
-		RuntimeURL:         cfg.RuntimeURL,
-		RuntimeModel:       cfg.RuntimeModel,
-		PublicModels:       append([]string(nil), cfg.PublicModels...),
-		ActiveProfileIDs:   append([]string(nil), cfg.ActiveProfileIDs...),
-		Profiles:           append([]ModelProfile(nil), cfg.Profiles...),
-		Capacity:           cfg.Capacity,
-		DataDir:            cfg.DataDir,
-		ReleaseURL:         cfg.ReleaseURL,
-		AllowAllInterfaces: cfg.AllowAllInterfaces,
+		RouterURL:            cfg.RouterURL,
+		SetupToken:           redact(cfg.SetupToken),
+		NodeID:               cfg.NodeID,
+		NodeToken:            redact(cfg.NodeToken),
+		UpstreamToken:        redact(cfg.UpstreamToken),
+		DisplayName:          cfg.DisplayName,
+		MeshIP:               cfg.MeshIP,
+		ListenAddress:        cfg.ListenAddress,
+		InferencePort:        cfg.InferencePort,
+		DashboardAddress:     cfg.DashboardAddress,
+		DashboardToken:       redact(cfg.DashboardToken),
+		MeshLLMAPIPort:       cfg.MeshLLMAPIPort,
+		MeshLLMConsolePort:   cfg.MeshLLMConsolePort,
+		MeshLLMFlavor:        cfg.MeshLLMFlavor,
+		MeshLLMAllowUnpinned: cfg.MeshLLMAllowUnpinned,
+		RuntimeModel:         cfg.RuntimeModel,
+		PublicModels:         append([]string(nil), cfg.PublicModels...),
+		ActiveProfileIDs:     append([]string(nil), cfg.ActiveProfileIDs...),
+		Profiles:             append([]ModelProfile(nil), cfg.Profiles...),
+		Capacity:             cfg.Capacity,
+		DataDir:              cfg.DataDir,
+		AllowAllInterfaces:   cfg.AllowAllInterfaces,
 	}
 }
 
@@ -216,4 +220,4 @@ func hostname() string {
 	return name
 }
 
-const ConfigAnchors = "REQ-NODE-001 REQ-SEC-004"
+const ConfigAnchors = "REQ-NODE-001 REQ-RUN-003 REQ-SEC-004"

@@ -12,27 +12,21 @@ export interface TokenRecord {
   readonly expiresAt?: number
 }
 
-export interface RuntimeCommand {
-  readonly executable: 'llama-server'
-  readonly args: readonly string[]
-  readonly env: Record<string, string>
-}
-
-export type ModelSourceMode = 'llama-hf' | 'direct-gguf'
+export type ModelSourceMode = 'meshllm-ref'
 
 export interface ModelProfile {
   readonly id: string
   readonly publicAliases: readonly string[]
   readonly upstreamModel: string
   readonly sourceMode: ModelSourceMode
-  readonly hfSpecifier?: string
-  readonly downloadUrl?: string
-  readonly localFilename?: string
-  readonly sha256?: string
-  readonly llamaServerModelArg?: string
   readonly contextWindow: number
-  readonly runtime: 'llama.cpp'
-  readonly runtimeCommand: RuntimeCommand
+  readonly runtime: 'meshllm'
+  readonly meshllm: {
+    readonly modelRef: string
+    readonly split: boolean
+    readonly bindPort: number
+    readonly maxVramGb?: number
+  }
   readonly version: number
   readonly rolloutPercent: number
   readonly active: boolean
@@ -50,6 +44,15 @@ export interface NodeMetrics {
   readonly generationTokensPerSecond?: number
   readonly loadedProfileId?: string
   readonly loadedProfileVersion?: number
+  readonly meshId?: string
+  readonly meshRole?: 'coordinator' | 'serving-peer' | 'api-client'
+  readonly peerCount?: number
+  readonly readyModels?: readonly string[]
+  readonly splitEnabled?: boolean
+  readonly stageCount?: number
+  readonly apiReady?: boolean
+  readonly consoleReady?: boolean
+  readonly meshllmVersion?: string
   readonly lastError?: string
 }
 
@@ -66,8 +69,9 @@ export interface NodeRecord {
   readonly inFlight: number
   readonly lastSeenAt: number
   readonly failurePenaltyUntil?: number
-  readonly runtime: 'llama.cpp'
+  readonly runtime: 'meshllm'
   readonly runtimeModel?: string
+  readonly agentVersion?: string
   readonly nodeTokenVerifier?: string
   readonly upstreamTokenVerifier?: string
   readonly metrics?: NodeMetrics
@@ -111,6 +115,22 @@ export interface ClaimRequest {
   readonly capacity: number
 }
 
+export interface MeshBootstrap {
+  readonly action: 'create' | 'join' | 'wait'
+  readonly rotation: number
+  readonly meshId?: string
+  readonly joinTokens?: readonly string[]
+}
+
+export interface ClaimResponse {
+  readonly nodeId: string
+  readonly nodeToken: string
+  readonly upstreamToken: string
+  readonly profiles: readonly ModelProfile[]
+  readonly meshBootstrap?: MeshBootstrap
+  readonly desiredAgentVersion?: string
+}
+
 export interface HeartbeatRequest {
   readonly nodeId: string
   readonly displayName: string
@@ -122,9 +142,19 @@ export interface HeartbeatRequest {
   readonly activeProfileIds: readonly string[]
   readonly capacity: number
   readonly inFlight: number
-  readonly runtime: 'llama.cpp'
+  readonly runtime: 'meshllm'
   readonly runtimeModel?: string
+  readonly meshId?: string
+  readonly meshToken?: string
+  readonly agentVersion?: string
   readonly metrics?: NodeMetrics
+}
+
+export interface HeartbeatResponse {
+  readonly ok: boolean
+  readonly desiredProfiles: readonly ModelProfile[]
+  readonly meshBootstrap?: MeshBootstrap
+  readonly desiredAgentVersion?: string
 }
 
 export interface ReservationRequest {
@@ -188,6 +218,7 @@ export interface RouterEnv {
   readonly AI_GATEWAY_PROVIDER_NAME?: string
   readonly WORKER_NAME?: string
   readonly ADMIN_RECOVERY_TOKEN?: string
+  readonly MESH_STATE_KEY?: string
   readonly WORKER_BASE_URL?: string
   readonly GITHUB_REPOSITORY?: string
   readonly AGENT_RELEASE_TAG?: string

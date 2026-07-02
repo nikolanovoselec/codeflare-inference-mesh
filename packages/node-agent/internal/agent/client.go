@@ -25,11 +25,20 @@ type ClaimRequest struct {
 	Capacity         int      `json:"capacity"`
 }
 
+type MeshBootstrap struct {
+	Action     string   `json:"action"`
+	Rotation   int      `json:"rotation"`
+	MeshID     string   `json:"meshId,omitempty"`
+	JoinTokens []string `json:"joinTokens,omitempty"`
+}
+
 type ClaimResponse struct {
-	NodeID        string         `json:"nodeId"`
-	NodeToken     string         `json:"nodeToken"`
-	UpstreamToken string         `json:"upstreamToken"`
-	Profiles      []ModelProfile `json:"profiles"`
+	NodeID              string         `json:"nodeId"`
+	NodeToken           string         `json:"nodeToken"`
+	UpstreamToken       string         `json:"upstreamToken"`
+	Profiles            []ModelProfile `json:"profiles"`
+	MeshBootstrap       *MeshBootstrap `json:"meshBootstrap,omitempty"`
+	DesiredAgentVersion string         `json:"desiredAgentVersion,omitempty"`
 }
 
 type HeartbeatRequest struct {
@@ -45,12 +54,17 @@ type HeartbeatRequest struct {
 	InFlight           int         `json:"inFlight"`
 	Runtime            string      `json:"runtime"`
 	RuntimeModel       string      `json:"runtimeModel,omitempty"`
+	MeshID             string      `json:"meshId,omitempty"`
+	MeshToken          string      `json:"meshToken,omitempty"`
+	AgentVersion       string      `json:"agentVersion,omitempty"`
 	Metrics            NodeMetrics `json:"metrics"`
 }
 
 type HeartbeatResponse struct {
-	OK              bool           `json:"ok"`
-	DesiredProfiles []ModelProfile `json:"desiredProfiles"`
+	OK                  bool           `json:"ok"`
+	DesiredProfiles     []ModelProfile `json:"desiredProfiles"`
+	MeshBootstrap       *MeshBootstrap `json:"meshBootstrap,omitempty"`
+	DesiredAgentVersion string         `json:"desiredAgentVersion,omitempty"`
 }
 
 func (c Client) Claim(ctx context.Context, setupToken string, req ClaimRequest) (ClaimResponse, error) {
@@ -149,7 +163,17 @@ func profileAliases(profiles []ModelProfile) []string {
 	return aliases
 }
 
-func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int) HeartbeatRequest {
+// HeartbeatIdentity carries the values resent in every heartbeat request:
+// the node's current mesh id and invite token as last captured from the
+// MeshLLM console, plus the compiled-in agent version. Resending every tick
+// keeps token delivery idempotent so the router can upsert on change.
+type HeartbeatIdentity struct {
+	MeshID       string
+	MeshToken    string
+	AgentVersion string
+}
+
+func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int, identity HeartbeatIdentity) HeartbeatRequest {
 	return HeartbeatRequest{
 		NodeID:             cfg.NodeID,
 		DisplayName:        cfg.DisplayName,
@@ -161,8 +185,11 @@ func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int) Heartbea
 		ActiveProfileIDs:   append([]string(nil), cfg.ActiveProfileIDs...),
 		Capacity:           cfg.Capacity,
 		InFlight:           inFlight,
-		Runtime:            "llama.cpp",
+		Runtime:            "meshllm",
 		RuntimeModel:       metrics.LoadedModel,
+		MeshID:             identity.MeshID,
+		MeshToken:          identity.MeshToken,
+		AgentVersion:       identity.AgentVersion,
 		Metrics:            metrics,
 	}
 }
@@ -196,4 +223,4 @@ func (c Client) post(ctx context.Context, path string, token string, req any, ou
 	return nil
 }
 
-const ClientAnchors = "REQ-NODE-002"
+const ClientAnchors = "REQ-NODE-002 REQ-RUN-003 REQ-RUN-006"

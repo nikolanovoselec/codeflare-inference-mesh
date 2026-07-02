@@ -20,74 +20,82 @@ import (
 
 func TestREQNODE001ServiceSkeletonAndListenerPolicy(t *testing.T) {
 	t.Run("REQ-NODE-001", func(t *testing.T) {
-	addr := &net.IPNet{IP: net.ParseIP("100.64.1.10"), Mask: net.CIDRMask(32, 32)}
-	meshIP, ok := DetectMeshIP([]net.Addr{addr})
-	if !ok || meshIP != "100.64.1.10" {
-		t.Fatalf("expected CGNAT Mesh IP, got %q ok=%v", meshIP, ok)
-	}
-	lan := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(32, 32)}
-	if ambiguousIP, ok := DetectMeshIP([]net.Addr{addr, lan}); ok || ambiguousIP != "" {
-		t.Fatalf("ambiguous private Mesh IP detection should fail closed, got %q ok=%v", ambiguousIP, ok)
-	}
-	if got := ListenerAddress(meshIP, 8080, false); got != "100.64.1.10:8080" {
-		t.Fatalf("expected mesh listener, got %s", got)
-	}
-	plan := ServiceInstallPlan("/opt/inference-mesh-agent", "/etc/inference-mesh/config.json", "linux")
-	if plan.UnitName != "inference-mesh-agent.service" || plan.Command == "" {
-		t.Fatalf("invalid service plan: %#v", plan)
-	}
+		addr := &net.IPNet{IP: net.ParseIP("100.64.1.10"), Mask: net.CIDRMask(32, 32)}
+		meshIP, ok := DetectMeshIP([]net.Addr{addr})
+		if !ok || meshIP != "100.64.1.10" {
+			t.Fatalf("expected CGNAT Mesh IP, got %q ok=%v", meshIP, ok)
+		}
+		lan := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(32, 32)}
+		if ambiguousIP, ok := DetectMeshIP([]net.Addr{addr, lan}); ok || ambiguousIP != "" {
+			t.Fatalf("ambiguous private Mesh IP detection should fail closed, got %q ok=%v", ambiguousIP, ok)
+		}
+		if got := ListenerAddress(meshIP, 8080, false); got != "100.64.1.10:8080" {
+			t.Fatalf("expected mesh listener, got %s", got)
+		}
+		plan := ServiceInstallPlan("/opt/inference-mesh-agent", "/etc/inference-mesh/config.json", "linux")
+		if plan.UnitName != "inference-mesh-agent.service" || plan.Command == "" {
+			t.Fatalf("invalid service plan: %#v", plan)
+		}
 	})
 }
 
 func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 	t.Run("REQ-NODE-002", func(t *testing.T) {
-	var claimed ClaimRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/node/claim" {
-			if r.Header.Get("authorization") != "Bearer setup-token" {
-				t.Fatalf("missing setup token")
+		var claimed ClaimRequest
+		var heartbeat HeartbeatRequest
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/node/claim" {
+				if r.Header.Get("authorization") != "Bearer setup-token" {
+					t.Fatalf("missing setup token")
+				}
+				_ = json.NewDecoder(r.Body).Decode(&claimed)
+				_ = json.NewEncoder(w).Encode(ClaimResponse{NodeID: "node-a", NodeToken: "node-token", UpstreamToken: "upstream-token"})
+				return
 			}
-			_ = json.NewDecoder(r.Body).Decode(&claimed)
-			_ = json.NewEncoder(w).Encode(ClaimResponse{NodeID: "node-a", NodeToken: "node-token", UpstreamToken: "upstream-token"})
-			return
-		}
-		if r.URL.Path == "/node/heartbeat" {
-			if r.Header.Get("authorization") != "Bearer node-token" {
-				t.Fatalf("missing node token")
+			if r.URL.Path == "/node/heartbeat" {
+				if r.Header.Get("authorization") != "Bearer node-token" {
+					t.Fatalf("missing node token")
+				}
+				_ = json.NewDecoder(r.Body).Decode(&heartbeat)
+				_ = json.NewEncoder(w).Encode(HeartbeatResponse{OK: true})
+				return
 			}
-			_ = json.NewEncoder(w).Encode(HeartbeatResponse{OK: true})
-			return
+			http.NotFound(w, r)
+		}))
+		defer server.Close()
+		client := Client{RouterURL: server.URL, HTTPClient: server.Client()}
+		claim, err := client.Claim(context.Background(), "setup-token", ClaimRequest{DisplayName: "Node A", MeshIP: "100.64.1.10", InferencePort: 8080, PublicModels: []string{"mesh-default"}, ActiveProfileIDs: []string{"mesh-default-qwen36-35b"}, Capacity: 2})
+		if err != nil {
+			t.Fatal(err)
 		}
-		http.NotFound(w, r)
-	}))
-	defer server.Close()
-	client := Client{RouterURL: server.URL, HTTPClient: server.Client()}
-	claim, err := client.Claim(context.Background(), "setup-token", ClaimRequest{DisplayName: "Node A", MeshIP: "100.64.1.10", InferencePort: 8080, PublicModels: []string{"mesh-default"}, ActiveProfileIDs: []string{"qwen36-35b-a3b-262k-mm-3090"}, Capacity: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "config.json")
-	cfg, err := ApplyClaim(DefaultConfig(t.TempDir()), claim, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.NodeToken != "node-token" || cfg.UpstreamToken != "upstream-token" || cfg.SetupToken != "" {
-		t.Fatalf("claim not applied: %#v", cfg)
-	}
-	loaded, err := LoadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.NodeID != "node-a" {
-		t.Fatalf("config was not saved")
-	}
-	_, err = client.Heartbeat(context.Background(), cfg.NodeToken, HeartbeatFromConfig(cfg, RuntimeMetrics("ready", "mesh-default", 0), 0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claimed.MeshIP != "100.64.1.10" || claimed.Capacity != 2 {
-		t.Fatalf("claim payload mismatch: %#v", claimed)
-	}
+		path := filepath.Join(t.TempDir(), "config.json")
+		cfg, err := ApplyClaim(DefaultConfig(t.TempDir()), claim, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.NodeToken != "node-token" || cfg.UpstreamToken != "upstream-token" || cfg.SetupToken != "" {
+			t.Fatalf("claim not applied: %#v", cfg)
+		}
+		loaded, err := LoadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.NodeID != "node-a" {
+			t.Fatalf("config was not saved")
+		}
+		_, err = client.Heartbeat(context.Background(), cfg.NodeToken, HeartbeatFromConfig(cfg, RuntimeMetrics("ready", "mesh-default", 0), 0, HeartbeatIdentity{AgentVersion: "v-test"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if claimed.MeshIP != "100.64.1.10" || claimed.Capacity != 2 {
+			t.Fatalf("claim payload mismatch: %#v", claimed)
+		}
+		if heartbeat.Runtime != "meshllm" {
+			t.Fatalf("heartbeat runtime = %q, want meshllm", heartbeat.Runtime)
+		}
+		if heartbeat.AgentVersion != "v-test" {
+			t.Fatalf("heartbeat should carry the agent version, got %q", heartbeat.AgentVersion)
+		}
 	})
 }
 
@@ -137,6 +145,96 @@ func TestREQNODE002AppliesDetectedMeshIPBeforeClaim(t *testing.T) {
 	})
 }
 
+func TestREQNODE002HeartbeatResendsMeshIdentityEveryTick(t *testing.T) {
+	t.Run("REQ-NODE-002 REQ-RUN-006", func(t *testing.T) {
+		cfg := DefaultConfig(t.TempDir())
+		identity := HeartbeatIdentity{MeshID: "mesh-1", MeshToken: "tok-1", AgentVersion: "v2.0.0"}
+
+		first := HeartbeatFromConfig(cfg, RuntimeMetrics("ready", "model-a", 0), 0, identity)
+		second := HeartbeatFromConfig(cfg, RuntimeMetrics("starting", "", 1), 1, identity)
+
+		for index, request := range []HeartbeatRequest{first, second} {
+			if request.MeshID != "mesh-1" || request.MeshToken != "tok-1" || request.AgentVersion != "v2.0.0" {
+				t.Fatalf("tick %d must resend mesh identity, got meshId=%q meshToken=%q agentVersion=%q", index, request.MeshID, request.MeshToken, request.AgentVersion)
+			}
+		}
+		encoded, err := json.Marshal(second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire map[string]any
+		if err := json.Unmarshal(encoded, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if wire["meshId"] != "mesh-1" || wire["meshToken"] != "tok-1" || wire["agentVersion"] != "v2.0.0" {
+			t.Fatalf("wire payload must carry meshId/meshToken/agentVersion on every tick, got %v", wire)
+		}
+	})
+}
+
+func TestREQNODE002ResponsesCarryMeshBootstrapAndDesiredVersion(t *testing.T) {
+	t.Run("REQ-NODE-002", func(t *testing.T) {
+		var claim ClaimResponse
+		if err := json.Unmarshal([]byte(`{"nodeId":"n","nodeToken":"t","upstreamToken":"u","profiles":[],"meshBootstrap":{"action":"wait","rotation":3},"desiredAgentVersion":"v1.2.3"}`), &claim); err != nil {
+			t.Fatal(err)
+		}
+		if claim.MeshBootstrap == nil || claim.MeshBootstrap.Action != "wait" || claim.MeshBootstrap.Rotation != 3 {
+			t.Fatalf("claim response must decode the mesh bootstrap directive, got %#v", claim.MeshBootstrap)
+		}
+		if claim.DesiredAgentVersion != "v1.2.3" {
+			t.Fatalf("claim response must decode desiredAgentVersion, got %q", claim.DesiredAgentVersion)
+		}
+
+		var heartbeat HeartbeatResponse
+		if err := json.Unmarshal([]byte(`{"ok":true,"desiredProfiles":[],"meshBootstrap":{"action":"join","rotation":4,"meshId":"mesh-9","joinTokens":["tokA","tokB"]},"desiredAgentVersion":"v9.9.9"}`), &heartbeat); err != nil {
+			t.Fatal(err)
+		}
+		bootstrap := heartbeat.MeshBootstrap
+		if bootstrap == nil || bootstrap.Action != "join" || bootstrap.Rotation != 4 || bootstrap.MeshID != "mesh-9" {
+			t.Fatalf("heartbeat response must decode the join bootstrap, got %#v", bootstrap)
+		}
+		if !equalStrings(bootstrap.JoinTokens, []string{"tokA", "tokB"}) {
+			t.Fatalf("join tokens = %v, want [tokA tokB]", bootstrap.JoinTokens)
+		}
+		if heartbeat.DesiredAgentVersion != "v9.9.9" {
+			t.Fatalf("heartbeat response must decode desiredAgentVersion, got %q", heartbeat.DesiredAgentVersion)
+		}
+	})
+}
+
+func TestREQRUN006HeartbeatCarriesMeshTokenAndMeshId(t *testing.T) {
+	t.Run("REQ-RUN-006", func(t *testing.T) {
+		console := &consoleFixture{status: statusPayload("serving", "mesh-xyz", "tok-abc")}
+		consoleServer := httptest.NewServer(console)
+		defer consoleServer.Close()
+		models := &modelsFixture{ids: []string{"target-model"}}
+		modelsServer := httptest.NewServer(models)
+		defer modelsServer.Close()
+
+		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+			ModelRef:    "target-model",
+			APIPort:     serverPort(t, modelsServer),
+			ConsolePort: serverPort(t, consoleServer),
+		}, 0)
+		if _, reachable := fixture.manager.PollStatus(context.Background()); !reachable {
+			t.Fatal("console fixture should be reachable")
+		}
+
+		request := HeartbeatFromConfig(DefaultConfig(t.TempDir()), RuntimeMetrics("ready", "target-model", 0), 0, HeartbeatIdentity{
+			MeshID:       fixture.manager.CurrentMeshID(),
+			MeshToken:    fixture.manager.CurrentToken(),
+			AgentVersion: "v1.0.0",
+		})
+
+		if request.MeshID != "mesh-xyz" || request.MeshToken != "tok-abc" {
+			t.Fatalf("heartbeat must carry the console-captured mesh identity, got meshId=%q meshToken=%q", request.MeshID, request.MeshToken)
+		}
+		if request.Runtime != "meshllm" {
+			t.Fatalf("heartbeat runtime = %q, want meshllm", request.Runtime)
+		}
+	})
+}
+
 func TestREQRUN003ClaimAppliesDesiredProfilesBeforeRuntimeStart(t *testing.T) {
 	t.Run("REQ-RUN-003 REQ-RUN-004", func(t *testing.T) {
 		cfg := DefaultConfig(t.TempDir())
@@ -145,9 +243,10 @@ func TestREQRUN003ClaimAppliesDesiredProfilesBeforeRuntimeStart(t *testing.T) {
 			ID:             "router-profile",
 			PublicAliases:  []string{"mesh-router"},
 			UpstreamModel:  "router-upstream",
-			LocalFilename:  "router.gguf",
-			ContextWindow:  32768,
-			Runtime:        "llama.cpp",
+			SourceMode:     "meshllm-ref",
+			ContextWindow:  262144,
+			Runtime:        "meshllm",
+			MeshLLM:        MeshLLMSettings{ModelRef: "router-upstream", BindPort: 4300},
 			Version:        2,
 			RolloutPercent: 100,
 			Active:         true,
@@ -177,31 +276,31 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.json")
 		cfg := DefaultConfig(t.TempDir())
 		cfg.Profiles = []ModelProfile{{
-			ID:                  "old-profile",
-			PublicAliases:       []string{"mesh-default"},
-			UpstreamModel:       "old-upstream",
-			LocalFilename:       "old.gguf",
-			LlamaServerModelArg: "old.gguf",
-			ContextWindow:       32768,
-			Runtime:             "llama.cpp",
-			Version:             1,
-			RolloutPercent:      100,
-			Active:              true,
+			ID:             "old-profile",
+			PublicAliases:  []string{"mesh-default"},
+			UpstreamModel:  "old-upstream",
+			SourceMode:     "meshllm-ref",
+			ContextWindow:  262144,
+			Runtime:        "meshllm",
+			MeshLLM:        MeshLLMSettings{ModelRef: "old-upstream", BindPort: 4300},
+			Version:        1,
+			RolloutPercent: 100,
+			Active:         true,
 		}}
 		cfg.ActiveProfileIDs = []string{"old-profile"}
 		cfg.PublicModels = []string{"mesh-default"}
 		cfg.RuntimeModel = "old-upstream"
 		desired := []ModelProfile{{
-			ID:                  "new-profile",
-			PublicAliases:       []string{"mesh-default", "mesh-next"},
-			UpstreamModel:       "new-upstream",
-			LocalFilename:       "new.gguf",
-			LlamaServerModelArg: "new.gguf",
-			ContextWindow:       32768,
-			Runtime:             "llama.cpp",
-			Version:             2,
-			RolloutPercent:      100,
-			Active:              true,
+			ID:             "new-profile",
+			PublicAliases:  []string{"mesh-default", "mesh-next"},
+			UpstreamModel:  "new-upstream",
+			SourceMode:     "meshllm-ref",
+			ContextWindow:  262144,
+			Runtime:        "meshllm",
+			MeshLLM:        MeshLLMSettings{ModelRef: "new-upstream", BindPort: 4300},
+			Version:        2,
+			RolloutPercent: 100,
+			Active:         true,
 		}}
 
 		next, changed, restart, err := ApplyDesiredProfiles(cfg, desired, path)
@@ -229,7 +328,7 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 		if len(next.PublicModels) != 2 || next.PublicModels[0] != "mesh-default" || next.PublicModels[1] != "mesh-next" {
 			t.Fatalf("public aliases were not updated: %#v", next.PublicModels)
 		}
-		payload := HeartbeatFromConfig(next, RuntimeMetrics("ready", "old-upstream", 0), 0)
+		payload := HeartbeatFromConfig(next, RuntimeMetrics("ready", "old-upstream", 0), 0, HeartbeatIdentity{})
 		if payload.RuntimeModel != "old-upstream" {
 			t.Fatalf("heartbeat should report the actually loaded runtime model, got %q", payload.RuntimeModel)
 		}
@@ -241,46 +340,46 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 
 func TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(t *testing.T) {
 	t.Run("REQ-NODE-003", func(t *testing.T) {
-	counter := &ActiveCounter{}
-	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if counter.Value() != 1 {
-			t.Fatalf("proxy did not count the active request")
+		counter := &ActiveCounter{}
+		runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if counter.Value() != 1 {
+				t.Fatalf("proxy did not count the active request")
+			}
+			if r.Header.Get("authorization") != "" || r.Header.Get("cf-access-client-secret") != "" {
+				t.Fatalf("proxy leaked forbidden headers")
+			}
+			w.Header().Set("content-type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: one\n\n")
+			_, _ = io.WriteString(w, "data: two\n\n")
+		}))
+		defer runtime.Close()
+		proxy, err := ProxyHandler(runtime.URL, "upstream-token", counter)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if r.Header.Get("authorization") != "" || r.Header.Get("cf-access-client-secret") != "" {
-			t.Fatalf("proxy leaked forbidden headers")
+		bad := httptest.NewRecorder()
+		proxy.ServeHTTP(bad, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{}`)))
+		if bad.Code != http.StatusUnauthorized {
+			t.Fatalf("expected unauthorized, got %d", bad.Code)
 		}
-		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: one\n\n")
-		_, _ = io.WriteString(w, "data: two\n\n")
-	}))
-	defer runtime.Close()
-	proxy, err := ProxyHandler(runtime.URL, "upstream-token", counter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bad := httptest.NewRecorder()
-	proxy.ServeHTTP(bad, httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{}`)))
-	if bad.Code != http.StatusUnauthorized {
-		t.Fatalf("expected unauthorized, got %d", bad.Code)
-	}
-	good := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{}`))
-	req.Header.Set("authorization", "Bearer upstream-token")
-	req.Header.Set("cf-access-client-secret", "secret")
-	proxy.ServeHTTP(good, req)
-	if good.Code != http.StatusOK || good.Body.String() != "data: one\n\ndata: two\n\n" {
-		t.Fatalf("unexpected proxy response %d %q", good.Code, good.Body.String())
-	}
-	if counter.Value() != 0 {
-		t.Fatalf("proxy did not release the active request")
-	}
+		good := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{}`))
+		req.Header.Set("authorization", "Bearer upstream-token")
+		req.Header.Set("cf-access-client-secret", "secret")
+		proxy.ServeHTTP(good, req)
+		if good.Code != http.StatusOK || good.Body.String() != "data: one\n\ndata: two\n\n" {
+			t.Fatalf("unexpected proxy response %d %q", good.Code, good.Body.String())
+		}
+		if counter.Value() != 0 {
+			t.Fatalf("proxy did not release the active request")
+		}
 	})
 }
 
 func TestREQNODE004DashboardRendersOperationalStatusUI(t *testing.T) {
 	t.Run("REQ-NODE-004", func(t *testing.T) {
 		handler := DashboardHandler(func() DashboardStatus {
-			return DashboardStatus{Config: Config{MeshIP: "100.64.1.10", InferencePort: 8080, DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token", RuntimeURL: "http://127.0.0.1:8081", RuntimeModel: "mesh-default"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
+			return DashboardStatus{Config: Config{MeshIP: "100.64.1.10", InferencePort: 8080, DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token", MeshLLMAPIPort: 9337, MeshLLMConsolePort: 3131, RuntimeModel: "mesh-default"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
 		})
 		resp := httptest.NewRecorder()
 
@@ -296,64 +395,125 @@ func TestREQNODE004DashboardRendersOperationalStatusUI(t *testing.T) {
 	})
 }
 
+func TestREQNODE004DashboardReportsMeshLLMRuntimePanel(t *testing.T) {
+	t.Run("REQ-NODE-004", func(t *testing.T) {
+		metrics := NodeMetrics{
+			RuntimeState:    "ready",
+			ActiveRequests:  0,
+			MeshID:          "mesh-1",
+			MeshRole:        "coordinator",
+			PeerCount:       3,
+			ReadyModels:     []string{"model-a", "model-b"},
+			SplitEnabled:    true,
+			StageCount:      2,
+			APIReady:        true,
+			ConsoleReady:    true,
+			MeshLLMVersion:  "0.72.9-test",
+			TokensPerSecond: 42.5,
+			LastError:       "runtime exploded",
+		}
+		cfg := Config{MeshLLMAPIPort: 9337, MeshLLMConsolePort: 3131, DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}
+		handler := DashboardHandler(func() DashboardStatus {
+			return DashboardStatus{Config: cfg, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: "test"}
+		})
+
+		page := httptest.NewRecorder()
+		handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
+		body := page.Body.String()
+		if !strings.Contains(body, "data-runtime-panel") {
+			t.Fatalf("dashboard must render a MeshLLM runtime panel section")
+		}
+		for _, field := range []string{"meshllm-version", "runtime-state", "mesh-id", "peer-count", "ready-models", "split-enabled", "stage-count", "api-port", "console-port", "api-ready", "console-ready", "tokens-per-second", "last-error"} {
+			if !strings.Contains(body, `data-field="`+field+`"`) {
+				t.Fatalf("runtime panel is missing the %s field marker", field)
+			}
+		}
+		for _, value := range []string{"0.72.9-test", "mesh-1", "model-a, model-b", "9337", "3131", "42.5", "runtime exploded"} {
+			if !strings.Contains(body, value) {
+				t.Fatalf("runtime panel is missing contract value %q", value)
+			}
+		}
+
+		api := httptest.NewRecorder()
+		handler.ServeHTTP(api, httptest.NewRequest(http.MethodGet, "/api/status", nil))
+		var decoded DashboardStatus
+		if err := json.NewDecoder(api.Body).Decode(&decoded); err != nil {
+			t.Fatal(err)
+		}
+		got := decoded.Metrics
+		if got.MeshID != "mesh-1" || got.MeshRole != "coordinator" || got.PeerCount != 3 || got.StageCount != 2 {
+			t.Fatalf("status API mesh fields mismatch: %#v", got)
+		}
+		if !got.SplitEnabled || !got.APIReady || !got.ConsoleReady {
+			t.Fatalf("status API readiness fields mismatch: %#v", got)
+		}
+		if !equalStrings(got.ReadyModels, []string{"model-a", "model-b"}) || got.MeshLLMVersion != "0.72.9-test" || got.TokensPerSecond != 42.5 || got.LastError != "runtime exploded" {
+			t.Fatalf("status API runtime fields mismatch: %#v", got)
+		}
+		if decoded.Config.MeshLLMAPIPort != 9337 || decoded.Config.MeshLLMConsolePort != 3131 {
+			t.Fatalf("status API must expose the MeshLLM ports, got %#v", decoded.Config)
+		}
+	})
+}
+
 func TestREQNODE004DashboardRedactsCredentials(t *testing.T) {
 	t.Run("REQ-NODE-004", func(t *testing.T) {
-	handler := DashboardHandler(func() DashboardStatus {
-		return DashboardStatus{Config: Config{NodeToken: "node-token", UpstreamToken: "upstream-token", DashboardToken: "dashboard-token", DisplayName: "Node A"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
-	})
-	resp := httptest.NewRecorder()
-	handler.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/status", nil))
-	var body DashboardStatus
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected OK")
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatal(err)
-	}
-	if body.Config.NodeToken != "[redacted]" || body.Config.UpstreamToken != "[redacted]" || body.Config.DashboardToken != "[redacted]" {
-		t.Fatalf("dashboard did not redact credentials: %#v", body.Config)
-	}
+		handler := DashboardHandler(func() DashboardStatus {
+			return DashboardStatus{Config: Config{NodeToken: "node-token", UpstreamToken: "upstream-token", DashboardToken: "dashboard-token", DisplayName: "Node A"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
+		})
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/status", nil))
+		var body DashboardStatus
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected OK")
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Config.NodeToken != "[redacted]" || body.Config.UpstreamToken != "[redacted]" || body.Config.DashboardToken != "[redacted]" {
+			t.Fatalf("dashboard did not redact credentials: %#v", body.Config)
+		}
 	})
 }
 
 func TestREQNODE004DashboardRuntimeControlsUseController(t *testing.T) {
 	t.Run("REQ-NODE-004 REQ-SEC-004", func(t *testing.T) {
-	controller := &fakeRuntimeController{}
-	handler := DashboardHandler(func() DashboardStatus {
-		return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
-	}, controller)
+		controller := &fakeRuntimeController{}
+		handler := DashboardHandler(func() DashboardStatus {
+			return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
+		}, controller)
 
-	forbidden := httptest.NewRecorder()
-	handler.ServeHTTP(forbidden, httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/start", nil))
-	if forbidden.Code != http.StatusForbidden {
-		t.Fatalf("expected missing token to be forbidden, got %d", forbidden.Code)
-	}
-
-	badOrigin := httptest.NewRecorder()
-	badOriginRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/start", nil)
-	badOriginRequest.Header.Set("origin", "https://evil.example")
-	badOriginRequest.Header.Set("x-inference-mesh-dashboard-token", "dashboard-token")
-	handler.ServeHTTP(badOrigin, badOriginRequest)
-	if badOrigin.Code != http.StatusForbidden {
-		t.Fatalf("expected mismatched origin to be forbidden, got %d", badOrigin.Code)
-	}
-	if controller.starts != 0 || controller.stops != 0 || controller.restarts != 0 {
-		t.Fatalf("forbidden runtime control reached controller: %#v", controller)
-	}
-
-	for _, path := range []string{"/api/runtime/start", "/api/runtime/stop", "/api/runtime/restart"} {
-		resp := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777"+path, nil)
-		req.Header.Set("origin", "http://127.0.0.1:17777")
-		req.Header.Set("x-inference-mesh-dashboard-token", "dashboard-token")
-		handler.ServeHTTP(resp, req)
-		if resp.Code != http.StatusOK {
-			t.Fatalf("runtime control %s returned %d", path, resp.Code)
+		forbidden := httptest.NewRecorder()
+		handler.ServeHTTP(forbidden, httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/start", nil))
+		if forbidden.Code != http.StatusForbidden {
+			t.Fatalf("expected missing token to be forbidden, got %d", forbidden.Code)
 		}
-	}
-	if controller.starts != 1 || controller.stops != 1 || controller.restarts != 1 {
-		t.Fatalf("runtime controls not routed: %#v", controller)
-	}
+
+		badOrigin := httptest.NewRecorder()
+		badOriginRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/start", nil)
+		badOriginRequest.Header.Set("origin", "https://evil.example")
+		badOriginRequest.Header.Set("x-inference-mesh-dashboard-token", "dashboard-token")
+		handler.ServeHTTP(badOrigin, badOriginRequest)
+		if badOrigin.Code != http.StatusForbidden {
+			t.Fatalf("expected mismatched origin to be forbidden, got %d", badOrigin.Code)
+		}
+		if controller.starts != 0 || controller.stops != 0 || controller.restarts != 0 {
+			t.Fatalf("forbidden runtime control reached controller: %#v", controller)
+		}
+
+		for _, path := range []string{"/api/runtime/start", "/api/runtime/stop", "/api/runtime/restart"} {
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777"+path, nil)
+			req.Header.Set("origin", "http://127.0.0.1:17777")
+			req.Header.Set("x-inference-mesh-dashboard-token", "dashboard-token")
+			handler.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("runtime control %s returned %d", path, resp.Code)
+			}
+		}
+		if controller.starts != 1 || controller.stops != 1 || controller.restarts != 1 {
+			t.Fatalf("runtime controls not routed: %#v", controller)
+		}
 	})
 }
 
@@ -375,253 +535,218 @@ func TestREQNODE004DashboardRuntimeControlsReportUnavailableWithoutController(t 
 	})
 }
 
-func TestREQRUN003RuntimeEnvironmentInheritsServiceEnv(t *testing.T) {
-	t.Run("REQ-RUN-003", func(t *testing.T) {
-		t.Setenv("HF_TOKEN", "hf-node-token")
-
-		env := runtimeEnvironment(map[string]string{"EXTRA_RUNTIME_FLAG": "1"})
-
-		if !containsEnv(env, "HF_TOKEN=hf-node-token") {
-			t.Fatalf("runtime environment should inherit HF_TOKEN from the node service environment")
-		}
-		if !containsEnv(env, "EXTRA_RUNTIME_FLAG=1") {
-			t.Fatalf("runtime environment should include profile command env")
-		}
-	})
-}
-
-func TestREQRUN003RuntimeCommandUsesProfileTemplate(t *testing.T) {
-	t.Run("REQ-RUN-003", func(t *testing.T) {
-		dataDir := t.TempDir()
-		modelDir := filepath.Join(dataDir, "models")
-		profile := ModelProfile{
-			ID:            "profile-a",
-			LocalFilename: "model.gguf",
-			Runtime:       "llama.cpp",
-			RuntimeCommand: RuntimeCommand{
-				Executable: "llama-server",
-				Args:       []string{"-hf", "unsloth/model:Q4", "--model", "{{MODEL_PATH}}", "--host", "{{HOST}}", "--port", "{{PORT}}", "--cache", "{{MODEL_DIR}}"},
-				Env:        map[string]string{"LLAMA_CACHE": "{{DATA_DIR}}/llama.cpp-cache", "CUDA_VISIBLE_DEVICES": "0"},
-			},
-		}
-
-		cmd := LlamaCommand(profile, modelDir, "100.64.1.10:8080")
-
-		expectedModelPath := filepath.Join(modelDir, "model.gguf")
-		if cmd.Executable != "llama-server" {
-			t.Fatalf("runtime executable changed: %#v", cmd)
-		}
-		if got := cmd.Args; !sameStrings(got, []string{"-hf", "unsloth/model:Q4", "--model", expectedModelPath, "--host", "100.64.1.10", "--port", "8080", "--cache", modelDir}) {
-			t.Fatalf("runtime args were not rendered from profile template: %#v", got)
-		}
-		if cmd.Env["LLAMA_CACHE"] != filepath.Join(dataDir, "llama.cpp-cache") || cmd.Env["CUDA_VISIBLE_DEVICES"] != "0" {
-			t.Fatalf("runtime env was not rendered from profile template: %#v", cmd.Env)
-		}
-	})
-}
-
-func TestREQRUN003SourceModesAndChecksum(t *testing.T) {
-	t.Run("REQ-RUN-003", func(t *testing.T) {
-		data := []byte("model")
-		sum := sha256.Sum256(data)
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write(data)
-		}))
-		defer server.Close()
-
-		direct := ModelProfile{ID: "direct", SourceMode: "direct-gguf", DownloadURL: server.URL + "/model.gguf", LocalFilename: "model.gguf", SHA256: hex.EncodeToString(sum[:]), Runtime: "llama.cpp"}
-		path, err := EnsureModel(context.Background(), direct, t.TempDir(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		ok, err := VerifyFileSHA256(path, hex.EncodeToString(sum[:]))
-		if err != nil || !ok {
-			t.Fatalf("checksum failed ok=%v err=%v", ok, err)
-		}
-
-		hf := ModelProfile{ID: "hf", SourceMode: "llama-hf", HFSpecifier: "unsloth/model:Q4", Runtime: "llama.cpp"}
-		if path, err := EnsureModel(context.Background(), hf, t.TempDir(), nil); err != nil || path != "" {
-			t.Fatalf("llama-hf profiles should not pre-download model files, path=%q err=%v", path, err)
-		}
-	})
-}
-
-func TestREQRUN005RuntimeReadinessProbeWaitsForModelEndpoint(t *testing.T) {
-	t.Run("REQ-RUN-005", func(t *testing.T) {
-		attempts := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			attempts++
-			if attempts < 2 {
-				http.Error(w, "loading", http.StatusServiceUnavailable)
-				return
-			}
-			_, _ = io.WriteString(w, `{"data":[]}`)
-		}))
-		defer server.Close()
-
-		if err := waitForRuntimeReady(context.Background(), server.URL, server.Client()); err != nil {
-			t.Fatal(err)
-		}
-		if attempts < 2 {
-			t.Fatalf("readiness probe should wait until the endpoint succeeds")
-		}
-	})
-}
-
-func TestREQRUN003RuntimeDependencyMissingState(t *testing.T) {
-	t.Run("REQ-RUN-003 REQ-OBS-003", func(t *testing.T) {
-		missingExecutable := filepath.Join(t.TempDir(), "missing-llama-server")
-		manager := NewRuntimeManager(RuntimeCommand{Executable: missingExecutable})
-
-		err := manager.Start(context.Background())
-		metrics := RuntimeMetricsWithError(manager.State(), "qwen36-35b-a3b-262k-mm-3090", 0, manager.LastError())
-
-		if !errors.Is(err, ErrRuntimeDependencyMissing) {
-			t.Fatalf("expected dependency-missing error, got %v", err)
-		}
-		if manager.State() != "dependency-missing" || manager.LastError() == "" {
-			t.Fatalf("runtime manager did not store dependency-missing state: state=%s last=%q", manager.State(), manager.LastError())
-		}
-		if metrics.RuntimeState != "dependency-missing" || metrics.LastError == "" {
-			t.Fatalf("dependency-missing metrics were not surfaced: %#v", metrics)
-		}
-	})
-}
-
 func TestREQRUN005RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
 	t.Run("REQ-RUN-005 REQ-NODE-004", func(t *testing.T) {
-	if os.Getenv("INFERENCE_MESH_HELPER_PROCESS") == "1" {
-		time.Sleep(10 * time.Second)
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	manager := NewRuntimeManager(RuntimeCommand{Executable: os.Args[0], Args: []string{"-test.run=TestREQRUN005RuntimeManagerUsesProcessLifetimeContext"}, Env: map[string]string{"INFERENCE_MESH_HELPER_PROCESS": "1"}})
-	if err := manager.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
-	cancel()
-	if manager.State() != "ready" {
-		t.Fatalf("runtime should survive caller context cancellation, got %s", manager.State())
-	}
-	stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer stopCancel()
-	if err := manager.Stop(stopCtx); err != nil {
-		t.Fatal(err)
-	}
-	if manager.State() != "stopped" {
-		t.Fatalf("runtime should stop after explicit stop, got %s", manager.State())
-	}
+		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{}, 0)
+		var processCtx context.Context
+		inner := fixture.manager.launch
+		fixture.manager.launch = func(ctx context.Context, binary string, args []string, env []string) (meshProcess, error) {
+			processCtx = ctx
+			return inner(ctx, binary, args, env)
+		}
+		callerCtx, cancel := context.WithCancel(context.Background())
+		if err := fixture.manager.Start(callerCtx); err != nil {
+			t.Fatal(err)
+		}
+		cancel()
+		if processCtx == nil {
+			t.Fatal("launcher did not receive a process context")
+		}
+		if err := processCtx.Err(); err != nil {
+			t.Fatalf("cancelling the caller context must not cancel the process-lifetime context, got %v", err)
+		}
+		if state := fixture.manager.State(); state == "failed" || state == "stopped" {
+			t.Fatalf("runtime should survive caller context cancellation, got %s", state)
+		}
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stopCancel()
+		if err := fixture.manager.Stop(stopCtx); err != nil {
+			t.Fatal(err)
+		}
+		if state := fixture.manager.State(); state != "stopped" {
+			t.Fatalf("runtime should stop after explicit stop, got %s", state)
+		}
 	})
 }
 
 func TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline(t *testing.T) {
 	t.Run("REQ-RUN-005 REQ-NODE-004", func(t *testing.T) {
-		if os.Getenv("INFERENCE_MESH_HELPER_PROCESS") == "1" {
-			time.Sleep(10 * time.Second)
-			return
-		}
-		readiness := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "loading", http.StatusServiceUnavailable)
-		}))
-		defer readiness.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-		defer cancel()
-		manager := NewRuntimeManager(RuntimeCommand{
-			Executable:   os.Args[0],
-			Args:         []string{"-test.run=TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline"},
-			Env:          map[string]string{"INFERENCE_MESH_HELPER_PROCESS": "1"},
-			ReadinessURL: readiness.URL,
-		})
+		console := &consoleFixture{status: statusPayload("standby", "", "")}
+		consoleServer := httptest.NewServer(console)
+		defer consoleServer.Close()
+		models := &modelsFixture{}
+		modelsServer := httptest.NewServer(models)
+		defer modelsServer.Close()
 
-		if err := manager.Start(ctx); err != nil {
+		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+			ModelRef:    "target-model",
+			APIPort:     serverPort(t, modelsServer),
+			ConsolePort: serverPort(t, consoleServer),
+		}, 0)
+		requestCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+
+		if err := fixture.manager.Start(requestCtx); err != nil {
 			t.Fatal(err)
 		}
-		if state := manager.State(); state != "starting" && state != "ready" {
-			t.Fatalf("runtime start should return while readiness continues asynchronously, got %s", state)
+		time.Sleep(80 * time.Millisecond)
+		if state := fixture.manager.State(); state != "starting" {
+			t.Fatalf("readiness must continue past the request deadline without failing, got %s", state)
 		}
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer stopCancel()
-		if err := manager.Stop(stopCtx); err != nil {
+		if err := fixture.manager.Stop(stopCtx); err != nil {
 			t.Fatal(err)
 		}
 	})
 }
 
-func TestREQRUN005RuntimeReadinessFailsWhenProcessExits(t *testing.T) {
+func TestREQRUN005APIReadyFailsClosedWhenModelsUnreachable(t *testing.T) {
 	t.Run("REQ-RUN-005 REQ-OBS-003", func(t *testing.T) {
-		if os.Getenv("INFERENCE_MESH_EXIT_HELPER") == "1" {
-			return
-		}
-		readiness := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			http.Error(w, "loading", http.StatusServiceUnavailable)
-		}))
-		defer readiness.Close()
-		manager := NewRuntimeManager(RuntimeCommand{
-			Executable:   os.Args[0],
-			Args:         []string{"-test.run=TestREQRUN005RuntimeReadinessFailsWhenProcessExits"},
-			Env:          map[string]string{"INFERENCE_MESH_EXIT_HELPER": "1"},
-			ReadinessURL: readiness.URL,
-		})
+		console := &consoleFixture{status: statusPayload("serving", "mesh-1", "tok-1")}
+		consoleServer := httptest.NewServer(console)
+		defer consoleServer.Close()
+		models := &modelsFixture{ids: []string{"target-model"}}
+		modelsServer := httptest.NewServer(models)
 
-		if err := manager.Start(context.Background()); err != nil {
-			t.Fatal(err)
+		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+			ModelRef:    "target-model",
+			APIPort:     serverPort(t, modelsServer),
+			ConsolePort: serverPort(t, consoleServer),
+		}, 0)
+		fixture.manager.PollStatus(context.Background())
+		if !fixture.manager.APIReady() {
+			t.Fatal("APIReady should be true after a successful /v1/models poll")
 		}
-		deadline := time.Now().Add(2 * time.Second)
-		for manager.State() != "failed" && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
-		}
-		if manager.State() != "failed" {
-			t.Fatalf("runtime should fail when the child exits before readiness, got %s", manager.State())
+
+		modelsServer.Close()
+		fixture.manager.PollStatus(context.Background())
+		if fixture.manager.APIReady() {
+			t.Fatal("APIReady must fail closed when the models endpoint is unreachable")
 		}
 	})
 }
 
-func TestREQOBS003ParsesLlamaTokenMetrics(t *testing.T) {
-	t.Run("REQ-OBS-003", func(t *testing.T) {
-		metrics := ParseLlamaMetrics("llamacpp:tokens_prompt_total 250\nllamacpp:prompt_seconds_total 10\nllamacpp:tokens_predicted_total 900\nllamacpp:predicted_seconds_total 30\n")
+func TestREQRUN007RestartWithInputRelaunchesWithNewProfileArgs(t *testing.T) {
+	t.Run("REQ-RUN-007", func(t *testing.T) {
+		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+			ProfileID:   "prof",
+			ModelRef:    "model-a",
+			BindPort:    4300,
+			MeshIP:      "100.64.1.10",
+			APIPort:     9337,
+			ConsolePort: 3131,
+			Rotation:    1,
+		}, 0)
+		if err := fixture.manager.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 
-		if metrics.PromptTokensPerSecond != 25 || metrics.GenerationTokensPerSecond != 30 || metrics.TokensPerSecond != 55 {
-			t.Fatalf("unexpected token metrics: %#v", metrics)
+		next := MeshLLMRenderInput{
+			ProfileID:   "prof",
+			ModelRef:    "hf://meshllm/layers@rev2",
+			Split:       true,
+			BindPort:    4310,
+			MeshIP:      "100.64.1.10",
+			APIPort:     9337,
+			ConsolePort: 3131,
+			Rotation:    1,
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := fixture.manager.RestartWithInput(ctx, next, 0); err != nil {
+			t.Fatal(err)
+		}
+
+		if fixture.launch.count() != 2 {
+			t.Fatalf("restart with new input should relaunch, got %d launches", fixture.launch.count())
+		}
+		args := fixture.launch.record(1).args
+		if models := flagValues(args, "--model"); !equalStrings(models, []string{"hf://meshllm/layers@rev2"}) {
+			t.Fatalf("relaunch must render the new profile's model ref, got %v", models)
+		}
+		if !argvContains(args, "--split") {
+			t.Fatalf("relaunch of a split profile must render --split, got %v", args)
+		}
+		if ports := flagValues(args, "--bind-port"); !equalStrings(ports, []string{"4310"}) {
+			t.Fatalf("relaunch must render the new profile's bind port, got %v", ports)
+		}
+	})
+}
+
+func TestREQOBS003ReportsLastRuntimeError(t *testing.T) {
+	t.Run("REQ-OBS-003 REQ-RUN-003", func(t *testing.T) {
+		manager := NewMeshLLMManager(MeshLLMRenderInput{ProfileID: "prof", ModelRef: "target-model", Rotation: 1}, 0, t.TempDir(), "definitely-missing-mesh-llm-for-test")
+
+		err := manager.Start(context.Background())
+		metrics := RuntimeMetricsWithError(manager.State(), "", 0, manager.LastError())
+
+		if !errors.Is(err, ErrRuntimeDependencyMissing) {
+			t.Fatalf("expected dependency-missing error, got %v", err)
+		}
+		if metrics.RuntimeState != "dependency-missing" {
+			t.Fatalf("dependency-missing state was not surfaced: %#v", metrics)
+		}
+		if !strings.Contains(metrics.LastError, "definitely-missing-mesh-llm-for-test") {
+			t.Fatalf("heartbeat metrics must carry the runtime manager's last error, got %q", metrics.LastError)
 		}
 	})
 }
 
 func TestREQOBS003BestEffortHardwareMetrics(t *testing.T) {
 	t.Run("REQ-OBS-003", func(t *testing.T) {
-	metrics := ParseNvidiaSMI("RTX 3090, 12000, 24576")
-	if metrics.GPUName != "RTX 3090" || metrics.GPUMemoryUsedMiB != 12000 || metrics.GPUMemoryTotalMiB != 24576 {
-		t.Fatalf("unexpected metrics: %#v", metrics)
-	}
+		metrics := ParseNvidiaSMI("RTX 3090, 12000, 24576")
+		if metrics.GPUName != "RTX 3090" || metrics.GPUMemoryUsedMiB != 12000 || metrics.GPUMemoryTotalMiB != 24576 {
+			t.Fatalf("unexpected metrics: %#v", metrics)
+		}
 	})
 }
 
 func TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches(t *testing.T) {
 	t.Run("REQ-NODE-005", func(t *testing.T) {
-	data := []byte("agent-binary")
-	sum := sha256.Sum256(data)
-	path, err := StageUpdate(bytes.NewReader(data), hex.EncodeToString(sum[:]), t.TempDir(), "agent")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("staged file missing: %v", err)
-	}
-	if _, err := StageUpdate(bytes.NewReader(data), "bad", t.TempDir(), "agent"); err == nil {
-		t.Fatalf("expected checksum mismatch")
-	}
+		data := []byte("agent-binary")
+		sum := sha256.Sum256(data)
+		path, err := StageUpdate(bytes.NewReader(data), hex.EncodeToString(sum[:]), t.TempDir(), "agent")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("staged file missing: %v", err)
+		}
+		if _, err := StageUpdate(bytes.NewReader(data), "bad", t.TempDir(), "agent"); err == nil {
+			t.Fatalf("expected checksum mismatch")
+		}
 	})
 }
 
-func sameStrings(left []string, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
+func TestREQNODE005ServiceDefinitionsGuaranteeAutoRestart(t *testing.T) {
+	t.Run("REQ-NODE-005", func(t *testing.T) {
+		cases := []struct {
+			platform   string
+			directives []string
+		}{
+			{platform: "linux", directives: []string{"Restart=always"}},
+			{platform: "darwin", directives: []string{"KeepAlive=true"}},
+			{platform: "windows", directives: []string{"sc.exe failure InferenceMeshAgent", "actions= restart", "sc.exe failureflag InferenceMeshAgent 1"}},
+		}
+		for _, testCase := range cases {
+			plan := ServiceInstallPlan("/opt/inference-mesh-agent", "/etc/inference-mesh/config.json", testCase.platform)
+			for _, directive := range testCase.directives {
+				if !strings.Contains(plan.Config, directive) {
+					t.Fatalf("%s service definition must guarantee restart after an update exit, missing %q in %q", testCase.platform, directive, plan.Config)
+				}
+			}
+		}
+	})
+}
+
+func argvContains(args []string, flag string) bool {
+	for _, arg := range args {
+		if arg == flag {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 func containsEnv(values []string, expected string) bool {
@@ -656,47 +781,47 @@ func (f *fakeRuntimeController) Restart(context.Context) error {
 
 func TestREQSEC005LegacyConfigBackfillsDashboardToken(t *testing.T) {
 	t.Run("REQ-SEC-005", func(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
-	legacy := DefaultConfig(t.TempDir())
-	if legacy.DashboardToken == "" {
-		t.Fatalf("default config did not generate a dashboard token")
-	}
-	legacy.DashboardToken = ""
-	data, err := json.Marshal(legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
+		path := filepath.Join(t.TempDir(), "config.json")
+		legacy := DefaultConfig(t.TempDir())
+		if legacy.DashboardToken == "" {
+			t.Fatalf("default config did not generate a dashboard token")
+		}
+		legacy.DashboardToken = ""
+		data, err := json.Marshal(legacy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
 
-	loaded, err := LoadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	persisted, err := LoadConfig(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.DashboardToken == "" || persisted.DashboardToken != loaded.DashboardToken {
-		t.Fatalf("dashboard token was not backfilled and persisted")
-	}
+		loaded, err := LoadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		persisted, err := LoadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.DashboardToken == "" || persisted.DashboardToken != loaded.DashboardToken {
+			t.Fatalf("dashboard token was not backfilled and persisted")
+		}
 	})
 }
 
 func TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken(t *testing.T) {
 	t.Run("REQ-SEC-004", func(t *testing.T) {
-	cfg := DefaultConfig(t.TempDir())
-	cfg.MeshIP = ""
-	cfg.AllowAllInterfaces = false
-	if cfg.DashboardAddress != "127.0.0.1:17777" {
-		t.Fatalf("dashboard must bind localhost")
-	}
-	if got := ListenerAddress(cfg.MeshIP, cfg.InferencePort, cfg.AllowAllInterfaces); got != "127.0.0.1:8080" {
-		t.Fatalf("unexpected fallback listener %s", got)
-	}
-	if got := ListenerAddress(cfg.MeshIP, cfg.InferencePort, true); got != "0.0.0.0:8080" {
-		t.Fatalf("explicit all-interface fallback missing")
-	}
+		cfg := DefaultConfig(t.TempDir())
+		cfg.MeshIP = ""
+		cfg.AllowAllInterfaces = false
+		if cfg.DashboardAddress != "127.0.0.1:17777" {
+			t.Fatalf("dashboard must bind localhost")
+		}
+		if got := ListenerAddress(cfg.MeshIP, cfg.InferencePort, cfg.AllowAllInterfaces); got != "127.0.0.1:8080" {
+			t.Fatalf("unexpected fallback listener %s", got)
+		}
+		if got := ListenerAddress(cfg.MeshIP, cfg.InferencePort, true); got != "0.0.0.0:8080" {
+			t.Fatalf("explicit all-interface fallback missing")
+		}
 	})
 }

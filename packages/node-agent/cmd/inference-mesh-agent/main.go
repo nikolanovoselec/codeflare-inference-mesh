@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
-	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 )
 
 var version = "dev"
+
+// agentReleaseRepo is the GitHub repository whose releases carry the agent
+// artifacts the self-updater downloads.
+const agentReleaseRepo = "nikolanovoselec/codeflare-inference-mesh"
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "version" {
@@ -82,6 +87,7 @@ func runService() error {
 	} else {
 		cfg = next
 	}
+	var claimBootstrap *agent.MeshBootstrap
 	if cfg.SetupToken != "" && cfg.NodeToken == "" {
 		claimClient := agent.Client{RouterURL: cfg.RouterURL}
 		claim, err := claimClient.Claim(serviceCtx, cfg.SetupToken, agent.ClaimRequest{DisplayName: cfg.DisplayName, MeshIP: cfg.MeshIP, InferencePort: cfg.InferencePort, PublicModels: cfg.PublicModels, ActiveProfileIDs: cfg.ActiveProfileIDs, Capacity: cfg.Capacity})
@@ -93,24 +99,33 @@ func runService() error {
 			return err
 		}
 		cfg = next
+		claimBootstrap = claim.MeshBootstrap
 	}
 	loadState := &runtimeLoadState{}
-	var runtimeManager *agent.RuntimeManager
+	var manager *agent.MeshLLMManager
+	installError := ""
 	if profile, ok := agent.SelectedProfile(cfg); ok {
 		loadState.SetStarting(profile)
-		started, err := startRuntimeForProfile(serviceCtx, cfg, profile)
+		started, startInstallError, err := startMeshRuntime(serviceCtx, cfg, profile, claimBootstrap)
 		if err != nil {
 			return err
 		}
-		runtimeManager = started
-		if runtimeManager.State() == "ready" {
+		manager = started
+		installError = startInstallError
+		if manager.State() == "ready" {
 			loadState.Set(profile)
 		}
 		defer func() {
 			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_ = runtimeManager.Stop(stopCtx)
+			_ = manager.Stop(stopCtx)
 		}()
+	}
+	var loopRuntime meshRuntime
+	dashboardControllers := []agent.RuntimeController{}
+	if manager != nil {
+		loopRuntime = manager
+		dashboardControllers = append(dashboardControllers, manager)
 	}
 	var stateMu sync.RWMutex
 	currentConfig := func() agent.Config {
@@ -119,18 +134,30 @@ func runService() error {
 		return cfg
 	}
 	telemetry := &runtimeTelemetry{}
-	go heartbeatLoop(serviceCtx, &stateMu, &cfg, runtimeManager, loadState, telemetry, activeRequests)
-	proxy, err := agent.ProxyHandler(cfg.RuntimeURL, cfg.UpstreamToken, activeRequests)
+	loop := &serviceLoop{
+		configPath:     agent.ConfigPath(),
+		stateMu:        &stateMu,
+		cfg:            &cfg,
+		manager:        loopRuntime,
+		loadState:      loadState,
+		telemetry:      telemetry,
+		activeRequests: activeRequests,
+		updater:        agent.NewSelfUpdater(version, agentReleaseRepo, cfg.DataDir),
+		exit: func() {
+			os.Exit(0)
+		},
+		agentVersion: version,
+		installError: installError,
+		drainTimeout: 2 * time.Minute,
+	}
+	go heartbeatLoop(serviceCtx, loop)
+	proxy, err := agent.ProxyHandler(fmt.Sprintf("http://127.0.0.1:%d", cfg.MeshLLMAPIPort), cfg.UpstreamToken, activeRequests)
 	if err != nil {
 		return err
 	}
-	dashboardControllers := []agent.RuntimeController{}
-	if runtimeManager != nil {
-		dashboardControllers = append(dashboardControllers, runtimeManager)
-	}
 	dashboardServer := &http.Server{Addr: cfg.DashboardAddress, Handler: agent.DashboardHandler(func() agent.DashboardStatus {
 		current := currentConfig()
-		metrics := telemetry.Snapshot(runtimeMetrics(runtimeManager, loadState, current, activeRequests.Value()))
+		metrics := telemetry.Snapshot(runtimeMetrics(loopRuntime, loadState, current, activeRequests.Value(), installError))
 		return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
 	}, dashboardControllers...)}
 	go func() {
@@ -154,27 +181,107 @@ func runService() error {
 	}
 }
 
-func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent.ModelProfile) (*agent.RuntimeManager, error) {
-	listenAddress, err := agent.RuntimeListenAddress(cfg.RuntimeURL)
-	if err != nil {
-		return nil, err
+// startMeshRuntime provisions the pinned mesh-llm binary and starts the
+// manager for the selected profile. An install failure keeps the node up but
+// never eligible: the manager reports dependency-missing and the install
+// error rides heartbeat metrics as the last error.
+func startMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (*agent.MeshLLMManager, string, error) {
+	binaryPath, installErr := agent.EnsureMeshLLM(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned)
+	installError := ""
+	if installErr != nil {
+		installError = installErr.Error()
 	}
-	if _, err := agent.EnsureModel(ctx, profile, cfg.DataDir, nil); err != nil {
-		return nil, err
+	manager := agent.NewMeshLLMManager(meshRenderInput(profile, cfg), profile.ContextWindow, cfg.DataDir, binaryPath)
+	manager.ApplyBootstrap(bootstrap)
+	if err := manager.Start(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+		return nil, installError, err
 	}
-	manager := agent.NewRuntimeManager(agent.LlamaCommand(profile, filepath.Join(cfg.DataDir, "models"), listenAddress))
-	if err := manager.Start(ctx); err != nil {
-		if errors.Is(err, agent.ErrRuntimeDependencyMissing) {
-			return manager, nil
-		}
-		return nil, err
-	}
-	return manager, nil
+	return manager, installError, nil
 }
 
-func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config, runtimeManager *agent.RuntimeManager, loadState *runtimeLoadState, telemetry *runtimeTelemetry, activeRequests *agent.ActiveCounter) {
-	restartMu := sync.Mutex{}
-	restartPending := false
+// meshRenderInput assembles the deterministic renderer input from the
+// selected profile and node-local agent config. Rotation and join tokens are
+// deliberately absent: the manager overlays them from the last stored mesh
+// bootstrap when rendering.
+func meshRenderInput(profile agent.ModelProfile, cfg agent.Config) agent.MeshLLMRenderInput {
+	return agent.MeshLLMRenderInput{
+		ProfileID:   profile.ID,
+		ModelRef:    profile.MeshLLM.ModelRef,
+		Split:       profile.MeshLLM.Split,
+		BindPort:    profile.MeshLLM.BindPort,
+		MaxVramGb:   profile.MeshLLM.MaxVramGb,
+		MeshIP:      cfg.MeshIP,
+		APIPort:     cfg.MeshLLMAPIPort,
+		ConsolePort: cfg.MeshLLMConsolePort,
+		Flavor:      meshFlavorFlag(cfg),
+	}
+}
+
+// meshFlavorFlag resolves the rendered runtime flavor flag value: the
+// configured override when set, otherwise hardware detection. The cuda-12
+// install-asset flavor maps to upstream's plain cuda flag vocabulary.
+func meshFlavorFlag(cfg agent.Config) string {
+	flavor := cfg.MeshLLMFlavor
+	if flavor == "" {
+		flavor = agent.DetectMeshLLMFlavor(runtime.GOOS, runtime.GOARCH, func() bool {
+			_, err := exec.LookPath("nvidia-smi")
+			return err == nil
+		})
+	}
+	if flavor == "cuda-12" {
+		return "cuda"
+	}
+	return flavor
+}
+
+// meshRuntime is what the service loop needs from the MeshLLM manager; tests
+// substitute a fake.
+type meshRuntime interface {
+	agent.RuntimeController
+	PollStatus(ctx context.Context) (agent.MeshLLMStatus, bool)
+	ApplyBootstrap(bootstrap *agent.MeshBootstrap)
+	NeedsRestart(bootstrap *agent.MeshBootstrap) bool
+	CurrentToken() string
+	CurrentMeshID() string
+	ReadyModels() []string
+	APIReady() bool
+	State() string
+	LastError() string
+	SetState(state string)
+	SetFailure(err error)
+	RestartWithInput(ctx context.Context, in agent.MeshLLMRenderInput, contextWindow int) error
+}
+
+// agentUpdater is the self-update seam; the real implementation is
+// agent.SelfUpdater.
+type agentUpdater interface {
+	Maybe(desired string, now time.Time) (bool, error)
+}
+
+// serviceLoop owns the per-tick heartbeat pipeline: one console/API poll,
+// metrics assembly, the heartbeat exchange, desired-profile and mesh
+// bootstrap reconciliation, and the router-driven self-update.
+type serviceLoop struct {
+	configPath     string
+	stateMu        *sync.RWMutex
+	cfg            *agent.Config
+	manager        meshRuntime
+	loadState      *runtimeLoadState
+	telemetry      *runtimeTelemetry
+	activeRequests *agent.ActiveCounter
+	updater        agentUpdater
+	exit           func()
+	agentVersion   string
+	installError   string
+	drainTimeout   time.Duration
+
+	restartMu      sync.Mutex
+	restartPending bool
+	updateMu       sync.Mutex
+	updateError    string
+}
+
+func heartbeatLoop(ctx context.Context, loop *serviceLoop) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -182,47 +289,139 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			stateMu.RLock()
-			current := *cfg
-			stateMu.RUnlock()
-			metrics := telemetry.Refresh(ctx, current.RuntimeURL, runtimeMetrics(runtimeManager, loadState, current, activeRequests.Value()))
-			client := agent.Client{RouterURL: current.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
-			response, err := client.Heartbeat(ctx, current.NodeToken, agent.HeartbeatFromConfig(current, metrics, activeRequests.Value()))
-			if err != nil {
-				continue
-			}
-			stateMu.Lock()
-			next, _, _, err := agent.ApplyDesiredProfiles(*cfg, response.DesiredProfiles, agent.ConfigPath())
-			if err == nil {
-				*cfg = next
-			}
-			stateMu.Unlock()
-			if err == nil && runtimeManager != nil {
-				if restartConfig, ok := beginRuntimeProfileRestart(next, runtimeManager, loadState, &restartMu, &restartPending); ok {
-					go func() {
-						defer finishRestart(&restartMu, &restartPending)
-						if err := restartRuntimeForSelectedProfile(ctx, restartConfig, runtimeManager, activeRequests); err != nil {
-							runtimeManager.SetFailure(err)
-							return
-						}
-						if profile, ok := agent.SelectedProfile(restartConfig); ok && runtimeManager.State() == "ready" {
-							loadState.Set(profile)
-						}
-					}()
-				}
-			}
+			loop.tick(ctx)
 		}
 	}
 }
 
-func beginRuntimeProfileRestart(cfg agent.Config, runtimeManager *agent.RuntimeManager, loadState *runtimeLoadState, restartMu *sync.Mutex, restartPending *bool) (agent.Config, bool) {
+func (s *serviceLoop) currentConfig() agent.Config {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return *s.cfg
+}
+
+func (s *serviceLoop) tick(ctx context.Context) {
+	current := s.currentConfig()
+	metrics, identity := s.collect(ctx, current)
+	client := agent.Client{RouterURL: current.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
+	response, err := client.Heartbeat(ctx, current.NodeToken, agent.HeartbeatFromConfig(current, metrics, s.activeRequests.Value(), identity))
+	if err != nil {
+		return
+	}
+	s.handleResponse(ctx, response)
+}
+
+// collect runs the once-per-tick MeshLLM poll and assembles the heartbeat
+// metrics and identity: mesh id and invite token are resent every tick.
+func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.NodeMetrics, agent.HeartbeatIdentity) {
+	identity := agent.HeartbeatIdentity{AgentVersion: s.agentVersion}
+	metrics := runtimeMetrics(s.manager, s.loadState, current, s.activeRequests.Value(), s.installError)
+	if s.manager != nil {
+		status, consoleReady := s.manager.PollStatus(ctx)
+		profile, _ := agent.SelectedProfile(current)
+		metrics = applyMeshStatusMetrics(metrics, profile, status, consoleReady, s.manager.APIReady(), s.manager.ReadyModels())
+		identity.MeshID = s.manager.CurrentMeshID()
+		identity.MeshToken = s.manager.CurrentToken()
+	}
+	s.telemetry.Store(metrics)
+	metrics.LastError = s.foldUpdateError(metrics.LastError)
+	return metrics, identity
+}
+
+func (s *serviceLoop) handleResponse(ctx context.Context, response agent.HeartbeatResponse) {
+	s.stateMu.Lock()
+	next, _, _, err := agent.ApplyDesiredProfiles(*s.cfg, response.DesiredProfiles, s.configPath)
+	if err == nil {
+		*s.cfg = next
+	}
+	s.stateMu.Unlock()
+	if s.manager != nil {
+		s.manager.ApplyBootstrap(response.MeshBootstrap)
+		if err == nil && s.beginProfileRestart(next) {
+			go s.finishProfileRestart(ctx, next)
+		} else if s.manager.NeedsRestart(response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
+			go s.finishBootstrapRestart(ctx)
+		}
+	}
+	s.maybeSelfUpdate(ctx, response.DesiredAgentVersion)
+}
+
+func (s *serviceLoop) beginProfileRestart(cfg agent.Config) bool {
+	_, ok := beginRuntimeProfileRestart(cfg, s.manager, s.loadState, &s.restartMu, &s.restartPending)
+	return ok
+}
+
+func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config) {
+	defer finishRestart(&s.restartMu, &s.restartPending)
+	if err := restartRuntimeForSelectedProfile(ctx, cfg, s.manager, s.activeRequests, s.drainTimeout); err != nil {
+		s.manager.SetFailure(err)
+		return
+	}
+	if profile, ok := agent.SelectedProfile(cfg); ok && s.manager.State() == "ready" {
+		s.loadState.Set(profile)
+	}
+}
+
+func (s *serviceLoop) finishBootstrapRestart(ctx context.Context) {
+	defer finishRestart(&s.restartMu, &s.restartPending)
+	if err := waitForDrain(ctx, s.activeRequests, s.drainTimeout); err != nil {
+		s.manager.SetFailure(err)
+		return
+	}
+	if err := s.manager.Restart(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+		s.manager.SetFailure(err)
+	}
+}
+
+// maybeSelfUpdate runs one router-driven update pass. After a staged binary
+// is applied the loop drains in-flight requests, stops the managed runtime,
+// and exits so the service manager restarts the new binary; failures are
+// reported as the node's last error while the current version keeps running.
+func (s *serviceLoop) maybeSelfUpdate(ctx context.Context, desired string) {
+	if s.updater == nil {
+		return
+	}
+	applied, err := s.updater.Maybe(desired, time.Time{})
+	if err != nil {
+		s.setUpdateError(err.Error())
+		return
+	}
+	if !applied {
+		return
+	}
+	_ = waitForDrain(ctx, s.activeRequests, s.drainTimeout)
+	if s.manager != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = s.manager.Stop(stopCtx)
+		cancel()
+	}
+	fmt.Printf("agent updated to version %s; exiting for service restart\n", desired)
+	s.exit()
+}
+
+func (s *serviceLoop) setUpdateError(message string) {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+	s.updateError = message
+}
+
+func (s *serviceLoop) foldUpdateError(current string) string {
+	s.updateMu.Lock()
+	defer s.updateMu.Unlock()
+	if current == "" && s.updateError != "" {
+		return s.updateError
+	}
+	return current
+}
+
+func beginRuntimeProfileRestart(cfg agent.Config, manager meshRuntime, loadState *runtimeLoadState, restartMu *sync.Mutex, restartPending *bool) (agent.Config, bool) {
 	nextProfile := selectedProfileKey(cfg)
-	runtimeState := runtimeManager.State()
+	runtimeState := manager.State()
 	busy := runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping"
 	if nextProfile == "" || nextProfile == loadState.Key() || busy || !beginRestart(restartMu, restartPending) {
 		return agent.Config{}, false
 	}
-	runtimeManager.SetState("downloading")
+	manager.SetState("downloading")
 	if profile, ok := agent.SelectedProfile(cfg); ok {
 		loadState.SetStarting(profile)
 	} else {
@@ -247,43 +446,32 @@ func finishRestart(mu *sync.Mutex, pending *bool) {
 	*pending = false
 }
 
-func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, runtimeManager *agent.RuntimeManager, activeRequests *agent.ActiveCounter) error {
+func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, manager meshRuntime, activeRequests *agent.ActiveCounter, drainTimeout time.Duration) error {
 	profile, ok := agent.SelectedProfile(cfg)
 	if !ok {
 		return nil
 	}
-	listenAddress, err := agent.RuntimeListenAddress(cfg.RuntimeURL)
-	if err != nil {
+	manager.SetState("downloading")
+	if err := waitForDrain(ctx, activeRequests, drainTimeout); err != nil {
 		return err
 	}
-	runtimeManager.SetState("downloading")
-	if _, err := agent.EnsureModel(ctx, profile, cfg.DataDir, nil); err != nil {
-		return err
-	}
-	if err := waitForDrain(ctx, activeRequests, 2*time.Minute); err != nil {
-		return err
-	}
-	if err := runtimeManager.RestartWithCommand(ctx, agent.LlamaCommand(profile, filepath.Join(cfg.DataDir, "models"), listenAddress)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+	if err := manager.RestartWithInput(ctx, meshRenderInput(profile, cfg), profile.ContextWindow); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
 		return err
 	}
 	return nil
 }
 
+// runtimeTelemetry caches the last fully assembled metrics so dashboard reads
+// between heartbeat ticks keep the mesh and throughput fields.
 type runtimeTelemetry struct {
 	mu      sync.RWMutex
 	metrics agent.NodeMetrics
 }
 
-func (t *runtimeTelemetry) Refresh(ctx context.Context, runtimeURL string, base agent.NodeMetrics) agent.NodeMetrics {
-	extra, err := agent.FetchLlamaMetrics(ctx, runtimeURL, nil)
-	if err != nil {
-		return t.Snapshot(base)
-	}
-	merged := agent.MergeRuntimeMetrics(base, extra)
+func (t *runtimeTelemetry) Store(metrics agent.NodeMetrics) {
 	t.mu.Lock()
-	t.metrics = merged
+	t.metrics = metrics
 	t.mu.Unlock()
-	return merged
 }
 
 func (t *runtimeTelemetry) Snapshot(base agent.NodeMetrics) agent.NodeMetrics {
@@ -292,19 +480,20 @@ func (t *runtimeTelemetry) Snapshot(base agent.NodeMetrics) agent.NodeMetrics {
 	return agent.MergeRuntimeMetrics(base, t.metrics)
 }
 
-func runtimeState(runtimeManager *agent.RuntimeManager) string {
-	if runtimeManager == nil {
-		return "external"
-	}
-	return runtimeManager.State()
-}
-
-func runtimeMetrics(runtimeManager *agent.RuntimeManager, loadState *runtimeLoadState, cfg agent.Config, active int) agent.NodeMetrics {
+// runtimeMetrics builds the manager-derived base metrics: runtime state,
+// loaded model and profile bookkeeping, and the last runtime error. An
+// install failure replaces the generic dependency-missing message with the
+// install error detail.
+func runtimeMetrics(manager meshRuntime, loadState *runtimeLoadState, cfg agent.Config, active int, installError string) agent.NodeMetrics {
+	state := "external"
 	lastError := ""
-	if runtimeManager != nil {
-		lastError = runtimeManager.LastError()
+	if manager != nil {
+		state = manager.State()
+		lastError = manager.LastError()
 	}
-	state := runtimeState(runtimeManager)
+	if state == "dependency-missing" && installError != "" {
+		lastError = installError
+	}
 	profile, loaded := loadState.Snapshot()
 	if !loaded && state == "ready" && profile.ID != "" {
 		loadState.Set(profile)
@@ -313,13 +502,45 @@ func runtimeMetrics(runtimeManager *agent.RuntimeManager, loadState *runtimeLoad
 	loadedModel := ""
 	if loaded {
 		loadedModel = profile.UpstreamModel
-	} else if runtimeManager == nil {
+	} else if manager == nil {
 		loadedModel = cfg.RuntimeModel
 	}
 	metrics := agent.RuntimeMetricsWithError(state, loadedModel, active, lastError)
 	if loaded {
 		metrics.LoadedProfileID = profile.ID
 		metrics.LoadedProfileVersion = profile.Version
+	}
+	return metrics
+}
+
+// applyMeshStatusMetrics overlays the per-tick MeshLLM console and API poll
+// onto the base metrics. Ready models are the ids parsed from the node's own
+// /v1/models; a runtime reported ready is demoted (and its loaded fields
+// cleared) unless the console still reports serving with the selected
+// profile's upstream model routable in the union of both model surfaces.
+func applyMeshStatusMetrics(metrics agent.NodeMetrics, profile agent.ModelProfile, status agent.MeshLLMStatus, consoleReady bool, apiReady bool, readyModels []string) agent.NodeMetrics {
+	if metrics.RuntimeState == "ready" {
+		unioned := agent.MeshStatusWithModels(status, readyModels)
+		if mapped := agent.MapMeshLLMState(unioned, profile.UpstreamModel, true, consoleReady); mapped != "ready" {
+			metrics.RuntimeState = mapped
+			metrics.LoadedModel = ""
+			metrics.LoadedProfileID = ""
+			metrics.LoadedProfileVersion = 0
+		}
+	}
+	metrics.MeshID = status.MeshID
+	if consoleReady {
+		metrics.MeshRole = agent.DeriveMeshRole(status, status.NodeID)
+	}
+	metrics.PeerCount = status.PeerCount
+	metrics.ReadyModels = append([]string(nil), readyModels...)
+	metrics.SplitEnabled = profile.MeshLLM.Split
+	metrics.StageCount = status.StageCount
+	metrics.APIReady = apiReady
+	metrics.ConsoleReady = consoleReady
+	metrics.MeshLLMVersion = status.Version
+	if status.TokPerSec > 0 {
+		metrics.TokensPerSecond = status.TokPerSec
 	}
 	return metrics
 }

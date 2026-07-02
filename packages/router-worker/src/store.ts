@@ -213,8 +213,22 @@ function retiredDefaultProfiles(existing: readonly ModelProfile[], defaults: rea
   const defaultIds = new Set(defaults.map((profile) => profile.id))
   const defaultAliases = new Set(defaults.flatMap((profile) => [...profile.publicAliases]))
   return existing
-    .filter((profile) => profile.active && profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
+    .filter((profile) => profile.active && (
+      (profile.runtime as string) !== 'meshllm' ||
+      (profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
+    ))
     .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
+}
+
+export function aliasExclusiveActivation(profiles: readonly ModelProfile[], profileId: string): { readonly activated: ModelProfile; readonly deactivated: readonly ModelProfile[] } | undefined {
+  const target = profiles.find((profile) => profile.id === profileId)
+  if (!target) return undefined
+  return {
+    activated: { ...target, active: true, rolloutPercent: 100, version: target.version + 1 },
+    deactivated: profiles
+      .filter((profile) => profile.id !== target.id && profile.active && profile.publicAliases.some((alias) => target.publicAliases.includes(alias)))
+      .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
+  }
 }
 
 function materializeNode(node: NodeRecord, now: number): NodeRecord {
@@ -228,5 +242,6 @@ function parseJson<T>(text: string): T {
 
 export const STORE_ANCHORS = {
   REQ_SCH_001: 'REQ-SCH-001',
-  REQ_SCH_004: 'REQ-SCH-004'
+  REQ_SCH_004: 'REQ-SCH-004',
+  REQ_RUN_002: 'REQ-RUN-002'
 } as const
