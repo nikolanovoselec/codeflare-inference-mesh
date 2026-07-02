@@ -120,13 +120,13 @@ export function adminUiHtml(workerOrigin: string): string {
           <section class="work-section" id="setup-token" data-flow-stage="enroll">
             ${sectionHeader('Enroll')}
             ${actionRow({ id: 'setup-token-create', actionId: 'setup-token-create', title: 'Setup token', description: 'Create a short-lived node enrollment token.', controls: '<button type="button" data-action="setup-token-create">Create setup token</button>', outputId: 'setup-token-output', outputKind: 'setup-token', empty: 'A short-lived setup token appears here.' })}
-            ${actionRow({ id: 'installer-generate', actionId: 'installer-linux', title: 'Node install command', description: 'Copy a release-backed install command for the selected node platform.', controls: '<div class="control-line compact"><select name="platform" id="installer-platform" aria-label="Installer platform"><option value="linux">Linux</option><option value="macos">macOS</option><option value="windows">Windows</option></select><button type="button" data-action="installer-generate">Copy install command</button></div>', outputId: 'installer-output', outputKind: 'installer-command', empty: 'Installer command output appears here.', tag: 'pre' })}
+            ${actionRow({ id: 'installer-generate', actionId: 'installer-linux', title: 'Node install command', description: 'Choose a platform to fetch the release-backed install command automatically; copy remains available as a secondary action.', controls: '<div class="control-line compact"><select name="platform" id="installer-platform" aria-label="Installer platform" data-installer-platform="true"><option value="linux">Linux</option><option value="macos">macOS</option><option value="windows">Windows</option></select><button type="button" data-action="installer-generate">Copy install command</button></div>', outputId: 'installer-output', outputKind: 'installer-command', empty: 'Select a platform after login to load the install command.', tag: 'pre' })}
           </section>
 
           <section class="work-section" id="gateway" data-flow-stage="route">
             ${sectionHeader('Route')}
-            ${actionRow({ id: 'gateway-sync', actionId: 'gateway-sync', title: 'AI Gateway', description: 'Configure the custom provider, dynamic route, version, and deployment metadata.', controls: '<button type="button" data-action="gateway-sync">Configure AI Gateway</button>', outputId: 'gateway-output', outputKind: 'gateway-sync', empty: 'Gateway sync response appears here.', tag: 'pre' })}
-            ${actionRow({ id: 'custom-domain-validate', actionId: 'custom-domain-validate', title: 'Custom domain', description: 'Validate a hostname before switching Gateway traffic to a custom origin.', controls: '<div class="control-stack"><input class="control-input" name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url" aria-label="Hostname"><button type="button" data-action="custom-domain-validate">Validate hostname</button></div>', outputId: 'domain-output', outputKind: 'custom-domain', empty: 'Hostname validation response appears here.', help: 'Enter only the hostname. Zone IDs stay out of the normal setup path.', tag: 'pre' })}
+            ${actionRow({ id: 'gateway-sync', actionId: 'gateway-sync', title: 'AI Gateway', description: 'Configure a specific Gateway, route, and public model so the target is visible before sync.', controls: '<div class="control-stack"><input class="control-input" name="gatewayId" id="gateway-id" placeholder="inference-mesh" aria-label="Gateway ID"><input class="control-input" name="routeName" id="gateway-route-name" placeholder="mesh-default" aria-label="Gateway route name"><input class="control-input" name="publicModel" id="gateway-public-model" placeholder="mesh-default" aria-label="Gateway public model"><input class="control-input" name="providerName" id="gateway-provider-name" placeholder="codeflare-inference-mesh" aria-label="Gateway provider name"><input class="control-input" name="workerUrl" id="gateway-worker-url" placeholder="https://router.example.workers.dev" aria-label="Worker URL override"><button type="button" data-action="gateway-sync">Configure AI Gateway</button></div>', outputId: 'gateway-output', outputKind: 'gateway-sync', empty: 'Gateway sync response appears here.', help: 'Blank fields use saved settings or Worker environment defaults.', tag: 'pre' })}
+            ${actionRow({ id: 'custom-domain-validate', actionId: 'custom-domain-validate', title: 'Custom domain', description: 'Provision DNS and Worker routing before Gateway traffic can use the hostname.', controls: '<div class="control-stack"><input class="control-input" name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url" aria-label="Hostname"><input class="control-input" name="zoneId" id="custom-domain-zone" placeholder="optional zone id" aria-label="Cloudflare zone ID"><button type="button" data-action="custom-domain-validate">Provision custom domain</button></div>', outputId: 'domain-output', outputKind: 'custom-domain', empty: 'Provisioning response appears here.', help: 'Provide a zone ID when multiple zones could match the hostname.', tag: 'pre' })}
           </section>
 
           <section class="work-section" id="status" data-flow-stage="operate">
@@ -361,6 +361,21 @@ function adminUiScript(): string {
   const primaryOutput = (scope) => scope?.querySelector('[data-output]');
   const setOutput = (id, value, isError = false) => { const el = byId(id); el.classList.toggle('is-error', isError); el.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); };
   const showJson = (id, value) => setOutput(id, value);
+  const readInput = (id) => byId(id)?.value?.trim() || '';
+  async function loadInstallerCommand(copyToClipboard = false) {
+    const platform = byId('installer-platform').value;
+    const command = await request('/admin/installers/' + platform, { headers: headers(true) });
+    setOutput('installer-output', command);
+    if (copyToClipboard) { await navigator.clipboard.writeText(command); toast('Install command copied'); }
+    return command;
+  }
+  const gatewayPayload = () => Object.fromEntries(Object.entries({
+    gatewayId: readInput('gateway-id'),
+    routeName: readInput('gateway-route-name'),
+    publicModel: readInput('gateway-public-model'),
+    providerName: readInput('gateway-provider-name'),
+    workerUrl: readInput('gateway-worker-url')
+  }).filter(([, value]) => value));
   const friendlyError = (action, error) => {
     if (action === 'first-run-setup' && error.status === config.setupLockedFeedback.status) return 'Setup is already complete for this Worker. Paste the existing admin token in the Admin token section, then use the authenticated controls below.';
     if (error.status === 401) return 'Admin token missing or invalid. Paste the admin token, verify it, then try this action again.';
@@ -414,6 +429,8 @@ function adminUiScript(): string {
       '<div class="metric"><strong>Nodes</strong><code>' + nodes.length + '</code></div>',
       '<div class="metric"><strong>Profiles</strong><code>' + profiles.length + '</code></div>',
       '<div class="metric"><strong>Audit</strong><code>' + audit.length + '</code></div>',
+      '<div class="metric"><strong>Gateway target</strong><code>' + esc([value.gateway?.gatewayId, value.gateway?.routeName, value.gateway?.publicModel, value.gateway?.workerUrl].filter(Boolean).join(' / ') || 'not synced') + '</code></div>',
+      '<div class="metric"><strong>Custom domain</strong><code>' + esc(value.customDomain?.hostname ? value.customDomain.hostname + ':' + (value.customDomain.status || 'unprovisioned') : 'not configured') + '</code></div>',
       '<div class="metric"><strong>Generated</strong><code>' + (value.generatedAt || 'unknown') + '</code></div>',
       '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status + ':' + (node.metrics?.runtimeState || 'unknown')).join('\\n')) + '</code></div>',
       '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '% ' + (profile.sourceMode || 'unknown')).join('\\n')) + '</code></div>',
@@ -439,9 +456,9 @@ function adminUiScript(): string {
       setScopeState(scope, 'loading'); button.disabled = true;
       if (action === 'first-run-setup') {
         const body = await request('/admin/setup', { method: 'POST' });
-        renderTokens('setup-output', body); setToken(body.adminToken || '', byId('remember-token').checked); byId('setup-status').textContent = 'locked'; byId('auth-status').textContent = 'verified'; toast('Setup complete');
+        renderTokens('setup-output', body); setToken(body.adminToken || '', byId('remember-token').checked); byId('setup-status').textContent = 'locked'; byId('auth-status').textContent = 'verified'; toast('Setup complete'); await loadInstallerCommand(false).catch(() => undefined);
       } else if (action === 'admin-login') {
-        setToken(byId('admin-token').value.trim(), byId('remember-token').checked); await request('/admin/login', { method: 'POST', headers: headers(true) }); byId('auth-status').textContent = 'verified'; setOutput('login-output', 'Admin token verified'); toast('Admin token verified');
+        setToken(byId('admin-token').value.trim(), byId('remember-token').checked); await request('/admin/login', { method: 'POST', headers: headers(true) }); byId('auth-status').textContent = 'verified'; setOutput('login-output', 'Admin token verified'); toast('Admin token verified'); await loadInstallerCommand(false).catch(() => undefined);
       } else if (action === 'forget-token') {
         setToken('', false); byId('auth-status').textContent = 'required'; setOutput('login-output', 'Token removed'); toast('Token removed');
       } else if (action === 'status-refresh') {
@@ -449,11 +466,11 @@ function adminUiScript(): string {
       } else if (action === 'setup-token-create') {
         renderTokens('setup-token-output', await request('/admin/setup-tokens', { method: 'POST', headers: headers(true) }));
       } else if (action === 'installer-generate') {
-        const platform = byId('installer-platform').value; const command = await request('/admin/installers/' + platform, { headers: headers(true) }); setOutput('installer-output', command); await navigator.clipboard.writeText(command); toast('Install command copied');
+        await loadInstallerCommand(true);
       } else if (action === 'gateway-sync') {
-        showJson('gateway-output', await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true) }));
+        showJson('gateway-output', await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true, true), body: JSON.stringify(gatewayPayload()) }));
       } else if (action === 'custom-domain-validate') {
-        showJson('domain-output', await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ hostname: byId('custom-domain').value.trim() }) }));
+        showJson('domain-output', await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ hostname: readInput('custom-domain'), zoneId: readInput('custom-domain-zone') }) }));
       } else if (action === 'node-revoke') {
         const nodeId = encodeURIComponent(byId('node-id').value.trim()); showJson('node-output', await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(true) }));
       } else if (action === 'profile-rollout') {
@@ -481,7 +498,8 @@ function adminUiScript(): string {
       button.disabled = false;
     }
   });
-  const saved = token(); if (saved) byId('admin-token').value = saved;
+  byId('installer-platform')?.addEventListener('change', () => { if (token()) loadInstallerCommand(false).catch((error) => setOutput('installer-output', friendlyError('installer-generate', error), true)); });
+  const saved = token(); if (saved) { byId('admin-token').value = saved; loadInstallerCommand(false).catch(() => undefined); }
 })();`
 }
 

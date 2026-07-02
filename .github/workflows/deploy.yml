@@ -174,12 +174,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
           CLOUDFLARE_API_TOKEN_RUNTIME: ${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}
+          ADMIN_RECOVERY_TOKEN: ${{ secrets.ADMIN_RECOVERY_TOKEN }}
         run: |
           set -euo pipefail
           args=()
           if [ -n "${{ steps.settings.outputs.wrangler_env }}" ]; then args+=(--env "${{ steps.settings.outputs.wrangler_env }}"); fi
           printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | npm exec -- wrangler secret put CLOUDFLARE_ACCOUNT_ID "${args[@]}"
           printf '%s' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npm exec -- wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME "${args[@]}"
+          if [ -n "$ADMIN_RECOVERY_TOKEN" ]; then printf '%s' "$ADMIN_RECOVERY_TOKEN" | npm exec -- wrangler secret put ADMIN_RECOVERY_TOKEN "${args[@]}"; fi
 
       - name: Build release artifacts and manifest
         working-directory: packages/node-agent

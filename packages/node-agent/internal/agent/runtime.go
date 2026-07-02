@@ -37,9 +37,10 @@ type ModelProfile struct {
 }
 
 type RuntimeCommand struct {
-	Executable string            `json:"executable"`
-	Args       []string          `json:"args"`
-	Env        map[string]string `json:"env"`
+	Executable   string            `json:"executable"`
+	Args         []string          `json:"args"`
+	Env          map[string]string `json:"env"`
+	ReadinessURL string            `json:"readinessUrl,omitempty"`
 }
 
 var ErrRuntimeDependencyMissing = errors.New("runtime dependency missing")
@@ -69,18 +70,19 @@ func (m *RuntimeManager) Start(ctx context.Context) error {
 		return err
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.runningLocked() {
+		m.mu.Unlock()
 		return nil
 	}
 	if _, err := exec.LookPath(m.command.Executable); err != nil {
 		m.state = "dependency-missing"
 		m.lastError = fmt.Sprintf("%s missing from PATH", m.command.Executable)
+		m.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrRuntimeDependencyMissing, m.command.Executable)
 	}
 	processCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(processCtx, m.command.Executable, m.command.Args...)
-	cmd.Env = append(os.Environ(), envPairs(m.command.Env)...)
+	cmd.Env = runtimeEnvironment(m.command.Env)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	m.state = "starting"
@@ -89,13 +91,28 @@ func (m *RuntimeManager) Start(ctx context.Context) error {
 		cancel()
 		m.state = "failed"
 		m.lastError = err.Error()
+		m.mu.Unlock()
 		return fmt.Errorf("start runtime: %w", err)
 	}
 	m.cmd = cmd
 	m.cancel = cancel
 	m.done = make(chan error, 1)
-	m.state = "ready"
+	readinessURL := m.command.ReadinessURL
 	go m.wait(cmd, m.done)
+	m.mu.Unlock()
+	readyCtx, cancelReady := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancelReady()
+	if err := waitForRuntimeReady(readyCtx, readinessURL, nil); err != nil {
+		_ = m.Stop(context.Background())
+		m.mu.Lock()
+		m.state = "failed"
+		m.lastError = err.Error()
+		m.mu.Unlock()
+		return fmt.Errorf("runtime readiness: %w", err)
+	}
+	m.mu.Lock()
+	m.state = "ready"
+	m.mu.Unlock()
 	return nil
 }
 
@@ -244,10 +261,20 @@ func (m *RuntimeManager) finishStop(cmd *exec.Cmd, cancel context.CancelFunc, st
 	m.state = state
 }
 
-func (m *RuntimeManager) setState(state string) {
+func (m *RuntimeManager) SetState(state string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.state = state
+	if state != "failed" {
+		m.lastError = ""
+	}
+}
+
+func (m *RuntimeManager) SetFailure(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state = "failed"
+	m.lastError = err.Error()
 }
 
 func LlamaCommand(profile ModelProfile, modelDir string, listenAddress string) RuntimeCommand {
@@ -268,13 +295,14 @@ func LlamaCommand(profile ModelProfile, modelDir string, listenAddress string) R
 	}
 	if profile.RuntimeCommand.Executable != "" {
 		return RuntimeCommand{
-			Executable: profile.RuntimeCommand.Executable,
-			Args:       renderRuntimeArgs(profile.RuntimeCommand.Args, values),
-			Env:        renderRuntimeEnv(profile.RuntimeCommand.Env, values),
+			Executable:   profile.RuntimeCommand.Executable,
+			Args:         renderRuntimeArgs(profile.RuntimeCommand.Args, values),
+			Env:          renderRuntimeEnv(profile.RuntimeCommand.Env, values),
+			ReadinessURL: "http://" + listenAddress + "/v1/models",
 		}
 	}
 	args := []string{"--model", modelPath, "--ctx-size", fmt.Sprintf("%d", profile.ContextWindow), "--host", values.host, "--port", values.port}
-	return RuntimeCommand{Executable: "llama-server", Args: args, Env: map[string]string{"LLAMA_ARG_THREADS": "auto"}}
+	return RuntimeCommand{Executable: "llama-server", Args: args, Env: map[string]string{"LLAMA_ARG_THREADS": "auto"}, ReadinessURL: "http://" + listenAddress + "/v1/models"}
 }
 
 type runtimeTemplateValues struct {
@@ -309,6 +337,36 @@ func renderRuntimeValue(value string, values runtimeTemplateValues) string {
 		"{{MODEL_DIR}}", values.modelDir,
 		"{{MODEL_PATH}}", values.modelPath,
 	).Replace(value)
+}
+
+func waitForRuntimeReady(ctx context.Context, readinessURL string, client *http.Client) error {
+	if readinessURL == "" {
+		return nil
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 2 * time.Second}
+	}
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, readinessURL, nil)
+		if err != nil {
+			return err
+		}
+		response, err := client.Do(req)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, response.Body)
+			_ = response.Body.Close()
+			if response.StatusCode >= 200 && response.StatusCode < 300 {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func RuntimeListenAddress(runtimeURL string) (string, error) {
@@ -444,6 +502,10 @@ func existingModelOK(path string, expectedSHA256 string) (bool, error) {
 		return true, nil
 	}
 	return VerifyFileSHA256(path, expectedSHA256)
+}
+
+func runtimeEnvironment(values map[string]string) []string {
+	return append(os.Environ(), envPairs(values)...)
 }
 
 func envPairs(values map[string]string) []string {

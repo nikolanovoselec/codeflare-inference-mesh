@@ -67,7 +67,8 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 1. Heartbeat metrics include runtime state, loaded model, active profile ID/version, and in-flight requests. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 2. Heartbeat metrics include the last runtime error when the runtime manager reports one. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeDependencyMissingState) -->
 3. GPU metrics are best-effort from platform tools first and absent rather than fabricated when unavailable. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseNvidiaSMI --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS003BestEffortHardwareMetrics) -->
-4. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
+4. Token-throughput metrics are calculated from llama.cpp token and duration metrics when the runtime exposes them. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseLlamaMetrics --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS003ParsesLlamaTokenMetrics) -->
+5. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime)
 
@@ -96,13 +97,34 @@ This domain covers response metadata, admin status, node metrics, audit events, 
 5. Mid-stream node failures increase the node's recent failure score. <!-- @impl: packages/router-worker/src/scheduler.ts::recordFailure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 releases and penalizes stream failures) -->
 6. Invalid Mesh connection data makes the node ineligible for scheduling. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
 7. Capacity exhaustion is reported as no-node when no other node is eligible. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
-8. Audit events record setup, claim, unregister, revoke, route provisioning, and profile switch actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-004 records audit events for setup, claim, unregister, revoke, route provisioning, and profile switch actions) -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-RTR-003](router-worker.md#req-rtr-003-streaming-pass-through)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-OBS-006: Audit history
+
+**Intent:** Admin-visible audit history should identify high-impact setup and routing actions without mixing those records into scheduler failure handling.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Audit events record setup, claim, unregister, revoke, route provisioning, and profile switch actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-006 records audit events for setup, claim, unregister, revoke, route provisioning, and profile switch actions) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-OBS-002](#req-obs-002-admin-status-surface)
 
 **Verification:** Automated test
 

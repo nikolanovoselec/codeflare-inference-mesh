@@ -33,9 +33,25 @@ func DashboardHandler(status func() DashboardStatus, controllers ...RuntimeContr
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		cfg := status().Config
 		w.Header().Set("content-type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte("<!doctype html><title>Inference Mesh Agent</title><meta name=csrf-token content=\"" + html.EscapeString(cfg.DashboardToken) + "\"><main id=app data-status=/api/status></main>"))
+		_, _ = w.Write([]byte(dashboardHTML(cfg)))
 	})
 	return mux
+}
+
+func dashboardHTML(cfg Config) string {
+	return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="` + html.EscapeString(cfg.DashboardToken) + `"><title>Inference Mesh Agent</title><style>
+	:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#09090b;color:#f4f4f5}body{margin:0;padding:24px}.shell{max-width:1120px;margin:0 auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.card{border:1px solid #2d2d35;border-radius:14px;background:#141419;padding:14px}.card span{display:block;color:#a1a1aa;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.card strong,.card code{display:block;margin-top:6px;color:#fff;word-break:break-word}.panel{margin-top:16px;border:1px solid #2d2d35;border-radius:14px;background:#101014;padding:14px}button{min-height:40px;border:1px solid #3f3f46;border-radius:10px;background:#1f1f27;color:#fff;padding:0 14px;margin-right:8px}pre{white-space:pre-wrap;word-break:break-word;color:#d4d4d8}.error{color:#ff9a7f}</style></head><body><main class="shell"><h1>Inference Mesh Agent</h1><p>Local runtime, Mesh, heartbeat, GPU, and profile status.</p><section class="grid" data-dashboard-cards>
+	` + dashboardCard("Mesh IP", cfg.MeshIP) + dashboardCard("Listener", ListenerAddress(cfg.MeshIP, cfg.InferencePort, cfg.AllowAllInterfaces)) + dashboardCard("Dashboard", cfg.DashboardAddress) + dashboardCard("Runtime URL", cfg.RuntimeURL) + `
+	</section><section class="panel"><h2>Runtime controls</h2><button data-runtime="start">Start</button><button data-runtime="stop">Stop</button><button data-runtime="restart">Restart</button><pre id="runtime-feedback"></pre></section><section class="panel"><h2>Status</h2><pre id="status">Loading…</pre></section></main><script>
+	const token=document.querySelector('meta[name="csrf-token"]').content; const statusEl=document.getElementById('status'); const feedback=document.getElementById('runtime-feedback');
+	function card(label,value){return '<div class="card"><span>'+label+'</span><code>'+String(value||'—').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))+'</code></div>'}
+	async function refresh(){try{const r=await fetch('/api/status'); const s=await r.json(); const m=s.metrics||{}; document.querySelector('[data-dashboard-cards]').innerHTML=[card('Mesh IP',s.config.meshIp),card('Listener',s.config.meshIp+':'+s.config.inferencePort),card('Heartbeat model',s.config.runtimeModel),card('Runtime state',s.runtimeState||m.runtimeState),card('Loaded model',m.loadedModel),card('Loaded profile',(m.loadedProfileId||'')+(m.loadedProfileVersion?' v'+m.loadedProfileVersion:'')),card('Active requests',m.activeRequests),card('Tokens/sec',m.tokensPerSecond),card('Prompt tokens/sec',m.promptTokensPerSecond),card('Generation tokens/sec',m.generationTokensPerSecond),card('GPU',m.gpuName),card('GPU memory',m.gpuMemoryUsedMiB&&m.gpuMemoryTotalMiB?m.gpuMemoryUsedMiB+'/'+m.gpuMemoryTotalMiB+' MiB':'—'),card('Last error',m.lastError)].join(''); statusEl.textContent=JSON.stringify(s,null,2)}catch(e){statusEl.textContent=e.message;statusEl.className='error'}}
+	document.addEventListener('click',async e=>{const action=e.target.dataset.runtime;if(!action)return;feedback.textContent='Working…';try{const r=await fetch('/api/runtime/'+action,{method:'POST',headers:{'x-inference-mesh-dashboard-token':token}});feedback.textContent=await r.text();await refresh()}catch(err){feedback.textContent=err.message;feedback.className='error'}}); refresh(); setInterval(refresh,5000);
+	</script></body></html>`
+}
+
+func dashboardCard(label string, value string) string {
+	return `<div class="card"><span>` + html.EscapeString(label) + `</span><code>` + html.EscapeString(value) + `</code></div>`
 }
 
 func runtimeAction(status func() DashboardStatus, controllers []RuntimeController, action func(context.Context, RuntimeController) error) http.HandlerFunc {

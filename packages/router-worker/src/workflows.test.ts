@@ -59,6 +59,17 @@ function runScript(script: string, options: { input?: string; env?: Record<strin
   })
 }
 
+function runShellBlock(block: string, env: Record<string, string>) {
+  const dir = mkdtempSync(resolve(tmpdir(), 'workflow-shell-'))
+  const script = resolve(dir, 'step.sh')
+  writeFileSync(script, block)
+  try {
+    return spawnSync('bash', [script], { cwd: dir, env: { PATH: process.env.PATH ?? '', ...env }, encoding: 'utf8' })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 describe('workflow contract values', () => {
   it('REQ-REL-001 runs PR, main-push, manual, router, agent, packaging, security, and aggregate test checks', () => {
     const ci = workflow('ci.yml')
@@ -97,7 +108,12 @@ describe('workflow contract values', () => {
     expect(deployJob.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}', 'persist-credentials': false })
     const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
     expect(stepNames.indexOf('Guard deploy source')).toBeLessThan(stepNames.indexOf('actions/checkout@v7.0.0'))
-    expect(stepByName(deployJob, 'Guard deploy source')?.run).toContain('Production deploys are only allowed from main')
+    const guardRun = stepByName(deployJob, 'Guard deploy source')!.run!
+    const guardEnv = { WORKFLOW_RUN_CONCLUSION: '', WORKFLOW_RUN_EVENT: '', WORKFLOW_RUN_REPOSITORY: '', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }
+    expect(runShellBlock(guardRun, { ...guardEnv, EVENT_NAME: 'workflow_dispatch', INPUT_ENVIRONMENT: 'integration', GITHUB_REF: 'refs/heads/feature' }).status).toBe(0)
+    expect(runShellBlock(guardRun, { ...guardEnv, EVENT_NAME: 'workflow_dispatch', INPUT_ENVIRONMENT: 'production', GITHUB_REF: 'refs/heads/feature' }).status).toBe(1)
+    expect(runShellBlock(guardRun, { EVENT_NAME: 'workflow_run', INPUT_ENVIRONMENT: '', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_CONCLUSION: 'success', WORKFLOW_RUN_EVENT: 'push', WORKFLOW_RUN_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }).status).toBe(0)
+    expect(runShellBlock(guardRun, { EVENT_NAME: 'workflow_run', INPUT_ENVIRONMENT: '', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_CONCLUSION: 'success', WORKFLOW_RUN_EVENT: 'pull_request', WORKFLOW_RUN_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }).status).toBe(1)
     expect(stepNames.indexOf('Resolve deploy settings')).toBeGreaterThan(stepNames.indexOf('actions/checkout@v7.0.0'))
     expect(stepNames.indexOf('Publish GitHub Release')).toBeGreaterThan(-1)
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
@@ -158,8 +174,11 @@ describe('workflow contract values', () => {
 
     expect(stepNames).toEqual(expect.arrayContaining(['Build release artifacts and manifest', 'Sign checksums when signing is configured', 'Publish GitHub Release', 'Deploy Worker', 'actions/upload-artifact@v7.0.1']))
     expect(stepByName(deployJob, 'Build release artifacts and manifest')).toMatchObject({ 'working-directory': 'packages/node-agent' })
-    expect(stepByName(deployJob, 'Sign checksums when signing is configured')).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}', COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}' } })
-    expect(stepByName(deployJob, 'Sign checksums when signing is configured')?.run).toContain('Cosign key not configured; skipping signature')
+    const signStep = stepByName(deployJob, 'Sign checksums when signing is configured')!
+    expect(signStep).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}', COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}' } })
+    const skippedSign = runShellBlock(signStep.run!, { COSIGN_PRIVATE_KEY: '', COSIGN_PASSWORD: '' })
+    expect(skippedSign.status).toBe(0)
+    expect(skippedSign.stdout).toContain('Cosign key not configured; skipping signature')
     expect(stepByName(deployJob, 'Publish GitHub Release')).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { GH_TOKEN: '${{ github.token }}' } })
     expect(stepByName(deployJob, 'Resolve or create D1 database')?.env).toMatchObject({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' })
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))

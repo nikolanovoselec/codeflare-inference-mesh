@@ -17,18 +17,18 @@ Provider responses include request ID, session ID when present, and selected nod
 
 | Field group | Contents | REQs |
 | --- | --- | --- |
-| Nodes | Node status, public models, active profiles, runtime readiness, capacity, in-flight count, and last seen. | [REQ-OBS-002](../../sdd/spec/observability.md) |
+| Nodes | Node status, public models, active profiles, runtime readiness, token throughput, GPU memory, capacity, in-flight count, and last seen. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 | Profiles | Public aliases, upstream model, source mode, version, rollout percent, active flag, and ready/downloading/failed node counts. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md), [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| Audit | Recent setup, claim, unregister, revoke, route provisioning, and profile switch events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-004](../../sdd/spec/observability.md), [REQ-OBS-005](../../sdd/spec/observability.md) |
+| Audit | Recent setup, claim, unregister, revoke, route provisioning, and profile switch events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-006](../../sdd/spec/observability.md) |
 | Metadata | Status generation timestamp. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 
 ## Node metrics
 
-Heartbeats report runtime state, loaded model, active profile ID/version, in-flight count, last runtime error, and Mesh IP. GPU metrics start as best-effort platform probes and stay absent when unsupported. ([REQ-OBS-003](../../sdd/spec/observability.md))
+Heartbeats report runtime state, loaded model, active profile ID/version, in-flight count, token throughput, last runtime error, and Mesh IP. GPU metrics start as best-effort platform probes and stay absent when unsupported. Token throughput is calculated from llama.cpp `/metrics` token and duration counters when that endpoint is available. ([REQ-OBS-003](../../sdd/spec/observability.md))
 
 ## Audit events
 
-Audit history records setup completion, provider route provisioning, setup-token creation and claim, node unregister, node revoke, and profile switch actions. Audit records redact token material and credential values. ([REQ-OBS-004](../../sdd/spec/observability.md)) ([REQ-OBS-005](../../sdd/spec/observability.md)) ([REQ-SEC-002](../../sdd/spec/security.md))
+Audit history records setup completion, provider route provisioning, setup-token creation and claim, node unregister, node revoke, and profile switch actions. Audit records redact token material and credential values. ([REQ-OBS-006](../../sdd/spec/observability.md)) ([REQ-SEC-002](../../sdd/spec/security.md))
 
 ## Failure states
 
@@ -45,4 +45,4 @@ Audit history records setup completion, provider route provisioning, setup-token
 | Surface | Specification | Source |
 |---|---|---|
 | Provider metadata | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
-| Node metrics | [observability.md](../../sdd/spec/observability.md) | `packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError` <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> |
+| Node metrics | [observability.md](../../sdd/spec/observability.md) | `packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError`, `packages/node-agent/internal/agent/metrics.go::ParseLlamaMetrics` <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseLlamaMetrics --> |

@@ -18,6 +18,7 @@
 | --- | --- | --- | --- | --- |
 | `ROUTER_PROVIDER_TOKEN` | n/a | yes for seeded provider auth | `packages/router-worker/src/router.ts::authenticateKind` | [REQ-GWY-002](../../sdd/spec/gateway.md) |
 | `ADMIN_TOKEN` | n/a | no after browser setup creates admin token records | `packages/router-worker/src/router.ts::authenticateKind` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
+| `ADMIN_RECOVERY_TOKEN` | n/a | yes only for emergency admin reset | `packages/router-worker/src/router.ts::handleAdminRecovery` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | `NODE_UPSTREAM_TOKEN` | generated during first setup when absent | no | `packages/router-worker/src/router.ts::resolveUpstreamToken` | [REQ-SEC-001](../../sdd/spec/security.md) |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
 | `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
@@ -30,6 +31,9 @@
 | `MAX_REQUEST_BYTES` | `16777216` | no | `packages/router-worker/src/router.ts::handleChat` | [REQ-RTR-002](../../sdd/spec/router-worker.md) |
 | `HEARTBEAT_TTL_SECONDS` | `45` | no | Declared in Wrangler but not consumed; live heartbeat TTL is hard-coded to 45s in `packages/router-worker/src/scheduler.ts` and `packages/router-worker/src/store.ts`. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `AI_GATEWAY_ID` | `inference-mesh` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `AI_GATEWAY_ROUTE_NAME` | `mesh-default` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `AI_GATEWAY_PROVIDER_NAME` | `Codeflare Inference Mesh` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `AI_GATEWAY_PUBLIC_MODEL` | `mesh-default` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `WORKER_BASE_URL` | Worker origin placeholder | yes for Gateway sync and installer commands | `packages/router-worker/src/router.ts::handleGatewaySync`, `packages/router-worker/src/router.ts::handleInstaller` | [REQ-GWY-001](../../sdd/spec/gateway.md) |
 | `AGENT_RELEASE_TAG` | `agent-release-tag-placeholder` | set by deploy for real installers | `packages/router-worker/src/router.ts::handleInstallScript` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | `GITHUB_REPOSITORY` | `nikolanovoselec/codeflare-inference-mesh` | yes for installers | `packages/router-worker/src/router.ts::handleInstaller`, `packages/router-worker/src/router.ts::handleInstallScript` | [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
@@ -73,7 +77,7 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | `publicModels` | `["mesh-default"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
 | `activeProfileIds` | `["qwen36-35b-a3b-262k-mm-3090"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
 | `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles`, `packages/node-agent/internal/agent/runtime.go::EnsureModel`, `packages/node-agent/internal/agent/runtime.go::LlamaCommand` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
-| `HF_TOKEN` | node service environment | no, required only for gated Hugging Face profiles | `packages/node-agent/internal/agent/runtime.go::cmd.Env` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `HF_TOKEN` | node service environment | no, required only for gated Hugging Face profiles | `packages/node-agent/internal/agent/runtime.go::runtimeEnvironment` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `capacity` | `1` | no | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `dataDir` | `.inference-mesh` | no | `packages/node-agent/cmd/inference-mesh-agent/main.go::defaultDataDir` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `releaseUrl` | repository release API | no | `packages/node-agent/internal/agent/config.go::Config`, `packages/node-agent/internal/agent/config.go::DefaultConfig` | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
@@ -83,7 +87,9 @@ Legacy config loads persist a generated `dashboardToken` before dashboard contro
 
 Before first claim, config startup persists `meshIp` only when private-interface detection finds exactly one candidate; ambiguous hosts must supply it explicitly. ([REQ-NODE-002](../../sdd/spec/node-agent.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP -->
 
-`HF_TOKEN` is not stored in router profiles. When a gated Hugging Face model is used, provide `HF_TOKEN` in the node service environment so `llama-server -hf` can resolve the model without the Worker returning secrets to nodes. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/node-agent/internal/agent/runtime.go::cmd.Env -->
+The router seeds default model profiles during setup/status reads when D1 has no profile rows, so legacy deployments get the same `mesh-default` profile set without a manual migration. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/router-worker/src/profiles.ts::ensureDefaultProfiles -->
+
+`HF_TOKEN` is not stored in router profiles. When a gated Hugging Face model is used, provide `HF_TOKEN` in the node service environment; `runtimeEnvironment` inherits that service environment and appends only profile-specific runtime variables so `llama-server -hf` can resolve the model without the Worker returning secrets to nodes. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/node-agent/internal/agent/runtime.go::runtimeEnvironment -->
 
 ## GitHub secrets
 
@@ -92,6 +98,7 @@ Before first claim, config startup persists `meshIp` only when private-interface
 | `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | `CLOUDFLARE_API_TOKEN_DEPLOY` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain setup | `.github/workflows/deploy.yml` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `ADMIN_RECOVERY_TOKEN` | n/a | no | `.github/workflows/deploy.yml`, `packages/router-worker/src/router.ts::handleAdminRecovery` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | `COSIGN_PRIVATE_KEY` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | `COSIGN_PASSWORD` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 

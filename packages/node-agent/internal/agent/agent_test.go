@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -87,6 +88,24 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 	if claimed.MeshIP != "100.64.1.10" || claimed.Capacity != 2 {
 		t.Fatalf("claim payload mismatch: %#v", claimed)
 	}
+	})
+}
+
+func TestREQNODE002DetectsUnambiguousMeshIP(t *testing.T) {
+	t.Run("REQ-NODE-002", func(t *testing.T) {
+		meshAddr := &net.IPNet{IP: net.ParseIP("100.64.1.10"), Mask: net.CIDRMask(32, 32)}
+		lanAddr := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(32, 32)}
+		publicAddr := &net.IPNet{IP: net.ParseIP("8.8.8.8"), Mask: net.CIDRMask(32, 32)}
+
+		if meshIP, ok := DetectMeshIP([]net.Addr{meshAddr}); !ok || meshIP != "100.64.1.10" {
+			t.Fatalf("expected one unambiguous private Mesh IP, got %q ok=%v", meshIP, ok)
+		}
+		if meshIP, ok := DetectMeshIP([]net.Addr{publicAddr}); ok || meshIP != "" {
+			t.Fatalf("public-only interfaces should not be detected, got %q ok=%v", meshIP, ok)
+		}
+		if meshIP, ok := DetectMeshIP([]net.Addr{meshAddr, lanAddr}); ok || meshIP != "" {
+			t.Fatalf("multiple private candidates should fail closed, got %q ok=%v", meshIP, ok)
+		}
 	})
 }
 
@@ -223,6 +242,25 @@ func TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(t *testing.T) {
 	})
 }
 
+func TestREQNODE004DashboardRendersOperationalStatusUI(t *testing.T) {
+	t.Run("REQ-NODE-004", func(t *testing.T) {
+		handler := DashboardHandler(func() DashboardStatus {
+			return DashboardStatus{Config: Config{MeshIP: "100.64.1.10", InferencePort: 8080, DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token", RuntimeURL: "http://127.0.0.1:8081", RuntimeModel: "mesh-default"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
+		})
+		resp := httptest.NewRecorder()
+
+		handler.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/", nil))
+		body := resp.Body.String()
+
+		if !strings.Contains(body, "data-dashboard-cards") || !strings.Contains(body, "/api/status") {
+			t.Fatalf("dashboard UI should expose status cards and API polling: %s", body)
+		}
+		if count := strings.Count(body, "data-runtime=\""); count != 3 {
+			t.Fatalf("dashboard UI should expose start, stop, and restart controls, got %d in %s", count, body)
+		}
+	})
+}
+
 func TestREQNODE004DashboardRedactsCredentials(t *testing.T) {
 	t.Run("REQ-NODE-004", func(t *testing.T) {
 	handler := DashboardHandler(func() DashboardStatus {
@@ -302,6 +340,21 @@ func TestREQNODE004DashboardRuntimeControlsReportUnavailableWithoutController(t 
 	})
 }
 
+func TestREQRUN003RuntimeEnvironmentInheritsServiceEnv(t *testing.T) {
+	t.Run("REQ-RUN-003", func(t *testing.T) {
+		t.Setenv("HF_TOKEN", "hf-node-token")
+
+		env := runtimeEnvironment(map[string]string{"EXTRA_RUNTIME_FLAG": "1"})
+
+		if !containsEnv(env, "HF_TOKEN=hf-node-token") {
+			t.Fatalf("runtime environment should inherit HF_TOKEN from the node service environment")
+		}
+		if !containsEnv(env, "EXTRA_RUNTIME_FLAG=1") {
+			t.Fatalf("runtime environment should include profile command env")
+		}
+	})
+}
+
 func TestREQRUN003RuntimeCommandUsesProfileTemplate(t *testing.T) {
 	t.Run("REQ-RUN-003", func(t *testing.T) {
 		dataDir := t.TempDir()
@@ -358,6 +411,28 @@ func TestREQRUN003SourceModesAndChecksum(t *testing.T) {
 	})
 }
 
+func TestREQRUN003RuntimeReadinessProbeWaitsForModelEndpoint(t *testing.T) {
+	t.Run("REQ-RUN-003", func(t *testing.T) {
+		attempts := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts++
+			if attempts < 2 {
+				http.Error(w, "loading", http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = io.WriteString(w, `{"data":[]}`)
+		}))
+		defer server.Close()
+
+		if err := waitForRuntimeReady(context.Background(), server.URL, server.Client()); err != nil {
+			t.Fatal(err)
+		}
+		if attempts < 2 {
+			t.Fatalf("readiness probe should wait until the endpoint succeeds")
+		}
+	})
+}
+
 func TestREQRUN003RuntimeDependencyMissingState(t *testing.T) {
 	t.Run("REQ-RUN-003 REQ-OBS-003", func(t *testing.T) {
 		missingExecutable := filepath.Join(t.TempDir(), "missing-llama-server")
@@ -404,6 +479,16 @@ func TestREQRUN003RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
 	})
 }
 
+func TestREQOBS003ParsesLlamaTokenMetrics(t *testing.T) {
+	t.Run("REQ-OBS-003", func(t *testing.T) {
+		metrics := ParseLlamaMetrics("llamacpp:tokens_prompt_total 250\nllamacpp:prompt_seconds_total 10\nllamacpp:tokens_predicted_total 900\nllamacpp:predicted_seconds_total 30\n")
+
+		if metrics.PromptTokensPerSecond != 25 || metrics.GenerationTokensPerSecond != 30 || metrics.TokensPerSecond != 55 {
+			t.Fatalf("unexpected token metrics: %#v", metrics)
+		}
+	})
+}
+
 func TestREQOBS003BestEffortHardwareMetrics(t *testing.T) {
 	t.Run("REQ-OBS-003", func(t *testing.T) {
 	metrics := ParseNvidiaSMI("RTX 3090, 12000, 24576")
@@ -440,6 +525,15 @@ func sameStrings(left []string, right []string) bool {
 		}
 	}
 	return true
+}
+
+func containsEnv(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 type fakeRuntimeController struct {

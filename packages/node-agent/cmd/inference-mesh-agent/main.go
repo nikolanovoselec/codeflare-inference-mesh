@@ -117,7 +117,8 @@ func runService() error {
 		defer stateMu.RUnlock()
 		return cfg
 	}
-	go heartbeatLoop(serviceCtx, &stateMu, &cfg, runtimeManager, loadState, activeRequests)
+	telemetry := &runtimeTelemetry{}
+	go heartbeatLoop(serviceCtx, &stateMu, &cfg, runtimeManager, loadState, telemetry, activeRequests)
 	proxy, err := agent.ProxyHandler(cfg.RuntimeURL, cfg.UpstreamToken, activeRequests)
 	if err != nil {
 		return err
@@ -128,7 +129,7 @@ func runService() error {
 	}
 	dashboardServer := &http.Server{Addr: cfg.DashboardAddress, Handler: agent.DashboardHandler(func() agent.DashboardStatus {
 		current := currentConfig()
-		metrics := runtimeMetrics(runtimeManager, loadState, current, activeRequests.Value())
+		metrics := telemetry.Snapshot(runtimeMetrics(runtimeManager, loadState, current, activeRequests.Value()))
 		return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
 	}, dashboardControllers...)}
 	go func() {
@@ -170,8 +171,9 @@ func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent
 	return manager, nil
 }
 
-func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config, runtimeManager *agent.RuntimeManager, loadState *runtimeLoadState, activeRequests *agent.ActiveCounter) {
-	loadedProfile := loadState.Key()
+func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config, runtimeManager *agent.RuntimeManager, loadState *runtimeLoadState, telemetry *runtimeTelemetry, activeRequests *agent.ActiveCounter) {
+	restartMu := sync.Mutex{}
+	restartPending := false
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -182,7 +184,7 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 			stateMu.RLock()
 			current := *cfg
 			stateMu.RUnlock()
-			metrics := runtimeMetrics(runtimeManager, loadState, current, activeRequests.Value())
+			metrics := telemetry.Refresh(ctx, current.RuntimeURL, runtimeMetrics(runtimeManager, loadState, current, activeRequests.Value()))
 			client := agent.Client{RouterURL: current.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 			response, err := client.Heartbeat(ctx, current.NodeToken, agent.HeartbeatFromConfig(current, metrics, activeRequests.Value()))
 			if err != nil {
@@ -193,23 +195,42 @@ func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config
 			if err == nil {
 				*cfg = next
 			}
+			stateMu.Unlock()
 			if err == nil && runtimeManager != nil {
 				nextProfile := selectedProfileKey(next)
-				if nextProfile != "" && nextProfile != loadedProfile {
-					if err := restartRuntimeForSelectedProfile(ctx, next, runtimeManager, activeRequests); err == nil {
-						if profile, ok := agent.SelectedProfile(next); ok && runtimeManager.State() == "ready" {
-							loadState.Set(profile)
-							loadedProfile = profileKey(profile)
-						} else {
-							loadState.Clear()
-							loadedProfile = ""
+				if nextProfile != "" && nextProfile != loadState.Key() && beginRestart(&restartMu, &restartPending) {
+					loadState.Clear()
+					restartConfig := next
+					go func() {
+						defer finishRestart(&restartMu, &restartPending)
+						if err := restartRuntimeForSelectedProfile(ctx, restartConfig, runtimeManager, activeRequests); err != nil {
+							runtimeManager.SetFailure(err)
+							return
 						}
-					}
+						if profile, ok := agent.SelectedProfile(restartConfig); ok && runtimeManager.State() == "ready" {
+							loadState.Set(profile)
+						}
+					}()
 				}
 			}
-			stateMu.Unlock()
 		}
 	}
+}
+
+func beginRestart(mu *sync.Mutex, pending *bool) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	if *pending {
+		return false
+	}
+	*pending = true
+	return true
+}
+
+func finishRestart(mu *sync.Mutex, pending *bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	*pending = false
 }
 
 func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, runtimeManager *agent.RuntimeManager, activeRequests *agent.ActiveCounter) error {
@@ -221,6 +242,7 @@ func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, run
 	if err != nil {
 		return err
 	}
+	runtimeManager.SetState("downloading")
 	if _, err := agent.EnsureModel(ctx, profile, cfg.DataDir, nil); err != nil {
 		return err
 	}
@@ -231,6 +253,29 @@ func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, run
 		return err
 	}
 	return nil
+}
+
+type runtimeTelemetry struct {
+	mu      sync.RWMutex
+	metrics agent.NodeMetrics
+}
+
+func (t *runtimeTelemetry) Refresh(ctx context.Context, runtimeURL string, base agent.NodeMetrics) agent.NodeMetrics {
+	extra, err := agent.FetchLlamaMetrics(ctx, runtimeURL, nil)
+	if err != nil {
+		return t.Snapshot(base)
+	}
+	merged := agent.MergeRuntimeMetrics(base, extra)
+	t.mu.Lock()
+	t.metrics = merged
+	t.mu.Unlock()
+	return merged
+}
+
+func (t *runtimeTelemetry) Snapshot(base agent.NodeMetrics) agent.NodeMetrics {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return agent.MergeRuntimeMetrics(base, t.metrics)
 }
 
 func runtimeState(runtimeManager *agent.RuntimeManager) string {

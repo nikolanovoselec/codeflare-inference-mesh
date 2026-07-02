@@ -1,6 +1,6 @@
 import { adminUiHtml } from './admin-ui'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
-import { CloudflareGatewayClient, type GatewaySyncRequest, type GatewaySyncResult } from './cloudflare-api'
+import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewaySyncRequest, type GatewaySyncResult } from './cloudflare-api'
 import { installerCommand, installScript, validateCustomDomain, type InstallerPlatform } from './installers'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { meshUrl } from './scheduler'
@@ -17,7 +17,7 @@ export interface RouterDeps {
   readonly env: Partial<RouterEnv>
   readonly now?: () => number
   readonly requestId?: () => string
-  readonly cloudflareClient?: { syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult> }
+  readonly cloudflareClient?: { syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult>; provisionCustomDomain(input: CustomDomainProvisionRequest): Promise<CustomDomainProvisionResult> }
 }
 
 export function createRouter(deps: RouterDeps): (request: Request) => Promise<Response> {
@@ -36,6 +36,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (request.method === 'POST' && url.pathname === '/node/heartbeat') return await handleNodeHeartbeat(request, deps, id, now())
       if (request.method === 'POST' && url.pathname === '/node/unregister') return await handleNodeUnregister(request, deps, id, now())
       if (url.pathname === '/admin/setup' && request.method === 'POST') return await handleFirstSetup(request, deps, id, now())
+      if (url.pathname === '/admin/recovery/reset' && request.method === 'POST') return await handleAdminRecovery(request, deps, id, now())
       if (url.pathname === '/install.sh' && request.method === 'GET') return handleInstallScript(deps, url.searchParams.get('platform') === 'macos' ? 'macos' : 'linux')
       if (url.pathname === '/install.ps1' && request.method === 'GET') return handleInstallScript(deps, 'windows')
       if (url.pathname === '/admin/login' && request.method === 'POST') return await handleAdminLogin(request, deps, id, now())
@@ -194,6 +195,17 @@ async function handleFirstSetup(request: Request, deps: RouterDeps, requestId: s
   return json({ adminToken, providerToken, setupToken, upstreamToken, byokInstruction: 'Paste providerToken as the AI Gateway custom provider API key.' }, 201, requestId)
 }
 
+async function handleAdminRecovery(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const recoveryToken = deps.env.ADMIN_RECOVERY_TOKEN
+  if (!recoveryToken || !(await verifyPlainOrHashed(recoveryToken, bearerToken(request)))) return json({ error: 'unauthorized' }, 401, requestId)
+  const existingAdmins = await deps.store.listTokens('admin')
+  await Promise.all(existingAdmins.filter((token) => token.active).map((token) => deps.store.revokeToken('admin', token.id, now)))
+  const adminToken = generateBearerToken('admin')
+  await deps.store.putToken(await createTokenRecord('admin', adminToken, now))
+  await deps.store.appendAudit({ id: requestId, type: 'admin_recovery_reset', at: now, actor: 'recovery', detail: { revoked: existingAdmins.filter((token) => token.active).length } })
+  return json({ adminToken }, 201, requestId)
+}
+
 async function handleAdminLogin(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   return json({ ok: true, session: 'bearer-token' }, 200, requestId)
@@ -255,14 +267,25 @@ function handleInstallScript(deps: RouterDeps, platform: InstallerPlatform): Res
 
 async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
-  const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
-  const gatewayId = deps.env.AI_GATEWAY_ID ?? 'inference-mesh'
-  const customDomain = await deps.store.getConfig<{ hostname: string; zoneId?: string }>('custom_domain')
-  const workerUrl = customDomain?.hostname ? `https://${customDomain.hostname}` : deps.env.WORKER_BASE_URL
+  const body = await readOptionalObject<Partial<GatewaySettings>>(request)
+  const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
+  const customDomain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
+  const settings = gatewaySettings({ env: deps.env, body, stored: storedSettings })
+  const workerUrl = settings.workerUrl ?? (customDomain?.status === 'provisioned' ? `https://${customDomain.hostname}` : deps.env.WORKER_BASE_URL)
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
-  if (!accountId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  if (customDomain?.hostname && customDomain.status !== 'provisioned' && !settings.workerUrl) return json({ error: 'custom_domain_not_provisioned', hostname: customDomain.hostname }, 409, requestId)
+  if (!settings.accountId || !settings.gatewayId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
-  const result = await client.syncCustomProvider({ accountId, gatewayId, workerUrl, providerName: 'codeflare-inference-mesh', routeName: 'mesh-default', providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.' })
+  const result = await client.syncCustomProvider({
+    accountId: settings.accountId,
+    gatewayId: settings.gatewayId,
+    workerUrl,
+    providerName: settings.providerName,
+    routeName: settings.routeName,
+    publicModel: settings.publicModel,
+    providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.'
+  })
+  await deps.store.putConfig('cloudflare_gateway_settings', { ...settings, workerUrl })
   await deps.store.putConfig('cloudflare_gateway', result)
   await deps.store.appendAudit({ id: requestId, type: 'gateway_sync', at: now, actor: 'admin', detail: { ...result } })
   return json(result, 200, requestId)
@@ -271,15 +294,21 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
 async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<{ hostname: string; zoneId?: string }>(request)
-  const hostname = typeof body?.hostname === 'string' ? body.hostname.trim() : ''
+  const hostname = typeof body?.hostname === 'string' ? body.hostname.trim().toLowerCase() : ''
   const zoneId = typeof body?.zoneId === 'string' ? body.zoneId.trim() : ''
   const zoneValid = zoneId === '' || /^[a-f0-9]{32}$/i.test(zoneId)
   const valid = Boolean(hostname && validateCustomDomain(hostname) && zoneValid)
   if (!valid) return json({ valid: false, hostname: body?.hostname }, 400, requestId)
-  const stored = zoneId ? { hostname, zoneId } : { hostname }
-  await deps.store.putConfig('custom_domain', stored)
-  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_validated', at: now, actor: 'admin', target: hostname, detail: zoneId ? { zoneId } : {} })
-  return json({ valid: true, ...stored }, 200, requestId)
+  const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
+  const workerName = deps.env.WORKER_NAME ?? 'codeflare-inference-mesh-router'
+  const workerUrl = deps.env.WORKER_BASE_URL
+  const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
+  if (!accountId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
+  const provisioned = await client.provisionCustomDomain({ accountId, hostname, workerName, workerUrl, ...(zoneId ? { zoneId } : {}) })
+  await deps.store.putConfig('custom_domain', provisioned)
+  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_provisioned', at: now, actor: 'admin', target: hostname, detail: { ...provisioned } })
+  return json({ valid: true, ...provisioned }, 200, requestId)
 }
 
 async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
@@ -299,6 +328,35 @@ async function handleProfileRollout(request: Request, deps: RouterDeps, requestI
   await deps.store.setActiveProfile(body.profileId, body.rolloutPercent)
   await deps.store.appendAudit({ id: requestId, type: 'profile_rollout', at: now, actor: 'admin', target: body.profileId, detail: { rolloutPercent: body.rolloutPercent } })
   return json({ ok: true }, 200, requestId)
+}
+
+interface GatewaySettings {
+  readonly accountId: string
+  readonly gatewayId: string
+  readonly providerName: string
+  readonly routeName: string
+  readonly publicModel: string
+  readonly workerUrl?: string
+}
+
+interface StoredCustomDomain extends CustomDomainProvisionResult {
+  readonly valid?: boolean
+}
+
+function gatewaySettings(input: { env: Partial<RouterEnv>; body?: Partial<GatewaySettings>; stored?: Partial<GatewaySettings> }): GatewaySettings {
+  const source = { ...input.stored, ...input.body }
+  return {
+    accountId: cleanString(source.accountId) ?? input.env.CLOUDFLARE_ACCOUNT_ID ?? input.env.AI_GATEWAY_ACCOUNT_ID ?? '',
+    gatewayId: cleanString(source.gatewayId) ?? input.env.AI_GATEWAY_ID ?? 'inference-mesh',
+    providerName: cleanString(source.providerName) ?? input.env.AI_GATEWAY_PROVIDER_NAME ?? 'codeflare-inference-mesh',
+    routeName: cleanString(source.routeName) ?? input.env.AI_GATEWAY_ROUTE_NAME ?? 'mesh-default',
+    publicModel: cleanString(source.publicModel) ?? input.env.AI_GATEWAY_PUBLIC_MODEL ?? 'mesh-default',
+    ...(cleanString(source.workerUrl) ? { workerUrl: cleanString(source.workerUrl)! } : {})
+  }
+}
+
+function cleanString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
 async function resolveUpstreamToken(deps: RouterDeps): Promise<string | undefined> {
@@ -355,6 +413,11 @@ function html(body: string, requestId: string): Response {
 
 async function readJson<T>(request: Request): Promise<T> {
   return await request.json() as T
+}
+
+async function readOptionalObject<T>(request: Request): Promise<T | undefined> {
+  const text = await request.text()
+  return text ? parseObject(text) as T | undefined : undefined
 }
 
 function parseObject(text: string): Record<string, unknown> | undefined {

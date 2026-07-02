@@ -102,6 +102,29 @@ POST /admin/login
 
 **Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
+### POST /admin/recovery/reset
+
+Replaces a lost admin token when the configured recovery secret is presented.
+
+```http
+POST /admin/recovery/reset
+```
+
+**Authentication:** recovery token in `Authorization: Bearer <ADMIN_RECOVERY_TOKEN>`
+
+**Origin check:** n/a
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `201` | New admin token is displayed once and only its verifier is stored. | `{ "adminToken": string }` |
+| `401` | Recovery token is missing or invalid. | `{ "error": "unauthorized" }` |
+
+**Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md)
+
 ### GET /admin/status
 
 Returns the admin dashboard status contract with secrets redacted.
@@ -197,7 +220,7 @@ POST /admin/nodes/{nodeId}/revoke
 
 ### POST /admin/cloudflare/gateway/sync
 
-Creates or updates the AI Gateway custom-provider route for the Worker origin.
+Creates or reuses the AI Gateway custom-provider dynamic route for the selected Worker origin.
 
 ```http
 POST /admin/cloudflare/gateway/sync
@@ -207,13 +230,13 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** No required body fields in the current implementation; account, gateway, token, and Worker URL come from Worker environment unless a validated custom domain is stored.
+**Request body:** Optional JSON with `gatewayId`, `routeName`, `providerName`, `publicModel`, and `workerBaseUrl`. Omitted fields use Worker defaults, and a stored custom domain is used only after provisioning succeeds.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Cloudflare AI Gateway metadata is stored in D1. | Provider, route, route version, and deployment identifiers. |
+| `200` | Cloudflare AI Gateway metadata and selected sync settings are stored in D1. | Provider, route, route version, deployment identifiers, and selected settings. |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `503` | Required runtime Cloudflare configuration is missing. | Configuration error. |
 
@@ -221,7 +244,7 @@ POST /admin/cloudflare/gateway/sync
 
 ### POST /admin/custom-domain/validate
 
-Validates and stores a custom-domain hostname; a zone ID may be stored only when supplied by an advanced caller.
+Provisions DNS and Worker routing for a custom-domain hostname; a zone ID may be supplied by an advanced caller.
 
 ```http
 POST /admin/custom-domain/validate
@@ -231,13 +254,13 @@ POST /admin/custom-domain/validate
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `hostname`; optional `zoneId` must be a 32-character hexadecimal Cloudflare zone ID when present.
+**Request body:** JSON body with `hostname`; optional `zoneId` may identify the Cloudflare zone to provision.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Hostname is stored for later Gateway operations; `zoneId` is included only when supplied and valid. | `{ "valid": true, "hostname": string, "zoneId"?: string }` |
+| `200` | DNS and Worker route provisioning succeeded, and the hostname is stored for later Gateway operations. | `{ "valid": true, "hostname": string, "status": "provisioned", "dnsRecordId": string, "routeId": string }` |
 | `400` | Hostname is missing/invalid, or supplied zone ID is invalid. | `{ "valid": false, "hostname"?: string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 

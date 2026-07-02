@@ -183,6 +183,11 @@ export interface RouterEnv {
   readonly CLOUDFLARE_ACCOUNT_ID?: string
   readonly AI_GATEWAY_ACCOUNT_ID?: string
   readonly AI_GATEWAY_ID?: string
+  readonly AI_GATEWAY_ROUTE_NAME?: string
+  readonly AI_GATEWAY_PUBLIC_MODEL?: string
+  readonly AI_GATEWAY_PROVIDER_NAME?: string
+  readonly WORKER_NAME?: string
+  readonly ADMIN_RECOVERY_TOKEN?: string
   readonly WORKER_BASE_URL?: string
   readonly GITHUB_REPOSITORY?: string
   readonly AGENT_RELEASE_TAG?: string
