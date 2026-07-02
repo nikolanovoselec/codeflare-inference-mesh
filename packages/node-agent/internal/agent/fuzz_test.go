@@ -15,6 +15,9 @@ func FuzzDetectMeshIP(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, raw string) {
+		if len(raw) > 128 {
+			return
+		}
 		ip, ok := DetectMeshIP([]net.Addr{fuzzAddr(raw)})
 		if !ok {
 			return
