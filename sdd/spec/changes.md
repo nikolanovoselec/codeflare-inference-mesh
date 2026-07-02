@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-07-03
+
+- Implemented [REQ-RUN-006](runtime-profiles.md#req-run-006-private-mesh-formation), [REQ-RUN-007](runtime-profiles.md#req-run-007-split-serving-via-layer-packages), [REQ-NODE-006](node-agent.md#req-node-006-meshllm-binary-install-and-update), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle), [REQ-OBS-007](observability.md#req-obs-007-mesh-health-surface), and [REQ-ADM-008](setup-admin.md#req-adm-008-agent-version-management) with the landed MeshLLM backend swap: the router gained encrypted per-profile mesh state with rotation, agent-version management, and the Admin UI mesh health panel; the node agent gained the MeshLLM manager, argv renderer, status parser, pinned binary installer, and self-update while the llama runtime machinery was deleted; the deploy workflow pushes the `MESH_STATE_KEY` Worker secret fail-closed and drops the darwin/amd64 release lane; and source and test anchors across the spec were synced to the landed implementation.
+
 ## 2026-07-02
 
 - Replaced [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles) and [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime), updated [REQ-RUN-005](runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting), and added [REQ-RUN-006](runtime-profiles.md#req-run-006-private-mesh-formation) and [REQ-RUN-007](runtime-profiles.md#req-run-007-split-serving-via-layer-packages) so shipped defaults are MeshLLM-only private-mesh profiles that never start a public mesh, the agent installs and supervises `mesh-llm` instead of launching `llama-server`, a node reports loaded only when the MeshLLM API is up and the requested model is routable with split profiles fail-closed until every stage is ready, the first node per profile creates the private mesh and later nodes join via the distributed invite token, and layer packages split one model across nodes.

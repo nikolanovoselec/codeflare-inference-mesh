@@ -50,5 +50,5 @@ Each lane references the REQs it implements or explains. If implementation chang
 ## Related
 
 - Product spec: [../sdd/README.md](../sdd/README.md)
-- Current plan: [../PLAN.md](../PLAN.md)
+- Original llama.cpp-era plan (superseded by [AD-012](decisions/README.md#ad-012-meshllm-only-private-inference-backend)): [../PLAN.md](../PLAN.md)
 - Implementation tracking: [../pending.md](../pending.md)

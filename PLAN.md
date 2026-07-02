@@ -1,5 +1,11 @@
 # Codeflare Inference Mesh Plan
 
+> **Superseded.** This document describes the original llama.cpp-era
+> architecture. The inference backend is now MeshLLM; see
+> [AD-012: MeshLLM-only private inference backend](documentation/decisions/README.md#ad-012-meshllm-only-private-inference-backend)
+> and the current operational docs in [documentation/lanes/](documentation/lanes/).
+> It is kept for historical context and is not updated.
+
 Status: planning document
 
 This document defines the architecture and implementation plan for Cloudflare

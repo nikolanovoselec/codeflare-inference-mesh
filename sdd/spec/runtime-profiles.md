@@ -101,8 +101,8 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 1. The agent reports a managed profile loaded only when the MeshLLM console `/api/status` responds and the profile's upstream model name appears among the ids parsed from the node's own `/v1/models` response; a 2xx response without the parsed id is not ready. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN005ReadinessRequiresUpstreamModelInOwnModels) -->
 2. While the console reports `node_state` `loading`, the readiness deadline extends instead of marking the runtime failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN005LoadingStateExtendsReadinessDeadline) -->
-3. Dashboard start requests return after launch while readiness continues outside the request deadline. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline) -->
-4. Child-process exit before readiness marks the runtime failed. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeReadinessFailsWhenProcessExits) -->
+3. Dashboard start requests return after launch while readiness continues outside the request deadline. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline) -->
+4. Child-process exit before readiness marks the runtime failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN005MeshLLMReadinessFailsWhenProcessExits) -->
 5. The agent drains and stops the runtime before shutdown, update, or profile switch. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeManagerUsesProcessLifetimeContext) -->
 6. The agent reports runtime state, loaded model, active profile ID/version, mesh membership state, MeshLLM version, and dependency-missing errors on heartbeat/dashboard status. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsMarksLaunchedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsMarksReadySelectedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsReportsActualLoadedProfile) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeRestartMarksPendingProfileNotReady) -->
 
@@ -172,7 +172,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -187,7 +187,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 1. Every serving node of a split profile renders `--model <layer-package ref>` and `--split`; joining nodes add `--join` tokens and never render a bare join without the model and split flags. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN007SplitProfilesRenderModelAndSplitOnEveryNode) -->
 2. The agent derives mesh role `coordinator` when the node owns stage 0 in console status, else `serving-peer` or `api-client` from the node state. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQRUN007DerivesCoordinatorFromStageZeroOwnership) -->
 3. A split profile reports loaded only when the full model id appears in the node's `/v1/models`, which MeshLLM populates only after every stage is ready. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN007SplitReadinessGatedOnFullModelId) -->
-4. A profile version bump on an active split profile drains and restarts every serving node, interrupting the whole mesh until all stages reload; split rollout is a mesh-wide outage, not a rolling update. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN007VersionBumpRestartsEverySplitServingNode) -->
+4. A profile version bump on an active split profile drains and restarts every serving node, interrupting the whole mesh until all stages reload; split rollout is a mesh-wide outage, not a rolling update. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN007VersionBumpRestartsEverySplitServingNode) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -197,7 +197,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

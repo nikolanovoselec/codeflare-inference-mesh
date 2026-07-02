@@ -5,6 +5,7 @@
 - [Response metadata](#response-metadata)
 - [Admin status](#admin-status)
 - [Node metrics](#node-metrics)
+- [Mesh health](#mesh-health)
 - [Audit events](#audit-events)
 - [Failure states](#failure-states)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
@@ -19,16 +20,46 @@ Provider responses include request ID, session ID when present, and selected nod
 | --- | --- | --- |
 | Nodes | Node status, public models, active profiles, runtime readiness, token throughput, GPU memory, capacity, in-flight count, and last seen. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 | Profiles | Public aliases, upstream model, source mode, version, rollout percent, active flag, and ready/downloading/failed node counts. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md), [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| Audit | Recent setup, claim, unregister, revoke, admin recovery reset, route provisioning, and profile switch events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-006](../../sdd/spec/observability.md) |
+| Mesh health | One entry per MeshLLM profile: coordinator, peers, ready models, failed nodes, rotation counter, and secret presence/age (see [Mesh health](#mesh-health)). | [REQ-OBS-007](../../sdd/spec/observability.md) |
+| Audit | Recent setup, claim, unregister, revoke, admin recovery reset, route provisioning, profile switch, profile activation, agent version selection, and mesh lifecycle events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-006](../../sdd/spec/observability.md) |
 | Metadata | Status generation timestamp. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 
 ## Node metrics
 
-Heartbeats report runtime state, loaded model, active profile ID/version, in-flight count, token throughput, last runtime error, and Mesh IP. GPU metrics start as best-effort platform probes and stay absent when unsupported. Token throughput is calculated from llama.cpp `/metrics` token and duration counters when that endpoint is available. ([REQ-OBS-003](../../sdd/spec/observability.md))
+Heartbeats report runtime state, loaded model, active profile ID/version, in-flight count, last runtime error, and Mesh IP, plus the MeshLLM mesh view: mesh ID, mesh role (`coordinator` when the node owns stage 0, else `serving-peer` or `api-client`), peer count, ready models, split flag and stage count, API and console readiness, and the MeshLLM version. Runtime metrics are decoded from the MeshLLM console status through a tolerant parser that reads only the needed subset and ignores unknown fields. ([REQ-OBS-003](../../sdd/spec/observability.md))
+
+Token throughput (`tokensPerSecond`) is read from the console status `tok_per_sec` value when the console exposes it. Metrics the upstream surface does not provide are absent from heartbeats and admin status rather than fabricated or zero-filled: prompt-versus-generation throughput splits stay absent because the console reports a single throughput value, and GPU metrics stay absent when best-effort platform probes are unsupported. ([REQ-OBS-003](../../sdd/spec/observability.md))
+
+Runtime state maps from the console `node_state`:
+
+| Console observation | Reported runtime state |
+| --- | --- |
+| `loading` | `downloading` |
+| `serving` with the selected profile's upstream model routable in the node's own model list | `ready` |
+| `serving` without that model, `standby`, `client`, or any unknown state | `starting` |
+| Console unreachable or runtime process exited | `failed` |
+
+## Mesh health
+
+Admin status carries one mesh health entry per MeshLLM profile so operators can confirm the mesh formed, identify its coordinator, and diagnose failing members. Entries expose secret presence, age, and count only — never token or secret values. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-006](../../sdd/spec/security.md))
+
+| Field | Meaning |
+| --- | --- |
+| `profileId` | Profile whose mesh the entry describes. |
+| `meshId` | Formed mesh identity; absent until the seed node reports one. |
+| `rotation` | Mesh rotation counter; increments on each admin mesh rotation. |
+| `seedNodeId` | Node elected to create the mesh; absent before election. |
+| `coordinatorNodeId` | Current coordinator (stage-0 owner); absent until a member reports it. |
+| `peerNodeIds` | Member nodes currently joined. |
+| `readyModels` | Models the mesh currently serves. |
+| `failedNodeIds` | Member nodes reporting a failed runtime. |
+| `tokenCount` | Count of stored invite tokens; entries are pruned when their node is revoked or offline for more than 24 hours. |
+| `secretAgeMs` | Age of the stored mesh secret; absent when no secret is stored. |
+| `lastError` | Most recent MeshLLM error reported by a member node; `mesh_state_key_missing` when the `MESH_STATE_KEY` Worker secret is unset. |
 
 ## Audit events
 
-Audit history records setup completion, provider route provisioning, setup-token creation and claim, admin recovery reset, node unregister, node revoke, and profile switch actions. Audit records redact token material and credential values. ([REQ-OBS-006](../../sdd/spec/observability.md)) ([REQ-SEC-002](../../sdd/spec/security.md))
+Audit history records setup completion, provider route provisioning, setup-token creation and claim, admin recovery reset, node unregister, node revoke, and profile switch actions. Mesh lifecycle and rollout actions append `mesh_state_stored`, `mesh_token_rotated`, `mesh_token_removed`, `mesh_state_cleared`, `profile_activated`, and `agent_version_selected` events. Audit payloads carry node and mesh identifiers and redact token material and credential values. ([REQ-OBS-006](../../sdd/spec/observability.md)) ([REQ-SEC-002](../../sdd/spec/security.md))
 
 ## Failure states
 
@@ -45,4 +76,7 @@ Audit history records setup completion, provider route provisioning, setup-token
 | Surface | Specification | Source |
 |---|---|---|
 | Provider metadata | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
-| Node metrics | [observability.md](../../sdd/spec/observability.md) | `packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError`, `packages/node-agent/internal/agent/metrics.go::ParseLlamaMetrics` <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseLlamaMetrics --> |
+| Node metrics | [observability.md](../../sdd/spec/observability.md) | `packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError`, `packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus` <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> |
+| Runtime state mapping | [observability.md](../../sdd/spec/observability.md) | `packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState`, `packages/node-agent/internal/agent/meshllm_status.go::DeriveMeshRole` <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::DeriveMeshRole --> |
+| Mesh health | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::handleAdminStatus`, `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
+| Mesh and rollout audit events | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS`, `packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> |

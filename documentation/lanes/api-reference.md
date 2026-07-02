@@ -52,7 +52,7 @@ GET /v1/models
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Public aliases are listed without exposing internal runtime names. | OpenAI-compatible model list. |
+| `200` | Public aliases of active profiles are listed without exposing internal runtime names; aliases of inactive or retired profiles are excluded. | OpenAI-compatible model list. |
 | `401` | Provider token is missing or invalid. | Error object. |
 
 **Implements:** [REQ-GWY-001](../../sdd/spec/gateway.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md)
@@ -104,15 +104,17 @@ POST /node/claim
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `201` | Setup token is consumed and node credentials are created. | Node credentials and desired profile state. |
+| `201` | Setup token is consumed and node credentials are created. | Node credentials, desired profile state, optional `meshBootstrap`, and optional `desiredAgentVersion`. |
 | `400` | Claim body is missing required node fields or has invalid capacity. | `{ "error": "invalid_claim", "fields": string[] }` |
 | `401` | Setup token is expired, claimed, missing, or invalid. | Error object. |
 
-**Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md)
+**Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md)
+
+**Notes:** `meshBootstrap` and `desiredAgentVersion` follow the same contract as `POST /node/heartbeat` responses. Mesh material never rides the installer or enrollment path itself; it is returned only inside this credentialed claim response and later node-token-authenticated heartbeat responses. ([REQ-SEC-006](../../sdd/spec/security.md))
 
 ### POST /node/heartbeat
 
-Refreshes node lease, runtime metrics, and desired profile state.
+Refreshes node lease, runtime metrics, mesh membership state, and desired profile state.
 
 ```http
 POST /node/heartbeat
@@ -122,19 +124,21 @@ POST /node/heartbeat
 
 **Origin check:** n/a
 
-**Request body:** JSON heartbeat body with node status, Mesh address, capacity, active profiles, runtime state, and metrics.
+**Request body:** JSON heartbeat body with node status, Mesh address, capacity, active profiles, `runtime: "meshllm"`, `agentVersion`, the node's current `meshId` and `meshToken` (its own invite token, resent on every heartbeat), and metrics.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Node lease and metrics are refreshed. | Desired profile actions and alias state. |
+| `200` | Node lease, metrics, and mesh token set are refreshed. | `ok`, `desiredProfiles`, optional `meshBootstrap`, optional `desiredAgentVersion`. |
 | `400` | `nodeId` is missing. | `{ "error": "invalid_heartbeat" }` |
 | `401` | Node token is invalid. | `{ "error": "unauthorized" }` |
 | `403` | Node is revoked and cannot restore eligibility. | `{ "error": "node_revoked" }` |
 | `404` | Node record does not exist. | `{ "error": "unknown_node" }` |
 
-**Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md)
+**Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+
+**Notes:** `metrics` carries the MeshLLM status fields alongside the existing runtime state and throughput fields: `meshRole` (`coordinator` when the node owns stage 0, else `serving-peer` or `api-client`), `readyModels` (the model ids from the node's own `/v1/models` — the mesh-wide union), `peerCount`, `splitEnabled`, `stageCount`, `apiReady`, `consoleReady`, and `meshllmVersion`. `meshBootstrap` is computed per node as `{ "action": "create" | "join" | "wait", "rotation": number, "meshId"?: string, "joinTokens"?: string[] }`: the elected seed receives `create`, every node receives `join` with all live invite tokens once tokens are stored, and non-seed nodes receive `wait` before then. Invite-token values (`meshToken`, `joinTokens`) are stored encrypted, never logged, and never surfaced through any admin or status response. ([REQ-SEC-006](../../sdd/spec/security.md))
 
 ### POST /node/unregister
 
@@ -230,6 +234,8 @@ GET /api/status
 
 **Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md)
 
+**Notes:** This is the node agent's own localhost dashboard status (default port `17777`). It is distinct from the `mesh-llm` console `GET /api/status` (default `127.0.0.1:3131`), which is served by the managed `mesh-llm` process, stays localhost-only on the node, and is never exposed through the router or the mesh. ([REQ-SEC-004](../../sdd/spec/security.md))
+
 ### POST /api/runtime/start
 
 Starts the managed local runtime from the node dashboard.
@@ -318,4 +324,5 @@ POST /api/runtime/restart
 | Provider routes | [gateway.md](../../sdd/spec/gateway.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Forwarding routes | [router-worker.md](../../sdd/spec/router-worker.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Node proxy | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/proxy.go::ProxyAnchors` <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> |
+| Mesh bootstrap | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
 | Dashboard controls | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/dashboard.go::DashboardAnchors` <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> |

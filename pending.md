@@ -1,5 +1,10 @@
 # Pending Implementation Task List
 
+> **Superseded.** This task list tracks the original llama.cpp-era
+> build. The inference backend is now MeshLLM; see
+> [AD-012: MeshLLM-only private inference backend](documentation/decisions/README.md#ad-012-meshllm-only-private-inference-backend).
+> It is kept for historical context and is not updated.
+
 This task list is generated from [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md), [`PLAN.md`](PLAN.md), and [`sdd/README.md`](sdd/README.md).
 
 ## In progress

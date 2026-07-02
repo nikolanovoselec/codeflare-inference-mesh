@@ -189,7 +189,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

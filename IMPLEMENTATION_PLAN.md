@@ -1,5 +1,11 @@
 # Implementation Plan
 
+> **Superseded.** This document describes the original llama.cpp-era
+> build phases. The inference backend is now MeshLLM; see
+> [AD-012: MeshLLM-only private inference backend](documentation/decisions/README.md#ad-012-meshllm-only-private-inference-backend)
+> and the current operational docs in [documentation/lanes/](documentation/lanes/).
+> It is kept for historical context and is not updated.
+
 Source of truth: [`PLAN.md`](PLAN.md), [`sdd/README.md`](sdd/README.md), and the requirement files under [`sdd/spec/`](sdd/spec/).
 
 No Graphify action is planned because the user selected no graph action and no repo graph exists.

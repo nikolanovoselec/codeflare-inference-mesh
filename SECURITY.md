@@ -71,7 +71,7 @@ The following are in scope:
 
 The following are generally out of scope unless they demonstrate impact on this project:
 
-- issues in Cloudflare, GitHub, Go, Node.js, llama.cpp, or operating systems without a project-specific exploit path;
+- issues in Cloudflare, GitHub, Go, Node.js, or operating systems without a project-specific exploit path; vulnerabilities in the `mesh-llm` inference engine itself belong upstream at <https://github.com/Mesh-LLM/mesh-llm> — nodes run a pinned release verified against per-asset SHA-256 checksums, and fixes reach nodes through a re-pin;
 - attacks requiring control of the operator's Cloudflare account, GitHub repository, or local machine;
 - social engineering, phishing, or physical attacks;
 - public availability of a first-run setup route before setup is completed. This is an intentional bootstrap decision documented in `documentation/decisions/README.md`; setup must be completed in a controlled deployment flow and is protected by admin auth after completion.

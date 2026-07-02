@@ -8,6 +8,10 @@
 - [Session latency suddenly increases](#session-latency-suddenly-increases)
 - [Installer cannot verify artifact](#installer-cannot-verify-artifact)
 - [Node reports dependency-missing](#node-reports-dependency-missing)
+- [Peer count stays at one](#peer-count-stays-at-one)
+- [Model never appears in ready models](#model-never-appears-in-ready-models)
+- [Requests fail briefly after mesh rotation](#requests-fail-briefly-after-mesh-rotation)
+- [Admin status shows mesh_state_key_missing](#admin-status-shows-mesh_state_key_missing)
 - [Update staging checksum mismatch](#update-staging-checksum-mismatch)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
@@ -55,9 +59,41 @@
 
 **Symptom:** Admin status shows a node with runtime state `dependency-missing`, and the node is not selected for requests.
 
-**Cause:** The agent now manages the runtime process but the first version expects `llama-server` to already be installed on the node PATH.
+**Cause:** The agent could not install or find the pinned `mesh-llm` release: the downloaded asset's SHA-256 did not match the embedded pin (the install is refused), no pinned asset exists for the detected OS/architecture/flavor, or egress to `github.com` release downloads is blocked.
 
-**Fix:** Install a CUDA-capable llama.cpp build for the node OS, confirm `llama-server` is on PATH for the service user, then restart the agent service. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-llamacpp-runtime)) ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
+**Fix:** Check the agent log for the `runtime dependency missing` cause, confirm the flavor configuration matches the node hardware, allow GitHub egress from the node, then restart the agent service. ([REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update)) ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
+
+## Peer count stays at one
+
+**Symptom:** The first node serves, but a second node never joins the mesh: `peerCount` stays `1` and the mesh health entry never lists the joiner in `peerNodeIds`.
+
+**Cause:** UDP is blocked on the profile's mesh bind port between the nodes' WARP IPs, the WARP split-tunnel configuration excludes `100.96.0.0/12` so mesh traffic bypasses the tunnel, or the joining node is dialing with stale join tokens.
+
+**Fix:** Verify WARP routes include the mesh range on both nodes, allow UDP on the configured bind port between the WARP IPs, and check `tokenCount` and `rotation` in the `/admin/status` mesh health entry; rotate the mesh once to reissue tokens when they are stale. ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation)) ([REQ-OBS-007](../../sdd/spec/observability.md#req-obs-007-mesh-health-surface))
+
+## Model never appears in ready models
+
+**Symptom:** Nodes join the mesh but the profile's model never shows up in mesh health `readyModels`, and member nodes stay `starting` or `downloading`.
+
+**Cause:** A split profile's stages are incomplete — not every serving node needed for the layer split is online — or the model download is still in progress.
+
+**Fix:** Compare `stageCount` in node metrics against the online serving nodes for the profile, and check the agent dashboard for `downloading` state; start the missing nodes or let the download finish. ([REQ-RUN-007](../../sdd/spec/runtime-profiles.md#req-run-007-split-serving-via-layer-packages)) ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting))
+
+## Requests fail briefly after mesh rotation
+
+**Symptom:** Right after an admin mesh rotation, member nodes restart and some requests fail over to other nodes or queue.
+
+**Cause:** Rotation is a deliberate hard cut: the incremented rotation counter renders a new mesh name, and every member drains and restarts into the new mesh, which takes up to about two minutes to reconverge.
+
+**Fix:** Treat up to two minutes of restarts and reconnects as expected, wait for the mesh health entry to show the new rotation with peers rejoined, and do not trigger rotations in quick succession. ([REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle))
+
+## Admin status shows mesh_state_key_missing
+
+**Symptom:** The admin UI shows a `mesh_state_key_missing` banner, mesh rotation returns an error, and no mesh bootstrap is issued, while claim, heartbeats, and scheduling of already-ready nodes keep working.
+
+**Cause:** The `MESH_STATE_KEY` Worker secret is unset, so the Worker cannot encrypt or decrypt mesh state and the mesh endpoints fail closed.
+
+**Fix:** Run the deploy workflow, which validates the secret and sets it on the Worker, then confirm the banner clears from admin status. ([REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle))
 
 ## Update staging checksum mismatch
 
@@ -74,3 +110,6 @@
 | Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS`, `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Failure reporting | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::releaseOnCompletion`, `packages/router-worker/src/scheduler.ts::recordFailure` <!-- @impl: packages/router-worker/src/router.ts::releaseOnCompletion --> <!-- @impl: packages/router-worker/src/scheduler.ts::recordFailure --> |
 | Update checksum staging | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::StageUpdate` <!-- @impl: packages/node-agent/internal/agent/update.go::StageUpdate --> |
+| MeshLLM install failures | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM` <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM --> |
+| Mesh state and rotation | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
+| Runtime readiness states | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState` <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> |

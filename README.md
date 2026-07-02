@@ -4,7 +4,7 @@ Most enterprises already own thousands of Windows, macOS, and Linux devices that
 
 Instead of buying dedicated inference racks or sending every request to third-party AI providers, the mesh uses existing endpoint capacity first. It still leaves room for automatic failover and routing to external providers such as OpenAI, Anthropic, Microsoft, or other frontier-model services when local capacity is insufficient or a task needs a stronger model.
 
-Technically, Codeflare Inference Mesh is a set of private local LLM nodes behind one stable OpenAI-compatible Cloudflare AI Gateway route. A Cloudflare Worker receives Gateway traffic, selects a ready node, and forwards the request over Workers VPC / Cloudflare Mesh. Each node runs the Go agent, reports runtime health, and proxies requests to local `llama-server`.
+Technically, Codeflare Inference Mesh is a set of private local LLM nodes behind one stable OpenAI-compatible Cloudflare AI Gateway route. A Cloudflare Worker receives Gateway traffic, selects a ready node, and forwards the request over Workers VPC / Cloudflare Mesh. Each node runs the Go agent, which installs and supervises a pinned `mesh-llm` runtime, reports runtime health, and proxies requests to it. Nodes that serve the same profile form a private mesh over Cloudflare WARP for single-node or split serving.
 
 ## Use it for
 
@@ -12,7 +12,9 @@ Technically, Codeflare Inference Mesh is a set of private local LLM nodes behind
 - Local GPUs without public node URLs.
 - Cloudflare One / WARP private node reachability.
 - Session affinity for long-context coding agents.
-- Profile-driven `llama-server` commands and readiness checks.
+- Profile-driven `mesh-llm` runtimes and readiness checks.
+- Single-node serving by default, with a split-serving profile toggled from Admin.
+- Router-driven agent updates: the admin selects a release, nodes update themselves.
 - Admin setup, node enrollment, Gateway sync, custom domains, and installer commands from the browser UI.
 
 ## Repository layout
@@ -35,12 +37,13 @@ The product contract lives in [sdd/](sdd/). Operational detail lives in [documen
    - `CLOUDFLARE_ACCOUNT_ID`
    - `CLOUDFLARE_API_TOKEN_DEPLOY`
    - `CLOUDFLARE_API_TOKEN_RUNTIME`
+   - `MESH_STATE_KEY`
 2. Open **Actions → Deploy → Run workflow**.
 3. Choose `integration` or `production`.
 4. Use `vX.Y.Z-dev.N` tags for integration and `vX.Y.Z` tags for production.
 5. Run the workflow.
 
-Before routing real traffic, enroll each node in Cloudflare One / WARP and install a CUDA-capable `llama-server` on the node PATH.
+Before routing real traffic, enroll each node in Cloudflare One / WARP. No separate inference server is needed: the agent downloads a pinned, checksum-verified `mesh-llm` binary on its own. Nodes need GPU drivers where applicable and outbound HTTPS to `github.com` and `huggingface.co`.
 
 ## After deploy
 
@@ -61,6 +64,7 @@ Before routing real traffic, enroll each node in Cloudflare One / WARP and insta
 | `CLOUDFLARE_ACCOUNT_ID` | Yes | Cloudflare account used by deploy and runtime setup. |
 | `CLOUDFLARE_API_TOKEN_DEPLOY` | Yes | Deploys Workers and manages D1. |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | Yes | Lets the deployed Worker sync AI Gateway and optional custom domains. |
+| `MESH_STATE_KEY` | Yes | Encryption key for stored private-mesh state; deploy sets it as a Worker secret and refuses to run without it. |
 | `ADMIN_RECOVERY_TOKEN` | Optional | Emergency token for replacing a lost admin token. |
 | `COSIGN_PRIVATE_KEY` | Optional | Signs release checksums. |
 | `COSIGN_PASSWORD` | Optional | Password for `COSIGN_PRIVATE_KEY`. |
@@ -96,13 +100,14 @@ The Worker config is in [`packages/router-worker/wrangler.toml`](packages/router
 | `AGENT_RELEASE_TAG` | Var | Release tag used by install scripts. |
 | `CLOUDFLARE_ACCOUNT_ID` | Secret | Runtime Cloudflare account ID. |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | Secret | Runtime Cloudflare API token. |
+| `MESH_STATE_KEY` | Secret | Mesh state encryption key; mesh bootstrap and rotation refuse to run without it. |
 | `ADMIN_RECOVERY_TOKEN` | Secret | Optional admin-token recovery secret. |
 
 ### Node environment
 
 | Name | Required | Purpose |
 | --- | --- | --- |
-| `HF_TOKEN` | Only for gated Hugging Face profiles | Passed through the node service environment to `llama-server -hf`. |
+| `HF_TOKEN` | Only for gated Hugging Face profiles | Passed through the node service environment to `mesh-llm`. |
 
 </details>
 

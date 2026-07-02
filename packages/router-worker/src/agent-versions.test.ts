@@ -187,7 +187,7 @@ describe('agent version management behavioral contracts', () => {
     expect(store.audit.some((event) => event.type === 'agent_version_selected')).toBe(false)
   })
 
-  it('REQ-ADM-008 refreshes a stale cache before validating a selection', async () => {
+  it('REQ-SCH-001 persists the release-tag cache and desired agent version', async () => {
     const store = new MemoryStore()
     await store.putConfig(CACHE_KEY, expiredCache(['v1.0.0']))
     const calls: FetchCall[] = []

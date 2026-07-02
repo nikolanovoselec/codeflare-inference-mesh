@@ -127,7 +127,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 1. Audit events record setup, claim, unregister, revoke, admin recovery reset, route provisioning, and profile switch actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::handleAdminRecovery --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-006 records audit events for setup, claim, unregister, revoke, route provisioning, and profile switch actions) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 recovers a lost admin token only with the recovery secret) -->
 2. Audit events record mesh state stored, mesh token rotated, mesh state cleared, and mesh token removed (on node revoke) actions. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-OBS-006 records mesh lifecycle audit events without token material) -->
-3. Audit events record profile activation and agent version selection actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-006 records profile activation audit events) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-OBS-006 records agent version selection audit events) -->
+3. Audit events record profile activation and agent version selection actions. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-006 records profile activation audit events) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 stores the fleet-wide desired version and audits the selection) -->
 4. Audit event payloads carry node and mesh identifiers and never include invite token material. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-OBS-006 records mesh lifecycle audit events without token material) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
@@ -186,7 +186,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

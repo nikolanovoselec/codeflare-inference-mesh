@@ -143,10 +143,12 @@ GET /admin/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Router state is returned with credentials redacted. | Nodes, profiles, profile readiness counts, setup/gateway/domain state, recent audit entries, and generated timestamp. |
+| `200` | Router state is returned with credentials redacted. | Nodes (each with its reported `agentVersion`), profiles, profile readiness counts, `meshHealth` entries, setup/gateway/domain state, recent audit entries, optional `desiredAgentVersion`, and generated timestamp. |
 | `401` | Admin credential is missing or invalid. | Error object. |
 
-**Implements:** [REQ-OBS-002](../../sdd/spec/observability.md)
+**Implements:** [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-007](../../sdd/spec/observability.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+
+**Notes:** `meshHealth` carries one entry per MeshLLM profile: `{ profileId, meshId?, rotation, seedNodeId?, coordinatorNodeId?, peerNodeIds, tokenCount, secretAgeMs?, lastError?, readyModels, failedNodeIds }`. Mesh secrets appear only as presence, age, and count (`tokenCount`, `secretAgeMs`); invite-token values are never included in any admin response. When the `MESH_STATE_KEY` Worker secret is not configured, each entry reports `lastError: "mesh_state_key_missing"`. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-006](../../sdd/spec/security.md))
 
 ### POST /admin/setup-tokens
 
@@ -302,6 +304,108 @@ POST /admin/profiles/rollout
 
 **Implements:** [REQ-RUN-004](../../sdd/spec/runtime-profiles.md)
 
+**Notes:** A rollout percentage above zero applies the alias-exclusive activation invariant: any other active profile sharing a public alias with the target is deactivated first, so no alias ever has two active owners. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md))
+
+### POST /admin/profiles/activate
+
+Activates a profile and atomically deactivates any active profile sharing one of its public aliases.
+
+```http
+POST /admin/profiles/activate
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `profileId`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Target profile is activated, alias-overlapping active profiles are deactivated in the same operation, and a `profile_activated` audit event records the deactivated ids. | `{ "ok": true, "activated": string, "deactivated": string[] }` |
+| `400` | `profileId` is missing or not a string. | `{ "error": "invalid_activation", "requestId": string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `404` | Profile does not exist. | `{ "error": "unknown_profile", "requestId": string }` |
+
+**Implements:** [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+
+### POST /admin/mesh/rotate
+
+Rotates a profile's mesh: increments the rotation counter and clears the stored mesh id, seed, and invite-token set so the fleet reforms a new mesh.
+
+```http
+POST /admin/mesh/rotate
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `profileId`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Rotation counter is incremented, mesh state is cleared, and a `mesh_token_rotated` audit event is recorded; subsequent heartbeats re-elect a seed and reform the mesh under the new `--mesh-name codeflare-<profileId>-r<N>` identity. | `{ "ok": true, "profileId": string, "rotation": number }` |
+| `400` | `profileId` is missing or empty. | `{ "error": "invalid_rotate" }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `404` | Profile does not exist. | `{ "error": "unknown_profile" }` |
+| `500` | The `MESH_STATE_KEY` Worker secret is not configured. | `{ "error": "mesh_state_key_missing" }` |
+
+**Implements:** [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+
+**Notes:** The audit event carries profile id, rotation, and the previous mesh id — never token material. Invite-token values are never returned by this or any other admin endpoint. ([REQ-SEC-006](../../sdd/spec/security.md))
+
+### GET /admin/agent-versions
+
+Lists node-agent release tags from the repository's GitHub releases API together with the current desired version.
+
+```http
+GET /admin/agent-versions
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Release tags are served from the `router_config` cache with a 10-minute TTL; when the GitHub fetch fails, the last cached list is served with `stale: true`, or an empty list with `error: "releases_fetch_failed"` when no cache exists yet. | `{ "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired"?: string, "error"?: string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+
+**Implements:** [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+
+### POST /admin/agent-version
+
+Selects the fleet-wide desired node-agent version from the cached release-tag list.
+
+```http
+POST /admin/agent-version
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `version`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Version is validated against the release-tag list, stored as the single fleet-wide desired agent version, and recorded as an `agent_version_selected` audit event; nodes receive it as `desiredAgentVersion` in subsequent heartbeat responses. | `{ "ok": true, "desired": string }` |
+| `400` | `version` is missing, or the tag is absent from the release-tag list. | `{ "error": "invalid_version" }` or `{ "error": "unknown_version", "version": string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+
+**Implements:** [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |
@@ -310,3 +414,5 @@ POST /admin/profiles/rollout
 | Admin routes | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Installer routes | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/installers.ts::INSTALLER_ANCHORS` <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> |
 | Gateway sync | [gateway.md](../../sdd/spec/gateway.md) | `packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS` <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS --> |
+| Mesh rotation | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
+| Agent versions | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS` <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> |

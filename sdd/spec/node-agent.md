@@ -42,8 +42,8 @@ This domain covers the local cross-platform service that registers nodes, proxie
 2. A claimed node stores credentials in the platform-specific service data directory. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 3. Heartbeats include node identity, detected Mesh IP, listener port, runtime status, ready profiles, metrics, and agent version. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 4. Once captured, the node's mesh id and its own mesh join token are resent in every heartbeat request, so token delivery is idempotent. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002HeartbeatResendsMeshIdentityEveryTick) -->
-5. Heartbeat metrics report mesh id, mesh role, peer count, ready model ids from the node's own MeshLLM `/v1/models`, split state, stage count, API and console readiness, and MeshLLM version. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQNODE002HeartbeatMetricsCarryMeshState) -->
-6. The node reports mesh role `coordinator` exactly when it owns stage 0 of its mesh. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQNODE002MeshRoleCoordinatorOnlyForStageZeroOwner) -->
+5. Heartbeat metrics report mesh id, mesh role, peer count, ready model ids from the node's own MeshLLM `/v1/models`, split state, stage count, API and console readiness, and MeshLLM version. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002HeartbeatMetricsCarryMeshState) -->
+6. The node reports mesh role `coordinator` exactly when it owns stage 0 of its mesh. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQRUN007DerivesCoordinatorFromStageZeroOwnership) -->
 7. The Worker persists heartbeat state to D1 and refreshes the scheduler's live lease. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 8. Claim and heartbeat responses may include desired profile actions, the desired agent version, and a mesh bootstrap directive (`create`, `join`, or `wait`) carrying rotation and, for joins, mesh id and join tokens. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ResponsesCarryMeshBootstrapAndDesiredVersion) -->
 9. Mesh IP detection succeeds only when exactly one private IPv4 candidate is present. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002AppliesDetectedMeshIPBeforeClaim) -->
@@ -167,7 +167,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
