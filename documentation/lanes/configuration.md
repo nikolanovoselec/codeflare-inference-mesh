@@ -97,8 +97,8 @@ The router calls `seedDefaultProfiles(DEFAULT_MODEL_PROFILES)` at request entry,
 
 | Variable | Default | Required | Consumed by | Implements |
 | --- | --- | --- | --- | --- |
-| `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
-| `CLOUDFLARE_API_TOKEN_DEPLOY` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+| `CLOUDFLARE_API_TOKEN_DEPLOY` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain setup | `.github/workflows/deploy.yml` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `ADMIN_RECOVERY_TOKEN` | n/a | no | `.github/workflows/deploy.yml`, `packages/router-worker/src/router.ts::handleAdminRecovery` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | `COSIGN_PRIVATE_KEY` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |

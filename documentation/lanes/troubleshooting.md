@@ -57,7 +57,7 @@
 
 **Cause:** The agent now manages the runtime process but the first version expects `llama-server` to already be installed on the node PATH.
 
-**Fix:** Install a CUDA-capable llama.cpp build for the node OS, confirm `llama-server` is on PATH for the service user, then restart the agent service. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
+**Fix:** Install a CUDA-capable llama.cpp build for the node OS, confirm `llama-server` is on PATH for the service user, then restart the agent service. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-llamacpp-runtime)) ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
 
 ## Update staging checksum mismatch
 

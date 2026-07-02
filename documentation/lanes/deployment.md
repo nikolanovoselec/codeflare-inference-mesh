@@ -40,7 +40,7 @@ Production deployment is automatic after a merged `main` push has green PR Check
 
 ## Node runtime prerequisite
 
-The first managed-runtime version expects each node operator to install a CUDA-capable `llama-server` before starting the service. If the executable is missing from the service user's PATH, the node reports `dependency-missing` and remains ineligible for scheduling instead of failing the router. When a runtime starts, the agent waits for the local `/v1/models` readiness endpoint before reporting the profile as loaded, so scheduling sees only ready runtimes. ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
+The first managed-runtime version expects each node operator to install a CUDA-capable `llama-server` before starting the service. If the executable is missing from the service user's PATH, the node reports `dependency-missing` and remains ineligible for scheduling instead of failing the router. When a runtime starts, the agent waits for the local `/v1/models` readiness endpoint before reporting the profile as loaded, so scheduling sees only ready runtimes. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-llamacpp-runtime)) ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
 
 Optional custom-domain provisioning uses the runtime Cloudflare token after deploy; give that token DNS and Worker route permissions for the target zone before asking the Admin UI to provision a hostname. ([REQ-ADM-005](../../sdd/spec/setup-admin.md))
 

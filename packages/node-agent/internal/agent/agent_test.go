@@ -447,7 +447,7 @@ func TestREQRUN003SourceModesAndChecksum(t *testing.T) {
 }
 
 func TestREQRUN005RuntimeReadinessProbeWaitsForModelEndpoint(t *testing.T) {
-	t.Run("REQ-RUN-003", func(t *testing.T) {
+	t.Run("REQ-RUN-005", func(t *testing.T) {
 		attempts := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			attempts++
@@ -489,7 +489,7 @@ func TestREQRUN003RuntimeDependencyMissingState(t *testing.T) {
 }
 
 func TestREQRUN005RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
-	t.Run("REQ-RUN-003 REQ-NODE-004", func(t *testing.T) {
+	t.Run("REQ-RUN-005 REQ-NODE-004", func(t *testing.T) {
 	if os.Getenv("INFERENCE_MESH_HELPER_PROCESS") == "1" {
 		time.Sleep(10 * time.Second)
 		return
@@ -515,7 +515,7 @@ func TestREQRUN005RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
 }
 
 func TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline(t *testing.T) {
-	t.Run("REQ-RUN-003 REQ-NODE-004", func(t *testing.T) {
+	t.Run("REQ-RUN-005 REQ-NODE-004", func(t *testing.T) {
 		if os.Getenv("INFERENCE_MESH_HELPER_PROCESS") == "1" {
 			time.Sleep(10 * time.Second)
 			return
@@ -548,7 +548,7 @@ func TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline(t *testing.T) {
 }
 
 func TestREQRUN005RuntimeReadinessFailsWhenProcessExits(t *testing.T) {
-	t.Run("REQ-RUN-003 REQ-OBS-003", func(t *testing.T) {
+	t.Run("REQ-RUN-005 REQ-OBS-003", func(t *testing.T) {
 		if os.Getenv("INFERENCE_MESH_EXIT_HELPER") == "1" {
 			return
 		}
