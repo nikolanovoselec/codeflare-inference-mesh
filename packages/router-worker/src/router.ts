@@ -254,7 +254,7 @@ async function handleInstaller(request: Request, deps: RouterDeps, url: URL, req
   if (!['linux', 'macos', 'windows'].includes(platform)) return json({ error: 'unknown_platform' }, 404, requestId)
   const setupToken = generateBearerToken('setup')
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
-  const command = installerCommand({ platform, workerUrl: deps.env.WORKER_BASE_URL ?? url.origin, setupToken, repository: deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh' })
+  const command = installerCommand({ platform, workerUrl: publicWorkerOrigin(deps.env.WORKER_BASE_URL, request.url), setupToken, repository: deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh' })
   return new Response(command, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'x-inference-mesh-request-id': requestId } })
 }
 
@@ -277,12 +277,14 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
   })
   const bodyWorkerUrl = cleanString(body?.workerUrl)
   const storedWorkerUrl = cleanString(storedSettings?.workerUrl)
-  const storedWorkerUrlOverride = storedWorkerUrl && storedWorkerUrl !== deps.env.WORKER_BASE_URL ? storedWorkerUrl : undefined
+  const storedWorkerUrlOverride = storedWorkerUrl && storedWorkerUrl !== usableWorkerBaseUrl(deps.env.WORKER_BASE_URL) ? storedWorkerUrl : undefined
   const workerUrlOverride = bodyWorkerUrl ?? storedWorkerUrlOverride
-  const workerUrl = workerUrlOverride ?? (customDomain?.status === 'provisioned' ? `https://${customDomain.hostname}` : deps.env.WORKER_BASE_URL)
+  const customDomainUrl = customDomain?.status === 'provisioned' ? `https://${customDomain.hostname}` : undefined
+  const workerUrl = workerUrlOverride ?? customDomainUrl
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (customDomain?.hostname && customDomain.status !== 'provisioned' && !workerUrlOverride) return json({ error: 'custom_domain_not_provisioned', hostname: customDomain.hostname }, 409, requestId)
-  if (!settings.accountId || !settings.gatewayId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  if (!workerUrl) return json({ error: 'custom_domain_required' }, 409, requestId)
+  if (!settings.accountId || !settings.gatewayId || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
   const result = await client.syncCustomProvider({
     accountId: settings.accountId,
@@ -316,7 +318,7 @@ async function handleCustomDomain(request: Request, deps: RouterDeps, requestId:
   if (!valid) return json({ valid: false, hostname: body?.hostname }, 400, requestId)
   const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
   const workerName = deps.env.WORKER_NAME ?? 'codeflare-inference-mesh-router'
-  const workerUrl = deps.env.WORKER_BASE_URL
+  const workerUrl = publicWorkerOrigin(deps.env.WORKER_BASE_URL, request.url)
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!accountId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
@@ -376,6 +378,16 @@ function gatewaySettings(input: { env: Partial<RouterEnv>; body?: Partial<Gatewa
 
 function cleanString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function publicWorkerOrigin(configuredUrl: string | undefined, requestUrl: string): string {
+  return usableWorkerBaseUrl(configuredUrl) ?? new URL(requestUrl).origin
+}
+
+function usableWorkerBaseUrl(value: string | undefined): string | undefined {
+  const cleaned = cleanString(value)
+  if (!cleaned || cleaned.includes('<your-subdomain>')) return undefined
+  return cleaned
 }
 
 async function resolveUpstreamToken(deps: RouterDeps): Promise<string | undefined> {

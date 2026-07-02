@@ -46,9 +46,9 @@ Before routing real traffic, enroll each node in Cloudflare One / WARP and insta
 
 1. Open the deployed Worker root or `/admin`.
 2. Run first setup and save the one-time tokens.
-3. Paste the provider token into the AI Gateway custom provider key / BYOK field.
-4. Sync the AI Gateway route from Admin.
-5. Optional: provision a custom domain from Admin, then re-run Gateway sync.
+3. Provision the custom domain from Admin; the initial workers.dev URL is only for setup/bootstrap.
+4. Sync the AI Gateway route from Admin so Gateway targets the custom domain.
+5. Paste the provider token into the AI Gateway custom provider key / BYOK field.
 6. Install node agents with the generated one-line command.
 
 <details>
@@ -92,7 +92,7 @@ The Worker config is in [`packages/router-worker/wrangler.toml`](packages/router
 | `AI_GATEWAY_PROVIDER_NAME` | Var | Default custom provider name. |
 | `AI_GATEWAY_PUBLIC_MODEL` | Var | Default public model alias. |
 | `WORKER_NAME` | Var | Worker script name for custom-domain routes. |
-| `WORKER_BASE_URL` | Var | Worker origin for Gateway sync and installers. |
+| `WORKER_BASE_URL` | Var | Optional bootstrap origin override; installers and custom-domain setup use the request origin when this is unset or still a placeholder. |
 | `AGENT_RELEASE_TAG` | Var | Release tag used by install scripts. |
 | `CLOUDFLARE_ACCOUNT_ID` | Secret | Runtime Cloudflare account ID. |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | Secret | Runtime Cloudflare API token. |

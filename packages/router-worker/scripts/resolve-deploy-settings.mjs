@@ -30,8 +30,8 @@ const settings = targetEnv === 'production'
   : { db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' }
 
 const workerBaseUrl = resolveWorkerBaseUrl(targetEnv, settings.worker_name)
-if (!validWorkerBaseUrl(workerBaseUrl)) {
-  console.error(`Invalid ${targetEnv} worker_base_url: ${workerBaseUrl || '(empty)'}`)
+if (workerBaseUrl && !validWorkerBaseUrl(workerBaseUrl)) {
+  console.error(`Invalid ${targetEnv} worker_base_url: ${workerBaseUrl}`)
   process.exit(1)
 }
 

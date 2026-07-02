@@ -35,7 +35,7 @@ Production deployment is automatic after a merged `main` push has green PR Check
 | Prepare D1 | The production or integration database is created or resolved and migrations are applied. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | Build artifacts | Platform agent archives, checksums, signature, and manifest exist; raw binaries are removed before release upload. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Publish release | GitHub Release contains all installer/update assets. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG` and a validated HTTPS origin-only `WORKER_BASE_URL` set before deploy. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety), [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG`; a bootstrap `WORKER_BASE_URL` is optional and validated only when explicitly supplied. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety), [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Summarize | Workflow summary lists ref, Worker, release tag, environment, and artifacts. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 
 ## Node runtime prerequisite

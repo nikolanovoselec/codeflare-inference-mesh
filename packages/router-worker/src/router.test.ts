@@ -1024,7 +1024,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans', async () => {
-    const { router, store } = routerFixture({ env: { AGENT_RELEASE_TAG: 'v0.1.0-dev.1782860991' } })
+    const { router, store } = routerFixture({ env: { AGENT_RELEASE_TAG: 'v0.1.0-dev.1782860991', WORKER_BASE_URL: 'https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev' } })
     const commandResponse = await router(new Request('https://router.test/admin/installers/linux', { headers: bearer('admin-secret') }))
     const command = await commandResponse.text()
     const scriptUrl = new URL(command.split(/\s+/).find((part) => part.startsWith('https://'))!)
@@ -1036,6 +1036,7 @@ describe('router worker behavioral contracts', () => {
     const windowsPlan = installerPlan('windows', 'amd64')
 
     expect(commandResponse.status).toBe(200)
+    expect(scriptUrl.origin).toBe('https://router.test')
     expect(scriptUrl.pathname).toBe('/install.sh')
     expect(scriptUrl.searchParams.get('platform')).toBe('linux')
     expect(script).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/releases/download/v0.1.0-dev.1782860991')
@@ -1136,6 +1137,27 @@ describe('router worker behavioral contracts', () => {
     expect(result).toMatchObject({ hostname: 'ai.example.com', status: 'provisioned', dnsRecordId: 'dns-a', routeId: 'route-a' })
   })
 
+  it('REQ-ADM-005 provisions custom domains from the bootstrap request origin when deploy URL is a placeholder', async () => {
+    const calls: string[] = []
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', WORKER_NAME: 'router-worker', WORKER_BASE_URL: 'https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev' },
+      cloudflareClient: {
+        async syncCustomProvider() { throw new Error('Gateway sync is not used in this test') },
+        async provisionCustomDomain(input) {
+          calls.push(input.workerUrl, input.hostname, input.workerName)
+          return { hostname: input.hostname, zoneId: 'zone-a', zoneName: 'example.com', dnsRecordId: 'dns-a', dnsRecordType: 'CNAME', routeId: 'route-a', routePattern: `${input.hostname}/*`, workerName: input.workerName, status: 'provisioned' }
+        }
+      }
+    })
+
+    const response = await router(new Request('https://bootstrap.example.workers.dev/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com' }) }))
+    const stored = await store.getConfig<{ hostname: string; status: string }>('custom_domain')
+
+    expect(response.status).toBe(200)
+    expect(calls).toEqual(['https://bootstrap.example.workers.dev', 'ai.example.com', 'router-worker'])
+    expect(stored).toMatchObject({ hostname: 'ai.example.com', status: 'provisioned' })
+  })
+
   it('REQ-ADM-005 refuses to overwrite conflicting custom-domain DNS records', async () => {
     const calls: Array<{ method: string; path: string }> = []
     const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1165,7 +1187,7 @@ describe('router worker behavioral contracts', () => {
     expect(body).toEqual({ error: 'custom_domain_not_provisioned', hostname: 'ai.example.com' })
   })
 
-  it('REQ-GWY-003 recomputes Gateway Worker URL after custom-domain provisioning', async () => {
+  it('REQ-GWY-003 uses the provisioned custom domain for Gateway sync instead of workers.dev bootstrap', async () => {
     const calls: string[] = []
     const { router, store } = routerFixture({
       env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', AI_GATEWAY_ID: 'gateway-a', WORKER_BASE_URL: 'https://router.example.workers.dev' },
@@ -1178,12 +1200,16 @@ describe('router worker behavioral contracts', () => {
       }
     })
 
-    await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    const beforeCustomDomain = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
     await store.putConfig('custom_domain', { hostname: 'ai.example.com', zoneId: '0123456789abcdef0123456789abcdef', zoneName: 'example.com', dnsRecordId: 'dns-a', dnsRecordType: 'CNAME', routeId: 'route-a', routePattern: 'ai.example.com/*', workerName: 'router-worker', status: 'provisioned' })
-    await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    const afterCustomDomain = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    const missingCustomBody = await beforeCustomDomain.json() as { error: string }
     const settings = await store.getConfig<Record<string, unknown>>('cloudflare_gateway_settings')
 
-    expect(calls).toEqual(['https://router.example.workers.dev', 'https://ai.example.com'])
+    expect(beforeCustomDomain.status).toBe(409)
+    expect(missingCustomBody).toEqual({ error: 'custom_domain_required' })
+    expect(afterCustomDomain.status).toBe(200)
+    expect(calls).toEqual(['https://ai.example.com'])
     expect(settings).not.toHaveProperty('workerUrl')
   })
 

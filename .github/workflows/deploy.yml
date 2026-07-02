@@ -150,7 +150,7 @@ jobs:
             DB_ID=$(node scripts/d1-database-id.mjs d1-create.txt)
           fi
           [ -n "$DB_ID" ] || { echo "::error::Could not resolve D1 database id"; exit 1; }
-          DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; const text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID).replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG).replaceAll('https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL).replaceAll('https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL); fs.writeFileSync(p,text)"
+          DB_ID="$DB_ID" node -e "const fs=require('fs'); const p='wrangler.toml'; let text=fs.readFileSync(p,'utf8').replaceAll('create-via-deploy-workflow', process.env.DB_ID).replaceAll('agent-release-tag-placeholder', process.env.AGENT_RELEASE_TAG); if (process.env.WORKER_BASE_URL) text=text.replaceAll('https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL).replaceAll('https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev', process.env.WORKER_BASE_URL); fs.writeFileSync(p,text)"
 
       - name: Apply D1 migrations
         working-directory: packages/router-worker

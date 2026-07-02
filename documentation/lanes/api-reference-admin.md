@@ -230,7 +230,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON. For account and Gateway fields, request body values override stored settings, then environment defaults apply. For `workerUrl`, request body overrides a stored explicit Worker URL; if neither exists, a provisioned custom domain wins before `WORKER_BASE_URL`.
+**Request body:** Optional JSON. For account and Gateway fields, request body values override stored settings, then environment defaults apply. For `workerUrl`, request body overrides a stored explicit Worker URL; otherwise Gateway sync uses the provisioned custom domain.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -239,7 +239,7 @@ POST /admin/cloudflare/gateway/sync
 | `routeName` | string | no | Dynamic route display name. Falls back to stored settings, then `AI_GATEWAY_ROUTE_NAME`, then `mesh-default`. |
 | `providerName` | string | no | Custom-provider display name. Falls back to stored settings, then `AI_GATEWAY_PROVIDER_NAME`, then `codeflare-inference-mesh`. |
 | `publicModel` | string | no | Public model alias exposed through Gateway. Falls back to stored settings, then `AI_GATEWAY_PUBLIC_MODEL`, then `mesh-default`. |
-| `workerUrl` | string | no | Router origin used by the custom provider. Falls back to a stored explicit override, then a provisioned custom domain, then `WORKER_BASE_URL`. |
+| `workerUrl` | string | no | Advanced explicit router origin override. When omitted, Gateway sync uses the provisioned custom domain. |
 
 **Response**
 
@@ -247,7 +247,7 @@ POST /admin/cloudflare/gateway/sync
 | --- | --- | --- |
 | `200` | Cloudflare AI Gateway metadata and selected sync settings are stored in D1. | Provider, route, route version, deployment identifiers, and selected settings. |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
-| `409` | Stored custom domain is not provisioned and no `workerUrl` override was supplied. | `{ "error": "custom_domain_not_provisioned", "hostname": string }` |
+| `409` | No provisioned custom domain exists for Gateway sync, or the stored custom domain is not provisioned and no `workerUrl` override was supplied. | `{ "error": "custom_domain_required" }` or `{ "error": "custom_domain_not_provisioned", "hostname": string }` |
 | `503` | Required runtime Cloudflare configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
 **Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md)

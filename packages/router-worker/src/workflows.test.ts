@@ -151,13 +151,15 @@ describe('workflow contract values', () => {
         CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: '${{ vars.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN }}'
       }
     })
-    const integrationSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7', CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: 'example-subdomain' } })
+    const integrationSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7' } })
+    const integrationSettingsWithBootstrapUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7', CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: 'example-subdomain' } })
     const productionSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_run', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_HEAD_SHA: 'abc123', GITHUB_RUN_NUMBER: '8', PRODUCTION_WORKER_BASE_URL: 'https://router.example.com' } })
     const rejectedProduction = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'production', GITHUB_RUN_NUMBER: '9', WORKER_BASE_URL: 'https://router.example.com' } })
     const rejectedWorkerUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '10', WORKER_BASE_URL: 'https://router.example.com/path' } })
     const rejectedShellUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '11', WORKER_BASE_URL: 'https://$(id).example.com' } })
     expect(integrationSettings.status).toBe(0)
-    expect(outputValues(integrationSettings.stdout)).toEqual({ target_env: 'integration', deploy_ref: 'refs/heads/feature', version_tag: 'v0.1.0-dev.7', worker_base_url: 'https://codeflare-inference-mesh-router-integration.example-subdomain.workers.dev', db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' })
+    expect(outputValues(integrationSettings.stdout)).toEqual({ target_env: 'integration', deploy_ref: 'refs/heads/feature', version_tag: 'v0.1.0-dev.7', worker_base_url: '', db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' })
+    expect(outputValues(integrationSettingsWithBootstrapUrl.stdout)).toMatchObject({ worker_base_url: 'https://codeflare-inference-mesh-router-integration.example-subdomain.workers.dev' })
     expect(productionSettings.status).toBe(0)
     expect(outputValues(productionSettings.stdout)).toMatchObject({ target_env: 'production', deploy_ref: 'abc123', version_tag: 'v0.1.8', worker_base_url: 'https://router.example.com', db_name: 'codeflare-inference-mesh' })
     expect(rejectedProduction.status).toBe(1)
@@ -180,9 +182,18 @@ describe('workflow contract values', () => {
       { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler d1 list --json" ]; then printf \'[{"name":"codeflare-inference-mesh-integration","uuid":"11111111-2222-4333-8444-555555555555"}]\'; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
       ['wrangler.toml']
     )
+    const d1WithoutBootstrapUrl = runShellBlockWithFiles(
+      d1Run.replaceAll('${{ steps.settings.outputs.db_name }}', 'codeflare-inference-mesh-integration'),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', AGENT_RELEASE_TAG: 'v0.1.0-dev.7', WORKER_BASE_URL: '' },
+      { 'wrangler.toml': 'database_id = "create-via-deploy-workflow"\nAGENT_RELEASE_TAG = "agent-release-tag-placeholder"\nWORKER_BASE_URL = "https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev"\n' },
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler d1 list --json" ]; then printf \'[{"name":"codeflare-inference-mesh-integration","uuid":"11111111-2222-4333-8444-555555555555"}]\'; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
+      ['wrangler.toml']
+    )
     expect(d1Execution.result.status).toBe(0)
     expect(d1Execution.outputs['wrangler.toml']).toContain('https://router.example.com')
     expect(d1Execution.outputs['wrangler.toml']).not.toContain('<your-subdomain>')
+    expect(d1WithoutBootstrapUrl.result.status).toBe(0)
+    expect(d1WithoutBootstrapUrl.outputs['wrangler.toml']).toContain('https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev')
     expect(stepByName(deployJob, 'Apply D1 migrations')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
     const secretsRun = stepByName(deployJob, 'Set Worker runtime secrets')!.run!
     expect(stepByName(deployJob, 'Set Worker runtime secrets')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN_RUNTIME: '${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}' } })
