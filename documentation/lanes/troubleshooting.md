@@ -7,7 +7,8 @@
 - [Requests return no-node](#requests-return-no-node)
 - [Session latency suddenly increases](#session-latency-suddenly-increases)
 - [Installer cannot verify artifact](#installer-cannot-verify-artifact)
-- [Node update is staged but not applied](#node-update-is-staged-but-not-applied)
+- [Node reports dependency-missing](#node-reports-dependency-missing)
+- [Self-update checksum mismatch](#self-update-checksum-mismatch)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## AI Gateway returns authentication errors
@@ -50,18 +51,26 @@
 
 **Fix:** Re-run the deploy workflow, verify uploaded artifacts and checksums, and confirm the installer selected the correct OS/architecture asset. ([REQ-ADM-004](../../sdd/spec/setup-admin.md)) ([REQ-REL-003](../../sdd/spec/release-ci.md))
 
-## Node update is staged but not applied
+## Node reports dependency-missing
 
-**Symptom:** The dashboard shows an update ready but the service version does not change.
+**Symptom:** Admin status shows a node with runtime state `dependency-missing`, and the node is not selected for requests.
 
-**Cause:** Updates require explicit operator approval and service restart.
+**Cause:** The agent now manages the runtime process but the first version expects `llama-server` to already be installed on the node PATH.
 
-**Fix:** Use the dashboard update-and-restart action after checksum/signature verification succeeds; confirm the service reports the new version on heartbeat. ([REQ-NODE-005](../../sdd/spec/node-agent.md))
+**Fix:** Install a CUDA-capable llama.cpp build for the node OS, confirm `llama-server` is on PATH for the service user, then restart the agent service. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
+
+## Self-update checksum mismatch
+
+**Symptom:** Self-update staging refuses an agent archive.
+
+**Cause:** The downloaded archive hash does not match the expected SHA-256.
+
+**Fix:** Re-download the artifact and `checksums.txt` from the same release tag, then stage the update again. ([REQ-NODE-005](../../sdd/spec/node-agent.md))
 
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |
 |---|---|---|
-| Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/router.ts::handleChat` <!-- @impl: packages/router-worker/src/router.ts::handleChat --> |
-| Failure reporting | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
-| Self-update recovery | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::UpdateAnchors` <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> |
+| Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::isEligible` <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> |
+| Failure reporting | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/scheduler.ts::StoreScheduler.recordFailure` <!-- @impl: packages/router-worker/src/scheduler.ts::StoreScheduler.recordFailure --> |
+| Self-update checksum staging | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::StageUpdate` <!-- @impl: packages/node-agent/internal/agent/update.go::StageUpdate --> |

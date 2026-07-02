@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,10 +21,12 @@ type ModelProfile struct {
 	ID                  string            `json:"id"`
 	PublicAliases       []string          `json:"publicAliases"`
 	UpstreamModel       string            `json:"upstreamModel"`
-	HFSpecifier         string            `json:"hfSpecifier"`
-	LocalFilename       string            `json:"localFilename"`
+	SourceMode          string            `json:"sourceMode"`
+	HFSpecifier         string            `json:"hfSpecifier,omitempty"`
+	DownloadURL         string            `json:"downloadUrl,omitempty"`
+	LocalFilename       string            `json:"localFilename,omitempty"`
 	SHA256              string            `json:"sha256,omitempty"`
-	LlamaServerModelArg string            `json:"llamaServerModelArg"`
+	LlamaServerModelArg string            `json:"llamaServerModelArg,omitempty"`
 	ContextWindow       int               `json:"contextWindow"`
 	Runtime             string            `json:"runtime"`
 	RuntimeCommand      RuntimeCommand    `json:"runtimeCommand"`
@@ -39,6 +42,8 @@ type RuntimeCommand struct {
 	Env        map[string]string `json:"env"`
 }
 
+var ErrRuntimeDependencyMissing = errors.New("runtime dependency missing")
+
 type RuntimeController interface {
 	Start(context.Context) error
 	Stop(context.Context) error
@@ -46,12 +51,13 @@ type RuntimeController interface {
 }
 
 type RuntimeManager struct {
-	command RuntimeCommand
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	done    chan error
-	cancel  context.CancelFunc
-	state   string
+	command   RuntimeCommand
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	done      chan error
+	cancel    context.CancelFunc
+	state     string
+	lastError string
 }
 
 func NewRuntimeManager(command RuntimeCommand) *RuntimeManager {
@@ -67,15 +73,22 @@ func (m *RuntimeManager) Start(ctx context.Context) error {
 	if m.runningLocked() {
 		return nil
 	}
+	if _, err := exec.LookPath(m.command.Executable); err != nil {
+		m.state = "dependency-missing"
+		m.lastError = fmt.Sprintf("%s missing from PATH", m.command.Executable)
+		return fmt.Errorf("%w: %s", ErrRuntimeDependencyMissing, m.command.Executable)
+	}
 	processCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(processCtx, m.command.Executable, m.command.Args...)
 	cmd.Env = append(os.Environ(), envPairs(m.command.Env)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	m.state = "starting"
+	m.lastError = ""
 	if err := cmd.Start(); err != nil {
 		cancel()
 		m.state = "failed"
+		m.lastError = err.Error()
 		return fmt.Errorf("start runtime: %w", err)
 	}
 	m.cmd = cmd
@@ -145,11 +158,28 @@ func (m *RuntimeManager) Restart(ctx context.Context) error {
 	return m.Start(ctx)
 }
 
+func (m *RuntimeManager) RestartWithCommand(ctx context.Context, command RuntimeCommand) error {
+	if err := m.Stop(ctx); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.command = command
+	m.mu.Unlock()
+	return m.Start(ctx)
+}
+
 func (m *RuntimeManager) State() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.runningLocked()
 	return m.state
+}
+
+func (m *RuntimeManager) LastError() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runningLocked()
+	return m.lastError
 }
 
 func (m *RuntimeManager) runningLocked() bool {
@@ -172,6 +202,7 @@ func (m *RuntimeManager) runningLocked() bool {
 		m.cancel = nil
 		if err != nil && !strings.Contains(err.Error(), "signal") {
 			m.state = "failed"
+			m.lastError = err.Error()
 		} else {
 			m.state = "stopped"
 		}
@@ -192,6 +223,7 @@ func (m *RuntimeManager) wait(cmd *exec.Cmd, done chan error) {
 		m.cancel = nil
 		if err != nil && !strings.Contains(err.Error(), "signal") {
 			m.state = "failed"
+			m.lastError = err.Error()
 		} else {
 			m.state = "stopped"
 		}
@@ -218,13 +250,65 @@ func (m *RuntimeManager) setState(state string) {
 	m.state = state
 }
 
-func LlamaCommand(profile ModelProfile, cacheDir string, listenAddress string) RuntimeCommand {
-	modelPath := filepath.Join(cacheDir, profile.LocalFilename)
+func LlamaCommand(profile ModelProfile, modelDir string, listenAddress string) RuntimeCommand {
+	modelPath := filepath.Join(modelDir, profile.LocalFilename)
 	if profile.LlamaServerModelArg != "" && profile.LocalFilename == "" {
 		modelPath = profile.LlamaServerModelArg
 	}
-	args := []string{"--model", modelPath, "--ctx-size", fmt.Sprintf("%d", profile.ContextWindow), "--host", hostOnly(listenAddress), "--port", portOnly(listenAddress)}
+	dataDir := modelDir
+	if filepath.Base(modelDir) == "models" {
+		dataDir = filepath.Dir(modelDir)
+	}
+	values := runtimeTemplateValues{
+		host:      hostOnly(listenAddress),
+		port:      portOnly(listenAddress),
+		dataDir:   dataDir,
+		modelDir:  modelDir,
+		modelPath: modelPath,
+	}
+	if profile.RuntimeCommand.Executable != "" {
+		return RuntimeCommand{
+			Executable: profile.RuntimeCommand.Executable,
+			Args:       renderRuntimeArgs(profile.RuntimeCommand.Args, values),
+			Env:        renderRuntimeEnv(profile.RuntimeCommand.Env, values),
+		}
+	}
+	args := []string{"--model", modelPath, "--ctx-size", fmt.Sprintf("%d", profile.ContextWindow), "--host", values.host, "--port", values.port}
 	return RuntimeCommand{Executable: "llama-server", Args: args, Env: map[string]string{"LLAMA_ARG_THREADS": "auto"}}
+}
+
+type runtimeTemplateValues struct {
+	host      string
+	port      string
+	dataDir   string
+	modelDir  string
+	modelPath string
+}
+
+func renderRuntimeArgs(args []string, values runtimeTemplateValues) []string {
+	rendered := make([]string, 0, len(args))
+	for _, arg := range args {
+		rendered = append(rendered, renderRuntimeValue(arg, values))
+	}
+	return rendered
+}
+
+func renderRuntimeEnv(env map[string]string, values runtimeTemplateValues) map[string]string {
+	rendered := make(map[string]string, len(env))
+	for key, value := range env {
+		rendered[key] = renderRuntimeValue(value, values)
+	}
+	return rendered
+}
+
+func renderRuntimeValue(value string, values runtimeTemplateValues) string {
+	return strings.NewReplacer(
+		"{{HOST}}", values.host,
+		"{{PORT}}", values.port,
+		"{{DATA_DIR}}", values.dataDir,
+		"{{MODEL_DIR}}", values.modelDir,
+		"{{MODEL_PATH}}", values.modelPath,
+	).Replace(value)
 }
 
 func RuntimeListenAddress(runtimeURL string) (string, error) {
@@ -255,6 +339,9 @@ func SelectedProfile(cfg Config) (ModelProfile, bool) {
 }
 
 func EnsureModel(ctx context.Context, profile ModelProfile, dataDir string, client *http.Client) (string, error) {
+	if profile.SourceMode == "llama-hf" {
+		return "", nil
+	}
 	path := ModelCachePath(dataDir, profile)
 	if profile.LocalFilename == "" {
 		return profile.LlamaServerModelArg, nil
@@ -318,6 +405,9 @@ func DownloadModel(ctx context.Context, sourceURL string, destination string, ex
 }
 
 func ModelDownloadURL(profile ModelProfile) string {
+	if profile.DownloadURL != "" {
+		return profile.DownloadURL
+	}
 	repository, filename, ok := strings.Cut(profile.HFSpecifier, ":")
 	if !ok || repository == "" || filename == "" {
 		return ""

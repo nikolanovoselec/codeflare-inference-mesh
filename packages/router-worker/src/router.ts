@@ -4,7 +4,7 @@ import { CloudflareGatewayClient, type GatewaySyncRequest, type GatewaySyncResul
 import { installerCommand, installScript, validateCustomDomain, type InstallerPlatform } from './installers'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { meshUrl } from './scheduler'
-import type { ClaimRequest, CredentialKind, HeartbeatRequest, ModelProfile, RouterEnv, Scheduler, Store, TokenRecord } from './types'
+import type { ClaimRequest, CredentialKind, HeartbeatRequest, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store, TokenRecord } from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024
@@ -90,11 +90,16 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
       body: rewritten
     })
   } catch (error) {
-    await deps.scheduler.release(result.reservation.reservationId, now)
+    await deps.scheduler.recordFailure(result.reservation.reservationId, now)
     throw error
   }
   const headers = responseMetadataHeaders(upstream.headers, requestId, sessionId, result.node.id)
-  return releaseOnCompletion(upstream, headers, () => deps.scheduler.release(result.reservation!.reservationId, now))
+  return releaseOnCompletion(
+    upstream,
+    headers,
+    () => deps.scheduler.release(result.reservation!.reservationId, now),
+    () => deps.scheduler.recordFailure(result.reservation!.reservationId, now)
+  )
 }
 
 async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -197,7 +202,29 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
-  return json(redactSecrets({ nodes, profiles, audit: await deps.store.listAudit(20), generatedAt: now }), 200, requestId)
+  const setup = await deps.store.getConfig('setup_state')
+  const gateway = await deps.store.getConfig('cloudflare_gateway')
+  const customDomain = await deps.store.getConfig('custom_domain')
+  return json(redactSecrets({ nodes, profiles, profileReadiness: profileReadiness(profiles, nodes), setup, gateway, customDomain, audit: await deps.store.listAudit(20), generatedAt: now }), 200, requestId)
+}
+
+function profileReadiness(profiles: readonly ModelProfile[], nodes: readonly NodeRecord[]): Array<{ profileId: string; version: number; ready: number; downloading: number; failed: number }> {
+  return profiles.map((profile) => {
+    const matching = nodes.filter((node) => node.activeProfileIds.includes(profile.id))
+    const ready = matching.filter((node) => nodeReadyForProfile(node, profile)).length
+    const downloading = matching.filter((node) => node.metrics?.runtimeState === 'downloading' || node.metrics?.runtimeState === 'starting').length
+    const failed = matching.filter((node) => {
+      const state = node.metrics?.runtimeState
+      return state === 'failed' || state === 'dependency-missing' || state === 'stopped'
+    }).length
+    return { profileId: profile.id, version: profile.version, ready, downloading, failed }
+  })
+}
+
+function nodeReadyForProfile(node: NodeRecord, profile: ModelProfile): boolean {
+  const runtimeState = node.metrics?.runtimeState
+  const loadedModel = node.metrics?.loadedModel ?? node.runtimeModel
+  return (runtimeState === 'ready' || runtimeState === 'running') && loadedModel === profile.upstreamModel
 }
 
 async function handleSetupToken(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -229,7 +256,7 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
   const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
   const gatewayId = deps.env.AI_GATEWAY_ID ?? 'inference-mesh'
-  const customDomain = await deps.store.getConfig<{ hostname: string; zoneId: string }>('custom_domain')
+  const customDomain = await deps.store.getConfig<{ hostname: string; zoneId?: string }>('custom_domain')
   const workerUrl = customDomain?.hostname ? `https://${customDomain.hostname}` : deps.env.WORKER_BASE_URL
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!accountId || !workerUrl || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
@@ -242,15 +269,16 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
 
 async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ hostname: string; zoneId: string }>(request)
+  const body = await readJson<{ hostname: string; zoneId?: string }>(request)
   const hostname = typeof body?.hostname === 'string' ? body.hostname.trim() : ''
   const zoneId = typeof body?.zoneId === 'string' ? body.zoneId.trim() : ''
-  const valid = Boolean(hostname && validateCustomDomain(hostname) && /^[a-f0-9]{32}$/i.test(zoneId))
+  const zoneValid = zoneId === '' || /^[a-f0-9]{32}$/i.test(zoneId)
+  const valid = Boolean(hostname && validateCustomDomain(hostname) && zoneValid)
   if (!valid) return json({ valid: false, hostname: body?.hostname }, 400, requestId)
-  const result = { valid: true, hostname, zoneId }
-  await deps.store.putConfig('custom_domain', { hostname, zoneId })
-  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_validated', at: now, actor: 'admin', target: hostname, detail: { zoneId } })
-  return json(result, 200, requestId)
+  const stored = zoneId ? { hostname, zoneId } : { hostname }
+  await deps.store.putConfig('custom_domain', stored)
+  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_validated', at: now, actor: 'admin', target: hostname, detail: zoneId ? { zoneId } : {} })
+  return json({ valid: true, ...stored }, 200, requestId)
 }
 
 async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
@@ -356,7 +384,7 @@ function responseMetadataHeaders(upstream: Headers, requestId: string, sessionId
   return headers
 }
 
-function releaseOnCompletion(response: Response, headers: Headers, release: () => Promise<void>): Response {
+function releaseOnCompletion(response: Response, headers: Headers, release: () => Promise<void>, recordFailure: () => Promise<void>): Response {
   if (!response.body) {
     void release()
     return new Response(null, { status: response.status, headers })
@@ -364,13 +392,18 @@ function releaseOnCompletion(response: Response, headers: Headers, release: () =
   const reader = response.body.getReader()
   const stream = new ReadableStream({
     async pull(controller) {
-      const chunk = await reader.read()
-      if (chunk.done) {
-        controller.close()
-        await release()
-        return
+      try {
+        const chunk = await reader.read()
+        if (chunk.done) {
+          controller.close()
+          await release()
+          return
+        }
+        controller.enqueue(chunk.value)
+      } catch (error) {
+        await recordFailure()
+        throw error
       }
-      controller.enqueue(chunk.value)
     },
     async cancel(reason) {
       await reader.cancel(reason)

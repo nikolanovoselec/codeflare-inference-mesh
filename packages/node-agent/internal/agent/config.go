@@ -13,26 +13,26 @@ import (
 )
 
 type Config struct {
-	RouterURL          string   `json:"routerUrl"`
-	SetupToken         string   `json:"setupToken,omitempty"`
-	NodeID             string   `json:"nodeId,omitempty"`
-	NodeToken          string   `json:"nodeToken,omitempty"`
-	UpstreamToken      string   `json:"upstreamToken,omitempty"`
-	DisplayName        string   `json:"displayName"`
-	MeshIP             string   `json:"meshIp"`
-	ListenAddress      string   `json:"listenAddress"`
-	InferencePort      int      `json:"inferencePort"`
-	DashboardAddress   string   `json:"dashboardAddress"`
-	DashboardToken     string   `json:"dashboardToken,omitempty"`
-	RuntimeURL         string   `json:"runtimeUrl"`
-	RuntimeModel       string   `json:"runtimeModel"`
+	RouterURL          string         `json:"routerUrl"`
+	SetupToken         string         `json:"setupToken,omitempty"`
+	NodeID             string         `json:"nodeId,omitempty"`
+	NodeToken          string         `json:"nodeToken,omitempty"`
+	UpstreamToken      string         `json:"upstreamToken,omitempty"`
+	DisplayName        string         `json:"displayName"`
+	MeshIP             string         `json:"meshIp"`
+	ListenAddress      string         `json:"listenAddress"`
+	InferencePort      int            `json:"inferencePort"`
+	DashboardAddress   string         `json:"dashboardAddress"`
+	DashboardToken     string         `json:"dashboardToken,omitempty"`
+	RuntimeURL         string         `json:"runtimeUrl"`
+	RuntimeModel       string         `json:"runtimeModel"`
 	PublicModels       []string       `json:"publicModels"`
 	ActiveProfileIDs   []string       `json:"activeProfileIds"`
 	Profiles           []ModelProfile `json:"profiles,omitempty"`
 	Capacity           int            `json:"capacity"`
 	DataDir            string         `json:"dataDir"`
-	ReleaseURL         string   `json:"releaseUrl"`
-	AllowAllInterfaces bool     `json:"allowAllInterfaces"`
+	ReleaseURL         string         `json:"releaseUrl"`
+	AllowAllInterfaces bool           `json:"allowAllInterfaces"`
 }
 
 func DefaultConfig(dataDir string) Config {
@@ -43,9 +43,9 @@ func DefaultConfig(dataDir string) Config {
 		DashboardAddress: "127.0.0.1:17777",
 		DashboardToken:   dashboardToken(),
 		RuntimeURL:       "http://127.0.0.1:8081",
-		RuntimeModel:     "qwen36-27b-256k-3090",
+		RuntimeModel:     "qwen36-35b-a3b-262k-mm-3090",
 		PublicModels:     []string{"mesh-default"},
-		ActiveProfileIDs: []string{"qwen36-27b-256k-3090"},
+		ActiveProfileIDs: []string{"qwen36-35b-a3b-262k-mm-3090"},
 		Profiles:         nil,
 		Capacity:         1,
 		DataDir:          dataDir,
@@ -74,6 +74,23 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
+func ApplyDetectedMeshIP(cfg Config, path string, detect func() (string, bool)) (Config, bool, error) {
+	if cfg.MeshIP != "" {
+		return cfg, false, nil
+	}
+	meshIP, ok := detect()
+	if !ok || meshIP == "" {
+		return cfg, false, nil
+	}
+	next := cfg
+	next.MeshIP = meshIP
+	next.ListenAddress = ListenerAddress(next.MeshIP, next.InferencePort, next.AllowAllInterfaces)
+	if err := SaveConfig(path, next); err != nil {
+		return Config{}, false, err
+	}
+	return next, true, nil
+}
+
 func SaveConfig(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
@@ -86,6 +103,14 @@ func SaveConfig(path string, cfg Config) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
+}
+
+func DetectHostMeshIP() (string, bool) {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "", false
+	}
+	return DetectMeshIP(addrs)
 }
 
 func DetectMeshIP(addrs []net.Addr) (string, bool) {

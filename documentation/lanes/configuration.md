@@ -19,20 +19,20 @@
 | `ROUTER_PROVIDER_TOKEN` | n/a | yes for seeded provider auth | `packages/router-worker/src/router.ts::authenticateKind` | [REQ-GWY-002](../../sdd/spec/gateway.md) |
 | `ADMIN_TOKEN` | n/a | no after browser setup creates admin token records | `packages/router-worker/src/router.ts::authenticateKind` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | `NODE_UPSTREAM_TOKEN` | generated during first setup when absent | no | `packages/router-worker/src/router.ts::resolveUpstreamToken` | [REQ-SEC-001](../../sdd/spec/security.md) |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
-| `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
+| `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 
 ## Worker vars
 
 | Variable | Default | Required | Consumed by | Implements |
 | --- | --- | --- | --- | --- |
-| `AI_GATEWAY_ACCOUNT_ID` | `set-by-deploy-or-runtime-secret` | no | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `AI_GATEWAY_ACCOUNT_ID` | `set-by-deploy-or-runtime-secret` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `MAX_REQUEST_BYTES` | `16777216` | no | `packages/router-worker/src/router.ts::handleChat` | [REQ-RTR-002](../../sdd/spec/router-worker.md) |
 | `HEARTBEAT_TTL_SECONDS` | `45` | no | Declared in Wrangler but not consumed; live heartbeat TTL is hard-coded to 45s in `packages/router-worker/src/scheduler.ts` and `packages/router-worker/src/store.ts`. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
-| `AI_GATEWAY_ID` | `inference-mesh` | no | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
-| `WORKER_BASE_URL` | Worker origin placeholder | yes for Gateway sync | `packages/router-worker/src/cloudflare-api.ts` | [REQ-GWY-001](../../sdd/spec/gateway.md) |
-| `AGENT_RELEASE_TAG` | `agent-release-tag-placeholder` | set by deploy for real installers | `packages/router-worker/src/installers.ts` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| `GITHUB_REPOSITORY` | `nikolanovoselec/codeflare-inference-mesh` | yes for installers | `packages/router-worker/src/installers.ts` | [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| `AI_GATEWAY_ID` | `inference-mesh` | no | `packages/router-worker/src/router.ts::handleGatewaySync` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
+| `WORKER_BASE_URL` | Worker origin placeholder | yes for Gateway sync and installer commands | `packages/router-worker/src/router.ts::handleGatewaySync`, `packages/router-worker/src/router.ts::handleInstaller` | [REQ-GWY-001](../../sdd/spec/gateway.md) |
+| `AGENT_RELEASE_TAG` | `agent-release-tag-placeholder` | set by deploy for real installers | `packages/router-worker/src/router.ts::handleInstallScript` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| `GITHUB_REPOSITORY` | `nikolanovoselec/codeflare-inference-mesh` | yes for installers | `packages/router-worker/src/router.ts::handleInstaller`, `packages/router-worker/src/router.ts::handleInstallScript` | [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
 
 ## Wrangler bindings
 
@@ -69,16 +69,18 @@ Each inference node must run Cloudflare One Client / WARP enrolled into the same
 | `dashboardAddress` | `127.0.0.1:17777` | no | `packages/node-agent/internal/agent/dashboard.go::DashboardHandler` | [REQ-NODE-004](../../sdd/spec/node-agent.md) |
 | `dashboardToken` | generated on config load | yes for dashboard controls | `packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed` | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md), [REQ-SEC-005](../../sdd/spec/security.md) |
 | `runtimeUrl` | `http://127.0.0.1:8081` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/proxy.go::ProxyHandler` | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
-| `runtimeModel` | `qwen36-27b-256k-3090` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetrics` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `runtimeModel` | `qwen36-35b-a3b-262k-mm-3090` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetrics` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `publicModels` | `["mesh-default"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
-| `activeProfileIds` | `["qwen36-27b-256k-3090"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/runtime.go::EnsureModel` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
+| `activeProfileIds` | `["qwen36-35b-a3b-262k-mm-3090"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
+| `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles`, `packages/node-agent/internal/agent/runtime.go::EnsureModel`, `packages/node-agent/internal/agent/runtime.go::LlamaCommand` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `capacity` | `1` | no | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `dataDir` | `.inference-mesh` | no | `packages/node-agent/cmd/inference-mesh-agent/main.go::defaultDataDir` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
-| `releaseUrl` | repository release API | no | `packages/node-agent/internal/agent/update.go` | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
+| `releaseUrl` | repository release API | no | `packages/node-agent/internal/agent/config.go::Config`, `packages/node-agent/internal/agent/config.go::DefaultConfig` | [REQ-NODE-005](../../sdd/spec/node-agent.md) |
 | `allowAllInterfaces` | `false` | no | `packages/node-agent/internal/agent/config.go::ListenerAddress` | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
 
 Legacy config loads persist a generated `dashboardToken` before dashboard controls are served. ([REQ-SEC-005](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
+
+`HF_TOKEN` is not stored in router profiles. When a gated Hugging Face model is used, provide `HF_TOKEN` in the node service environment so `llama-server -hf` can resolve the model without the Worker returning secrets to nodes. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeManager.Start -->
 
 ## GitHub secrets
 

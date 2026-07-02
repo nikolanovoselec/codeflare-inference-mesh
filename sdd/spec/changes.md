@@ -1,5 +1,12 @@
 # Changes
 
+## 2026-07-02
+
+- Updated [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-llamacpp-runtime), [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-OBS-002](observability.md#req-obs-002-admin-status-surface), [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain), and [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui) so profile-driven runtime commands, source modes, runtime readiness, hostname-only domain setup, profile readiness counts, and operator-facing admin labels are the product contract.
+- Updated [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-llamacpp-runtime) and [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout) so node agents persist desired heartbeat profiles and restart managed runtimes after draining active requests when the selected profile version changes.
+- Updated [REQ-OBS-004](observability.md#req-obs-004-failure-reporting) and [REQ-RTR-003](router-worker.md#req-rtr-003-streaming-pass-through) so Mesh fetch and stream failures release reservations and apply a recent failure penalty to the node.
+- Updated [REQ-REL-002](release-ci.md#req-rel-002-deploy-workflow-gating) so deploy setting decisions are resolved by an executable script with fixture-backed behavioral tests.
+
 ## 2026-07-01
 
 - Added [REQ-OBS-005](observability.md#req-obs-005-node-self-unregistration) so node self-unregistration has a Node Agent actor scope separate from admin failure reporting.
@@ -18,11 +25,8 @@
 
 - Added [REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui) for a responsive browser Admin configuration UI covering first-run setup, login, status, setup tokens, installers, Gateway sync, custom-domain validation, node revocation, and profile rollout.
 - Updated [REQ-REL-003](release-ci.md#req-rel-003-node-agent-release-artifacts) so deploy-published installers use the exact release tag selected for the node-agent artifacts.
-- Production deploys require green main checks, manual integration deploys can run from any branch, and Fuzz participates in required gates.
-- Workflow safety fails closed for unsafe workflow checks, and custom-domain persistence keeps Gateway routing stable.
-- Dashboard-token controls, node failure reporting, and workflow safety are covered by automated verification.
-- Legacy node-agent configs receive a dashboard token before dashboard controls are served, and dashboard Origin checks protect browser control requests.
-- Bootstrapped the implementation-ready SDD scaffold for the private inference mesh from the accepted plan.
-- Resolved the prior open decisions into binding requirements and architecture decisions.
-- Implemented the router Worker, scheduler, node agent, CI/deploy workflows, behavioral tests, and source anchors for all drafted requirements.
-- Removed stale e2e test scope, clarified CI-vs-targeted-local verification wording, and promoted dynamic route automation to P0 for v1 setup completeness.
+- Updated [REQ-REL-002](release-ci.md#req-rel-002-deploy-workflow-gating) and [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) so production deploys require green main checks, manual integration deploys can run from any branch, and Fuzz participates in required gates.
+- Updated [REQ-REL-004](release-ci.md#req-rel-004-security-workflows) and [REQ-ADM-005](setup-admin.md#req-adm-005-optional-custom-domain) so workflow safety fails closed for unsafe workflow checks and custom-domain persistence keeps Gateway routing stable.
+- Updated [REQ-SEC-005](security.md#req-sec-005-dashboard-token-lifecycle) and [REQ-SEC-004](security.md#req-sec-004-runtime-api-exposure) so legacy node-agent configs receive a dashboard token before dashboard controls are served and dashboard Origin checks protect browser control requests.
+- Added [REQ-RTR-001](router-worker.md#req-rtr-001-route-family-separation), [REQ-SCH-001](state-scheduling.md#req-sch-001-durable-router-state), and [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat) for the initial router Worker, durable scheduler state, and node claim/heartbeat path.
+- Updated [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-REL-001](release-ci.md#req-rel-001-pr-checks), and [REQ-REL-002](release-ci.md#req-rel-002-deploy-workflow-gating) so dynamic route automation, CI verification, and deploy gating are in the v1 setup scope.

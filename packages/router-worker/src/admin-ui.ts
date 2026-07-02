@@ -109,31 +109,31 @@ export function adminUiHtml(workerOrigin: string): string {
         <section class="work-area" aria-label="Admin work area" data-layout="command-center-work-area" data-panel-order="${ADMIN_UI_OPERATOR_FLOW.panelOrder.join(' ')}">
           <section class="work-section" id="setup" data-flow-stage="setup">
             ${sectionHeader('Setup')}
-            ${actionRow({ id: 'first-run-setup', actionId: 'first-run-setup', title: 'First-run setup', description: 'Only works before setup is locked. Once locked, use the existing admin token.', controls: '<button class="primary" type="button" data-action="first-run-setup">Create first credentials</button>', outputId: 'setup-output', outputKind: 'setup-tokens', empty: 'Generated credentials appear here once.' })}
+            ${actionRow({ id: 'first-run-setup', actionId: 'first-run-setup', title: 'Initial setup', description: 'Create first-use admin, provider, and node install credentials before setup locks.', controls: '<button class="primary" type="button" data-action="first-run-setup">Create first credentials</button>', outputId: 'setup-output', outputKind: 'setup-tokens', empty: 'Generated credentials appear here once.' })}
           </section>
 
           <section class="work-section" id="login" data-flow-stage="auth">
             ${sectionHeader('Auth')}
-            ${actionRow({ id: 'admin-login', actionId: 'admin-login', title: 'Admin token', description: 'Paste the token generated during setup. It stays in browser storage, not D1 plaintext.', controls: '<div class="control-line"><input class="control-input" name="adminToken" id="admin-token" autocomplete="off" type="password" aria-label="Admin token"><button type="button" data-action="admin-login">Verify token</button><button class="secondary" type="button" data-action="forget-token">Forget</button></div><label class="check"><input name="rememberToken" id="remember-token" type="checkbox"> Remember on this device</label>', outputId: 'login-output', outputKind: 'login-feedback', empty: 'Token verification feedback appears here.' })}
+            ${actionRow({ id: 'admin-login', actionId: 'admin-login', title: 'Admin login token', description: 'Paste the token generated during setup. It stays in browser storage, not D1 plaintext.', controls: '<div class="control-line"><input class="control-input" name="adminToken" id="admin-token" autocomplete="off" type="password" aria-label="Admin token"><button type="button" data-action="admin-login">Verify token</button><button class="secondary" type="button" data-action="forget-token">Forget</button></div><label class="check"><input name="rememberToken" id="remember-token" type="checkbox"> Remember on this device</label>', outputId: 'login-output', outputKind: 'login-feedback', empty: 'Token verification feedback appears here.' })}
           </section>
 
           <section class="work-section" id="setup-token" data-flow-stage="enroll">
             ${sectionHeader('Enroll')}
             ${actionRow({ id: 'setup-token-create', actionId: 'setup-token-create', title: 'Setup token', description: 'Create a short-lived node enrollment token.', controls: '<button type="button" data-action="setup-token-create">Create setup token</button>', outputId: 'setup-token-output', outputKind: 'setup-token', empty: 'A short-lived setup token appears here.' })}
-            ${actionRow({ id: 'installer-generate', actionId: 'installer-linux', title: 'Installer command', description: 'Generate a release-backed install command for the node platform.', controls: '<div class="control-line compact"><select name="platform" id="installer-platform" aria-label="Installer platform"><option value="linux">Linux</option><option value="macos">macOS</option><option value="windows">Windows</option></select><button type="button" data-action="installer-generate">Generate installer</button></div>', outputId: 'installer-output', outputKind: 'installer-command', empty: 'Installer command output appears here.', tag: 'pre' })}
+            ${actionRow({ id: 'installer-generate', actionId: 'installer-linux', title: 'Node install command', description: 'Copy a release-backed install command for the selected node platform.', controls: '<div class="control-line compact"><select name="platform" id="installer-platform" aria-label="Installer platform"><option value="linux">Linux</option><option value="macos">macOS</option><option value="windows">Windows</option></select><button type="button" data-action="installer-generate">Copy install command</button></div>', outputId: 'installer-output', outputKind: 'installer-command', empty: 'Installer command output appears here.', tag: 'pre' })}
           </section>
 
           <section class="work-section" id="gateway" data-flow-stage="route">
             ${sectionHeader('Route')}
-            ${actionRow({ id: 'gateway-sync', actionId: 'gateway-sync', title: 'AI Gateway', description: 'Sync custom provider, dynamic route, version, and deployment metadata.', controls: '<button type="button" data-action="gateway-sync">Sync Gateway route</button>', outputId: 'gateway-output', outputKind: 'gateway-sync', empty: 'Gateway sync response appears here.', tag: 'pre' })}
-            ${actionRow({ id: 'custom-domain-validate', actionId: 'custom-domain-validate', title: 'Custom domain', description: 'Validate a hostname before switching Gateway traffic to a custom origin.', controls: '<div class="control-stack"><input class="control-input" name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url" aria-label="Hostname"><input class="control-input" name="zoneId" id="custom-domain-zone" placeholder="Zone ID" aria-label="Zone ID"><button type="button" data-action="custom-domain-validate">Validate hostname</button></div>', outputId: 'domain-output', outputKind: 'custom-domain', empty: 'Hostname validation response appears here.', help: 'Use the Cloudflare zone ID for the hostname you want to validate.', tag: 'pre' })}
+            ${actionRow({ id: 'gateway-sync', actionId: 'gateway-sync', title: 'AI Gateway', description: 'Configure the custom provider, dynamic route, version, and deployment metadata.', controls: '<button type="button" data-action="gateway-sync">Configure AI Gateway</button>', outputId: 'gateway-output', outputKind: 'gateway-sync', empty: 'Gateway sync response appears here.', tag: 'pre' })}
+            ${actionRow({ id: 'custom-domain-validate', actionId: 'custom-domain-validate', title: 'Custom domain', description: 'Validate a hostname before switching Gateway traffic to a custom origin.', controls: '<div class="control-stack"><input class="control-input" name="hostname" id="custom-domain" placeholder="ai.example.com" inputmode="url" aria-label="Hostname"><button type="button" data-action="custom-domain-validate">Validate hostname</button></div>', outputId: 'domain-output', outputKind: 'custom-domain', empty: 'Hostname validation response appears here.', help: 'Enter only the hostname. Zone IDs stay out of the normal setup path.', tag: 'pre' })}
           </section>
 
           <section class="work-section" id="status" data-flow-stage="operate">
             ${sectionHeader('Operate')}
             ${actionRow({ id: 'status-refresh', actionId: 'status-refresh', title: 'Status', description: 'Load redacted nodes, profiles, audit events, and freshness metadata.', controls: '<button type="button" data-action="status-refresh">Refresh status</button>', outputId: 'status-output', outputKind: 'status', empty: 'Refresh status to load redacted state.', surfaceClass: 'status-grid' })}
             ${actionRow({ id: 'node-revoke', actionId: 'node-revoke', title: 'Node controls', description: 'Revoke a node when it should no longer receive traffic.', controls: '<div class="control-line"><input class="control-input" name="nodeId" id="node-id" autocomplete="off" aria-label="Node ID" placeholder="node id"><button class="danger" type="button" data-action="node-revoke">Revoke node</button></div>', outputId: 'node-output', outputKind: 'node-revoke', empty: 'Revocation result appears here.', tag: 'pre' })}
-            ${actionRow({ id: 'profile-rollout', actionId: 'profile-rollout', title: 'Profile rollout', description: 'Set rollout percentage for an existing model profile.', controls: '<div class="control-stack"><input class="control-input" name="profileId" id="profile-id" autocomplete="off" placeholder="gemma4-26b-a4b-256k-3090" aria-label="Profile ID"><div class="control-line compact"><input class="control-input short" name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100" aria-label="Rollout percent"><button type="button" data-action="profile-rollout">Update rollout</button></div></div>', outputId: 'profile-output', outputKind: 'profile-rollout', empty: 'Profile rollout result appears here.', help: 'Set how much traffic can use this model profile, from 0 to 100 percent.', tag: 'pre' })}
+            ${actionRow({ id: 'profile-rollout', actionId: 'profile-rollout', title: 'Profile readiness and rollout', description: 'Check profile readiness in Status, then set rollout percentage for an existing model profile.', controls: '<div class="control-stack"><input class="control-input" name="profileId" id="profile-id" autocomplete="off" placeholder="qwen36-35b-a3b-262k-text-3090" aria-label="Profile ID"><div class="control-line compact"><input class="control-input short" name="rolloutPercent" id="rollout-percent" type="number" min="0" max="100" step="1" value="100" aria-label="Rollout percent"><button type="button" data-action="profile-rollout">Update rollout</button></div></div>', outputId: 'profile-output', outputKind: 'profile-rollout', empty: 'Profile rollout result appears here.', help: 'Set how much traffic can use this model profile, from 0 to 100 percent.', tag: 'pre' })}
           </section>
         </section>
       </div>
@@ -404,6 +404,7 @@ function adminUiScript(): string {
   function renderStatus(value) {
     const nodes = Array.isArray(value.nodes) ? value.nodes : [];
     const profiles = Array.isArray(value.profiles) ? value.profiles : [];
+    const readiness = Array.isArray(value.profileReadiness) ? value.profileReadiness : [];
     const audit = Array.isArray(value.audit) ? value.audit : [];
     byId('node-status').textContent = String(nodes.length);
     byId('profile-status').textContent = String(profiles.length);
@@ -414,8 +415,9 @@ function adminUiScript(): string {
       '<div class="metric"><strong>Profiles</strong><code>' + profiles.length + '</code></div>',
       '<div class="metric"><strong>Audit</strong><code>' + audit.length + '</code></div>',
       '<div class="metric"><strong>Generated</strong><code>' + (value.generatedAt || 'unknown') + '</code></div>',
-      '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status).join('\\n')) + '</code></div>',
-      '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '%').join('\\n')) + '</code></div>'
+      '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status + ':' + (node.metrics?.runtimeState || 'unknown')).join('\\n')) + '</code></div>',
+      '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '% ' + (profile.sourceMode || 'unknown')).join('\\n')) + '</code></div>',
+      '<div class="metric"><strong>Profile readiness</strong><code>' + esc(readiness.map((item) => item.profileId + ' ready=' + item.ready + ' downloading=' + item.downloading + ' failed=' + item.failed).join('\\n')) + '</code></div>'
     ].join('');
   }
   document.addEventListener('click', async (event) => {
@@ -447,11 +449,11 @@ function adminUiScript(): string {
       } else if (action === 'setup-token-create') {
         renderTokens('setup-token-output', await request('/admin/setup-tokens', { method: 'POST', headers: headers(true) }));
       } else if (action === 'installer-generate') {
-        const platform = byId('installer-platform').value; setOutput('installer-output', await request('/admin/installers/' + platform, { headers: headers(true) }));
+        const platform = byId('installer-platform').value; const command = await request('/admin/installers/' + platform, { headers: headers(true) }); setOutput('installer-output', command); await navigator.clipboard.writeText(command); toast('Install command copied');
       } else if (action === 'gateway-sync') {
         showJson('gateway-output', await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true) }));
       } else if (action === 'custom-domain-validate') {
-        showJson('domain-output', await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ hostname: byId('custom-domain').value.trim(), zoneId: byId('custom-domain-zone').value.trim() }) }));
+        showJson('domain-output', await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true, true), body: JSON.stringify({ hostname: byId('custom-domain').value.trim() }) }));
       } else if (action === 'node-revoke') {
         const nodeId = encodeURIComponent(byId('node-id').value.trim()); showJson('node-output', await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(true) }));
       } else if (action === 'profile-rollout') {

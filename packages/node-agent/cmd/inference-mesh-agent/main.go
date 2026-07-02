@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent/internal/agent"
@@ -71,10 +74,17 @@ func runService() error {
 	if err != nil {
 		return err
 	}
+	serviceCtx, stopService := signal.NotifyContext(context.Background(), serviceSignals()...)
+	defer stopService()
 	activeRequests := &agent.ActiveCounter{}
+	if next, _, err := agent.ApplyDetectedMeshIP(cfg, agent.ConfigPath(), agent.DetectHostMeshIP); err != nil {
+		return err
+	} else {
+		cfg = next
+	}
 	if cfg.SetupToken != "" && cfg.NodeToken == "" {
 		claimClient := agent.Client{RouterURL: cfg.RouterURL}
-		claim, err := claimClient.Claim(context.Background(), cfg.SetupToken, agent.ClaimRequest{DisplayName: cfg.DisplayName, MeshIP: cfg.MeshIP, InferencePort: cfg.InferencePort, PublicModels: cfg.PublicModels, ActiveProfileIDs: cfg.ActiveProfileIDs, Capacity: cfg.Capacity})
+		claim, err := claimClient.Claim(serviceCtx, cfg.SetupToken, agent.ClaimRequest{DisplayName: cfg.DisplayName, MeshIP: cfg.MeshIP, InferencePort: cfg.InferencePort, PublicModels: cfg.PublicModels, ActiveProfileIDs: cfg.ActiveProfileIDs, Capacity: cfg.Capacity})
 		if err != nil {
 			return err
 		}
@@ -86,31 +96,24 @@ func runService() error {
 	}
 	var runtimeManager *agent.RuntimeManager
 	if profile, ok := agent.SelectedProfile(cfg); ok {
-		listenAddress, err := agent.RuntimeListenAddress(cfg.RuntimeURL)
+		started, err := startRuntimeForProfile(serviceCtx, cfg, profile)
 		if err != nil {
 			return err
 		}
-		if _, err := agent.EnsureModel(context.Background(), profile, cfg.DataDir, nil); err != nil {
-			return err
-		}
-		runtimeManager = agent.NewRuntimeManager(agent.LlamaCommand(profile, filepath.Join(cfg.DataDir, "models"), listenAddress))
-		if err := runtimeManager.Start(context.Background()); err != nil {
-			return err
-		}
+		runtimeManager = started
+		defer func() {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = runtimeManager.Stop(stopCtx)
+		}()
 	}
-	currentRuntimeState := func() string {
-		if runtimeManager == nil {
-			return "external"
-		}
-		return runtimeManager.State()
+	var stateMu sync.RWMutex
+	currentConfig := func() agent.Config {
+		stateMu.RLock()
+		defer stateMu.RUnlock()
+		return cfg
 	}
-	go func() {
-		client := agent.Client{RouterURL: cfg.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
-		for range time.Tick(15 * time.Second) {
-			metrics := agent.RuntimeMetrics(currentRuntimeState(), cfg.RuntimeModel, activeRequests.Value())
-			_, _ = client.Heartbeat(context.Background(), cfg.NodeToken, agent.HeartbeatFromConfig(cfg, metrics, activeRequests.Value()))
-		}
-	}()
+	go heartbeatLoop(serviceCtx, &stateMu, &cfg, runtimeManager, activeRequests)
 	proxy, err := agent.ProxyHandler(cfg.RuntimeURL, cfg.UpstreamToken, activeRequests)
 	if err != nil {
 		return err
@@ -119,13 +122,157 @@ func runService() error {
 	if runtimeManager != nil {
 		dashboardControllers = append(dashboardControllers, runtimeManager)
 	}
+	dashboardServer := &http.Server{Addr: cfg.DashboardAddress, Handler: agent.DashboardHandler(func() agent.DashboardStatus {
+		current := currentConfig()
+		metrics := runtimeMetrics(runtimeManager, current, activeRequests.Value())
+		return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
+	}, dashboardControllers...)}
 	go func() {
-		_ = http.ListenAndServe(cfg.DashboardAddress, agent.DashboardHandler(func() agent.DashboardStatus {
-			metrics := agent.RuntimeMetrics(currentRuntimeState(), cfg.RuntimeModel, activeRequests.Value())
-			return agent.DashboardStatus{Config: cfg, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
-		}, dashboardControllers...))
+		_ = dashboardServer.ListenAndServe()
 	}()
-	return http.ListenAndServe(agent.ListenerAddress(cfg.MeshIP, cfg.InferencePort, cfg.AllowAllInterfaces), proxy)
+	defer shutdownServer(dashboardServer)
+
+	proxyServer := &http.Server{Addr: agent.ListenerAddress(cfg.MeshIP, cfg.InferencePort, cfg.AllowAllInterfaces), Handler: proxy}
+	errCh := make(chan error, 1)
+	go func() { errCh <- proxyServer.ListenAndServe() }()
+	select {
+	case <-serviceCtx.Done():
+		shutdownServer(proxyServer)
+		return nil
+	case err := <-errCh:
+		stopService()
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	}
+}
+
+func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent.ModelProfile) (*agent.RuntimeManager, error) {
+	listenAddress, err := agent.RuntimeListenAddress(cfg.RuntimeURL)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := agent.EnsureModel(ctx, profile, cfg.DataDir, nil); err != nil {
+		return nil, err
+	}
+	manager := agent.NewRuntimeManager(agent.LlamaCommand(profile, filepath.Join(cfg.DataDir, "models"), listenAddress))
+	if err := manager.Start(ctx); err != nil {
+		if errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+			return manager, nil
+		}
+		return nil, err
+	}
+	return manager, nil
+}
+
+func heartbeatLoop(ctx context.Context, stateMu *sync.RWMutex, cfg *agent.Config, runtimeManager *agent.RuntimeManager, activeRequests *agent.ActiveCounter) {
+	loadedProfile := ""
+	if runtimeManager != nil {
+		loadedProfile = selectedProfileKey(*cfg)
+	}
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			stateMu.RLock()
+			current := *cfg
+			stateMu.RUnlock()
+			metrics := runtimeMetrics(runtimeManager, current, activeRequests.Value())
+			client := agent.Client{RouterURL: current.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
+			response, err := client.Heartbeat(ctx, current.NodeToken, agent.HeartbeatFromConfig(current, metrics, activeRequests.Value()))
+			if err != nil {
+				continue
+			}
+			stateMu.Lock()
+			next, _, _, err := agent.ApplyDesiredProfiles(*cfg, response.DesiredProfiles, agent.ConfigPath())
+			if err == nil {
+				*cfg = next
+			}
+			if err == nil && runtimeManager != nil {
+				nextProfile := selectedProfileKey(next)
+				if nextProfile != "" && nextProfile != loadedProfile {
+					if err := restartRuntimeForSelectedProfile(ctx, next, runtimeManager, activeRequests); err == nil {
+						loadedProfile = nextProfile
+					}
+				}
+			}
+			stateMu.Unlock()
+		}
+	}
+}
+
+func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, runtimeManager *agent.RuntimeManager, activeRequests *agent.ActiveCounter) error {
+	profile, ok := agent.SelectedProfile(cfg)
+	if !ok {
+		return nil
+	}
+	listenAddress, err := agent.RuntimeListenAddress(cfg.RuntimeURL)
+	if err != nil {
+		return err
+	}
+	if _, err := agent.EnsureModel(ctx, profile, cfg.DataDir, nil); err != nil {
+		return err
+	}
+	if err := waitForDrain(ctx, activeRequests, 2*time.Minute); err != nil {
+		return err
+	}
+	if err := runtimeManager.RestartWithCommand(ctx, agent.LlamaCommand(profile, filepath.Join(cfg.DataDir, "models"), listenAddress)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+		return err
+	}
+	return nil
+}
+
+func runtimeState(runtimeManager *agent.RuntimeManager) string {
+	if runtimeManager == nil {
+		return "external"
+	}
+	return runtimeManager.State()
+}
+
+func runtimeMetrics(runtimeManager *agent.RuntimeManager, cfg agent.Config, active int) agent.NodeMetrics {
+	lastError := ""
+	if runtimeManager != nil {
+		lastError = runtimeManager.LastError()
+	}
+	metrics := agent.RuntimeMetricsWithError(runtimeState(runtimeManager), cfg.RuntimeModel, active, lastError)
+	if profile, ok := agent.SelectedProfile(cfg); ok {
+		metrics.LoadedProfileID = profile.ID
+		metrics.LoadedProfileVersion = profile.Version
+	}
+	return metrics
+}
+
+func selectedProfileKey(cfg agent.Config) string {
+	profile, ok := agent.SelectedProfile(cfg)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", profile.ID, profile.Version)
+}
+
+func waitForDrain(ctx context.Context, activeRequests *agent.ActiveCounter, timeout time.Duration) error {
+	deadline, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for activeRequests.Value() > 0 {
+		select {
+		case <-deadline.Done():
+			return deadline.Err()
+		case <-ticker.C:
+		}
+	}
+	return nil
+}
+
+func shutdownServer(server *http.Server) {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = server.Shutdown(shutdownCtx)
 }
 
 func defaultDataDir() string {

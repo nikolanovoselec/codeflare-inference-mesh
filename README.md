@@ -14,7 +14,8 @@ Use this when you want:
 - local GPUs hidden behind Cloudflare instead of public node URLs;
 - node agents that depend on Cloudflare One Client / WARP for private `IP:PORT` reachability;
 - session affinity for coding agents and long-context work;
-- node registration, heartbeat, capacity, and runtime status;
+- node registration, heartbeat, capacity, profile readiness, and runtime status;
+- profile-driven `llama-server` runtime commands for the proven Qwen3.6 35B A3B and smoke-test profiles;
 - a Go node agent that proxies OpenAI-compatible requests to local `llama-server`;
 - CI-verified Worker, agent, release, security, and deploy workflows.
 
@@ -118,6 +119,7 @@ Before deploy can produce a working inference path:
 3. The node agent must bind its inference listener to the Cloudflare One network-interface IP when possible.
 4. The node agent advertises that private `IP:PORT` to the router in claim and heartbeat requests.
 5. The local firewall must allow inbound traffic from the Cloudflare One / Mesh interface to that inference port.
+6. A CUDA-capable `llama-server` must be installed on the node PATH before the managed runtime can report ready; otherwise the node reports `dependency-missing` and is not scheduled.
 
 The deploy token does not create or enroll Cloudflare One devices. If you later want this project to automate Zero Trust device, connector, or route setup, that would require additional Cloudflare One / connector permissions beyond the current deploy and runtime tokens.
 
@@ -145,7 +147,8 @@ Production tags must match `vX.Y.Z`. Integration tags must match `vX.Y.Z-dev.N`.
    - upstream token.
 3. Paste the generated provider token into the AI Gateway custom provider key / BYOK field.
 4. Use the setup flow to sync the AI Gateway custom provider and dynamic route.
-5. Install a node agent with the generated one-line installer command.
+5. Install a CUDA-capable `llama-server` on each node and expose `HF_TOKEN` in the service environment if a selected Hugging Face profile requires it.
+6. Install a node agent with the generated one-line installer command.
 
 ## Verification
 

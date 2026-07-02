@@ -32,17 +32,17 @@ This domain covers stable aliases, concrete model profiles, profile rollout, and
 
 ### REQ-RUN-002: Default model profiles
 
-**Intent:** The first implementation needs resolved model defaults so implementation does not stall on model selection. Qwen is the primary coding profile, Gemma is the fallback benchmark profile, and a small smoke-test profile keeps CI and demos practical.
+**Intent:** The first implementation needs resolved model defaults so implementation does not stall on model selection. The production defaults are locally proven Qwen3.6 35B A3B profiles for RTX 3090-class nodes, and a small smoke-test profile keeps install and Gateway validation practical.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. `mesh-default` initially targets `qwen36-27b-256k-3090` for serious coding-agent validation. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-2. `qwen36-27b-256k-3090` uses Qwen3.6 27B, context `262144`, and coding-oriented sampling defaults. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-3. `gemma4-26b-a4b-256k-3090` is configured as a fallback and benchmark candidate for the same public aliases. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-4. `small-smoke-test-32k` is available for fast validation when a full 27B profile is unavailable. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-5. Profile definitions include source specifier, upstream model name, context limit, concurrency, runtime args, and profile version. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
+1. `mesh-default` initially targets `qwen36-35b-a3b-262k-mm-3090` for serious coding-agent validation. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
+2. `qwen36-35b-a3b-262k-mm-3090` uses the locally proven Qwen3.6 35B A3B `llama-hf` profile, context `262144`, multimodal projector support, reasoning flags, and RTX 3090-oriented cache/batch flags. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and exact runtime flags) -->
+3. `qwen36-35b-a3b-262k-text-3090` is available as an explicit text-only variant without the multimodal projector. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and exact runtime flags) -->
+4. `small-smoke-test-32k` is available as a public direct-GGUF validation profile before large model downloads. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and exact runtime flags) -->
+5. Profile definitions include source mode, source specifier or download URL, upstream model name, context limit, concurrency/runtime flags, profile version, and stable public aliases. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and exact runtime flags) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -64,12 +64,12 @@ This domain covers stable aliases, concrete model profiles, profile rollout, and
 
 **Acceptance Criteria:**
 
-1. The agent can fetch desired model profile state from the heartbeat response. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003LlamaRuntimeCommandAndChecksum) -->
-2. The agent downloads model files into the configured model cache directory. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003LlamaRuntimeCommandAndChecksum) -->
-3. The agent verifies model checksums when a profile pins a checksum. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003LlamaRuntimeCommandAndChecksum) -->
-4. The agent starts `llama-server` with the profile's runtime args and upstream model alias. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003LlamaRuntimeCommandAndChecksum) -->
-5. The agent drains and stops the runtime before shutdown, update, or profile switch. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003LlamaRuntimeCommandAndChecksum) -->
-6. The agent reports runtime state and active profile version on heartbeat. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003LlamaRuntimeCommandAndChecksum) -->
+1. The agent can fetch desired model profile state from the heartbeat response. <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003HeartbeatDesiredProfilesUpdateConfig) -->
+2. Direct-GGUF profiles download model files into the configured model cache directory, while `llama-hf` profiles delegate model resolution to `llama-server -hf`. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003SourceModesAndChecksum) -->
+3. The agent verifies model checksums when a direct-GGUF profile pins a checksum. <!-- @impl: packages/node-agent/internal/agent/runtime.go::RuntimeAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003SourceModesAndChecksum) -->
+4. The agent starts `llama-server` from the profile's `runtimeCommand`, preserving exact args/env except for safe local substitutions. <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCommand --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeCommandUsesProfileTemplate) -->
+5. The agent drains and stops the runtime before shutdown, update, or profile switch. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeManagerUsesProcessLifetimeContext) -->
+6. The agent reports runtime state, loaded model, active profile ID/version, and dependency-missing errors on heartbeat/dashboard status. <!-- @impl: packages/node-agent/internal/agent/metrics.go::MetricsAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003RuntimeDependencyMissingState) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-llamacpp-first-runtime), [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable)
 
@@ -93,8 +93,8 @@ This domain covers stable aliases, concrete model profiles, profile rollout, and
 
 1. Profile updates increment the profile version. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 updates profile rollout as versioned configuration) -->
 2. Heartbeat responses can ask compatible nodes to prepare desired profiles before alias activation. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 updates profile rollout as versioned configuration) -->
-3. Nodes report ready profiles with profile ID, version, and loaded state. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 updates profile rollout as versioned configuration) -->
-4. The Admin can switch an alias only to a profile that at least one eligible node reports ready. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 updates profile rollout as versioned configuration) -->
+3. Nodes report ready profiles with profile ID, version, loaded model, and runtime state. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 reports profile readiness in admin status) -->
+4. The Admin can see which active profiles have ready, downloading, or failed nodes before changing rollout. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 reports profile readiness in admin status) -->
 5. The previous profile remains available as a rollback target until the Admin removes it. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-004 updates profile rollout as versioned configuration) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations)

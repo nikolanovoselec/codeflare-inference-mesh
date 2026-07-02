@@ -49,46 +49,11 @@ jobs:
     steps:
       - name: Resolve deploy settings
         id: settings
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            target_env="production"
-            deploy_ref="${{ github.event.workflow_run.head_sha }}"
-          else
-            target_env="${{ inputs.environment }}"
-            deploy_ref="${{ github.ref }}"
-          fi
-          if [ "$target_env" = "production" ] && [ "${{ github.ref }}" != "refs/heads/main" ] && [ "${{ github.event_name }}" != "workflow_run" ]; then
-            echo "::error::Production deploys are only allowed from main. Got ref: ${{ github.ref }}"
-            exit 1
-          fi
-          version_tag="${{ inputs.version_tag }}"
-          if [ -z "$version_tag" ]; then
-            if [ "$target_env" = "production" ]; then
-              version_tag="v0.1.${{ github.run_number }}"
-            else
-              version_tag="v0.1.0-dev.${{ github.run_number }}"
-            fi
-          fi
-          if [ "$target_env" = "production" ]; then
-            printf '%s' "$version_tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'
-            db_name="codeflare-inference-mesh"
-            worker_name="codeflare-inference-mesh-router"
-            wrangler_env=""
-          else
-            printf '%s' "$version_tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$'
-            db_name="codeflare-inference-mesh-integration"
-            worker_name="codeflare-inference-mesh-router-integration"
-            wrangler_env="integration"
-          fi
-          {
-            echo "target_env=$target_env"
-            echo "deploy_ref=$deploy_ref"
-            echo "version_tag=$version_tag"
-            echo "db_name=$db_name"
-            echo "worker_name=$worker_name"
-            echo "wrangler_env=$wrangler_env"
-          } >> "$GITHUB_OUTPUT"
+        env:
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+          INPUT_VERSION_TAG: ${{ inputs.version_tag }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node packages/router-worker/scripts/resolve-deploy-settings.mjs >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7.0.0
         with:

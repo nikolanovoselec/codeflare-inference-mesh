@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -79,6 +80,65 @@ func ApplyClaim(cfg Config, claim ClaimResponse, path string) (Config, error) {
 		return Config{}, err
 	}
 	return next, nil
+}
+
+func ApplyDesiredProfiles(cfg Config, desired []ModelProfile, path string) (Config, bool, bool, error) {
+	if len(desired) == 0 {
+		return cfg, false, false, nil
+	}
+	before, hadBefore := SelectedProfile(cfg)
+	next := cfg
+	next.Profiles = append([]ModelProfile(nil), desired...)
+	activeProfiles := activeDesiredProfiles(desired)
+	if len(activeProfiles) > 0 {
+		next.ActiveProfileIDs = profileIDs(activeProfiles)
+		next.PublicModels = profileAliases(activeProfiles)
+	}
+	if selected, ok := SelectedProfile(next); ok {
+		next.RuntimeModel = selected.UpstreamModel
+	}
+	changed := !reflect.DeepEqual(cfg.Profiles, next.Profiles) || !reflect.DeepEqual(cfg.ActiveProfileIDs, next.ActiveProfileIDs) || !reflect.DeepEqual(cfg.PublicModels, next.PublicModels) || cfg.RuntimeModel != next.RuntimeModel
+	if !changed {
+		return cfg, false, false, nil
+	}
+	if err := SaveConfig(path, next); err != nil {
+		return Config{}, false, false, err
+	}
+	after, hasAfter := SelectedProfile(next)
+	restart := hadBefore != hasAfter || (hadBefore && hasAfter && (before.ID != after.ID || before.Version != after.Version))
+	return next, true, restart, nil
+}
+
+func activeDesiredProfiles(profiles []ModelProfile) []ModelProfile {
+	active := make([]ModelProfile, 0, len(profiles))
+	for _, profile := range profiles {
+		if profile.Active {
+			active = append(active, profile)
+		}
+	}
+	return active
+}
+
+func profileIDs(profiles []ModelProfile) []string {
+	ids := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		ids = append(ids, profile.ID)
+	}
+	return ids
+}
+
+func profileAliases(profiles []ModelProfile) []string {
+	seen := map[string]bool{}
+	aliases := []string{}
+	for _, profile := range profiles {
+		for _, alias := range profile.PublicAliases {
+			if !seen[alias] {
+				seen[alias] = true
+				aliases = append(aliases, alias)
+			}
+		}
+	}
+	return aliases
 }
 
 func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int) HeartbeatRequest {

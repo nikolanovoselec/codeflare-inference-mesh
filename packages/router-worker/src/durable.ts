@@ -17,6 +17,11 @@ export class RegistryDO implements DurableObject {
       await scheduler.release(body.reservationId, body.now)
       return Response.json({ ok: true })
     }
+    if (request.method === 'POST' && url.pathname === '/failure') {
+      const body = await request.json() as { reservationId: string; now: number }
+      await scheduler.recordFailure(body.reservationId, body.now)
+      return Response.json({ ok: true })
+    }
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
 }

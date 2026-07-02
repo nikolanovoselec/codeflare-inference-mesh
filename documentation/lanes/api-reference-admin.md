@@ -120,7 +120,7 @@ GET /admin/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Router state is returned with credentials redacted. | Nodes, profiles, recent audit entries, and generated timestamp. |
+| `200` | Router state is returned with credentials redacted. | Nodes, profiles, profile readiness counts, setup/gateway/domain state, recent audit entries, and generated timestamp. |
 | `401` | Admin credential is missing or invalid. | Error object. |
 
 **Implements:** [REQ-OBS-002](../../sdd/spec/observability.md)
@@ -167,6 +167,7 @@ GET /admin/installers/{platform}
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Installer command fetches the platform installer and passes only router URL plus setup token. | One-line install command. |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | Unsupported platform. | `{ "error": "unknown_platform" }` |
 
 **Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
@@ -213,13 +214,14 @@ POST /admin/cloudflare/gateway/sync
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Cloudflare AI Gateway metadata is stored in D1. | Provider, route, route version, and deployment identifiers. |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `503` | Required runtime Cloudflare configuration is missing. | Configuration error. |
 
 **Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md)
 
 ### POST /admin/custom-domain/validate
 
-Validates and stores a custom-domain hostname and Cloudflare zone ID.
+Validates and stores a custom-domain hostname; a zone ID may be stored only when supplied by an advanced caller.
 
 ```http
 POST /admin/custom-domain/validate
@@ -229,14 +231,15 @@ POST /admin/custom-domain/validate
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `hostname` and a 32-character hexadecimal Cloudflare `zoneId`.
+**Request body:** JSON body with `hostname`; optional `zoneId` must be a 32-character hexadecimal Cloudflare zone ID when present.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Hostname and zone ID are stored for later Gateway/DNS operations. | `{ "valid": true, "hostname": string, "zoneId": string }` |
-| `400` | Hostname or zone ID is missing or invalid. | `{ "valid": false, "hostname": string }` |
+| `200` | Hostname is stored for later Gateway operations; `zoneId` is included only when supplied and valid. | `{ "valid": true, "hostname": string, "zoneId"?: string }` |
+| `400` | Hostname is invalid, or supplied zone ID is invalid. | `{ "valid": false, "hostname": string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 
 **Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md)
 
@@ -260,6 +263,7 @@ POST /admin/profiles/rollout
 | --- | --- | --- |
 | `200` | Versioned profile rollout update is stored. | `{ "ok": true }` |
 | `400` | Profile ID or rollout percentage is invalid. | Error object. |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 
 **Implements:** [REQ-RUN-004](../../sdd/spec/runtime-profiles.md)
 

@@ -37,6 +37,10 @@ Production deployment is automatic after a merged `main` push has green PR Check
 | Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG` set to the selected release tag. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Summarize | Workflow summary lists ref, Worker, release tag, environment, and artifacts. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 
+## Node runtime prerequisite
+
+The first managed-runtime version expects each node operator to install a CUDA-capable `llama-server` before starting the service. If the executable is missing from the service user's PATH, the node reports `dependency-missing` and remains ineligible for scheduling instead of failing the router. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md))
+
 ## Release channels
 
 Production releases use stable semantic tags such as `v0.1.0`. Integration releases use prerelease tags such as `v0.1.0-dev.<run_number>`. The deployed Worker stores the selected tag in `AGENT_RELEASE_TAG`, so install scripts download from `/releases/download/<tag>/` and integration installs use prerelease artifacts instead of GitHub `latest`. Node agents on stable ignore prerelease releases. ([REQ-REL-003](../../sdd/spec/release-ci.md))
@@ -57,7 +61,7 @@ For integration rollback, restore the safe code onto the selected integration br
 
 **Rollback:** If the rollback workflow fails before Worker deploy, the existing Worker remains active. If it fails after publishing a release but before deploy, delete the unused rollback GitHub Release tag and rerun from the restored safe ref with a fresh tag.
 
-Agent rollback uses the previous binary retained by the service update flow. Model profile rollback switches the public alias back to a previously ready profile. ([REQ-NODE-005](../../sdd/spec/node-agent.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
+Model profile rollback switches the public alias back to a previously ready profile. ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
 
 ## CI verification policy
 
@@ -74,3 +78,4 @@ GitHub Actions is authoritative for full suites, builds, lint, type-checks, depl
 | Bounded fuzz | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/fuzz.yml::REL004FuzzWorkflows` <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows --> |
 | Workflow contract tests | [release-ci.md](../../sdd/spec/release-ci.md) | `packages/router-worker/src/workflows.test.ts::workflow` <!-- @impl: packages/router-worker/src/workflows.test.ts::workflow --> |
 | Service install | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/service.go::ServiceInstallPlan` <!-- @impl: packages/node-agent/internal/agent/service.go::ServiceInstallPlan --> |
+| Runtime command | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/node-agent/internal/agent/runtime.go::LlamaCommand` <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCommand --> |

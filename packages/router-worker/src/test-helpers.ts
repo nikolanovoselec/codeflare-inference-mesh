@@ -123,11 +123,13 @@ export function nodeFixture(overrides: Partial<NodeRecord> = {}): NodeRecord {
     localDashboardPort: 17777,
     status: 'online',
     publicModels: ['mesh-default'],
-    activeProfileIds: ['qwen36-27b-256k-3090'],
+    activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'],
     capacity: 2,
     inFlight: 0,
     lastSeenAt: 1_700_000_000_000,
     runtime: 'llama.cpp',
+    runtimeModel: 'qwen36-35b-a3b-262k-mm-3090',
+    metrics: { runtimeState: 'ready', loadedModel: 'qwen36-35b-a3b-262k-mm-3090', activeRequests: 0 },
     ...overrides
   }
 }

@@ -6,13 +6,18 @@ import (
 )
 
 type NodeMetrics struct {
-	GPUName           string  `json:"gpuName,omitempty"`
-	GPUMemoryUsedMiB  int     `json:"gpuMemoryUsedMiB,omitempty"`
-	GPUMemoryTotalMiB int     `json:"gpuMemoryTotalMiB,omitempty"`
-	RuntimeState      string  `json:"runtimeState"`
-	LoadedModel       string  `json:"loadedModel,omitempty"`
-	ActiveRequests    int     `json:"activeRequests"`
-	TokensPerSecond   float64 `json:"tokensPerSecond,omitempty"`
+	GPUName                   string  `json:"gpuName,omitempty"`
+	GPUMemoryUsedMiB          int     `json:"gpuMemoryUsedMiB,omitempty"`
+	GPUMemoryTotalMiB         int     `json:"gpuMemoryTotalMiB,omitempty"`
+	RuntimeState              string  `json:"runtimeState"`
+	LoadedModel               string  `json:"loadedModel,omitempty"`
+	LoadedProfileID           string  `json:"loadedProfileId,omitempty"`
+	LoadedProfileVersion      int     `json:"loadedProfileVersion,omitempty"`
+	ActiveRequests            int     `json:"activeRequests"`
+	TokensPerSecond           float64 `json:"tokensPerSecond,omitempty"`
+	PromptTokensPerSecond     float64 `json:"promptTokensPerSecond,omitempty"`
+	GenerationTokensPerSecond float64 `json:"generationTokensPerSecond,omitempty"`
+	LastError                 string  `json:"lastError,omitempty"`
 }
 
 func ParseNvidiaSMI(csv string) NodeMetrics {
@@ -28,7 +33,11 @@ func ParseNvidiaSMI(csv string) NodeMetrics {
 }
 
 func RuntimeMetrics(state string, loadedModel string, activeRequests int) NodeMetrics {
-	return NodeMetrics{RuntimeState: state, LoadedModel: loadedModel, ActiveRequests: activeRequests}
+	return RuntimeMetricsWithError(state, loadedModel, activeRequests, "")
+}
+
+func RuntimeMetricsWithError(state string, loadedModel string, activeRequests int, lastError string) NodeMetrics {
+	return NodeMetrics{RuntimeState: state, LoadedModel: loadedModel, ActiveRequests: activeRequests, LastError: lastError}
 }
 
 func atoi(value string) int {

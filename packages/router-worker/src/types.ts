@@ -18,14 +18,18 @@ export interface RuntimeCommand {
   readonly env: Record<string, string>
 }
 
+export type ModelSourceMode = 'llama-hf' | 'direct-gguf'
+
 export interface ModelProfile {
   readonly id: string
   readonly publicAliases: readonly string[]
   readonly upstreamModel: string
-  readonly hfSpecifier: string
-  readonly localFilename: string
+  readonly sourceMode: ModelSourceMode
+  readonly hfSpecifier?: string
+  readonly downloadUrl?: string
+  readonly localFilename?: string
   readonly sha256?: string
-  readonly llamaServerModelArg: string
+  readonly llamaServerModelArg?: string
   readonly contextWindow: number
   readonly runtime: 'llama.cpp'
   readonly runtimeCommand: RuntimeCommand
@@ -42,6 +46,11 @@ export interface NodeMetrics {
   readonly loadedModel?: string
   readonly activeRequests: number
   readonly tokensPerSecond?: number
+  readonly promptTokensPerSecond?: number
+  readonly generationTokensPerSecond?: number
+  readonly loadedProfileId?: string
+  readonly loadedProfileVersion?: number
+  readonly lastError?: string
 }
 
 export interface NodeRecord {
@@ -160,6 +169,7 @@ export interface Store {
 export interface Scheduler {
   reserve(request: ReservationRequest): Promise<ReservationResult>
   release(reservationId: string, now: number): Promise<void>
+  recordFailure(reservationId: string, now: number): Promise<void>
 }
 
 export interface RouterEnv {

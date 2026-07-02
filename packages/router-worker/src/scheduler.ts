@@ -3,6 +3,7 @@ import type { ModelProfile, NodeRecord, ReservationRecord, ReservationRequest, R
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000
 const RESERVATION_TTL_MS = 30 * 60 * 1000
 const HEARTBEAT_TTL_MS = 45_000
+const FAILURE_PENALTY_MS = 30_000
 
 export class StoreScheduler implements Scheduler {
   constructor(private readonly store: Store, private readonly requestId: () => string = randomId) {}
@@ -41,11 +42,24 @@ export class StoreScheduler implements Scheduler {
   }
 
   async release(reservationId: string, now: number): Promise<void> {
+    await this.finishReservation(reservationId, now)
+  }
+
+  async recordFailure(reservationId: string, now: number): Promise<void> {
+    await this.finishReservation(reservationId, now, FAILURE_PENALTY_MS)
+  }
+
+  private async finishReservation(reservationId: string, now: number, failurePenaltyMs = 0): Promise<void> {
     const reservation = await this.store.getReservation(reservationId)
     await this.store.releaseReservation(reservationId, now)
     if (!reservation || reservation.releasedAt !== undefined) return
     const node = await this.store.getNode(reservation.nodeId)
-    if (node) await this.store.upsertNode({ ...node, inFlight: Math.max(0, node.inFlight - 1) })
+    if (!node) return
+    await this.store.upsertNode({
+      ...node,
+      inFlight: Math.max(0, node.inFlight - 1),
+      ...(failurePenaltyMs > 0 ? { failurePenaltyUntil: now + failurePenaltyMs } : {})
+    })
   }
 }
 
@@ -63,8 +77,16 @@ export class DurableSchedulerClient implements Scheduler {
   }
 
   async release(reservationId: string, now: number): Promise<void> {
+    await this.postReservationUpdate('/release', reservationId, now)
+  }
+
+  async recordFailure(reservationId: string, now: number): Promise<void> {
+    await this.postReservationUpdate('/failure', reservationId, now)
+  }
+
+  private async postReservationUpdate(path: string, reservationId: string, now: number): Promise<void> {
     const stub = this.namespace.get(this.namespace.idFromName('global'))
-    await stub.fetch('https://registry/release', {
+    await stub.fetch(`https://registry${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ reservationId, now })
@@ -82,6 +104,11 @@ export function isEligible(node: NodeRecord, profile: ModelProfile, now: number)
   if (node.failurePenaltyUntil !== undefined && node.failurePenaltyUntil > now) return false
   if (!node.publicModels.some((model) => profile.publicAliases.includes(model))) return false
   if (!node.activeProfileIds.includes(profile.id)) return false
+  const runtimeState = node.metrics?.runtimeState
+  if (runtimeState !== 'ready' && runtimeState !== 'running') return false
+  const loadedModel = node.metrics?.loadedModel ?? node.runtimeModel
+  if (loadedModel !== profile.upstreamModel) return false
+  if (node.runtimeModel !== undefined && node.runtimeModel !== profile.upstreamModel) return false
   if (node.inFlight >= node.capacity) return false
   if (!isSafeMeshTarget(node.meshIp, node.inferencePort)) return false
   return true

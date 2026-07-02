@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -56,7 +57,7 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 	}))
 	defer server.Close()
 	client := Client{RouterURL: server.URL, HTTPClient: server.Client()}
-	claim, err := client.Claim(context.Background(), "setup-token", ClaimRequest{DisplayName: "Node A", MeshIP: "100.64.1.10", InferencePort: 8080, PublicModels: []string{"mesh-default"}, ActiveProfileIDs: []string{"qwen36-27b-256k-3090"}, Capacity: 2})
+	claim, err := client.Claim(context.Background(), "setup-token", ClaimRequest{DisplayName: "Node A", MeshIP: "100.64.1.10", InferencePort: 8080, PublicModels: []string{"mesh-default"}, ActiveProfileIDs: []string{"qwen36-35b-a3b-262k-mm-3090"}, Capacity: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +83,97 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 	if claimed.MeshIP != "100.64.1.10" || claimed.Capacity != 2 {
 		t.Fatalf("claim payload mismatch: %#v", claimed)
 	}
+	})
+}
+
+func TestREQNODE002AppliesDetectedMeshIPBeforeClaim(t *testing.T) {
+	t.Run("REQ-NODE-002", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.json")
+		cfg := DefaultConfig(t.TempDir())
+		cfg.MeshIP = ""
+
+		next, changed, err := ApplyDetectedMeshIP(cfg, path, func() (string, bool) { return "100.64.1.10", true })
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := LoadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !changed || next.MeshIP != "100.64.1.10" || loaded.MeshIP != next.MeshIP {
+			t.Fatalf("detected mesh IP was not applied and persisted: changed=%v next=%#v loaded=%#v", changed, next, loaded)
+		}
+		unchanged, changedAgain, err := ApplyDetectedMeshIP(next, path, func() (string, bool) { return "100.64.1.11", true })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if changedAgain || unchanged.MeshIP != next.MeshIP {
+			t.Fatalf("existing mesh IP should not be overwritten: changed=%v next=%#v", changedAgain, unchanged)
+		}
+	})
+}
+
+func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
+	t.Run("REQ-RUN-003 REQ-RUN-004", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.json")
+		cfg := DefaultConfig(t.TempDir())
+		cfg.Profiles = []ModelProfile{{
+			ID:                  "old-profile",
+			PublicAliases:       []string{"mesh-default"},
+			UpstreamModel:       "old-upstream",
+			LocalFilename:       "old.gguf",
+			LlamaServerModelArg: "old.gguf",
+			ContextWindow:       32768,
+			Runtime:             "llama.cpp",
+			Version:             1,
+			RolloutPercent:      100,
+			Active:              true,
+		}}
+		cfg.ActiveProfileIDs = []string{"old-profile"}
+		cfg.PublicModels = []string{"mesh-default"}
+		cfg.RuntimeModel = "old-upstream"
+		desired := []ModelProfile{{
+			ID:                  "new-profile",
+			PublicAliases:       []string{"mesh-default", "mesh-next"},
+			UpstreamModel:       "new-upstream",
+			LocalFilename:       "new.gguf",
+			LlamaServerModelArg: "new.gguf",
+			ContextWindow:       32768,
+			Runtime:             "llama.cpp",
+			Version:             2,
+			RolloutPercent:      100,
+			Active:              true,
+		}}
+
+		next, changed, restart, err := ApplyDesiredProfiles(cfg, desired, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := LoadConfig(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		unchanged, changedAgain, restartAgain, err := ApplyDesiredProfiles(next, desired, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !changed || !restart {
+			t.Fatalf("expected changed desired profile to require runtime restart, changed=%v restart=%v", changed, restart)
+		}
+		if next.RuntimeModel != "new-upstream" || loaded.RuntimeModel != next.RuntimeModel {
+			t.Fatalf("runtime model was not updated and persisted: %#v loaded=%#v", next, loaded)
+		}
+		if len(next.ActiveProfileIDs) != 1 || next.ActiveProfileIDs[0] != "new-profile" {
+			t.Fatalf("active profile IDs were not replaced: %#v", next.ActiveProfileIDs)
+		}
+		if len(next.PublicModels) != 2 || next.PublicModels[0] != "mesh-default" || next.PublicModels[1] != "mesh-next" {
+			t.Fatalf("public aliases were not updated: %#v", next.PublicModels)
+		}
+		if changedAgain || restartAgain || unchanged.RuntimeModel != next.RuntimeModel {
+			t.Fatalf("unchanged heartbeat response should not rewrite config or restart runtime")
+		}
 	})
 }
 
@@ -202,22 +294,79 @@ func TestREQNODE004DashboardRuntimeControlsReportUnavailableWithoutController(t 
 	})
 }
 
-func TestREQRUN003LlamaRuntimeCommandAndChecksum(t *testing.T) {
+func TestREQRUN003RuntimeCommandUsesProfileTemplate(t *testing.T) {
 	t.Run("REQ-RUN-003", func(t *testing.T) {
-	profile := ModelProfile{ID: "p", LocalFilename: "model.gguf", ContextWindow: 32768, Runtime: "llama.cpp"}
-	cmd := LlamaCommand(profile, "/cache", "100.64.1.10:8080")
-	if cmd.Executable != "llama-server" || cmd.Args[0] != "--model" || cmd.Args[2] != "--ctx-size" || cmd.Args[6] != "--port" || cmd.Args[7] != "8080" {
-		t.Fatalf("invalid command: %#v", cmd)
-	}
-	file := filepath.Join(t.TempDir(), "model.gguf")
-	if err := os.WriteFile(file, []byte("model"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256([]byte("model"))
-	ok, err := VerifyFileSHA256(file, hex.EncodeToString(sum[:]))
-	if err != nil || !ok {
-		t.Fatalf("checksum failed ok=%v err=%v", ok, err)
-	}
+		dataDir := t.TempDir()
+		modelDir := filepath.Join(dataDir, "models")
+		profile := ModelProfile{
+			ID:            "profile-a",
+			LocalFilename: "model.gguf",
+			Runtime:       "llama.cpp",
+			RuntimeCommand: RuntimeCommand{
+				Executable: "llama-server",
+				Args:       []string{"-hf", "unsloth/model:Q4", "--model", "{{MODEL_PATH}}", "--host", "{{HOST}}", "--port", "{{PORT}}", "--cache", "{{MODEL_DIR}}"},
+				Env:        map[string]string{"LLAMA_CACHE": "{{DATA_DIR}}/llama.cpp-cache", "CUDA_VISIBLE_DEVICES": "0"},
+			},
+		}
+
+		cmd := LlamaCommand(profile, modelDir, "100.64.1.10:8080")
+
+		expectedModelPath := filepath.Join(modelDir, "model.gguf")
+		if cmd.Executable != "llama-server" {
+			t.Fatalf("runtime executable changed: %#v", cmd)
+		}
+		if got := cmd.Args; !sameStrings(got, []string{"-hf", "unsloth/model:Q4", "--model", expectedModelPath, "--host", "100.64.1.10", "--port", "8080", "--cache", modelDir}) {
+			t.Fatalf("runtime args were not rendered from profile template: %#v", got)
+		}
+		if cmd.Env["LLAMA_CACHE"] != filepath.Join(dataDir, "llama.cpp-cache") || cmd.Env["CUDA_VISIBLE_DEVICES"] != "0" {
+			t.Fatalf("runtime env was not rendered from profile template: %#v", cmd.Env)
+		}
+	})
+}
+
+func TestREQRUN003SourceModesAndChecksum(t *testing.T) {
+	t.Run("REQ-RUN-003", func(t *testing.T) {
+		data := []byte("model")
+		sum := sha256.Sum256(data)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write(data)
+		}))
+		defer server.Close()
+
+		direct := ModelProfile{ID: "direct", SourceMode: "direct-gguf", DownloadURL: server.URL + "/model.gguf", LocalFilename: "model.gguf", SHA256: hex.EncodeToString(sum[:]), Runtime: "llama.cpp"}
+		path, err := EnsureModel(context.Background(), direct, t.TempDir(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ok, err := VerifyFileSHA256(path, hex.EncodeToString(sum[:]))
+		if err != nil || !ok {
+			t.Fatalf("checksum failed ok=%v err=%v", ok, err)
+		}
+
+		hf := ModelProfile{ID: "hf", SourceMode: "llama-hf", HFSpecifier: "unsloth/model:Q4", Runtime: "llama.cpp"}
+		if path, err := EnsureModel(context.Background(), hf, t.TempDir(), nil); err != nil || path != "" {
+			t.Fatalf("llama-hf profiles should not pre-download model files, path=%q err=%v", path, err)
+		}
+	})
+}
+
+func TestREQRUN003RuntimeDependencyMissingState(t *testing.T) {
+	t.Run("REQ-RUN-003 REQ-OBS-003", func(t *testing.T) {
+		missingExecutable := filepath.Join(t.TempDir(), "missing-llama-server")
+		manager := NewRuntimeManager(RuntimeCommand{Executable: missingExecutable})
+
+		err := manager.Start(context.Background())
+		metrics := RuntimeMetricsWithError(manager.State(), "qwen36-35b-a3b-262k-mm-3090", 0, manager.LastError())
+
+		if !errors.Is(err, ErrRuntimeDependencyMissing) {
+			t.Fatalf("expected dependency-missing error, got %v", err)
+		}
+		if manager.State() != "dependency-missing" || manager.LastError() == "" {
+			t.Fatalf("runtime manager did not store dependency-missing state: state=%s last=%q", manager.State(), manager.LastError())
+		}
+		if metrics.RuntimeState != "dependency-missing" || metrics.LastError == "" {
+			t.Fatalf("dependency-missing metrics were not surfaced: %#v", metrics)
+		}
 	})
 }
 
@@ -271,6 +420,18 @@ func TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches(t *testing.T) {
 		t.Fatalf("expected checksum mismatch")
 	}
 	})
+}
+
+func sameStrings(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 type fakeRuntimeController struct {

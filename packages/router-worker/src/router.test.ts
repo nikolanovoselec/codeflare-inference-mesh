@@ -213,6 +213,7 @@ describe('router worker behavioral contracts', () => {
     expect(outputSurfaces).toHaveLength(9)
     expect(liveOutputSurfaces).toHaveLength(outputSurfaces.length)
     expect(fieldHelp).toHaveLength(2)
+    expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(0)
     expect(html).toMatch(/<meta name="color-scheme" content="dark">/)
     expect(html).toMatch(/data-setup-banner/)
     expect(html).toMatch(/data-responsive="desktop mobile"/)
@@ -467,7 +468,25 @@ describe('router worker behavioral contracts', () => {
     const body = await response.json() as { data: Array<{ id: string }> }
 
     expect(response.status).toBe(200)
-    expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['mesh-default', 'gemma4-26b-a4b', 'mesh-smoke']))
+    expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['mesh-default', 'qwen3.6-coder', 'mesh-smoke']))
+  })
+
+  it('REQ-RUN-002 exposes profile source modes and exact runtime flags', () => {
+    const primary = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'qwen36-35b-a3b-262k-mm-3090')!
+    const textOnly = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'qwen36-35b-a3b-262k-text-3090')!
+    const smoke = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'small-smoke-test-32k')!
+
+    expect(DEFAULT_MODEL_PROFILES.map((profile) => profile.id)).toEqual([
+      'qwen36-35b-a3b-262k-mm-3090',
+      'qwen36-35b-a3b-262k-text-3090',
+      'small-smoke-test-32k'
+    ])
+    expect(primary).toMatchObject({ sourceMode: 'llama-hf', hfSpecifier: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', contextWindow: 262144, active: true })
+    expect(primary.runtimeCommand.args).toEqual(expect.arrayContaining(['-hf', primary.hfSpecifier!, '-ngl', '99', '-c', '262144', '--mmproj-auto', '--reasoning', 'on', '--host', '{{HOST}}', '--port', '{{PORT}}']))
+    expect(primary.runtimeCommand.env).toMatchObject({ LLAMA_CACHE: '{{DATA_DIR}}/llama.cpp-cache', CUDA_VISIBLE_DEVICES: '0' })
+    expect(textOnly.runtimeCommand.args).toEqual(expect.arrayContaining(['--no-mmproj']))
+    expect(smoke).toMatchObject({ sourceMode: 'direct-gguf', localFilename: 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf', contextWindow: 32768 })
+    expect(smoke.runtimeCommand.args).toEqual(expect.arrayContaining(['--model', '{{MODEL_PATH}}']))
   })
 
   it('REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations', async () => {
@@ -487,7 +506,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.status).toBe(200)
     expect(capture.request!.url).toBe('http://100.64.1.10:8080/v1/chat/completions')
-    expect(forwarded.model).toBe('qwen36-27b-256k-3090')
+    expect(forwarded.model).toBe('qwen36-35b-a3b-262k-mm-3090')
     expect(capture.request!.headers.get('authorization')).toBe('Bearer upstream-secret')
     expect(response.headers.get('x-inference-mesh-request-id')).toBe('request-a')
     expect(response.headers.get('x-inference-mesh-session')).toBe('session-a')
@@ -511,7 +530,7 @@ describe('router worker behavioral contracts', () => {
     await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 1 })
     }))
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
@@ -539,9 +558,12 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ model: 'mesh-default', messages: [] })
     }))
 
+    const node = await store.getNode('node-a')
+
     expect(response.status).toBe(500)
     expect([...store.reservations.values()][0]?.releasedAt).toBe(1_700_000_000_000)
-    expect((await store.getNode('node-a'))?.inFlight).toBe(0)
+    expect(node?.inFlight).toBe(0)
+    expect(node?.failurePenaltyUntil).toBeGreaterThan(1_700_000_000_000)
   })
 
   it('REQ-RTR-003 streams upstream bodies without buffering them first', async () => {
@@ -568,6 +590,31 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.headers.get('content-type')?.split(';')[0]).toBe('text/event-stream')
     expect(await response.text()).toBe('data: one\n\ndata: two\n\n')
+  })
+
+  it('REQ-RTR-003 releases and penalizes stream failures', async () => {
+    const stream = new ReadableStream({
+      pull() {
+        throw new Error('stream failed')
+      }
+    })
+    const mesh = {
+      fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
+      connect() { throw new Error('connect is not used by inference forwarding') }
+    } as Fetcher
+    const { router, store } = routerFixture({ mesh })
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'mesh-default', stream: true, messages: [] })
+    }))
+
+    await expect(response.text()).rejects.toThrow('stream failed')
+    expect([...store.reservations.values()][0]?.releasedAt).toBe(1_700_000_000_000)
+    expect((await store.getNode('node-a'))?.failurePenaltyUntil).toBeGreaterThan(1_700_000_000_000)
   })
 
   it('REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs', () => {
@@ -615,6 +662,8 @@ describe('router worker behavioral contracts', () => {
       nodeFixture({ id: 'unloaded-profile', activeProfileIds: [] }),
       nodeFixture({ id: 'penalized', failurePenaltyUntil: now + 1_000 }),
       nodeFixture({ id: 'over-capacity', capacity: 1, inFlight: 1 }),
+      nodeFixture({ id: 'runtime-failed', metrics: { runtimeState: 'failed', loadedModel: 'qwen36-35b-a3b-262k-mm-3090', activeRequests: 0 } }),
+      nodeFixture({ id: 'stale-loaded-model', runtimeModel: 'other-model', metrics: { runtimeState: 'ready', loadedModel: 'other-model', activeRequests: 0 } }),
       nodeFixture({ id: 'unsafe-mesh', meshIp: '8.8.8.8' })
     ] as const
 
@@ -634,7 +683,7 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 1, capacity: 1 }))
     await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 0 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-a', publicModel: 'mesh-default', profileId: 'qwen36-27b-256k-3090', upstreamModel: 'qwen36-27b-256k-3090', expiresAt: 1_700_000_100_000 })
+    await store.putSession({ sessionId: 'session-a', nodeId: 'node-a', publicModel: 'mesh-default', profileId: 'qwen36-35b-a3b-262k-mm-3090', upstreamModel: 'qwen36-35b-a3b-262k-mm-3090', expiresAt: 1_700_000_100_000 })
     const scheduler = new StoreScheduler(store, () => 'reservation-c')
 
     const result = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_000 })
@@ -647,7 +696,7 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 0 }))
     await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 0 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'mesh-default', profileId: 'qwen36-27b-256k-3090', upstreamModel: 'qwen36-27b-256k-3090', expiresAt: 1_700_000_100_000 })
+    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'mesh-default', profileId: 'qwen36-35b-a3b-262k-mm-3090', upstreamModel: 'qwen36-35b-a3b-262k-mm-3090', expiresAt: 1_700_000_100_000 })
     const scheduler = new StoreScheduler(store, () => 'reservation-b')
 
     const result = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_000 })
@@ -660,7 +709,7 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 0, capacity: 2 }))
     await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 1, capacity: 2 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'mesh-default', profileId: 'qwen36-27b-256k-3090', upstreamModel: 'qwen36-27b-256k-3090', expiresAt: 1_699_999_999_999 })
+    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'mesh-default', profileId: 'qwen36-35b-a3b-262k-mm-3090', upstreamModel: 'qwen36-35b-a3b-262k-mm-3090', expiresAt: 1_699_999_999_999 })
     const scheduler = new StoreScheduler(store, () => 'reservation-expired')
 
     const result = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_000 })
@@ -677,19 +726,19 @@ describe('router worker behavioral contracts', () => {
     const expired = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer('expired-setup'), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Expired Node', meshIp: '100.64.1.9', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1 })
+      body: JSON.stringify({ displayName: 'Expired Node', meshIp: '100.64.1.9', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 1 })
     }))
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const setup = await setupResponse.json() as { setupToken: string }
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 2 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 2 })
     }))
     const consumed = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 2 })
+      body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 2 })
     }))
 
     expect(expired.status).toBe(401)
@@ -707,7 +756,7 @@ describe('router worker behavioral contracts', () => {
     const response = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 2, inFlight: 1, runtime: 'llama.cpp', runtimeModel: 'qwen36-27b-256k-3090', metrics: { runtimeState: 'ready', loadedModel: 'qwen36-27b-256k-3090', activeRequests: 1, gpuName: 'RTX 3090' } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 2, inFlight: 1, runtime: 'llama.cpp', runtimeModel: 'qwen36-35b-a3b-262k-mm-3090', metrics: { runtimeState: 'ready', loadedModel: 'qwen36-35b-a3b-262k-mm-3090', activeRequests: 1, gpuName: 'RTX 3090' } })
     }))
 
     expect(response.status).toBe(200)
@@ -740,7 +789,7 @@ describe('router worker behavioral contracts', () => {
     const heartbeat = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 2, inFlight: 0, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 2, inFlight: 0, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 0 } })
     }))
     const unregister = await router(new Request('https://router.test/node/unregister', {
       method: 'POST',
@@ -775,14 +824,14 @@ describe('router worker behavioral contracts', () => {
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 2 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 2 })
     }))
     const claimed = await claim.json() as { nodeId: string; nodeToken: string }
 
     await router(new Request('https://router.test/node/unregister', { method: 'POST', headers: { ...bearer(claimed.nodeToken), 'content-type': 'application/json' }, body: JSON.stringify({ nodeId: claimed.nodeId }) }))
     await router(new Request(`https://router.test/admin/nodes/${claimed.nodeId}/revoke`, { method: 'POST', headers: bearer('admin-secret') }))
     await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
-    await router(new Request('https://router.test/admin/profiles/rollout', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'qwen36-27b-256k-3090', rolloutPercent: 50 }) }))
+    await router(new Request('https://router.test/admin/profiles/rollout', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'qwen36-35b-a3b-262k-mm-3090', rolloutPercent: 50 }) }))
 
     expect(store.audit.map((event) => event.type)).toEqual(expect.arrayContaining(['first_setup', 'node_claimed', 'node_unregistered', 'node_revoked', 'gateway_sync', 'profile_rollout']))
   })
@@ -794,7 +843,7 @@ describe('router worker behavioral contracts', () => {
     const staleHigh = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1, inFlight: 1, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 1 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 1, inFlight: 1, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 1 } })
     }))
     const afterStaleHigh = await store.getNode('node-a')
     await store.upsertNode({ ...afterStaleHigh!, inFlight: 1 })
@@ -802,7 +851,7 @@ describe('router worker behavioral contracts', () => {
     const staleZero = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-27b-256k-3090'], capacity: 1, inFlight: 0, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['qwen36-35b-a3b-262k-mm-3090'], capacity: 1, inFlight: 0, runtime: 'llama.cpp', metrics: { runtimeState: 'ready', activeRequests: 0 } })
     }))
     const afterStaleZero = await store.getNode('node-a')
 
@@ -814,24 +863,30 @@ describe('router worker behavioral contracts', () => {
     expect(afterStaleZero?.metrics?.activeRequests).toBe(0)
   })
 
-  it('REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status', async () => {
+  it('REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status and REQ-RUN-004 reports profile readiness in admin status', async () => {
     // AdminStatusRedactionTestAnchor
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode({ ...nodeFixture(), upstreamTokenVerifier: 'sha256:hidden' })
-    await store.appendAudit({ id: 'audit-a', type: 'profile_rollout', at: 1_700_000_000_000, actor: 'admin', target: 'qwen36-27b-256k-3090', detail: { rolloutPercent: 100 } })
+    await store.upsertNode({ ...nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', metrics: { runtimeState: 'dependency-missing', loadedModel: 'qwen36-35b-a3b-262k-mm-3090', activeRequests: 0, lastError: 'missing runtime' } }) })
+    await store.putConfig('setup_state', { completedAt: 1_700_000_000_000 })
+    await store.appendAudit({ id: 'audit-a', type: 'profile_rollout', at: 1_700_000_000_000, actor: 'admin', target: 'qwen36-35b-a3b-262k-mm-3090', detail: { rolloutPercent: 100 } })
 
     const response = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
-    const body = await response.json() as { generatedAt?: number; nodes?: Array<Record<string, unknown>>; profiles?: Array<Record<string, unknown>>; audit?: Array<Record<string, unknown>> }
+    const body = await response.json() as { generatedAt?: number; nodes?: Array<Record<string, unknown>>; profiles?: Array<Record<string, unknown>>; profileReadiness?: Array<Record<string, unknown>>; setup?: Record<string, unknown>; audit?: Array<Record<string, unknown>> }
 
     expect(response.status).toBe(200)
     expect(body).toMatchObject({ generatedAt: 1_700_000_000_000 })
-    expect(body.nodes).toEqual([expect.objectContaining({ id: 'node-a', status: 'online', capacity: 2, inFlight: 0, lastSeenAt: 1_700_000_000_000 })])
+    expect(body.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'node-a', status: 'online', capacity: 2, inFlight: 0, lastSeenAt: 1_700_000_000_000 })]))
     expect(body.profiles).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'qwen36-27b-256k-3090', upstreamModel: 'qwen36-27b-256k-3090', version: 1, rolloutPercent: 100, active: true })
+      expect.objectContaining({ id: 'qwen36-35b-a3b-262k-mm-3090', upstreamModel: 'qwen36-35b-a3b-262k-mm-3090', sourceMode: 'llama-hf', version: 1, rolloutPercent: 100, active: true })
     ]))
     expect(body.profiles?.[0]).toHaveProperty('publicAliases')
-    expect(body.audit).toEqual([expect.objectContaining({ id: 'audit-a', type: 'profile_rollout', actor: 'admin', target: 'qwen36-27b-256k-3090' })])
+    expect(body.profileReadiness).toEqual(expect.arrayContaining([
+      expect.objectContaining({ profileId: 'qwen36-35b-a3b-262k-mm-3090', ready: 1, downloading: 0, failed: 1 })
+    ]))
+    expect(body.setup).toEqual(expect.objectContaining({ completedAt: 1_700_000_000_000 }))
+    expect(body.audit).toEqual([expect.objectContaining({ id: 'audit-a', type: 'profile_rollout', actor: 'admin', target: 'qwen36-35b-a3b-262k-mm-3090' })])
     expect(new Set(valuesOf(body)).has('sha256:hidden')).toBe(false)
   })
 
@@ -908,13 +963,12 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-ADM-005 validates and stores optional custom-domain hostnames before accepting them', async () => {
     const { router, store } = routerFixture()
-    const zoneId = '0123456789abcdef0123456789abcdef'
-    const good = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com', zoneId }) }))
-    const bad = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'http://bad', zoneId }) }))
+    const good = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com' }) }))
+    const bad = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'http://bad' }) }))
     const badZone = await router(new Request('https://router.test/admin/custom-domain/validate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ hostname: 'ai.example.com', zoneId: 'not-a-zone' }) }))
 
     expect(good.status).toBe(200)
-    expect(await store.getConfig('custom_domain')).toEqual({ hostname: 'ai.example.com', zoneId })
+    expect(await store.getConfig('custom_domain')).toEqual({ hostname: 'ai.example.com' })
     expect(store.audit.some((event) => event.type === 'custom_domain_validated' && event.target === 'ai.example.com')).toBe(true)
     expect(bad.status).toBe(400)
     expect(badZone.status).toBe(400)
@@ -944,9 +998,9 @@ describe('router worker behavioral contracts', () => {
     const response = await router(new Request('https://router.test/admin/profiles/rollout', {
       method: 'POST',
       headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ profileId: 'gemma4-26b-a4b-256k-3090', rolloutPercent: 25 })
+      body: JSON.stringify({ profileId: 'qwen36-35b-a3b-262k-text-3090', rolloutPercent: 25 })
     }))
-    const profile = (await store.listProfiles()).find((item) => item.id === 'gemma4-26b-a4b-256k-3090')!
+    const profile = (await store.listProfiles()).find((item) => item.id === 'qwen36-35b-a3b-262k-text-3090')!
 
     expect(response.status).toBe(200)
     expect(profile.rolloutPercent).toBe(25)
