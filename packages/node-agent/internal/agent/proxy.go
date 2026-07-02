@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -45,7 +46,7 @@ func ProxyHandler(targetURL string, upstreamToken string, counters ...*ActiveCou
 			http.NotFound(w, req)
 			return
 		}
-		if req.Header.Get("authorization") != "Bearer "+upstreamToken {
+		if subtle.ConstantTimeCompare([]byte(req.Header.Get("authorization")), []byte("Bearer "+upstreamToken)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

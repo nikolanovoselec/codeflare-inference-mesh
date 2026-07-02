@@ -598,7 +598,7 @@ function adminUiScript(): string {
       '<div class="metric"><strong>Audit</strong><code>' + audit.length + '</code></div>',
       '<div class="metric"><strong>Gateway target</strong><code>' + esc([value.gateway?.gatewayId, value.gateway?.routeName, value.gateway?.publicModel, value.gateway?.workerUrl].filter(Boolean).join(' / ') || 'not synced') + '</code></div>',
       '<div class="metric"><strong>Custom domain</strong><code>' + esc(value.customDomain?.hostname ? value.customDomain.hostname + ':' + (value.customDomain.status || 'unprovisioned') : 'not configured') + '</code></div>',
-      '<div class="metric"><strong>Generated</strong><code>' + (value.generatedAt || 'unknown') + '</code></div>',
+      '<div class="metric"><strong>Generated</strong><code>' + esc(value.generatedAt || 'unknown') + '</code></div>',
       '<div class="metric"><strong>Node state</strong><code>' + esc(nodes.map((node) => node.id + ':' + node.status + ':' + (node.metrics?.runtimeState || 'unknown')).join('\\n')) + '</code></div>',
       '<div class="metric"><strong>Profiles</strong><code>' + esc(profiles.map((profile) => profile.id + ' ' + profile.rolloutPercent + '% ' + (profile.sourceMode || 'unknown')).join('\\n')) + '</code></div>',
       '<div class="metric"><strong>Profile readiness</strong><code>' + esc(readiness.map((item) => item.profileId + ' ready=' + item.ready + ' downloading=' + item.downloading + ' failed=' + item.failed).join('\\n')) + '</code></div>',

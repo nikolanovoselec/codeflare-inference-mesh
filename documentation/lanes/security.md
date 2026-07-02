@@ -9,6 +9,7 @@
 - [Runtime safety](#runtime-safety)
 - [Mesh secret custody and rotation](#mesh-secret-custody-and-rotation)
 - [Mesh egress posture](#mesh-egress-posture)
+- [Update trust chain](#update-trust-chain)
 - [Access position](#access-position)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
@@ -95,6 +96,16 @@
 **Verification:** `TestREQRUN003RendererForbidsPublicDiscoveryFlags` asserts public discovery flags are never rendered; `TestREQRUN006BindsMeshIPSoTokensEmbedDialableAddresses` asserts tokens embed the WARP bind address. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render_test.go::TestREQRUN003RendererForbidsPublicDiscoveryFlags --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render_test.go::TestREQRUN006BindsMeshIPSoTokensEmbedDialableAddresses -->
 
 **Implements:** [REQ-RUN-006](../../sdd/spec/runtime-profiles.md), [REQ-SEC-004](../../sdd/spec/security.md)
+
+## Update trust chain
+
+**Threat:** A compromised release channel could push a malicious agent binary to the fleet through self-update.
+
+**Mitigation:** The trust anchor for agent updates is the GitHub repository and its release process, with an operator in the loop: the desired agent version is only ever an admin-selected tag from the validated release list, distributed via heartbeat, and the agent stages a downloaded binary only after its SHA-256 matches the release's `checksums.txt`; any failure leaves the current version running. The MeshLLM runtime binary uses a stronger pin — its per-asset checksums are embedded in the agent at build time, so a compromised MeshLLM release cannot affect nodes. The deploy pipeline additionally signs `checksums.txt` with cosign when `COSIGN_PRIVATE_KEY` is configured; the signature is an out-of-band operator verification artifact, and the agent does not verify it during self-update.
+
+**Verification:** `TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches` asserts checksum-gated staging; `TestREQNODE005FailureReportsLastErrorAndKeepsCurrentVersion` asserts failed updates leave the running version; the agent-version selection tests assert only listed release tags are accepted. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS -->
+
+**Implements:** [REQ-NODE-005](../../sdd/spec/node-agent.md), [REQ-NODE-006](../../sdd/spec/node-agent.md), [REQ-REL-003](../../sdd/spec/release-ci.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
 ## Access position
 
