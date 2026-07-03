@@ -170,7 +170,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Context:** The setup flow should avoid manual route construction, but automatic provider-key storage requires Secrets Store permissions. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS -->
 
-**Decision:** The Worker setup UI creates or updates the custom provider, route, version, and deployment. The Admin manually enters the generated provider token into AI Gateway BYOK/provider-key settings in v1.
+**Decision:** The Worker setup UI creates or updates the custom provider and the dynamic route, with the route's routing elements set inline so the same call yields its version and deployment; re-running sync reuses the existing provider and route without creating a new version or deployment. The Admin manually enters the generated provider token into AI Gateway BYOK/provider-key settings in v1.
 
 **Alternatives considered:** Manual route instructions only; full BYOK automation through Secrets Store.
 
