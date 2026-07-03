@@ -97,6 +97,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 2. The MeshLLM console API binds localhost-only and is never proxied to the Mesh. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMRenderAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004ArgvListForbidsPublicExposureFlags) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
 3. Managed MeshLLM processes always run in headless mode, keeping runtime web UI features disabled. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMRenderAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004RendererEnforcesHeadlessMode) -->
 4. The rendered MeshLLM argv list never contains `--publish`, `--listen-all`, `--auto`, `--discover`, or the `nostr` discovery mode. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMRenderAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004ArgvListForbidsPublicExposureFlags) -->
+
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P1

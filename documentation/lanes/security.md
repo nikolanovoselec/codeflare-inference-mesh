@@ -86,7 +86,7 @@
 
 **Verification:** audit pending — no automated test currently asserts a CSP header or an admin-UI output-encoding boundary. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
 
-**Implements:** [REQ-SEC-001](../../sdd/spec/security.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
 ## Mesh secret custody and rotation
 
@@ -94,9 +94,12 @@
 
 **Mitigation:** The router owns mesh secret custody.
 
-- It captures each node's invite token from authenticated heartbeats, stores per-profile mesh state AES-GCM envelope-encrypted in D1 under the `MESH_STATE_KEY` Worker secret (the durable record holds only `{iv, ciphertext}`), and distributes join tokens only in heartbeat responses to live, non-revoked nodes on the mesh profile; when the key is absent, mesh rotation and bootstrap fail closed with `mesh_state_key_missing`.
-- Rotation increments a per-profile counter that is baked into the rendered mesh identity (`--mesh-name codeflare-<profileId>-r<rotation>`), so a rotation is a hard cut into a different mesh that every member drains and restarts into; reconvergence within about two minutes is an operational constraint, not an acceptance criterion.
-- Eviction is honest about its boundary: revoking a node removes its token entry, and rotation excludes it from the new mesh, but a malicious holder of the old secret could still rejoin the old mesh name — which no longer receives traffic. Join-level eviction of stale-token holders is upstream MeshLLM's `--trust-policy allowlist` plus `--owner-key` backstop, not managed by this project.
+- It captures each node's invite token from authenticated heartbeats and stores per-profile mesh state AES-GCM envelope-encrypted in D1 under the `MESH_STATE_KEY` Worker secret (the durable record holds only `{iv, ciphertext}`).
+- It distributes join tokens only in heartbeat responses to live, non-revoked nodes on the mesh profile; when the key is absent, mesh rotation and bootstrap fail closed with `mesh_state_key_missing`.
+- Rotation increments a per-profile counter baked into the rendered mesh identity (`--mesh-name codeflare-<profileId>-r<rotation>`), so a rotation is a hard cut into a different mesh that every member drains and restarts into.
+- Reconvergence within about two minutes is an operational constraint, not an acceptance criterion.
+- Eviction is honest about its boundary: revoking a node removes its token entry, and rotation excludes it from the new mesh, but a malicious holder of the old secret could still rejoin the old mesh name — which no longer receives traffic.
+- Join-level eviction of stale-token holders is upstream MeshLLM's `--trust-policy allowlist` plus `--owner-key` backstop, not managed by this project.
 - Node tokens have no in-place rotation: a revoked node regains mesh access only by re-enrolling with a fresh single-use setup token. Admin surfaces show token presence, age, and count — never values.
 
 **Verification:** The mesh-state tests assert ciphertext-only storage, fail-closed behavior on a missing key, live-node-only token distribution, rotate and revoke auditing, and re-enrollment-only readmission; `TestREQRUN006RestartTriggersDrainAndRelaunch` asserts members drain and relaunch on a rotation or mesh-identity change. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @impl: packages/router-worker/src/mesh-crypto.ts::MESH_CRYPTO_ANCHORS --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager_test.go::TestREQRUN006RestartTriggersDrainAndRelaunch -->

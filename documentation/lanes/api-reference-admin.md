@@ -215,10 +215,10 @@ POST /admin/nodes/{nodeId}/revoke
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Node is marked revoked, stored node credentials are revoked, and later node heartbeats/unregister calls cannot restore eligibility. | `{ "ok": true }` |
+| `200` | Node is marked revoked, stored node credentials are revoked, the node's mesh invite-token entry is removed from every active MeshLLM profile's mesh state (`mesh_token_removed` audit event), and later node heartbeats/unregister calls cannot restore eligibility. | `{ "ok": true }` |
 | `401` | Admin credential is missing or invalid. | Error object. |
 
-**Implements:** [REQ-SEC-002](../../sdd/spec/security.md)
+**Implements:** [REQ-SEC-002](../../sdd/spec/security.md), [REQ-SEC-007](../../sdd/spec/security.md)
 
 ### POST /admin/cloudflare/gateway/sync
 
@@ -232,16 +232,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON. For account and Gateway fields, request body values override stored settings, then environment defaults apply. For `workerUrl`, request body overrides a stored explicit Worker URL; when neither exists, Gateway sync uses the provisioned custom domain.
-
-| Field | Type | Required | Description |
-| --- | --- | --- | --- |
-| `accountId` | string | no | Cloudflare account used for Gateway API calls. Falls back to stored settings, then `CLOUDFLARE_ACCOUNT_ID`, then `AI_GATEWAY_ACCOUNT_ID`. |
-| `gatewayId` | string | no | Gateway to receive the dynamic route. Falls back to stored settings, then `AI_GATEWAY_ID`, then `inference-mesh`. |
-| `routeName` | string | no | Dynamic route display name. Falls back to stored settings, then `AI_GATEWAY_ROUTE_NAME`, then `mesh-default`. |
-| `providerName` | string | no | Custom-provider display name. Falls back to stored settings, then `AI_GATEWAY_PROVIDER_NAME`, then `codeflare-inference-mesh`. |
-| `publicModel` | string | no | Public model alias exposed through Gateway. Falls back to stored settings, then `AI_GATEWAY_PUBLIC_MODEL`, then `mesh-default`. |
-| `workerUrl` | string | no | Advanced explicit router origin override. When omitted, Gateway sync reuses a stored explicit override, then falls back to the provisioned custom domain. |
+**Request body:** Optional JSON with `accountId`, `gatewayId`, `routeName`, `providerName`, `publicModel`, and `workerUrl` — all optional. For account and Gateway fields, request body values override stored settings, then the environment defaults documented in [configuration.md](configuration.md) apply. For `workerUrl`, request body overrides a stored explicit Worker URL; when neither exists, Gateway sync uses the provisioned custom domain.
 
 **Response**
 

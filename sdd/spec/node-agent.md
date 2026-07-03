@@ -168,6 +168,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 2. The agent downloads the matching `inference-mesh-agent-<os>-<arch>[.exe]` artifact and `checksums.txt` from the GitHub release tagged with the desired version. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/selfupdate_test.go (TestREQNODE005DownloadsArtifactAndChecksumsFromReleaseTag) -->
 3. The downloaded binary is verified against its `checksums.txt` SHA-256 entry and written into the protected staging directory. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
 4. A checksum mismatch fails staging and does not mark an update ready. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
+
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
 **Priority:** P2

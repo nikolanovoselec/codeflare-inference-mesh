@@ -49,7 +49,9 @@
 | --- | --- | --- |
 | `DB` | D1 database for durable router state. | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
 | `REGISTRY` | Durable Object namespace for scheduling and reservations. | [REQ-SCH-002](../../sdd/spec/state-scheduling.md) |
-| `MESH` | Workers VPC Network binding using `network_id = "cf1:network"` and `remote = true`; the Worker targets runtime `IP:PORT` values through it. The block ships commented out in the committed `wrangler.toml` so CI dry-runs and forks without Workers VPC entitlement still pass, and `.github/workflows/deploy.yml` uncomments and verifies it immediately before `wrangler deploy`. A local `wrangler dev` or manual deploy outside CI does not have this binding until the block is uncommented by hand. | [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-004](../../sdd/spec/router-worker.md) |
+| `MESH` | Workers VPC Network binding using `network_id = "cf1:network"` and `remote = true` for the Worker-to-private-node `fetch()` path. | [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-004](../../sdd/spec/router-worker.md) |
+
+The `MESH` binding ships commented out in the committed `wrangler.toml` so CI dry-runs and forks without Workers VPC entitlement still pass. `.github/workflows/deploy.yml` uncomments and verifies it immediately before `wrangler deploy`. A local `wrangler dev` or manual deploy outside CI does not have this binding until the block is uncommented by hand.
 
 ## Wrangler environments
 

@@ -243,7 +243,7 @@ func TestREQNODE005DownloadsArtifactAndChecksumsFromReleaseTag(t *testing.T) {
 }
 
 func TestREQNODE009AppliesUpdateByAtomicSwapThenExits(t *testing.T) {
-	t.Run("REQ-NODE-005", func(t *testing.T) {
+	t.Run("REQ-NODE-009", func(t *testing.T) {
 		now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
 		updater, env, binary, _ := newSelfUpdateFixture(t, "v1.0.0", "v1.1.0")
 		targetPath := filepath.Join(t.TempDir(), "inference-mesh-agent")
@@ -276,7 +276,7 @@ func TestREQNODE009AppliesUpdateByAtomicSwapThenExits(t *testing.T) {
 }
 
 func TestREQNODE009FailureReportsLastErrorAndKeepsCurrentVersion(t *testing.T) {
-	t.Run("REQ-NODE-005", func(t *testing.T) {
+	t.Run("REQ-NODE-009", func(t *testing.T) {
 		now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
 
 		stagedEntries := func(t *testing.T, dataDir string) []string {
@@ -351,7 +351,7 @@ func TestREQNODE009FailureReportsLastErrorAndKeepsCurrentVersion(t *testing.T) {
 }
 
 func TestREQNODE009RetriesOnlyOnVersionChangeOrAfterOneHour(t *testing.T) {
-	t.Run("REQ-NODE-005", func(t *testing.T) {
+	t.Run("REQ-NODE-009", func(t *testing.T) {
 		start := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
 
 		t.Run("same desired version backs off for one hour", func(t *testing.T) {
