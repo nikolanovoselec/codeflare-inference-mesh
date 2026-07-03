@@ -1759,6 +1759,7 @@ describe('router worker behavioral contracts', () => {
   })
 })
 
+// HostGatingTestAnchor
 describe('Access-first setup and host gating contracts', () => {
   const NOW = 1_700_000_000_000
   const TEAM = 'example-team.cloudflareaccess.com'

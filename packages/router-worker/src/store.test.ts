@@ -8,6 +8,7 @@ import type { AuditEvent, ReservationRecord, SessionRecord, TokenRecord } from '
 type Row = Record<string, unknown>
 
 class FakeD1Database {
+  configSelects = 0
   readonly config = new Map<string, Row>()
   readonly tokens = new Map<string, Row>()
   readonly profiles = new Map<string, Row>()
@@ -110,6 +111,7 @@ class FakeD1Statement {
     const values = this.values
 
     if (q === 'SELECT value_json FROM router_config WHERE key = ?') {
+      this.db.configSelects += 1
       return maybe(this.db.config.get(text(values[0])), ['value_json'])
     }
     if (q === 'SELECT id, kind, verifier, active, node_id, created_at, expires_at FROM tokens WHERE kind = ? AND id = ?') {
@@ -225,5 +227,28 @@ describe('D1 store behavioral contracts', () => {
     expect(await reader.getReservation('reservation-a')).toEqual(reservation)
     expect(await reader.listAudit(1)).toEqual([audit])
     expect(rebuilt.reservation).toMatchObject({ reservationId: 'reservation-b', nodeId: 'node-a', publicModel: 'mesh-default', profileId: profile.id })
+  })
+
+  it('REQ-ADM-014 caches gate config reads per binding with TTL expiry and write invalidation', async () => {
+    const db = new FakeD1Database()
+    let now = 1_700_000_000_000
+    const store = new D1Store(db as unknown as D1Database, () => now)
+    await store.putConfig('setup_state', { phase: 'claimed' })
+
+    expect(await store.getConfig('setup_state')).toEqual({ phase: 'claimed' })
+    expect(await store.getConfig('setup_state')).toEqual({ phase: 'claimed' })
+    expect(db.configSelects).toBe(1)
+
+    await store.putConfig('setup_state', { phase: 'complete' })
+    expect(await store.getConfig('setup_state')).toEqual({ phase: 'complete' })
+    expect(db.configSelects).toBe(2)
+
+    now += 5001
+    expect(await store.getConfig('setup_state')).toEqual({ phase: 'complete' })
+    expect(db.configSelects).toBe(3)
+
+    await store.getConfig('setup')
+    await store.getConfig('setup')
+    expect(db.configSelects).toBe(5)
   })
 })

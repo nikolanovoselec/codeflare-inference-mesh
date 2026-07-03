@@ -67,6 +67,7 @@ function headerRequest(jwt: string): Request {
   return new Request('https://mesh.example.com/admin/status', { headers: { 'cf-access-jwt-assertion': jwt } })
 }
 
+// AccessJwtTestAnchor
 describe('access JWT verification contracts', () => {
   beforeEach(() => {
     resetJwksCache()

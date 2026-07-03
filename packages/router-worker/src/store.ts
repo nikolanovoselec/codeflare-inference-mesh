@@ -2,7 +2,7 @@ import type { AuditEvent, CredentialKind, ModelProfile, NodeRecord, ReservationR
 
 // The host gate reads these two config keys on every request; cache them
 // per D1 binding with a short TTL so the hot path avoids two D1 round-trips.
-// putConfig writes through the cache, keeping same-isolate reads exact.
+// putConfig invalidates the cached entry, keeping same-isolate reads exact.
 const GATE_CONFIG_KEYS = new Set(['setup_state', 'custom_domain'])
 const GATE_CONFIG_TTL_MS = 5000
 const gateConfigCache = new WeakMap<D1Database, Map<string, { at: number; value: unknown }>>()

@@ -62,6 +62,7 @@ async function provision(calls: RecordedCall[], options: FakeApiOptions = {}): P
   return await client.provisionAccess({ accountId: ACCOUNT, hostname: HOSTNAME, adminEmails: [...EMAILS] })
 }
 
+// AccessProvisioningTestAnchor
 describe('access provisioning contracts', () => {
   it('REQ-ADM-012 creates the admin app with an allow policy containing exactly the captured emails', async () => {
     const calls: RecordedCall[] = []
