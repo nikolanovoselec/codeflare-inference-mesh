@@ -1209,6 +1209,12 @@ describe('router worker behavioral contracts', () => {
     expect(receiver).toBeUndefined()
   })
 
+  it('CloudflareGatewayClient surfaces the Cloudflare error code and message on a failed API call', async () => {
+    const fetcher = (async () => Response.json({ success: false, errors: [{ code: 2003, message: 'model id invalid' }] }, { status: 400 })) as unknown as typeof fetch
+    const client = new CloudflareGatewayClient('runtime-token', fetcher)
+    await expect(client.listGateways('account-a')).rejects.toThrow(/400.*2003.*model id invalid/)
+  })
+
   it('REQ-ADM-005 upserts DNS and Worker route for custom-domain provisioning', async () => {
     const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
     const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -104,6 +104,14 @@
 
 **Fix:** Retry the action after a few seconds. If it persists, look up the `router_error` audit entry by the `requestId` shown in the toast (or in the Worker runtime logs) to find the underlying exception, and check D1 availability if the action touches profile or mesh state. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.ts::createRouter -->
 
+## Setup step fails after a Cloudflare permission or API error
+
+**Symptom:** A setup or Routing action (Enable Access, Connect AI Gateway, Provision domain) shows "The router hit a temporary error", and the `router_error` audit entry reads `Cloudflare Access API failed: 403` or `Cloudflare API failed: 400`.
+
+**Cause:** The Worker's `CLOUDFLARE_API_TOKEN_RUNTIME` reached Cloudflare but the call was rejected. A `403` means the token lacks a permission the step needs: Access provisioning needs `Access: Apps and Policies Edit` and `Access: Organizations, Identity Providers, and Groups Edit`; Gateway sync needs `AI Gateway: Edit`; custom-domain provisioning needs `Workers Routes: Edit` and target-zone DNS edit (the README "Deploy secrets and token scopes" section lists the full set). A `400` means Cloudflare rejected the request payload. ([REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation))
+
+**Fix:** For a `403`, add the missing permission to the runtime token in the Cloudflare dashboard (editing a token's permissions keeps its value, so no redeploy is needed), then retry. For a `400`, read the Cloudflare error code and message that the `router_error` audit entry now includes to find the rejected field. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::formatCloudflareApiErrors --> <!-- @impl: packages/router-worker/src/router.ts::createRouter -->
+
 ## Update staging checksum mismatch
 
 **Symptom:** Update staging refuses an agent archive.

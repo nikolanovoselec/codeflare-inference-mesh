@@ -220,7 +220,7 @@ export class CloudflareGatewayClient {
       ...(body !== undefined ? { body: JSON.stringify(body) } : {})
     })
     const payload = await response.json() as ApiEnvelope<T>
-    if (!response.ok || payload.success === false) throw new Error(`Cloudflare API failed: ${response.status}`)
+    if (!response.ok || payload.success === false) throw new Error(`Cloudflare API failed: ${response.status}${formatCloudflareApiErrors(payload.errors)}`)
     return payload.result
   }
 }
@@ -228,6 +228,20 @@ export class CloudflareGatewayClient {
 interface ApiEnvelope<T> {
   readonly success: boolean
   readonly result: T
+  readonly errors?: readonly CloudflareApiError[]
+}
+
+export interface CloudflareApiError {
+  readonly code?: number
+  readonly message?: string
+}
+
+/** Render Cloudflare's `errors` array into a diagnosable suffix so a failed
+ *  setup call surfaces the real cause (e.g. `400: 2003 model id ...`) in the
+ *  audit log instead of an opaque status. Never contains secret material. */
+export function formatCloudflareApiErrors(errors?: readonly CloudflareApiError[]): string {
+  if (!Array.isArray(errors) || errors.length === 0) return ''
+  return ': ' + errors.map((error) => [error.code, error.message].filter((value) => value != null && value !== '').join(' ')).join('; ')
 }
 
 function dnsRecordBody(zone: ZoneRecord, hostname: string, workerUrl: string): { type: 'A' | 'CNAME'; name: string; content: string; proxied: true; ttl: 1 } {

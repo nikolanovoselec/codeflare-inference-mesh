@@ -1,3 +1,5 @@
+import { formatCloudflareApiErrors, type CloudflareApiError } from './cloudflare-api'
+
 export const ADMIN_APP_NAME = 'inference-mesh-admin'
 export const BYPASS_APP_NAME = 'inference-mesh-machine-bypass'
 export const MACHINE_BYPASS_SUFFIXES = ['/v1/*', '/node/*', '/health', '/install.sh', '/install.ps1'] as const
@@ -205,8 +207,8 @@ export class CloudflareAccessClient {
       },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {})
     })
-    const payload = await response.json() as { readonly success: boolean; readonly result: T }
-    if (!response.ok || payload.success === false) throw new Error(`Cloudflare Access API failed: ${response.status}`)
+    const payload = await response.json() as { readonly success: boolean; readonly result: T; readonly errors?: readonly CloudflareApiError[] }
+    if (!response.ok || payload.success === false) throw new Error(`Cloudflare Access API failed: ${response.status}${formatCloudflareApiErrors(payload.errors)}`)
     return payload.result
   }
 }
