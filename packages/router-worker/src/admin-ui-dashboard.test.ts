@@ -252,6 +252,18 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(bars().at(-1)!.dataset.smoothed).toBe('48.8')
   })
 
+  it('REQ-OBS-010 renders no throughput bars while there is no real throughput', async () => {
+    const harness = await dashboardHarness({ respond: (path) => path === '/admin/status' ? Response.json(toksStatus(0)) : undefined })
+    const trace = harness.byId(ADMIN_UI_TOKS_TRACE.containerId)
+    const bars = () => trace.children.filter((bar) => bar.dataset.sample !== undefined)
+    expect(bars().length).toBe(0)
+    harness.runTimers()
+    await harness.flush(10)
+    harness.runTimers()
+    await harness.flush(10)
+    expect(bars().length).toBe(0)
+  })
+
   it('REQ-OBS-010 caps the throughput trace at the configured rolling window', async () => {
     const harness = await dashboardHarness()
     const trace = harness.byId(ADMIN_UI_TOKS_TRACE.containerId)

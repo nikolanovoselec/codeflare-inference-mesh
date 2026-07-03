@@ -414,6 +414,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       hub.setAttribute('data-topo-hub', 'true');
       hub.textContent = 'router';
       canvas.appendChild(hub);
+      canvas.classList.toggle('is-empty', nodes.length === 0);
+      if (!nodes.length) {
+        const empty = document.createElement('p');
+        empty.className = 'topo-empty';
+        empty.textContent = 'No nodes enrolled yet. Add one from Nodes.';
+        canvas.appendChild(empty);
+      }
       nodes.forEach((node, index) => {
         const angle = (index / Math.max(1, nodes.length)) * 2 * Math.PI - Math.PI / 2;
         const spoke = document.createElement('span');
@@ -442,6 +449,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const trace = byId(config.toksTrace.containerId);
     if (!trace) return;
     trace.textContent = '';
+    // Leave the trace empty (and hidden by .toks-trace:empty) when there is no real
+    // throughput, so baseline bars do not read as an alarming coral line at zero.
+    if (!toksSamples.length || toksSamples.every((value) => value <= 0)) return;
     const span = config.toksTrace.smoothing;
     const smoothed = toksSamples.map((value, index) => {
       const window = toksSamples.slice(Math.max(0, index - span + 1), index + 1);

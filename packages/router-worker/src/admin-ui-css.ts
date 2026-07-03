@@ -173,6 +173,8 @@ details summary{cursor:pointer;color:var(--text-2);font-size:var(--fs-sm);font-w
 .topology{display:grid;gap:.5rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);padding:1rem;margin-top:1rem}
 .topo-caption{margin:0;font-family:var(--font-mono);font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)}
 .topo-canvas{position:relative;aspect-ratio:2/1;min-height:220px}
+.topo-canvas.is-empty{aspect-ratio:auto;min-height:140px}
+.topo-empty{position:absolute;left:50%;bottom:14%;transform:translateX(-50%);margin:0;max-width:90%;text-align:center;color:var(--muted);font-size:var(--fs-xs)}
 .topo-hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;display:grid;place-items:center;width:64px;height:64px;border:1px solid var(--accent-line);border-radius:50%;background:var(--accent-soft);color:var(--accent);font-family:var(--font-mono);font-size:var(--fs-xs)}
 .topo-spoke{position:absolute;left:50%;top:50%;width:38%;height:0;border-top:1px dashed var(--line-strong);transform-origin:left center}
 .topo-node{position:absolute;transform:translate(-50%,-50%);z-index:3;max-width:9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-2);color:var(--text);font-family:var(--font-mono);font-size:var(--fs-xs);padding:.35rem .6rem;cursor:pointer;min-height:0}
