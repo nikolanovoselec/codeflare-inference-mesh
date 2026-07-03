@@ -116,6 +116,12 @@ describe('access provisioning contracts', () => {
     expect(receiver).toBeUndefined()
   })
 
+  it('REQ-GWY-006 surfaces the Cloudflare error code and message on a failed Access API call', async () => {
+    const fetcher = (async () => Response.json({ success: false, errors: [{ code: 1004, message: 'access org unavailable' }] }, { status: 400 })) as unknown as typeof fetch
+    const client = new CloudflareAccessClient('token', fetcher)
+    await expect(client.provisionAccess(baseRequest())).rejects.toThrow(/Cloudflare Access API failed: 400.*1004.*access org unavailable/)
+  })
+
   it('REQ-SEC-010 gates the console app on the admin and user Access groups when a user set exists', async () => {
     const calls: RecordedCall[] = []
     await provision(calls, { adminEmails: ['owner@example.com'], userEmails: ['viewer@example.com'] })
