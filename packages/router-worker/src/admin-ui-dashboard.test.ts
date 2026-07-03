@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_POLLING, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
 // DashboardUiTestAnchor
@@ -47,13 +47,15 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
 interface DashboardOptions {
   readonly status?: Record<string, unknown>
   readonly failStatusAfterBoot?: boolean
+  readonly respond?: (path: string, init?: RequestInit) => Response | undefined
 }
 
 async function dashboardHarness(options: DashboardOptions = {}): Promise<AdminUiHarness> {
   const status = options.status ?? statusFixture()
   let statusCalls = 0
   const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
-  const harness = adminUiHarness(html, async (path) => {
+  const harness = adminUiHarness(html, async (path, init) => {
+    if (options.respond) { const custom = options.respond(path, init); if (custom) return custom }
     if (path === '/admin/status') {
       statusCalls += 1
       if (options.failStatusAfterBoot && statusCalls > 1) return new Response('down', { status: 503 })
@@ -219,5 +221,77 @@ describe('dashboard polling contracts', () => {
     await harness.flush(10)
     expect(harness.byId('health-pill').dataset.health).toBe('error')
     expect(harness.timers.some((timer) => timer.delay === ADMIN_UI_POLLING.intervalMs && !timer.cancelled), 'failed poll must keep polling').toBe(true)
+  })
+})
+
+describe('dashboard throughput trace and playground contracts', () => {
+  function toksStatus(total: number): Record<string, unknown> {
+    return statusFixture({ nodes: [{ id: 'node-x', status: 'online', metrics: { runtimeState: 'running', tokensPerSecond: total, readyModels: [] } }] })
+  }
+
+  it('REQ-OBS-010 renders a smoothed rolling throughput trace from successive polls', async () => {
+    let servedToks = 103.75
+    const harness = await dashboardHarness({ respond: (path) => path === '/admin/status' ? Response.json(toksStatus(servedToks)) : undefined })
+    const trace = harness.byId(ADMIN_UI_TOKS_TRACE.containerId)
+    const bars = () => trace.children.filter((bar) => bar.dataset.sample !== undefined)
+
+    expect(bars().map((bar) => bar.dataset.sample)).toEqual(['103.75'])
+    expect(bars().map((bar) => bar.dataset.smoothed)).toEqual(['103.8'])
+    bars().forEach((bar) => expect(bar.getAttribute('style')).toMatch(/height:\d+(\.\d+)?%/))
+
+    servedToks = 42.5
+    harness.runTimers()
+    await harness.flush(10)
+    expect(bars().map((bar) => bar.dataset.sample)).toEqual(['103.75', '42.5'])
+    expect(bars().at(-1)!.dataset.smoothed).toBe('73.1')
+
+    servedToks = 0
+    harness.runTimers()
+    await harness.flush(10)
+    expect(bars().map((bar) => bar.dataset.sample)).toEqual(['103.75', '42.5', '0'])
+    expect(bars().at(-1)!.dataset.smoothed).toBe('48.8')
+  })
+
+  it('REQ-OBS-010 caps the throughput trace at the configured rolling window', async () => {
+    const harness = await dashboardHarness()
+    const trace = harness.byId(ADMIN_UI_TOKS_TRACE.containerId)
+    for (let poll = 0; poll < 45; poll += 1) {
+      harness.runTimers()
+      await harness.flush(6)
+    }
+    const bars = trace.children.filter((bar) => bar.dataset.sample !== undefined)
+    expect(bars.length).toBe(ADMIN_UI_TOKS_TRACE.window)
+  })
+
+  it('REQ-ADM-016 populates the playground model select from active profile aliases', async () => {
+    const harness = await dashboardHarness()
+    const select = harness.byId(ADMIN_UI_PLAYGROUND.selectId)
+    expect(select.children.map((option) => option.value)).toEqual(['mesh-default', 'qwen3.6:35b-a3b'])
+    expect(select.children.map((option) => option.dataset.playgroundModelOption)).toEqual(['mesh-default', 'qwen3.6:35b-a3b'])
+  })
+
+  it('REQ-ADM-016 streams the playground response incrementally as chunks arrive', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const stream = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+    const harness = await dashboardHarness({
+      respond: (path) => path === '/admin/playground/chat' ? new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }) : undefined
+    })
+    harness.byId(ADMIN_UI_PLAYGROUND.promptId).value = 'hello mesh'
+    const send = harness.clickAction(ADMIN_UI_PLAYGROUND.sendAction, { out: ADMIN_UI_PLAYGROUND.outputId })
+    await harness.flush(10)
+
+    controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'))
+    await harness.flush(10)
+    expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toBe('Hello')
+
+    controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":" mesh"}}]}\n\ndata: [DONE]\n\n'))
+    controller.close()
+    await harness.flush(10)
+    await send
+
+    expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toBe('Hello mesh')
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/chat')
+    expect(call?.init?.method).toBe('POST')
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'mesh-default', messages: [{ role: 'user', content: 'hello mesh' }] })
   })
 })

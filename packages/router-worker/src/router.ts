@@ -34,6 +34,7 @@ export interface RouterDeps {
   readonly accessClient?: { provisionAccess(input: AccessProvisionRequest): Promise<AccessProvisionResult> }
   readonly jwksFetcher?: typeof fetch
   readonly releasesFetcher?: typeof fetch
+  readonly playgroundFetcher?: typeof fetch
 }
 
 export function createRouter(deps: RouterDeps): (request: Request) => Promise<Response> {
@@ -85,6 +86,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/mesh/rotate' && request.method === 'POST') return await handleAdminMeshRotate(request, deps, id, now())
       if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
       if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
+      if (url.pathname === '/admin/playground/chat' && request.method === 'POST') return await handlePlaygroundChat(request, deps, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
@@ -488,6 +490,36 @@ async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps,
   return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, actor)
 }
 
+/**
+ * REQ-ADM-016: admin-only proxy to the connected AI Gateway. Forwards through
+ * the dynamic route (or the custom provider for non-route aliases) and streams
+ * the response back behind fresh headers so no upstream gateway header reaches
+ * the browser.
+ */
+async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readOptionalObject<{ model?: unknown; messages?: unknown }>(request)
+  const messages = Array.isArray(body?.messages) ? body!.messages : []
+  const gateway = await deps.store.getConfig<GatewaySyncResult>('cloudflare_gateway')
+  const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
+  const accountId = cleanString(storedSettings?.accountId) ?? deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
+  if (!gateway?.gatewayId || !gateway.routeName || !accountId) return json({ error: 'gateway_not_configured', requestId }, 409, requestId)
+  const selected = cleanString(body?.model) ?? gateway.publicModel
+  const wireModel = selected === gateway.publicModel ? `dynamic/${gateway.routeName}` : `${gateway.providerSlug}/${selected}`
+  const upstream = await (deps.playgroundFetcher ?? fetch)(`https://gateway.ai.cloudflare.com/v1/${accountId}/${gateway.gatewayId}/compat/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: wireModel, stream: true, messages })
+  })
+  const headers = new Headers({
+    'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
+    'cache-control': 'no-store',
+    'x-inference-mesh-request-id': requestId
+  })
+  return new Response(upstream.body, { status: upstream.status, headers })
+}
+
 interface GatewaySettings {
   readonly accountId: string
   readonly gatewayId: string
@@ -517,6 +549,20 @@ function cleanString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
+/**
+ * Linear email-shape check (no regex backtracking): rejects whitespace, requires
+ * exactly one '@' not in first position, and a dotted domain with characters on
+ * both sides of the dot. Replaces an ambiguous regex flagged as polynomial ReDoS.
+ */
+function isEmailLike(value: string): boolean {
+  if (/\s/.test(value)) return false
+  const at = value.indexOf('@')
+  if (at <= 0 || at !== value.lastIndexOf('@')) return false
+  const domain = value.slice(at + 1)
+  const dot = domain.indexOf('.')
+  return dot > 0 && dot < domain.length - 1
+}
+
 function publicWorkerOrigin(configuredUrl: string | undefined, requestUrl: string): string {
   return usableWorkerBaseUrl(configuredUrl) ?? new URL(requestUrl).origin
 }
@@ -544,7 +590,7 @@ async function handleSetupAccess(request: Request, deps: RouterDeps, requestId: 
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<{ emails?: unknown }>(request)
   const emails = Array.isArray(body?.emails)
-    ? [...new Set(body.emails.filter((email): email is string => typeof email === 'string').map((email) => email.trim().toLowerCase()).filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))]
+    ? [...new Set(body.emails.filter((email): email is string => typeof email === 'string').map((email) => email.trim().toLowerCase()).filter(isEmailLike))]
     : []
   if (emails.length === 0) return json({ error: 'invalid_emails', requestId }, 400, requestId)
   const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
@@ -780,6 +826,7 @@ export const ROUTER_ANCHORS = {
   REQ_ADM_012: 'REQ-ADM-012',
   REQ_ADM_013: 'REQ-ADM-013',
   REQ_ADM_014: 'REQ-ADM-014',
+  REQ_ADM_016: 'REQ-ADM-016',
   REQ_GWY_005: 'REQ-GWY-005',
   REQ_SEC_002: 'REQ-SEC-002',
   REQ_SEC_006: 'REQ-SEC-006',

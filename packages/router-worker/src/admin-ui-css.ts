@@ -180,6 +180,12 @@ details summary{cursor:pointer;color:var(--text-2);font-size:var(--fs-sm);font-w
 .topo-node.tone-danger{border-color:var(--danger)}
 .topo-list{display:none;gap:.35rem}
 .topo-list .topo-node{position:static;transform:none;max-width:none;text-align:left;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px}
+.toks-trace{display:flex;align-items:flex-end;gap:2px;height:56px;padding:.35rem 0 .25rem}
+.toks-trace:empty{display:none}
+.trace-bar{flex:1 1 auto;min-width:2px;min-height:2px;border-top:2px solid var(--accent);background:var(--accent-soft);border-radius:2px 2px 0 0}
+.prompt-input{min-height:6rem;width:100%;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text);padding:.55rem .7rem;font:inherit;line-height:1.55;resize:vertical}
+.prompt-input::placeholder{color:var(--muted);opacity:1}
+.prompt-input:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--focus)}
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}
 .nodes-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
 .nodes-table th{text-align:left;border-bottom:1px solid var(--line-strong);padding:.2rem .45rem}

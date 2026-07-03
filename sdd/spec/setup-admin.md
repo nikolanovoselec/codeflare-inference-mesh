@@ -171,7 +171,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. The Worker pre-renders the entry view from host and setup phase: the setup wizard while setup is in progress, the locked console page on the bootstrap origin after completion, and the dashboard on the custom domain. <!-- @impl: packages/router-worker/src/router.ts::adminUiState --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_VIEWS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 pre-renders the entry view from host and setup phase) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-014 locks non-custom-domain hosts after setup completes) -->
-2. The authenticated dashboard separates operations into Overview, Nodes, Models, Routing, Mesh, and Settings sections behind persistent navigation that marks the active section. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_NAV --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
+2. The authenticated dashboard separates operations into Overview, Nodes, Models, Routing, Mesh, Playground, and Settings sections behind persistent navigation that marks the active section. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_NAV --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
 3. Each navigation entry resolves to a rendered dashboard section, and mobile viewports reach every section through a bottom tab bar. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
 4. Every text, number, and select control carries a visible label, with inline hints and per-action feedback in predictable placement. <!-- @impl: packages/router-worker/src/admin-ui-components.ts::ADMIN_UI_FIELD_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 labels every dashboard control visibly) -->
 5. Destructive actions arm into an explicit same-control confirm step that auto-disarms before submitting. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-007 arms destructive controls and auto-disarms before submitting) -->
@@ -405,10 +405,10 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Playground section offers a model selection populated from live status data.
-2. Sending a prompt submits it through the admin playground endpoint and renders the streamed response incrementally.
-3. The playground endpoint forwards prompts through the configured AI Gateway route and streams the response back.
-4. The playground endpoint requires admin authentication and never exposes gateway credentials to the browser.
+1. The Playground section offers a model selection populated from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 populates the playground model select from active profile aliases) -->
+2. Sending a prompt submits it through the admin playground endpoint and renders the streamed response incrementally. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 streams the playground response incrementally as chunks arrive) -->
+3. The playground endpoint forwards prompts through the configured AI Gateway route and streams the response back. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 forwards playground prompts through the configured gateway route and strips upstream secrets) -->
+4. The playground endpoint requires admin authentication and never exposes gateway credentials to the browser. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 rejects unauthenticated playground requests) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -418,7 +418,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

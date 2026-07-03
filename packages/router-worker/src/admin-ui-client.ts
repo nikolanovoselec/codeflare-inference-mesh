@@ -15,6 +15,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   let lastStatus;
   let nodeSort = { key: '', dir: 1 };
   let pollTimer;
+  let toksSamples = [];
   const byId = (id) => document.getElementById(id);
   const tokenKey = 'codeflareInferenceMeshAdminToken';
   const savedToken = () => sessionStorage.getItem(tokenKey) || localStorage.getItem(tokenKey) || '';
@@ -381,6 +382,30 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       nodes.forEach((node) => list.appendChild(topoNodeButton(node)));
     }
   }
+  const pushToksSample = (value) => {
+    toksSamples.push(value);
+    const cap = config.toksTrace.window;
+    if (toksSamples.length > cap) toksSamples = toksSamples.slice(toksSamples.length - cap);
+  };
+  function renderToksTrace() {
+    const trace = byId(config.toksTrace.containerId);
+    if (!trace) return;
+    trace.textContent = '';
+    const span = config.toksTrace.smoothing;
+    const smoothed = toksSamples.map((value, index) => {
+      const window = toksSamples.slice(Math.max(0, index - span + 1), index + 1);
+      return window.reduce((sum, item) => sum + item, 0) / window.length;
+    });
+    const peak = smoothed.reduce((max, value) => Math.max(max, value), 0) || 1;
+    toksSamples.forEach((raw, index) => {
+      const bar = document.createElement('span');
+      bar.className = 'trace-bar';
+      bar.setAttribute('data-sample', String(raw));
+      bar.setAttribute('data-smoothed', round1(smoothed[index]));
+      bar.setAttribute('style', 'height:' + (smoothed[index] / peak * 100).toFixed(1) + '%');
+      trace.appendChild(bar);
+    });
+  }
   const openDrawer = (title) => {
     const drawer = byId(config.drawer.containerId);
     const titleEl = byId(config.drawer.titleId);
@@ -484,6 +509,29 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     select.name = 'activateProfileId';
     select.setAttribute('data-profile-activate-select', 'true');
     fillProfileSelect(select, choices, active ? active.id : undefined);
+    slot.appendChild(select);
+  }
+  function renderPlaygroundSelect(profiles) {
+    const slot = byId(config.playground.slotId);
+    if (!slot) return;
+    const aliases = [];
+    profiles.filter((profile) => profile.active).forEach((profile) => {
+      (profile.publicAliases || []).forEach((alias) => { if (aliases.indexOf(alias) < 0) aliases.push(alias); });
+    });
+    slot.textContent = '';
+    const select = document.createElement('select');
+    select.id = config.playground.selectId;
+    select.name = 'playgroundModel';
+    select.setAttribute('data-playground-model-select', 'true');
+    aliases.forEach((alias) => {
+      const option = document.createElement('option');
+      option.value = alias;
+      option.setAttribute('data-playground-model-option', alias);
+      option.textContent = alias;
+      select.appendChild(option);
+    });
+    select.disabled = aliases.length === 0;
+    if (aliases.length) select.value = aliases[0];
     slot.appendChild(select);
   }
   function renderProfiles(profiles, readiness) {
@@ -616,6 +664,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       tiles.appendChild(tile('Fleet version', status.desiredAgentVersion || 'not pinned', 'version'));
     }
     renderTopology(nodes);
+    pushToksSample(nodes.reduce((total, node) => total + nodeToks(node), 0));
+    renderToksTrace();
     const rollup = byId('overview-mesh');
     if (rollup) {
       rollup.textContent = '';
@@ -632,6 +682,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     lastStatus = status;
     renderNodesTable(nodes, status.desiredAgentVersion);
     renderProfiles(profiles, readiness);
+    renderPlaygroundSelect(profiles);
     renderMeshHealth(meshEntries);
     renderAudit(audit);
     setHealth('ok', 'live');
@@ -855,7 +906,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'profile-activate': 'profile-activate-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
-    'mesh-rotate': 'mesh-rotate-output'
+    'mesh-rotate': 'mesh-rotate-output',
+    'playground-send': 'playground-output'
   };
   async function runAction(action, button) {
     const prefix = button.dataset.prefix || '';
@@ -945,6 +997,36 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'mesh-rotate') {
       const select = byId(config.meshHealth.rotateSelectId);
       setOutput(out, await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: select ? select.value : '' }) }));
+    } else if (action === config.playground.sendAction) {
+      const select = byId(config.playground.selectId);
+      const prompt = readInput(config.playground.promptId);
+      if (!prompt) { setOutput(out, 'Enter a prompt to send.', true); return; }
+      const response = await fetch('/admin/playground/chat', { method: 'POST', headers: headers(true), body: JSON.stringify({ model: select ? select.value : '', messages: [{ role: 'user', content: prompt }] }) });
+      if (!response.ok || !response.body) { setOutput(out, 'Playground request failed (' + response.status + ').', true); return; }
+      setOutput(out, '');
+      const outputEl = byId(out);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffered = '';
+      let text = '';
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        buffered += decoder.decode(chunk.value, { stream: true });
+        const lines = buffered.split('\\n');
+        buffered = lines.pop() || '';
+        for (const raw of lines) {
+          const line = raw.trim();
+          if (!line || line.indexOf('data:') !== 0) continue;
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(payload);
+            const delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content;
+            if (delta) { text += delta; if (outputEl) outputEl.textContent = text; }
+          } catch (parseError) { /* ignore keep-alive and non-JSON lines */ }
+        }
+      }
     }
   }
 

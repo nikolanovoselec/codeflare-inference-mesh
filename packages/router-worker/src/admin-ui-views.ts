@@ -5,7 +5,9 @@ import {
   ADMIN_UI_MESH_HEALTH,
   ADMIN_UI_NAV,
   ADMIN_UI_NODES_TABLE,
+  ADMIN_UI_PLAYGROUND,
   ADMIN_UI_PROFILE_ACTIVATION,
+  ADMIN_UI_TOKS_TRACE,
   ADMIN_UI_TOPOLOGY,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
@@ -147,6 +149,7 @@ function overviewSection(): string {
     body: `<div class="tile-grid" id="overview-tiles" data-output="status"><p class="empty-note">Status loads automatically.</p></div>
 <div class="topology" id="${ADMIN_UI_TOPOLOGY.containerId}">
 <p class="topo-caption" id="${ADMIN_UI_TOPOLOGY.captionId}" data-output="topology-caption"></p>
+<div class="toks-trace" id="${ADMIN_UI_TOKS_TRACE.containerId}" data-output="toks-trace" role="img" aria-label="Tokens per second, rolling window"></div>
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
 <div class="topo-list" id="${ADMIN_UI_TOPOLOGY.listId}" data-output="topology-list"></div>
 </div>
@@ -225,6 +228,20 @@ ${output({ id: 'mesh-rotate-output', kind: 'mesh-rotate', pre: true })}</div>`
   })
 }
 
+function playgroundSection(): string {
+  return sectionPanel({
+    id: 'playground',
+    title: 'Playground',
+    description: 'Send a prompt through the connected AI Gateway route and watch tokens stream back.',
+    body: `<div class="form-grid">
+${field({ id: ADMIN_UI_PLAYGROUND.selectId, label: 'Model', control: emptySlotSelect(ADMIN_UI_PLAYGROUND.slotId, ADMIN_UI_PLAYGROUND.selectId, 'playgroundModel', 'data-playground-model-select="true"'), hint: 'Active profile aliases route through the connected dynamic gateway route.' })}
+</div>
+${field({ id: ADMIN_UI_PLAYGROUND.promptId, label: 'Prompt', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.promptId}" name="prompt" rows="4" placeholder="Ask the mesh something to verify the full path."></textarea>` })}
+<div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}</div>
+${output({ id: ADMIN_UI_PLAYGROUND.outputId, kind: 'playground', pre: true })}`
+  })
+}
+
 function settingsSection(): string {
   const apiRows = ADMIN_UI_ACTIONS
     .map((action) => `<code>${action.method} ${escapeHtml(action.path)}${action.auth === 'admin' ? ' · admin' : ''}</code>`)
@@ -252,6 +269,7 @@ export function dashboardView(active: boolean): string {
     navItem({ section: 'models', label: 'Models', hint: 'Profiles + rollout' }),
     navItem({ section: 'routing', label: 'Routing', hint: 'Gateway + domain' }),
     navItem({ section: 'mesh', label: 'Mesh', hint: 'Formation + rotation' }),
+    navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
     navItem({ section: 'settings', label: 'Settings', hint: 'Versions + audit' })
   ].join('')
   const tabs = [
@@ -263,11 +281,12 @@ export function dashboardView(active: boolean): string {
   const moreItems = [
     navItem({ section: 'models', label: 'Models', hint: 'Profiles + rollout' }),
     navItem({ section: 'routing', label: 'Routing', hint: 'Gateway + domain' }),
+    navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
     navItem({ section: 'settings', label: 'Settings', hint: 'Versions + audit' })
   ].join('')
   return `<div class="view dash" id="view-dashboard"${active ? '' : ' hidden'}>
 <nav class="side-nav" aria-label="Console sections" data-nav-sections="${escapeHtml(ADMIN_UI_NAV.sections.join(' '))}">${navItems}</nav>
-<div class="sections">${overviewSection()}${nodesSection()}${modelsSection()}${routingSection()}${meshSection()}${settingsSection()}</div>
+<div class="sections">${overviewSection()}${nodesSection()}${modelsSection()}${routingSection()}${meshSection()}${playgroundSection()}${settingsSection()}</div>
 <nav class="tab-bar" aria-label="Console sections" data-mobile-tabs="${escapeHtml(ADMIN_UI_NAV.mobileTabs.join(' '))}">${tabs}</nav>
 <div class="more-sheet" id="more-sheet" data-more-sections="${escapeHtml(ADMIN_UI_NAV.moreSections.join(' '))}" hidden>${moreItems}</div>
 <aside class="drawer" id="${ADMIN_UI_DRAWER.containerId}" role="dialog" aria-labelledby="${ADMIN_UI_DRAWER.titleId}" hidden>

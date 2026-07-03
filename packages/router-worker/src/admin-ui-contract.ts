@@ -32,7 +32,8 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'profile-activate', method: 'POST', path: '/admin/profiles/activate', auth: 'admin' },
   { id: 'agent-versions-refresh', method: 'GET', path: '/admin/agent-versions', auth: 'admin' },
   { id: 'agent-version-set', method: 'POST', path: '/admin/agent-version', auth: 'admin' },
-  { id: 'mesh-rotate', method: 'POST', path: '/admin/mesh/rotate', auth: 'admin' }
+  { id: 'mesh-rotate', method: 'POST', path: '/admin/mesh/rotate', auth: 'admin' },
+  { id: 'playground-chat', method: 'POST', path: '/admin/playground/chat', auth: 'admin' }
 ] as const
 
 export const ADMIN_UI_RESPONSIVE = {
@@ -55,11 +56,11 @@ export interface AdminUiStateView {
   readonly recovery?: boolean
 }
 
-/** Dashboard IA: six noun sections; mobile reaches them through four tabs. */
+/** Dashboard IA: seven noun sections; mobile reaches them through four tabs. */
 export const ADMIN_UI_NAV = {
-  sections: ['overview', 'nodes', 'models', 'routing', 'mesh', 'settings'],
+  sections: ['overview', 'nodes', 'models', 'routing', 'mesh', 'playground', 'settings'],
   mobileTabs: ['overview', 'nodes', 'mesh', 'more'],
-  moreSections: ['models', 'routing', 'settings']
+  moreSections: ['models', 'routing', 'playground', 'settings']
 } as const
 
 /**
@@ -116,6 +117,22 @@ export const ADMIN_UI_NODES_TABLE = {
   bodyId: 'nodes-table-body',
   sortAttribute: 'data-sort',
   columns: ['id', 'status', 'toks', 'vram', 'models', 'version']
+} as const
+
+/** Operator playground: model select from live status, streamed response pane. */
+export const ADMIN_UI_PLAYGROUND = {
+  selectId: 'playground-model',
+  slotId: 'playground-model-slot',
+  promptId: 'playground-prompt',
+  outputId: 'playground-output',
+  sendAction: 'playground-send'
+} as const
+
+/** Client-smoothed throughput sparkline over a rolling window of poll samples. */
+export const ADMIN_UI_TOKS_TRACE = {
+  containerId: 'toks-trace',
+  window: 40,
+  smoothing: 3
 } as const
 
 export const ADMIN_UI_MESH_HEALTH = {

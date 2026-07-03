@@ -48,7 +48,8 @@ function routerFixture(overrides: Partial<Parameters<typeof createRouter>[0]> = 
       ...(overrides.cloudflareClient !== undefined ? { cloudflareClient: overrides.cloudflareClient } : {}),
       ...(overrides.releasesFetcher !== undefined ? { releasesFetcher: overrides.releasesFetcher } : {}),
       ...(overrides.accessClient !== undefined ? { accessClient: overrides.accessClient } : {}),
-      ...(overrides.jwksFetcher !== undefined ? { jwksFetcher: overrides.jwksFetcher } : {})
+      ...(overrides.jwksFetcher !== undefined ? { jwksFetcher: overrides.jwksFetcher } : {}),
+      ...(overrides.playgroundFetcher !== undefined ? { playgroundFetcher: overrides.playgroundFetcher } : {})
     })
   }
 }
@@ -168,7 +169,8 @@ describe('router worker behavioral contracts', () => {
       'profile-activate',
       'agent-versions-refresh',
       'agent-version-set',
-      'mesh-rotate'
+      'mesh-rotate',
+      'playground-chat'
     ])
     expect(config.actions.filter((action) => action.auth === 'admin').map((action) => action.path)).toEqual([
       '/admin/login',
@@ -189,11 +191,12 @@ describe('router worker behavioral contracts', () => {
       '/admin/profiles/activate',
       '/admin/agent-versions',
       '/admin/agent-version',
-      '/admin/mesh/rotate'
+      '/admin/mesh/rotate',
+      '/admin/playground/chat'
     ])
     expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 1, minTouchTargetPx: 44 })
     expect(config.views).toEqual({ modes: ['setup', 'dashboard'], attribute: 'data-view' })
-    expect(config.nav).toEqual({ sections: ['overview', 'nodes', 'models', 'routing', 'mesh', 'settings'], mobileTabs: ['overview', 'nodes', 'mesh', 'more'], moreSections: ['models', 'routing', 'settings'] })
+    expect(config.nav).toEqual({ sections: ['overview', 'nodes', 'models', 'routing', 'mesh', 'playground', 'settings'], mobileTabs: ['overview', 'nodes', 'mesh', 'more'], moreSections: ['models', 'routing', 'playground', 'settings'] })
     expect(config.wizard).toEqual({
       steps: ['connect', 'domain', 'access', 'gateway', 'node', 'review'],
       skippable: ['gateway', 'node'],
@@ -202,7 +205,7 @@ describe('router worker behavioral contracts', () => {
     expect(config.confirm).toEqual({ attribute: 'data-confirm', disarmMs: 5000 })
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
-    const serverControls = ['first-run-setup', 'setup-domain', 'access-email-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'sign-out']
+    const serverControls = ['first-run-setup', 'setup-domain', 'access-email-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'playground-send', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
@@ -256,16 +259,16 @@ describe('router worker behavioral contracts', () => {
     const navTargets = [...html.matchAll(/class="nav-item" href="#([^"]+)"/g)].map((match) => match[1])
     const sectionIds = new Set([...html.matchAll(/<section class="panel section-panel" id="([^"]+)"/g)].map((match) => match[1]))
 
-    expect(sections).toEqual(['overview', 'nodes', 'models', 'routing', 'mesh', 'settings'])
+    expect(sections).toEqual(['overview', 'nodes', 'models', 'routing', 'mesh', 'playground', 'settings'])
     expect([...config.nav.sections]).toEqual(sections)
-    expect(navTargets.slice(0, 6)).toEqual(sections)
-    expect(navTargets.slice(6)).toEqual(['models', 'routing', 'settings'])
+    expect(navTargets.slice(0, 7)).toEqual(sections)
+    expect(navTargets.slice(7)).toEqual(['models', 'routing', 'playground', 'settings'])
     expect(navTargets.every((target) => sectionIds.has(target))).toBe(true)
     expect(html.match(/data-mobile-tabs="([^"]+)"/)?.[1]).toBe('overview nodes mesh more')
     expect([...html.matchAll(/<button class="tab-item"[^>]*data-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(['overview', 'nodes', 'mesh', 'more'])
     expect([...html.matchAll(/data-active="true"/g)]).toHaveLength(1)
     expect(html).toMatch(/data-nav="overview" aria-current="page"/)
-    expect(html.match(/data-more-sections="([^"]+)"/)?.[1]).toBe('models routing settings')
+    expect(html.match(/data-more-sections="([^"]+)"/)?.[1]).toBe('models routing playground settings')
   })
 
   it('REQ-ADM-007 labels every dashboard control visibly', async () => {
@@ -2155,5 +2158,78 @@ describe('Access-first setup and host gating contracts', () => {
     const command = await response.text()
     expect(command).toContain(`https://${HOST}`)
     expect(command).not.toContain('router.example.workers.dev')
+  })
+})
+
+describe('operator playground contracts', () => {
+  // PlaygroundTestAnchor
+  const connectedGateway = { gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerSlug: 'custom-inference-mesh-router-test', manualProviderKeyRequired: true }
+
+  function sseFetcher(capture: { url?: string; init?: RequestInit }): typeof fetch {
+    return (async (url: string, init?: RequestInit) => {
+      capture.url = String(url)
+      capture.init = init
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'))
+          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+          controller.close()
+        }
+      })
+      return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream', 'cf-aig-log-id': 'log-should-not-leak' } })
+    }) as typeof fetch
+  }
+
+  it('REQ-ADM-016 rejects unauthenticated playground requests', async () => {
+    const { router } = routerFixture()
+    const response = await router(new Request('https://router.test/admin/playground/chat', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'mesh-default', messages: [] })
+    }))
+    expect(response.status).toBe(401)
+  })
+
+  it('REQ-ADM-016 returns gateway_not_configured until a gateway is connected', async () => {
+    const { router } = routerFixture()
+    const response = await router(new Request('https://router.test/admin/playground/chat', {
+      method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'mesh-default', messages: [] })
+    }))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: 'gateway_not_configured' })
+  })
+
+  it('REQ-ADM-016 forwards playground prompts through the configured gateway route and strips upstream secrets', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('cloudflare_gateway', connectedGateway)
+    await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1', gatewayId: 'inference-mesh' })
+    const capture: { url?: string; init?: RequestInit } = {}
+    const { router } = routerFixture({ store, playgroundFetcher: sseFetcher(capture) })
+
+    const response = await router(new Request('https://router.test/admin/playground/chat', {
+      method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'mesh-default', messages: [{ role: 'user', content: 'hello' }] })
+    }))
+
+    expect(response.status).toBe(200)
+    expect(capture.url).toBe('https://gateway.ai.cloudflare.com/v1/acct-1/inference-mesh/compat/chat/completions')
+    expect(JSON.parse(String(capture.init?.body))).toEqual({ model: 'dynamic/mesh-default', stream: true, messages: [{ role: 'user', content: 'hello' }] })
+    expect(response.headers.get('cf-aig-log-id')).toBeNull()
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('content-type')).toContain('text/event-stream')
+    expect(await response.text()).toContain('"content":"Hi"')
+  })
+
+  it('REQ-ADM-016 addresses non-route aliases through the custom provider slug', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('cloudflare_gateway', connectedGateway)
+    await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1' })
+    const capture: { url?: string; init?: RequestInit } = {}
+    const { router } = routerFixture({ store, playgroundFetcher: sseFetcher(capture) })
+
+    await router(new Request('https://router.test/admin/playground/chat', {
+      method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'qwen3.6:35b-a3b', messages: [] })
+    }))
+
+    expect(JSON.parse(String(capture.init?.body)).model).toBe('custom-inference-mesh-router-test/qwen3.6:35b-a3b')
   })
 })
