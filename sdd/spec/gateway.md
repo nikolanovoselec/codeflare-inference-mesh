@@ -107,6 +107,32 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 ---
 
+### REQ-GWY-005: Gateway selection and provisioning
+
+**Intent:** The Gateway step should feel like choosing from what the account already has — or creating sensible defaults in one action — instead of presenting empty identifier fields to fill by hand.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The gateway options endpoint lists the account's AI Gateways and the selected gateway's dynamic routes.
+2. The Gateway step renders gateway and route selections populated from the options endpoint, each with a create-new choice.
+3. When the account has no gateway, the step offers a single primary action that creates the default gateway and route.
+4. Provisioning a selection stores it and runs the existing sync flow against it.
+5. Provider name, public model alias, and Worker URL overrides are folded behind an explicit advanced disclosure.
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-GWY-003](#req-gwy-003-dynamic-route-automation), [REQ-ADM-011](setup-admin.md#req-adm-011-guided-first-run-setup)
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)

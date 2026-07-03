@@ -29,3 +29,8 @@
 | Dashboard Token | Local node-agent credential required for localhost runtime-control POSTs. |
 | Upstream Token | Credential sent by the Worker to a node agent before it proxies to the local runtime. |
 | Agent Release | Signed node-agent artifact set published from the deploy workflow for installers and update staging. |
+| Bootstrap Origin | The `workers.dev` hostname a fresh deployment serves; hosts first-run setup until handoff, then only the locked page and break-glass recovery. |
+| Handoff | Setup transition after Access provisioning where the wizard, dashboard, and machine traffic move permanently to the custom domain. |
+| Access Application | Cloudflare Access app the wizard provisions on the custom domain: an allow policy for admin emails plus bypass coverage for machine paths. |
+| Access JWT | Cloudflare-issued identity assertion (`Cf-Access-Jwt-Assertion` header or `CF_Authorization` cookie) the Worker verifies for every human admin request after handoff. |
+| Break-Glass Recovery | Reopening the bootstrap origin's admin surface by setting the reopen secret via wrangler, for operators locked out of the custom domain. |

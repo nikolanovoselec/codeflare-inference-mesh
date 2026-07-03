@@ -211,6 +211,33 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 ---
 
+### REQ-SEC-009: Cloudflare Access admin authentication
+
+**Intent:** Once the custom domain exists, human admin identity comes from Cloudflare Access, so the Worker must verify Access JWTs itself and stop trusting bearer tokens for humans outside bootstrap and recovery.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Admin requests present an Access JWT via the assertion header or the Access cookie.
+2. JWT verification checks the signature against the team's published keys plus audience, issuer, and validity window.
+3. A present-but-invalid JWT is rejected without falling back to bearer authentication.
+4. Verification keys are cached between requests and refreshed without a per-request fetch.
+5. Successful Access authentication records the authenticated email as the audit actor.
+6. Bearer admin authentication is accepted only before Access provisioning completes or while break-glass recovery is active.
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-SEC-001](#req-sec-001-credential-boundaries), [REQ-ADM-012](setup-admin.md#req-adm-012-domain-and-access-provisioning)
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/security.md](../../documentation/lanes/security.md)

@@ -232,6 +232,32 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 ---
 
+### REQ-OBS-010: Live throughput surface
+
+**Intent:** The dashboard should feel live: headline fleet numbers and a throughput trace that move on their own, derived by smoothing periodic status polls rather than pretending to stream.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The Overview stats strip reports node counts, active model count, total mesh VRAM, and aggregate generation throughput from live status data.
+2. The dashboard refreshes status on an approximately five-second cadence while the page is visible.
+3. Status polling pauses while the page is hidden and resumes when it becomes visible.
+4. A live indicator reflects whether the latest poll succeeded within the freshness window.
+5. The throughput trace renders a rolling window of samples smoothed between polls.
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-OBS-002](#req-obs-002-admin-status-surface), [REQ-OBS-009](#req-obs-009-hardware-and-throughput-metrics)
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/observability.md](../../documentation/lanes/observability.md)
