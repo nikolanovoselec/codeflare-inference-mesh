@@ -230,7 +230,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Priority:** P0
 
-**Dependencies:** [REQ-SEC-001](#req-sec-001-credential-boundaries), [REQ-ADM-012](setup-admin.md#req-adm-012-domain-and-access-provisioning)
+**Dependencies:** [REQ-SEC-001](#req-sec-001-credential-boundaries)
 
 **Verification:** Automated test
 
