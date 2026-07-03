@@ -151,7 +151,9 @@ export class CloudflareGatewayClient {
   private async upsertGatewayRoute(accountId: string, gatewayId: string, routeName: string, elements: unknown): Promise<RouteRecord> {
     const routes = listFrom<RouteRecord>(await this.accountRequest<unknown>(accountId, `/ai-gateway/gateways/${gatewayId}/routes`, 'GET'), 'routes')
     const existing = routes.find((route) => route.name === routeName)
-    const body = { name: routeName, elements }
+    // Send `enabled: true` so the route is live even if the create/update endpoint would
+    // otherwise default a new route to disabled; the response's deployment confirms activation.
+    const body = { name: routeName, enabled: true, elements }
     if (!existing) return await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes`, 'POST', body)
     const current = await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes/${existing.id}`, 'GET')
     if (stableJson(current.elements) === stableJson(elements)) return current
