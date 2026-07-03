@@ -156,7 +156,9 @@ export class CloudflareGatewayClient {
     const body = { name: routeName, enabled: true, elements }
     if (!existing) return await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes`, 'POST', body)
     const current = await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes/${existing.id}`, 'GET')
-    if (stableJson(current.elements) === stableJson(elements)) return current
+    // Reuse only when the route is already live with matching elements; a disabled route is
+    // re-upserted so sync always leaves it serving, even if it was disabled out of band.
+    if (current.enabled !== false && stableJson(current.elements) === stableJson(elements)) return current
     return await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes/${existing.id}`, 'PATCH', body)
   }
 
