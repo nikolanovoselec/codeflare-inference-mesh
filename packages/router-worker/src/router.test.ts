@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_ACTIONS, ADMIN_UI_ACTION_ROW_ANCHOR, ADMIN_UI_COMMAND_CENTER, ADMIN_UI_OPERATOR_FLOW, ADMIN_UI_RESPONSIVE, ADMIN_UI_SETUP_LOCKED_FEEDBACK } from './admin-ui'
+import { ADMIN_UI_ACTIONS, ADMIN_UI_CONFIRM, ADMIN_UI_NAV, ADMIN_UI_RESPONSIVE, ADMIN_UI_SETUP_LOCKED_FEEDBACK, ADMIN_UI_VIEWS, ADMIN_UI_WIZARD } from './admin-ui'
+import { ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
+import { adminUiHarness, elementStub } from './admin-ui-harness'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan } from './installers'
@@ -98,11 +100,22 @@ function valuesOf(value: unknown): string[] {
   return []
 }
 
-function adminUiConfig(html: string): { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; operatorFlow: typeof ADMIN_UI_OPERATOR_FLOW; commandCenter: typeof ADMIN_UI_COMMAND_CENTER; setupLockedFeedback: typeof ADMIN_UI_SETUP_LOCKED_FEEDBACK; workerOrigin: string } {
+interface AdminUiTestConfig {
+  readonly actions: typeof ADMIN_UI_ACTIONS
+  readonly responsive: typeof ADMIN_UI_RESPONSIVE
+  readonly views: typeof ADMIN_UI_VIEWS
+  readonly nav: typeof ADMIN_UI_NAV
+  readonly wizard: typeof ADMIN_UI_WIZARD
+  readonly confirm: typeof ADMIN_UI_CONFIRM
+  readonly setupLockedFeedback: typeof ADMIN_UI_SETUP_LOCKED_FEEDBACK
+  readonly workerOrigin: string
+}
+
+function adminUiConfig(html: string): AdminUiTestConfig {
   const match = html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)
   expect(match).not.toBeNull()
   expect(match![1]).not.toContain('&quot;')
-  return JSON.parse(match![1]!) as { actions: typeof ADMIN_UI_ACTIONS; responsive: typeof ADMIN_UI_RESPONSIVE; operatorFlow: typeof ADMIN_UI_OPERATOR_FLOW; commandCenter: typeof ADMIN_UI_COMMAND_CENTER; setupLockedFeedback: typeof ADMIN_UI_SETUP_LOCKED_FEEDBACK; workerOrigin: string }
+  return JSON.parse(match![1]!) as AdminUiTestConfig
 }
 
 function adminUiScript(html: string): string {
@@ -111,91 +124,6 @@ function adminUiScript(html: string): string {
   return match![1]!
 }
 
-type StubListener = (event?: unknown) => unknown
-
-interface StubElement {
-  textContent: string
-  innerHTML: string
-  value: string
-  checked: boolean
-  disabled: boolean
-  hidden: boolean
-  type: string
-  className: string
-  dataset: Record<string, string>
-  attributes: Record<string, string>
-  children: StubElement[]
-  listeners: Map<string, StubListener>
-  classList: {
-    add: (...names: string[]) => void
-    remove: (...names: string[]) => void
-    toggle: (name: string, enabled?: boolean) => boolean
-    contains: (name: string) => boolean
-  }
-  setAttribute: (name: string, value: string) => void
-  addEventListener: (name: string, listener: StubListener) => void
-  append: (...nodes: StubElement[]) => void
-  appendChild: (node: StubElement) => StubElement
-  prepend: (...nodes: StubElement[]) => void
-  querySelector: (selector: string) => StubElement | undefined
-  closest: (selector: string) => StubElement | null
-  scrollIntoView: (options?: unknown) => void
-  focus: (options?: unknown) => void
-}
-
-function elementStub(overrides: Partial<StubElement> = {}): StubElement {
-  const classes = new Set<string>()
-  const base: StubElement = {
-    textContent: '',
-    innerHTML: '',
-    value: '',
-    checked: false,
-    disabled: false,
-    hidden: false,
-    type: '',
-    className: '',
-    dataset: {},
-    attributes: {},
-    children: [],
-    listeners: new Map<string, StubListener>(),
-    classList: {
-      add: (...names: string[]) => { names.forEach((name) => classes.add(name)) },
-      remove: (...names: string[]) => { names.forEach((name) => classes.delete(name)) },
-      toggle: (name: string, enabled?: boolean) => {
-        const next = enabled ?? !classes.has(name)
-        if (next) classes.add(name)
-        else classes.delete(name)
-        return next
-      },
-      contains: (name: string) => classes.has(name)
-    },
-    setAttribute(name: string, value: string) {
-      this.attributes[name] = value
-      if (name.startsWith('data-')) {
-        const datasetKey = name.slice(5).replace(/-([a-z])/g, (_match, char: string) => char.toUpperCase())
-        this.dataset[datasetKey] = value
-      }
-    },
-    addEventListener(name: string, listener: StubListener) {
-      this.listeners.set(name, listener)
-    },
-    append(...nodes: StubElement[]) {
-      this.children.push(...nodes)
-    },
-    appendChild(node: StubElement) {
-      this.children.push(node)
-      return node
-    },
-    prepend(...nodes: StubElement[]) {
-      this.children.unshift(...nodes)
-    },
-    querySelector: () => undefined,
-    closest: () => null,
-    scrollIntoView: () => undefined,
-    focus: () => undefined
-  }
-  return Object.assign(base, overrides)
-}
 
 describe('router worker behavioral contracts', () => {
   it('REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function', async () => {
@@ -203,12 +131,15 @@ describe('router worker behavioral contracts', () => {
     const { router } = routerFixture()
     const root = await router(new Request('https://router.test/'))
     const admin = await router(new Request('https://router.test/admin'))
+    const head = await router(new Request('https://router.test/', { method: 'HEAD' }))
     const html = await admin.text()
     const config = adminUiConfig(html)
     const actionIds = config.actions.map((action) => action.id)
 
     expect(root.status).toBe(200)
     expect(admin.status).toBe(200)
+    expect(head.status).toBe(200)
+    expect(head.headers.get('content-type')).toBe('text/html; charset=utf-8')
     expect(admin.headers.get('content-type')).toBe('text/html; charset=utf-8')
     expect(admin.headers.get('content-security-policy')).toBe("frame-ancestors 'none'")
     expect(admin.headers.get('x-frame-options')).toBe('DENY')
@@ -247,301 +178,233 @@ describe('router worker behavioral contracts', () => {
       '/admin/mesh/rotate'
     ])
     expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 1, minTouchTargetPx: 44 })
-    expect(config.operatorFlow).toEqual({
-      stages: ['setup/authentication', 'enrollment/installers', 'Gateway/domain routing', 'status/node/profile operations'],
-      panelOrder: ['setup', 'login', 'setup-token', 'installer', 'gateway', 'domain', 'status', 'node', 'profile', 'activation', 'version', 'mesh', 'rotation']
-    })
-    const controls = [...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1])
-    const idleRows = [...html.matchAll(/data-state="idle"/g)]
-    const outputSurfaces = [...html.matchAll(/data-empty="[^"]+"/g)]
-    const liveOutputSurfaces = [...html.matchAll(/data-output="[^"]+"[^>]*role="log"[^>]*aria-live="polite"/g)]
-    const fieldHelp = [...html.matchAll(/class="field-help"/g)]
-    expect(controls).toEqual(expect.arrayContaining(['first-run-setup', 'admin-login', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'node-revoke', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate']))
-    expect(idleRows).toHaveLength(13)
-    expect(outputSurfaces).toHaveLength(13)
-    expect(liveOutputSurfaces).toHaveLength(outputSurfaces.length)
-    expect(fieldHelp).toHaveLength(3)
-    expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(1)
-    expect([...html.matchAll(/id="gateway-(account-id|id|route-name|public-model|provider-name|worker-url)"/g)]).toHaveLength(6)
+    expect(config.views).toEqual({ modes: ['setup', 'login', 'dashboard'], attribute: 'data-view' })
+    expect(config.nav).toEqual({ sections: ['overview', 'nodes', 'models', 'routing', 'mesh', 'settings'], mobileTabs: ['overview', 'nodes', 'mesh', 'more'], moreSections: ['models', 'routing', 'settings'] })
+    expect(config.wizard).toEqual({ steps: ['credentials', 'gateway', 'node', 'review'], skippable: ['gateway', 'node'] })
+    expect(config.confirm).toEqual({ attribute: 'data-confirm', disarmMs: 5000 })
+    expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
+    const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
+    const serverControls = ['first-run-setup', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'sign-out', 'wizard-finish']
+    serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
+    expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
+    expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(1)
+    expect([...html.matchAll(/id="(?:wiz-)?gateway-(?:account-id|id|route-name|public-model|provider-name|worker-url)"/g)]).toHaveLength(12)
+    const liveOutputSurfaces = [...html.matchAll(/data-output="[^"]+"[^>]*role="log"[^>]*aria-live="polite"/g)]
+    expect(liveOutputSurfaces.length).toBeGreaterThanOrEqual(12)
+    expect(html).toMatch(/<meta name="viewport" content="width=device-width, initial-scale=1">/)
     expect(html).toMatch(/<meta name="color-scheme" content="dark">/)
-    expect(html).toMatch(/data-setup-banner/)
-    expect(html).toMatch(/data-responsive="desktop mobile"/)
-    expect(html).toMatch(/data-brand-title="codeflare-inference-mesh"/)
-    expect(html).not.toMatch(/<small>Inference Mesh admin<\/small>/)
-    expect(html).toMatch(/data-panel-order="setup login setup-token installer gateway domain status node profile activation version mesh rotation"/)
-    expect(html).toMatch(/class="live-badge"/)
-    expect(html).toMatch(/\.status-dot\{display:inline-block/)
-    expect(html).toMatch(/#origin-label\{[^}]*white-space:normal;overflow-wrap:anywhere/)
+    expect(html).toMatch(/<link rel="icon" href="data:image\/svg\+xml/)
+    expect(html).toContain('<noscript>')
     expect(html).toMatch(/@media \(max-width:760px\)/)
+    expect(html).toContain('class="tab-bar"')
     expect(html).toContain('sessionStorage.getItem(tokenKey)')
     expect(html).toContain('localStorage.getItem(tokenKey)')
+    // The served behavior script is the pure literal, byte for byte: nothing is
+    // serialized from bundled code, so bundler helpers (__name) cannot leak in.
+    expect(adminUiScript(html)).toBe(ADMIN_UI_CLIENT_SCRIPT)
+    expect(html).not.toContain('__name')
     expect(() => new Function(adminUiScript(html))).not.toThrow()
   })
 
-  it('REQ-ADM-007 serves a command-center admin UI with consistent action rows', async () => {
-    // AdminCommandCenterUiTestAnchor
+  it('REQ-ADM-007 pre-renders the entry view from stored setup state', async () => {
+    // AdminEntryViewTestAnchor
     const { router } = routerFixture()
-    const admin = await router(new Request('https://router.test/admin'))
-    const html = await admin.text()
-    const config = adminUiConfig(html)
-    const rowContracts = [...html.matchAll(/data-action-row="([^"]+)"/g)].map((match) => match[1])
-    const commandRows = [...html.matchAll(/data-row="([^"]+)"/g)].map((match) => match[1])
-    const railTargets = [...html.matchAll(/class="rail-item" href="#([^"]+)"/g)].map((match) => match[1])
-    const sectionIds = new Set([...html.matchAll(/<section class="work-section" id="([^"]+)"/g)].map((match) => match[1]))
-    const railOrder = html.match(/data-rail-order="([^"]+)"/)?.[1]
-    const statusStrip = html.match(/data-status-strip="([^"]+)"/)?.[1]
+    const fresh = await (await router(new Request('https://router.test/'))).text()
+    expect(fresh).toContain('<body data-view="setup">')
+    expect(fresh).not.toMatch(/id="view-setup"[^>]*hidden/)
+    expect(fresh).toMatch(/id="view-login"[^>]*hidden/)
+    expect(fresh).toMatch(/id="view-dashboard" hidden/)
 
-    expect(admin.status).toBe(200)
-    expect(config.commandCenter.layout).toBe('command-center')
-    expect(config.commandCenter.railOrder).toEqual(['setup', 'auth', 'enroll', 'route', 'operate'])
-    expect(config.commandCenter.statusStrip).toEqual(['setup', 'auth', 'nodes', 'profiles', 'audit'])
-    expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
-    expect(railOrder).toBe('setup auth enroll route operate')
-    expect(statusStrip).toBe('setup auth nodes profiles audit')
-    expect(commandRows).toEqual([...ADMIN_UI_COMMAND_CENTER.rowOrder])
-    expect(railTargets).toEqual(['setup', 'login', 'setup-token', 'gateway', 'status'])
-    expect(railTargets.every((target) => sectionIds.has(target))).toBe(true)
-    expect(rowContracts).toHaveLength(ADMIN_UI_COMMAND_CENTER.rowOrder.length)
-    expect(rowContracts.every((contract) => contract === ADMIN_UI_ACTION_ROW_ANCHOR.slots.join(' '))).toBe(true)
-    expect([...html.matchAll(/class="action-row"/g)]).toHaveLength(ADMIN_UI_COMMAND_CENTER.rowOrder.length)
-    expect(html).not.toMatch(/class="hero"/)
-    expect(html).not.toMatch(/class="panel command-panel"/)
+    const setup = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
+    expect(setup.status).toBe(201)
+    const locked = await (await router(new Request('https://router.test/'))).text()
+    expect(locked).toContain('<body data-view="login">')
+    expect(locked).toMatch(/id="view-setup"[^>]*hidden/)
+    expect(locked).not.toMatch(/id="view-login"[^>]*hidden/)
+    expect(locked).toMatch(/id="view-dashboard" hidden/)
+  })
+
+  it('REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation', async () => {
+    // AdminDashboardNavTestAnchor
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/admin'))).text()
+    const config = adminUiConfig(html)
+    const sections = [...html.matchAll(/data-section="([^"]+)"/g)].map((match) => match[1])
+    const navTargets = [...html.matchAll(/class="nav-item" href="#([^"]+)"/g)].map((match) => match[1])
+    const sectionIds = new Set([...html.matchAll(/<section class="panel section-panel" id="([^"]+)"/g)].map((match) => match[1]))
+
+    expect(sections).toEqual(['overview', 'nodes', 'models', 'routing', 'mesh', 'settings'])
+    expect([...config.nav.sections]).toEqual(sections)
+    expect(navTargets.slice(0, 6)).toEqual(sections)
+    expect(navTargets.slice(6)).toEqual(['models', 'routing', 'settings'])
+    expect(navTargets.every((target) => sectionIds.has(target))).toBe(true)
+    expect(html.match(/data-mobile-tabs="([^"]+)"/)?.[1]).toBe('overview nodes mesh more')
+    expect([...html.matchAll(/data-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(['overview', 'nodes', 'mesh', 'more'])
+    expect([...html.matchAll(/data-active="true"/g)]).toHaveLength(1)
+    expect(html).toMatch(/data-nav="overview" aria-current="page"/)
+    expect(html.match(/data-more-sections="([^"]+)"/)?.[1]).toBe('models routing settings')
+  })
+
+  it('REQ-ADM-007 labels every dashboard control visibly', async () => {
+    // AdminLabeledControlsTestAnchor
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/admin'))).text()
+    const controlIds = [...html.matchAll(/<(?:input|select)[^>]*\bid="([^"]+)"/g)].map((match) => match[1])
+    const labelled = new Set([...html.matchAll(/<label for="([^"]+)">/g)].map((match) => match[1]))
+    const wrappedInLabel = new Set(['remember-token'])
+
+    expect(controlIds.length).toBeGreaterThan(15)
+    controlIds
+      .filter((id) => !wrappedInLabel.has(id))
+      .forEach((id) => expect(labelled.has(id), `control #${id} has no visible label`).toBe(true))
+  })
+
+  it('REQ-ADM-011 renders the setup wizard with its step sequence while setup is open', async () => {
+    // AdminSetupWizardTestAnchor
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/'))).text()
+
+    expect(html.match(/data-wizard="([^"]+)"/)?.[1]).toBe('credentials gateway node review')
+    expect([...html.matchAll(/<li data-step="([^"]+)"/g)].map((match) => match[1])).toEqual(['credentials', 'gateway', 'node', 'review'])
+    expect(html).toMatch(/<li data-step="credentials" aria-current="step">/)
+    expect([...html.matchAll(/data-step-panel="([^"]+)"/g)].map((match) => match[1])).toEqual(['credentials', 'gateway', 'node', 'review'])
+    expect(html).not.toMatch(/data-step-panel="credentials"[^>]*hidden/)
+    expect(html).toMatch(/data-step-panel="gateway"[^>]*hidden/)
+    expect(html).toMatch(/data-step-panel="node"[^>]*hidden/)
+    expect(html).toMatch(/data-step-panel="review"[^>]*hidden/)
+    const gatewayStep = html.slice(html.indexOf('id="step-gateway"'), html.indexOf('id="step-node"'))
+    const nodeStep = html.slice(html.indexOf('id="step-node"'), html.indexOf('id="step-review"'))
+    const reviewStep = html.slice(html.indexOf('id="step-review"'))
+    expect(gatewayStep).toContain('data-wizard-next')
+    expect(nodeStep).toContain('data-wizard-next')
+    expect(html).toMatch(/id="wizard-continue-credentials" hidden/)
+    expect(html).toContain('data-goto-login')
+    expect(reviewStep).toContain('data-action="wizard-finish"')
   })
 
   it('REQ-ADM-007 renders setup-locked recovery affordances instead of raw JSON', async () => {
     // AdminSetupLockedFeedbackTestAnchor
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
-    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
-    const timeouts: number[] = []
-    let authScrolled = false
-    let tokenFocused = false
-    const setupOutput = elementStub({ dataset: { feedback: '' } })
-    const setupScope = elementStub({ dataset: { state: 'idle' } })
-    setupScope.querySelector = (selector: string) => selector === '[data-output]' ? setupOutput : undefined
-    const setupButton = elementStub({ dataset: { action: 'first-run-setup' } })
-    setupButton.closest = (selector: string) => selector === '[data-action]' ? setupButton : selector === '[data-action-scope]' ? setupScope : null
-    const setupBanner = elementStub({ hidden: true })
-    const adminToken = elementStub()
-    adminToken.focus = () => { tokenFocused = true }
-    const loginSection = elementStub()
-    loginSection.scrollIntoView = () => { authScrolled = true }
-    const toast = elementStub()
-    const elements = new Map<string, StubElement>([
-      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
-      ['origin-label', elementStub()],
-      ['admin-token', adminToken],
-      ['remember-token', elementStub()],
-      ['setup-status', elementStub()],
-      ['auth-status', elementStub()],
-      ['toast', toast],
-      ['setup-output', setupOutput],
-      ['login', loginSection]
-    ])
-    const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
-    const documentStub = {
-      getElementById: (id: string) => elements.get(id),
-      querySelector: (selector: string) => selector === '[data-setup-banner]' ? setupBanner : undefined,
-      createElement: () => elementStub(),
-      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
-    }
-    const fetchStub = async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } })
+    const harness = adminUiHarness(html, async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } }))
+    harness.run()
 
-    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, (_callback: () => void, timeout: number) => { timeouts.push(timeout); return timeout })
-    await listeners.get('click')!({ target: setupButton })
+    const button = await harness.clickAction('first-run-setup', { out: 'setup-output' })
+    const output = harness.byId('setup-output')
+    const toast = harness.byId('toast')
     const dismiss = toast.children.find((child) => child.dataset.toastDismiss === 'true')
     dismiss?.listeners.get('click')?.()
 
-    expect(setupScope.dataset.state).toBe('error')
-    expect(setupOutput.classList.contains('is-error')).toBe(true)
-    expect(setupOutput.dataset.feedback).toBe('setup-locked')
-    expect(setupOutput.textContent).not.toMatch(/^\{/)
-    expect(setupBanner.hidden).toBe(false)
-    expect(authScrolled).toBe(true)
-    expect(tokenFocused).toBe(true)
-    expect(timeouts.at(-1)).toBe(8000)
+    expect(output.dataset.feedback).toBe('setup-locked')
+    expect(output.classList.contains('is-error')).toBe(true)
+    expect(output.textContent.length).toBeGreaterThan(0)
+    expect(output.textContent).not.toMatch(/^\{/)
     expect(toast.classList.contains('is-error')).toBe(true)
     expect(toast.classList.contains('show')).toBe(false)
+    expect(harness.timers.at(-1)?.delay).toBe(8000)
+    expect(button.attributes['aria-busy']).toBe('false')
+    expect(button.disabled).toBe(false)
   })
 
   it('REQ-GWY-003 sends selected Gateway account from the Admin UI', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
-    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
-    const requests: Array<{ path: string; init?: RequestInit }> = []
-    const gatewayOutput = elementStub()
-    const gatewayScope = elementStub({ dataset: { state: 'idle' } })
-    gatewayScope.querySelector = (selector: string) => selector === '[data-output]' ? gatewayOutput : undefined
-    const gatewayButton = elementStub({ dataset: { action: 'gateway-sync' } })
-    gatewayButton.closest = (selector: string) => selector === '[data-action]' ? gatewayButton : selector === '[data-action-scope]' ? gatewayScope : null
-    const elements = new Map<string, StubElement>([
-      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
-      ['origin-label', elementStub()],
-      ['admin-token', elementStub({ value: 'admin-secret' })],
-      ['remember-token', elementStub()],
-      ['toast', elementStub()],
-      ['gateway-account-id', elementStub({ value: ' account-admin ' })],
-      ['gateway-id', elementStub({ value: 'gateway-admin' })],
-      ['gateway-route-name', elementStub({ value: 'mesh-admin' })],
-      ['gateway-public-model', elementStub({ value: 'mesh-smoke' })],
-      ['gateway-provider-name', elementStub({ value: 'provider-admin' })],
-      ['gateway-worker-url', elementStub({ value: 'https://router.example.workers.dev' })],
-      ['gateway-output', gatewayOutput]
-    ])
-    const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
-    const documentStub = {
-      getElementById: (id: string) => elements.get(id),
-      querySelector: () => undefined,
-      createElement: () => elementStub(),
-      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
-    }
-    const fetchStub = async (path: string, init?: RequestInit) => {
-      requests.push(init ? { path, init } : { path })
-      return Response.json({ deploymentId: 'deployment-a' })
-    }
+    const harness = adminUiHarness(html, async () => Response.json({ deploymentId: 'deployment-a' }), { sessionToken: 'admin-secret' })
+    harness.run()
+    harness.byId('gateway-account-id').value = ' account-admin '
+    harness.byId('gateway-id').value = 'gateway-admin'
+    harness.byId('gateway-route-name').value = 'mesh-admin'
+    harness.byId('gateway-public-model').value = 'mesh-smoke'
+    harness.byId('gateway-provider-name').value = 'provider-admin'
+    harness.byId('gateway-worker-url').value = 'https://router.example.workers.dev'
 
-    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, () => undefined)
-    await listeners.get('click')!({ target: gatewayButton })
+    await harness.clickAction('gateway-sync', { out: 'gateway-output' })
 
-    expect(requests).toHaveLength(1)
-    expect(requests[0]!.path).toBe('/admin/cloudflare/gateway/sync')
-    expect(requests[0]!.init?.method).toBe('POST')
-    expect(requests[0]!.init?.headers).toMatchObject({ authorization: 'Bearer admin-secret', 'content-type': 'application/json' })
-    expect(JSON.parse(String(requests[0]!.init?.body))).toEqual({ accountId: 'account-admin', gatewayId: 'gateway-admin', routeName: 'mesh-admin', publicModel: 'mesh-smoke', providerName: 'provider-admin', workerUrl: 'https://router.example.workers.dev' })
-    expect(gatewayScope.dataset.state).toBe('ready')
-    expect(JSON.parse(gatewayOutput.textContent) as { deploymentId: string }).toEqual({ deploymentId: 'deployment-a' })
+    expect(harness.fetchCalls).toHaveLength(1)
+    expect(harness.fetchCalls[0]!.path).toBe('/admin/cloudflare/gateway/sync')
+    expect(harness.fetchCalls[0]!.init?.method).toBe('POST')
+    expect(harness.fetchCalls[0]!.init?.headers).toMatchObject({ authorization: 'Bearer admin-secret', 'content-type': 'application/json' })
+    expect(JSON.parse(String(harness.fetchCalls[0]!.init?.body))).toEqual({ accountId: 'account-admin', gatewayId: 'gateway-admin', routeName: 'mesh-admin', publicModel: 'mesh-smoke', providerName: 'provider-admin', workerUrl: 'https://router.example.workers.dev' })
+    expect(JSON.parse(harness.byId('gateway-output').textContent) as { deploymentId: string }).toEqual({ deploymentId: 'deployment-a' })
   })
 
   it('REQ-SEC-002 asks for confirmation before revoking a node from the Admin UI', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
-    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
-    const requests: string[] = []
-    const nodeOutput = elementStub()
-    const nodeScope = elementStub({ dataset: { state: 'idle' } })
-    nodeScope.querySelector = (selector: string) => selector === '[data-output]' ? nodeOutput : undefined
-    const revokeButton = elementStub({ dataset: { action: 'node-revoke' }, textContent: 'Revoke node' })
-    revokeButton.closest = (selector: string) => selector === '[data-action]' ? revokeButton : selector === '[data-action-scope]' ? nodeScope : null
-    const elements = new Map<string, StubElement>([
-      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
-      ['origin-label', elementStub()],
-      ['admin-token', elementStub({ value: 'admin-secret' })],
-      ['remember-token', elementStub()],
-      ['toast', elementStub()],
-      ['node-id', elementStub({ value: 'node/a' })],
-      ['node-output', nodeOutput]
-    ])
-    const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
-    const documentStub = {
-      getElementById: (id: string) => elements.get(id),
-      querySelector: () => undefined,
-      createElement: () => elementStub(),
-      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
-    }
-    const fetchStub = async (path: string) => {
-      requests.push(path)
-      return Response.json({ revoked: true })
-    }
+    const harness = adminUiHarness(html, async (path) => Response.json(path.includes('/revoke') ? { revoked: true } : {}), { sessionToken: 'admin-secret' })
+    harness.run()
+    const revoke = elementStub({ tagName: 'button', textContent: 'Revoke' })
+    revoke.dataset.action = 'node-revoke'
+    revoke.dataset.nodeId = 'node/a'
+    revoke.dataset.confirm = 'Confirm revoke?'
+    revoke.dataset.out = 'node-output'
 
-    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, () => undefined)
-    await listeners.get('click')!({ target: revokeButton })
-    expect(requests).toHaveLength(0)
-    expect(revokeButton.dataset.confirming).toBe('true')
-    expect(nodeScope.dataset.state).toBe('idle')
+    await harness.click(revoke)
+    expect(harness.fetchCalls).toHaveLength(0)
+    expect(revoke.dataset.armed).toBe('true')
+    expect(revoke.textContent).toBe('Confirm revoke?')
 
-    await listeners.get('click')!({ target: revokeButton })
-    expect(requests).toEqual(['/admin/nodes/node%2Fa/revoke'])
-    expect(nodeScope.dataset.state).toBe('ready')
-    expect(revokeButton.dataset.confirming).toBeUndefined()
-    expect(JSON.parse(nodeOutput.textContent) as { revoked: boolean }).toEqual({ revoked: true })
+    await harness.click(revoke)
+    expect(harness.fetchCalls[0]!.path).toBe('/admin/nodes/node%2Fa/revoke')
+    expect(revoke.dataset.armed).toBeUndefined()
+    expect(revoke.textContent).toBe('Revoke')
+    expect(JSON.parse(harness.byId('node-output').textContent) as { revoked: boolean }).toEqual({ revoked: true })
   })
 
   it('REQ-ADM-006 copies all generated setup tokens from rendered token controls', async () => {
     const { router } = routerFixture()
-    const html = await (await router(new Request('https://router.test/admin'))).text()
-    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
-    let copied = ''
-    const setupOutput = elementStub()
-    const setupScope = elementStub({ dataset: { state: 'idle' } })
-    setupScope.querySelector = (selector: string) => selector === '[data-output]' ? setupOutput : undefined
-    const setupButton = elementStub({ dataset: { action: 'first-run-setup' } })
-    setupButton.closest = (selector: string) => selector === '[data-action]' ? setupButton : selector === '[data-action-scope]' ? setupScope : null
-    const elements = new Map<string, StubElement>([
-      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
-      ['origin-label', elementStub()],
-      ['admin-token', elementStub()],
-      ['remember-token', elementStub()],
-      ['setup-status', elementStub()],
-      ['auth-status', elementStub()],
-      ['toast', elementStub()],
-      ['setup-output', setupOutput]
-    ])
-    const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined }
-    const documentStub = {
-      getElementById: (id: string) => elements.get(id),
-      querySelector: () => undefined,
-      createElement: () => elementStub(),
-      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
-    }
-    const setupTokens = { adminToken: 'admin-a', providerToken: 'provider-a', setupToken: 'setup-a', upstreamToken: 'upstream-a' }
-    const fetchStub = async () => Response.json(setupTokens, { status: 201 })
+    const html = await (await router(new Request('https://router.test/'))).text()
+    const setupTokens = { adminToken: 'admin-a', providerToken: 'provider-a', setupToken: 'setup-a', upstreamToken: 'upstream-a', byokInstruction: 'Paste providerToken as the AI Gateway custom provider API key.' }
+    const harness = adminUiHarness(html, async () => Response.json(setupTokens, { status: 201 }))
+    harness.run()
 
-    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async (value: string) => { copied = value } } }, fetchStub, () => undefined)
-    await listeners.get('click')!({ target: setupButton })
-    await setupOutput.children[0]!.listeners.get('click')?.()
+    await harness.clickAction('first-run-setup', { out: 'setup-output' })
+    const output = harness.byId('setup-output')
+    const cards = output.children.filter((child) => child.dataset.tokenCard)
+    const copyAll = output.children.find((child) => child.dataset.copyAll === 'true')
 
-    expect(setupOutput.children[0]!.dataset.copyAll).toBe('true')
-    expect(setupOutput.children).toHaveLength(5)
-    expect(copied.split('\n')).toEqual(['adminToken: admin-a', 'providerToken: provider-a', 'setupToken: setup-a', 'upstreamToken: upstream-a'])
-    expect(elements.get('admin-token')?.value).toBe('admin-a')
+    expect(output.children[0]!.dataset.tokenWarning).toBe('true')
+    expect(cards.map((card) => card.dataset.tokenCard)).toEqual(['adminToken', 'providerToken', 'setupToken', 'upstreamToken'])
+    expect(copyAll).toBeDefined()
+    await harness.click(copyAll!)
+    expect(harness.copied.at(-1)!.split('\n')).toEqual(['adminToken: admin-a', 'providerToken: provider-a', 'setupToken: setup-a', 'upstreamToken: upstream-a'])
+    expect(harness.events.some((event) => event.kind === 'setItem' && event.detail === 'session:codeflareInferenceMeshAdminToken=admin-a')).toBe(true)
+    expect(harness.byId('wizard-continue-credentials').hidden).toBe(false)
   })
 
   it('REQ-ADM-006 auto-loads installer command for saved tokens and platform changes', async () => {
     const { router } = routerFixture()
+    await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const html = await (await router(new Request('https://router.test/admin'))).text()
-    const listeners = new Map<string, (event: { target: StubElement }) => Promise<void>>()
-    const requests: string[] = []
-    const installerOutput = elementStub()
-    const installerPlatform = elementStub({ value: 'linux' })
-    const elements = new Map<string, StubElement>([
-      ['admin-ui-config', elementStub({ textContent: html.match(/<script type="application\/json" id="admin-ui-config">([^<]+)<\/script>/)?.[1] ?? '' })],
-      ['origin-label', elementStub()],
-      ['admin-token', elementStub({ value: 'admin-secret' })],
-      ['remember-token', elementStub()],
-      ['toast', elementStub()],
-      ['installer-platform', installerPlatform],
-      ['installer-output', installerOutput]
-    ])
-    const storage = { getItem: () => 'admin-secret', setItem: () => undefined, removeItem: () => undefined }
-    const documentStub = {
-      getElementById: (id: string) => elements.get(id),
-      querySelector: () => undefined,
-      createElement: () => elementStub(),
-      addEventListener: (name: string, listener: (event: { target: StubElement }) => Promise<void>) => listeners.set(name, listener)
-    }
+    expect(html).toContain('<body data-view="login">')
     let releaseLinux: (() => void) | undefined
     const linuxWait = new Promise<void>((resolve) => { releaseLinux = resolve })
-    const fetchStub = async (path: string) => {
-      requests.push(path)
+    const harness = adminUiHarness(html, async (path) => {
+      if (path === '/admin/login') return Response.json({ ok: true, session: 'bearer-token' })
+      if (path === '/admin/status') return Response.json({})
+      if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
       if (path.endsWith('/linux')) await linuxWait
       return new Response('install command for ' + path, { status: 200, headers: { 'content-type': 'text/plain' } })
-    }
+    }, { localToken: 'admin-secret' })
+    harness.byId('installer-platform').value = 'linux'
+    harness.run()
+    await harness.flush(10)
 
-    new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', adminUiScript(html))(documentStub, storage, storage, { clipboard: { writeText: async () => undefined } }, fetchStub, () => undefined)
-    await Promise.resolve()
-    await Promise.resolve()
-    installerPlatform.value = 'windows'
-    await installerPlatform.listeners.get('change')?.()
-    await Promise.resolve()
-    await Promise.resolve()
+    expect(harness.body.dataset.view).toBe('dashboard')
+    const platform = harness.byId('installer-platform')
+    platform.dataset.installerPlatform = 'true'
+    platform.dataset.prefix = ''
+    platform.value = 'windows'
+    await harness.change(platform)
+    await harness.flush(4)
     releaseLinux?.()
-    await Promise.resolve()
-    await Promise.resolve()
+    await harness.flush(6)
 
-    expect(requests).toContain('/admin/installers/linux')
-    expect(requests).toContain('/admin/installers/windows')
-    expect(installerOutput.textContent).toBe('install command for /admin/installers/windows')
+    const paths = harness.fetchCalls.map((call) => call.path)
+    expect(paths).toContain('/admin/installers/linux')
+    expect(paths).toContain('/admin/installers/windows')
+    expect(harness.byId('installer-output').textContent).toBe('install command for /admin/installers/windows')
   })
 
   it('REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families', async () => {

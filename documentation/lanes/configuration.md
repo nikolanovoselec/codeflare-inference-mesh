@@ -25,7 +25,7 @@
 | `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/router.ts::handleGatewaySync`, `packages/router-worker/src/router.ts::handleCustomDomain` | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
 | `MESH_STATE_KEY` | n/a | yes for mesh bootstrap and rotation | `packages/router-worker/src/mesh-state.ts::meshKeyFor` | [REQ-SEC-006](../../sdd/spec/security.md) |
 
-`MESH_STATE_KEY` is the AES-GCM key for the per-profile mesh state envelope, so D1 holds only `{iv, ciphertext}` and never plaintext invite tokens. Deploy sets it from the GitHub secret of the same name via `wrangler secret put`. When it is absent, mesh bootstrap and rotation fail closed with `mesh_state_key_missing` and the Admin UI shows a missing-key banner, while claim, heartbeat persistence, and scheduling of already-ready nodes continue. ([REQ-SEC-006](../../sdd/spec/security.md)) <!-- @impl: packages/router-worker/src/mesh-state.ts::meshKeyFor --> <!-- @impl: packages/router-worker/src/admin-ui.ts::keyMissingError -->
+`MESH_STATE_KEY` is the AES-GCM key for the per-profile mesh state envelope, so D1 holds only `{iv, ciphertext}` and never plaintext invite tokens. Deploy sets it from the GitHub secret of the same name via `wrangler secret put`. When it is absent, mesh bootstrap and rotation fail closed with `mesh_state_key_missing` and the Admin UI shows a missing-key banner, while claim, heartbeat persistence, and scheduling of already-ready nodes continue. ([REQ-SEC-006](../../sdd/spec/security.md)) <!-- @impl: packages/router-worker/src/mesh-state.ts::meshKeyFor --> <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::keyMissingError -->
 
 ## Worker vars
 

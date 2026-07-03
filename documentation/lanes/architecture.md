@@ -40,9 +40,9 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## Control plane lifecycle
 
-1. Admin opens `/` or `/admin` on the Worker command center and completes first-run setup in the browser. ([REQ-ADM-001](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
-2. Admin uses command-center controls to configure AI Gateway provider and route automation. ([REQ-GWY-003](../../sdd/spec/gateway.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
-3. Admin creates a one-time setup token from the command center. ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
+1. Admin opens `/` or `/admin`; the Worker pre-renders the guided setup wizard while setup is open and the sign-in view once setup is locked, and first-run setup completes in the browser. ([REQ-ADM-001](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md)) ([REQ-ADM-011](../../sdd/spec/setup-admin.md))
+2. Admin configures AI Gateway provider and route automation from the wizard's Gateway step or the dashboard Routing section. ([REQ-GWY-003](../../sdd/spec/gateway.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
+3. Admin creates a one-time setup token from the wizard's enrollment step or the dashboard Nodes section. ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
 4. Node operator runs the generated install command. ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
 5. Node agent claims the token and starts heartbeat. ([REQ-NODE-002](../../sdd/spec/node-agent.md))
 6. For each active MeshLLM profile, the router elects the first eligible heartbeating node as mesh seed (store-if-absent, serialized through RegistryDO) and answers it with `meshBootstrap.action: "create"`; other nodes receive `wait` and do not start `mesh-llm` yet. ([REQ-RUN-008](../../sdd/spec/runtime-profiles.md))

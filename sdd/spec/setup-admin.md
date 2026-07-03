@@ -96,7 +96,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 3. The Windows installer route installs the matching agent artifact and registers startup supervision without requiring the foreground CLI to implement the Windows service-control protocol. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans) -->
 4. Install scripts verify downloaded artifact checksums before installation. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans) -->
 5. Install scripts do not embed provider, admin, node, upstream, deploy, or Cloudflare API credentials. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans) -->
-6. The Admin UI fetches and displays the selected platform install command for saved tokens and platform changes. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiScript --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 auto-loads installer command for saved tokens and platform changes) -->
+6. The Admin UI fetches and displays the selected platform install command for saved tokens and platform changes. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 auto-loads installer command for saved tokens and platform changes) -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -119,7 +119,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. The Worker origin and Admin entry point serve the Admin configuration UI as HTML with no bearer token required to load the shell. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-2. The UI stores admin tokens only in browser-controlled session/local storage and sends them as bearer credentials only when an admin action requires authentication. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
+2. The UI stores admin tokens in browser-controlled session/local storage only after a successful login verification and sends them as bearer credentials only when an admin action requires authentication. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 verifies the admin token before storing it) -->
 3. The UI displays generated admin/provider/setup/upstream tokens only from creation responses, surfaces mesh invite tokens only as presence, status, and age, and never reads plaintext credential values back from status. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 shows mesh invite tokens as presence, status, and age only) -->
 4. The UI remains usable on desktop and mobile viewports. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_RESPONSIVE --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
 5. Admin UI HTML responses prevent browser framing. <!-- @impl: packages/router-worker/src/router.ts::html --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
@@ -161,25 +161,52 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
-### REQ-ADM-007: Admin command center
+### REQ-ADM-007: Operator dashboard
 
-**Intent:** Admins need the browser surface to behave like an operator console, with a clear task hierarchy and consistent control feedback.
+**Intent:** Admins need the browser surface to behave like an operator console: entry views driven by real deployment state, day-two operations separated into navigable sections, and consistent, safe control feedback.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. The UI summarizes setup, authentication, nodes, profiles, and audit state near the top of the page. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_COMMAND_CENTER --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
-2. The UI lists setup, authentication, enrollment, routing, and operations in persistent navigation order. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_COMMAND_CENTER --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
-3. Each workflow navigation link resolves to a rendered work section. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
-4. Related controls keep predictable label, input, feedback, and action placement while using operator-facing labels for install commands, Gateway configuration, custom domains, and mesh-profile readiness. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ACTION_ROW_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a command-center admin UI with consistent action rows) -->
-5. Locked setup errors show inline guidance instead of raw JSON. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_SETUP_LOCKED_FEEDBACK --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 renders setup-locked recovery affordances instead of raw JSON) -->
+1. The Worker serves the admin shell pre-rendered into the entry view matching stored setup state: the setup wizard while setup is open, and the sign-in view once setup is locked. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_VIEWS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 pre-renders the entry view from stored setup state) -->
+2. The authenticated dashboard separates operations into Overview, Nodes, Models, Routing, Mesh, and Settings sections behind persistent navigation that marks the active section. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_NAV --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
+3. Each navigation entry resolves to a rendered dashboard section, and mobile viewports reach every section through a bottom tab bar. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
+4. Every text, number, and select control carries a visible label, with inline hints and per-action feedback in predictable placement. <!-- @impl: packages/router-worker/src/admin-ui-components.ts::ADMIN_UI_FIELD_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 labels every dashboard control visibly) -->
+5. Destructive actions arm into an explicit same-control confirm step that auto-disarms before submitting. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-007 arms destructive controls and auto-disarms before submitting) -->
+6. Locked setup errors show inline guidance instead of raw JSON. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 renders setup-locked recovery affordances instead of raw JSON) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-011: Guided first-run setup
+
+**Intent:** First-run operators must be led through credentials, routing, and first-node enrollment as one sequenced flow instead of discovering parallel controls unaided.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. While setup is open, the Worker origin renders the setup wizard as the entry view with a visible step indicator. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
+2. The wizard sequences credential creation, AI Gateway connection, and first-node enrollment before a finishing review step, in that order. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
+3. Generated credentials render only from the creation response as one-time reveal cards with copy affordances and an explicit shown-once warning. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard) -->
+4. Completing credential creation establishes the admin session for the remaining steps without token re-entry. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard) -->
+5. The Gateway connection and node enrollment steps are individually skippable, and every wizard capability remains available from the dashboard afterward. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-ADM-001](#req-adm-001-first-run-setup), [REQ-ADM-002](#req-adm-002-mvp-admin-auth), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
 
 **Verification:** Automated test
 

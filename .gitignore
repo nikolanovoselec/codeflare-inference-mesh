@@ -35,3 +35,8 @@ graphify-out/obsidian/
 .graphify_community_label_batches/
 .graphify_root
 /.graphify_labels.json
+
+# Impeccable critique snapshots (tool-local state)
+.impeccable/
+# graphify curated-graph backups
+graphify-out/20*/

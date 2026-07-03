@@ -32,7 +32,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
     const url = new URL(request.url)
     try {
       await deps.store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-      if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/admin')) return html(adminUiHtml(url.origin), id)
+      if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/' || url.pathname === '/admin')) return html(adminUiHtml(url.origin, { setupOpen: await setupOpen(deps) }), id)
       if (request.method === 'GET' && url.pathname === '/health') return json({ ok: true, service: 'inference-mesh-router' }, 200, id)
       if (request.method === 'GET' && url.pathname === '/v1/models') return await handleModels(request, deps, id, now())
       if (request.method === 'POST' && url.pathname === '/v1/chat/completions') return await handleChat(request, deps, id, now())
@@ -214,6 +214,12 @@ async function handleNodeUnregister(request: Request, deps: RouterDeps, requestI
   await deps.store.upsertNode({ ...node, status: 'offline', inFlight: 0, lastSeenAt: now })
   await deps.store.appendAudit({ id: requestId, type: 'node_unregistered', at: now, actor: 'node', target: body.nodeId, detail: {} })
   return json({ ok: true }, 200, requestId)
+}
+
+/** Setup is open while no active admin token exists — the same rule handleFirstSetup locks on. */
+async function setupOpen(deps: RouterDeps): Promise<boolean> {
+  const admins = await deps.store.listTokens('admin')
+  return !admins.some((token) => token.active)
 }
 
 async function handleFirstSetup(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
