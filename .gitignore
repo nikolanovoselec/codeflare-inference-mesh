@@ -40,3 +40,6 @@ graphify-out/obsidian/
 .impeccable/
 # graphify curated-graph backups
 graphify-out/20*/
+
+# Report-only review artifacts (must never be committed)
+documentation/.doc-coverage.md
