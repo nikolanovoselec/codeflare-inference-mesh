@@ -1209,7 +1209,7 @@ describe('router worker behavioral contracts', () => {
     expect(receiver).toBeUndefined()
   })
 
-  it('CloudflareGatewayClient surfaces the Cloudflare error code and message on a failed API call', async () => {
+  it('REQ-GWY-005 surfaces the Cloudflare error code and message on a failed API call', async () => {
     const fetcher = (async () => Response.json({ success: false, errors: [{ code: 2003, message: 'model id invalid' }] }, { status: 400 })) as unknown as typeof fetch
     const client = new CloudflareGatewayClient('runtime-token', fetcher)
     await expect(client.listGateways('account-a')).rejects.toThrow(/400.*2003.*model id invalid/)

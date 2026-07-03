@@ -117,6 +117,15 @@ describe('dashboard overview contracts', () => {
     expect(listButtons.map((button) => button.dataset.nodeId).sort()).toEqual(['node-big', 'node-down', 'node-small'])
   })
 
+  it('REQ-ADM-015 renders an empty-state topology when no nodes are enrolled', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ nodes: [] }) })
+    const canvas = harness.byId(ADMIN_UI_TOPOLOGY.canvasId)
+    expect(canvas.classList.contains('is-empty')).toBe(true)
+    expect(canvas.children.filter((child) => child.className === 'topo-empty')).toHaveLength(1)
+    expect(descendants(canvas).filter((node) => node.dataset.topoHub === 'true')).toHaveLength(1)
+    expect(descendants(canvas).filter((node) => node.dataset.action === 'node-detail')).toHaveLength(0)
+  })
+
   it('REQ-ADM-015 sorts the nodes table by the clicked column and flips direction on repeat', async () => {
     const harness = await dashboardHarness()
     expect(rowOrder(harness)).toEqual(['node-big', 'node-small', 'node-down'])

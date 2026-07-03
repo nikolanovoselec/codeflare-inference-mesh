@@ -241,7 +241,10 @@ export interface CloudflareApiError {
  *  audit log instead of an opaque status. Never contains secret material. */
 export function formatCloudflareApiErrors(errors?: readonly CloudflareApiError[]): string {
   if (!Array.isArray(errors) || errors.length === 0) return ''
-  return ': ' + errors.map((error) => [error.code, error.message].filter((value) => value != null && value !== '').join(' ')).join('; ')
+  const rendered = errors
+    .map((error) => [error.code, error.message].filter((value) => value != null && value !== '').join(' '))
+    .filter((value) => value !== '')
+  return rendered.length === 0 ? '' : ': ' + rendered.join('; ')
 }
 
 function dnsRecordBody(zone: ZoneRecord, hostname: string, workerUrl: string): { type: 'A' | 'CNAME'; name: string; content: string; proxied: true; ttl: 1 } {
