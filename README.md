@@ -41,25 +41,14 @@ flowchart LR
     gateway -.->|fails over when local capacity is short| provider
 ```
 
-- Clients call one public model alias such as `mesh-default`, and the Gateway route stays fixed as nodes come and go.
+- Clients call one private model alias called `codeflare-mesh`, and the Gateway route stays fixed as nodes come and go.
 - The Worker is the only public surface. It takes Gateway traffic, reserves a ready node through a Durable Object scheduler, and forwards over Workers VPC to nodes that stay private on Cloudflare WARP.
 - Each node runs one Go agent. It installs and supervises a pinned, checksum-verified `mesh-llm` binary, reports health on every heartbeat, and proxies requests to it, so there is no separate inference server to babysit.
 - Nodes serving the same profile form a private mesh. The router elects a seed and hands out join tokens through heartbeats; the mesh then serves a model on one node or splits it across several. Mesh secrets are encrypted at rest and rotate on one click.
 
 ## What it runs
 
-The fabric serves open models, not a fixed menu. Every node runs [mesh-llm](https://github.com/Mesh-LLM/mesh-llm), a supervised runtime built on [llama.cpp](https://github.com/ggml-org/llama.cpp), so it runs the broad open-model ecosystem those projects support, from a 1.5B coder that fits on a laptop to large mixture-of-experts models. Operators publish a model under a stable alias like `mesh-default`; the fabric places it on ready nodes, splitting a model across several when one machine is not enough.
-
-## The operator console
-
-Setup and day-two operations run from the browser. The console is gated by Cloudflare Access on your own custom domain, so there is no long-lived admin password to leak.
-
-- The wizard runs on the bootstrap origin: claim the deployment, provision the custom domain, then provision Access. It hands off to the custom domain for Gateway connection, first-node enrollment, and review, and afterward the bootstrap origin locks itself to a "moved" page.
-- Roles come from Access. You name admin and user identities (Access groups or emails) at setup or later. Admins see and change everything; read-only users get the dashboard and the playground and nothing they can break. Leave the user set empty and anyone who clears Access gets read-only access.
-- The dashboard shows the live mesh: a hub-and-spoke topology, per-node and per-model drawers, a stats strip, a sortable node table, and a tokens-per-second trace that refreshes every five seconds.
-- The playground sends a prompt through the real Gateway route and streams it back, without ever pasting a key into a browser.
-
-One manual step lives inside the wizard: the Gateway step reveals a provider key to paste into the AI Gateway custom provider's BYOK field, and re-syncing the Gateway rotates it. That key is what lets the route fail over to your configured provider.
+The fabric serves open models, not a fixed menu. Every node runs [mesh-llm](https://github.com/Mesh-LLM/mesh-llm), a supervised runtime built on [llama.cpp](https://github.com/ggml-org/llama.cpp), so it runs the broad open-model ecosystem those projects support, from a 1.5B coder that fits on a laptop to large mixture-of-experts models. Operators publish a model under a stable alias `codeflare-mesh`; the fabric places it on ready nodes, splitting a model across several when one machine is not enough.
 
 ## Quickstart
 
@@ -152,10 +141,6 @@ Self-update works the same way. Pick a release tag from the console's agent-vers
 The full two-node runbook, rotation and failover tests, and rollback live in [deployment.md](documentation/lanes/deployment.md).
 
 </details>
-
-## Built to be verified
-
-Every change proves itself in CI before it ships: router and Go test suites, type checks, release packaging, security scanning, fuzzing, and workflow-safety validation. The required checks (`test`, `security`, `fuzz`) gate branch protection, and production deploys refuse to run unless `main` is green. The container the mesh is developed in is deliberately constrained, so CI, not a laptop, is the source of truth.
 
 ## Documentation
 
