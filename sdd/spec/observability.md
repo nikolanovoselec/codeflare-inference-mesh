@@ -245,6 +245,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 3. Status polling pauses while the page is hidden and resumes when it becomes visible. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 pauses polling while the tab is hidden and resumes with a fresh read) -->
 4. A live indicator reflects whether the latest poll succeeded within the freshness window. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 flips the live badge when a poll fails and recovers on the next success) -->
 5. The throughput trace renders a rolling window of samples smoothed between polls. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderToksTrace --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 renders a smoothed rolling throughput trace from successive polls) -->
+6. The throughput trace stays empty instead of rendering a flat baseline when there is no real throughput (samples absent or all zero). <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderToksTrace --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 renders no throughput bars while there is no real throughput) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 

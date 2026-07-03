@@ -413,6 +413,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 4. Selecting a model opens a detail drawer showing its alias, availability, and serving nodes. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer listing the nodes serving each alias) -->
 5. The Nodes section renders nodes as a sortable table whose rows open the node drawer. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 sorts the nodes table by the clicked column and flips direction on repeat) -->
 6. Below the mobile breakpoint the topology falls back to a list presentation. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_TOPOLOGY --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
+7. When no nodes are enrolled, the topology shows an empty-state message directing the operator to add a node rather than a bare hub-and-spoke frame. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders an empty-state topology when no nodes are enrolled) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 

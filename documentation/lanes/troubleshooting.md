@@ -13,6 +13,7 @@
 - [Requests fail briefly after mesh rotation](#requests-fail-briefly-after-mesh-rotation)
 - [Admin status shows mesh_state_key_missing](#admin-status-shows-mesh_state_key_missing)
 - [Dashboard shows "The router hit a temporary error"](#dashboard-shows-the-router-hit-a-temporary-error)
+- [Setup step fails after a Cloudflare permission or API error](#setup-step-fails-after-a-cloudflare-permission-or-api-error)
 - [Update staging checksum mismatch](#update-staging-checksum-mismatch)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
