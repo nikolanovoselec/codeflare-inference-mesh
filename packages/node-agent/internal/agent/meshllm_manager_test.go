@@ -337,7 +337,7 @@ func equalStrings(got []string, want []string) bool {
 // --- REQ-RUN-003 -----------------------------------------------------------
 
 func TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate(t *testing.T) {
-	t.Run("REQ-RUN-003", func(t *testing.T) {
+	t.Run("REQ-RUN-010", func(t *testing.T) {
 		t.Setenv("MESHLLM_MANAGER_TEST_MARKER", "inherited-value")
 		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{}, 0)
 		if err := fixture.manager.Start(context.Background()); err != nil {
@@ -357,7 +357,7 @@ func TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate(t *testing.T
 }
 
 func TestREQRUN010StopSendsSIGTERMBeforeKill(t *testing.T) {
-	t.Run("REQ-RUN-003", func(t *testing.T) {
+	t.Run("REQ-RUN-010", func(t *testing.T) {
 		t.Run("escalates to kill only after the grace period", func(t *testing.T) {
 			fixture := newMeshManagerForTest(t, MeshLLMRenderInput{}, 0)
 			if err := fixture.manager.Start(context.Background()); err != nil {
@@ -403,7 +403,7 @@ func TestREQRUN010StopSendsSIGTERMBeforeKill(t *testing.T) {
 }
 
 func TestREQRUN010MissingBinaryReportsDependencyMissing(t *testing.T) {
-	t.Run("REQ-RUN-003", func(t *testing.T) {
+	t.Run("REQ-RUN-010", func(t *testing.T) {
 		launch := &fakeLaunch{}
 		manager := NewMeshLLMManager(MeshLLMRenderInput{ProfileID: "prof", ModelRef: "target-model", Rotation: 1}, 0, t.TempDir(), "definitely-missing-mesh-llm-for-test")
 		manager.launch = launch.launcher()

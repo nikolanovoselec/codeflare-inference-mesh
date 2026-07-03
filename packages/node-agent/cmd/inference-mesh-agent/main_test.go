@@ -331,7 +331,7 @@ func TestREQRUN005RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
 // --- REQ-NODE-002 / REQ-OBS-003 mesh status metrics --------------------------
 
 func TestREQNODE007HeartbeatMetricsCarryMeshState(t *testing.T) {
-	t.Run("REQ-NODE-002 REQ-OBS-003", func(t *testing.T) {
+	t.Run("REQ-NODE-007 REQ-OBS-003", func(t *testing.T) {
 		profile := agent.ModelProfile{ID: "p", UpstreamModel: "model-x", MeshLLM: agent.MeshLLMSettings{ModelRef: "model-x", Split: true, BindPort: 4300}}
 		base := agent.NodeMetrics{RuntimeState: "ready", LoadedModel: "model-x", LoadedProfileID: "p", LoadedProfileVersion: 3, ActiveRequests: 1}
 		status := agent.MeshLLMStatus{NodeID: "node-1", NodeState: "serving", MeshID: "mesh-1", Version: "0.72.2", PeerCount: 2, StageCount: 2, StageZeroNodeID: "node-9", TokPerSec: 42.5}

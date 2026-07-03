@@ -82,9 +82,9 @@
 
 **Threat:** The admin bearer token is kept in browser `sessionStorage` or `localStorage` (`packages/router-worker/src/admin-ui.ts`) rather than an httpOnly cookie, so any JavaScript executing in the Worker's origin — including a future XSS bug in the admin UI — can read and exfiltrate it.
 
-**Mitigation:** The admin UI escapes every interpolated status value, and no third-party script is loaded. No Content-Security-Policy header is currently set on Worker responses. Operators who need defense-in-depth against this exposure should front the admin surface with Cloudflare Access after attaching a custom domain (see [SECURITY.md](../../SECURITY.md)).
+**Mitigation:** The admin UI escapes every interpolated status value, and no third-party script is loaded. The admin HTML response sets `content-security-policy: frame-ancestors 'none'` and `x-frame-options: DENY` (`packages/router-worker/src/router.ts::html`), which blocks clickjacking but carries no `script-src`/`default-src` directive, so it does not mitigate script injection into the same origin. Operators who need defense-in-depth against this exposure should front the admin surface with Cloudflare Access after attaching a custom domain (see [SECURITY.md](../../SECURITY.md)).
 
-**Verification:** audit pending — no automated test currently asserts a CSP header or an admin-UI output-encoding boundary. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
+**Verification:** `packages/router-worker/src/router.test.ts` (`AdminConfigurationUiTestAnchor`) asserts the `content-security-policy` and `x-frame-options` header values on the admin response; no automated test currently asserts an admin-UI output-encoding boundary, so that narrower gap remains audit pending. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminConfigurationUiTestAnchor -->
 
 **Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
@@ -98,7 +98,7 @@
 - It distributes join tokens only in heartbeat responses to live, non-revoked nodes on the mesh profile; when the key is absent, mesh rotation and bootstrap fail closed with `mesh_state_key_missing`.
 - Rotation increments a per-profile counter baked into the rendered mesh identity (`--mesh-name codeflare-<profileId>-r<rotation>`), so a rotation is a hard cut into a different mesh that every member drains and restarts into.
 - Reconvergence within about two minutes is an operational constraint, not an acceptance criterion.
-- Eviction is honest about its boundary: revoking a node removes its token entry, and rotation excludes it from the new mesh, but a malicious holder of the old secret could still rejoin the old mesh name — which no longer receives traffic.
+- Eviction is honest about its boundary: revoking a node removes its token entry and excludes it from the new mesh, but a holder of the old secret could still rejoin the old mesh name — which no longer receives traffic.
 - Join-level eviction of stale-token holders is upstream MeshLLM's `--trust-policy allowlist` plus `--owner-key` backstop, not managed by this project.
 - Node tokens have no in-place rotation: a revoked node regains mesh access only by re-enrolling with a fresh single-use setup token. Admin surfaces show token presence, age, and count — never values.
 
