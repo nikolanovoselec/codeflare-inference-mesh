@@ -6,10 +6,14 @@
 
 [![CI](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/ci.yml)
 [![Security](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/security.yml)
+[![Fuzz](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/fuzz.yml/badge.svg?branch=main)](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/fuzz.yml)
+[![Model families](https://img.shields.io/badge/model%20families-100%2B-ff5c3c)](#what-it-runs)
+[![Runtime](https://img.shields.io/badge/runtime-mesh--llm-ff5c3c)](https://github.com/Mesh-LLM/mesh-llm)
+[![Engine](https://img.shields.io/badge/engine-llama.cpp-ff5c3c)](https://github.com/ggml-org/llama.cpp)
 
-**Private LLM inference on the machines you already own, behind one OpenAI-compatible endpoint.**
+**Turn the idle machines you already own into a private inference fabric for open LLMs.**
 
-Codeflare Inference Mesh is the self-hosted inference layer of the **Codeflare** family, the enterprise agentic coding engine. It gives Codeflare's agents, and any OpenAI-compatible client you already run, a private model backend that lives inside your own network instead of a third-party API.
+Codeflare Inference Mesh is the self-hosted inference layer of the **Codeflare** family, the enterprise agentic coding engine. It pools the idle GPUs and CPUs already sitting in your fleet into one private fabric and serves open models on it: over 100 model families, with a model too large for any single machine sharded across several and served as one. Codeflare's agents use the fabric natively, and because it speaks the same OpenAI API your existing tools already do, they reach it with no change. Powered by [mesh-llm](https://github.com/Mesh-LLM/mesh-llm), which embeds [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
 ---
 
@@ -17,7 +21,7 @@ Codeflare Inference Mesh is the self-hosted inference layer of the **Codeflare**
 
 Most enterprises already own thousands of Windows, macOS, and Linux devices. They sit idle for most of the working day: someone reads a wiki, sits in a meeting, or waits between tasks while a capable GPU does nothing. Buying dedicated inference racks to sit next to that idle capacity is the expensive way to solve the problem.
 
-The mesh pools the capacity you have. A request lands on one stable Gateway route, the router picks a ready node, and the node serves the model locally. When local capacity runs short or a task needs a stronger model, the same route fails over to OpenAI, Anthropic, Microsoft, or any other provider you configure. No node exposes a public URL, and no prompt leaves your network unless you route it out on purpose.
+The fabric pools the capacity you have. A request lands on one stable Gateway route, the router picks a ready node, and the node serves the model locally. When local capacity runs short or a task needs a stronger model, the same route fails over to OpenAI, Anthropic, Microsoft, or any other provider you configure. No node exposes a public URL, and no prompt leaves your network unless you route it out on purpose.
 
 ## How it works
 
@@ -42,6 +46,10 @@ flowchart LR
 - The Worker is the only public surface. It takes Gateway traffic, reserves a ready node through a Durable Object scheduler, and forwards over Workers VPC to nodes that stay private on Cloudflare WARP.
 - Each node runs one Go agent. It installs and supervises a pinned, checksum-verified `mesh-llm` binary, reports health on every heartbeat, and proxies requests to it, so there is no separate inference server to babysit.
 - Nodes serving the same profile form a private mesh. The router elects a seed and hands out join tokens through heartbeats; the mesh then serves a model on one node or splits it across several. Mesh secrets are encrypted at rest and rotate on one click.
+
+## What it runs
+
+The fabric serves open models, not a fixed menu. Every node runs [mesh-llm](https://github.com/Mesh-LLM/mesh-llm), a supervised runtime built on [llama.cpp](https://github.com/ggml-org/llama.cpp), so it runs the GGUF ecosystem those projects support: over 100 model families and thousands of ready-to-run models, from a 1.5B coder that fits on a laptop to large mixture-of-experts models. Operators publish a model under a stable alias like `mesh-default`; the fabric places it on ready nodes, splitting a model across several when one machine is not enough.
 
 ## The operator console
 
