@@ -99,7 +99,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (pollTimer) clearTimeout(pollTimer);
     pollTimer = setTimeout(() => {
       pollTimer = undefined;
-      if (document.hidden) return;
+      if (document.hidden || document.body.dataset.view !== 'dashboard') return;
       refreshStatus().catch(() => undefined);
       schedulePoll();
     }, config.polling.intervalMs);
@@ -292,6 +292,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const row = document.createElement('tr');
       const cell = document.createElement('td');
       cell.className = 'empty-note';
+      cell.setAttribute('colspan', String(config.nodesTable.columns.length));
       cell.textContent = 'No nodes enrolled yet. Create a setup token below and run the install command on a machine.';
       row.appendChild(cell);
       bodyEl.appendChild(row);
@@ -803,6 +804,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (state.phase === 'complete') showDashboard(); else { setView('setup'); setWizardStep(phaseStep()); }
   }
   const signOut = () => {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = undefined; }
     storeToken('', false);
     liveToken = '';
     setView('setup');
