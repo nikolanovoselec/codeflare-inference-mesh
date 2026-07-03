@@ -1,7 +1,7 @@
 # Codeflare Inference Mesh
 
 <p align="center">
-  <img src="assets/og.png" alt="Codeflare Inference Mesh: private LLM inference on hardware you own" width="100%">
+  <img src="assets/og.png" alt="Codeflare Inference Mesh: private LLM inference on hardware you own." width="100%">
 </p>
 
 [![CI](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/ci.yml)
@@ -39,6 +39,8 @@ Setup and day-two operations run from the browser. The console is gated by Cloud
 - Roles come from Access. You name admin and user identities (Access groups or emails) at setup or later. Admins see and change everything; read-only users get the dashboard and the playground and nothing they can break. Leave the user set empty and anyone who clears Access gets read-only access.
 - The dashboard shows the live mesh: a hub-and-spoke topology, per-node and per-model drawers, a stats strip, a sortable node table, and a tokens-per-second trace that refreshes every five seconds.
 - The playground sends a prompt through the real Gateway route and streams it back, without ever pasting a key into a browser.
+
+One manual step lives inside the wizard: the Gateway step reveals a provider key to paste into the AI Gateway custom provider's BYOK field, and re-syncing the Gateway rotates it. That key is what lets the route fail over to your configured provider.
 
 ## Quickstart
 
@@ -80,7 +82,7 @@ Set these in **Settings → Secrets and variables → Actions**. Use scoped API 
 | Token | Minimum scopes |
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN_DEPLOY` | `Workers Scripts: Edit`, `D1: Edit`, `Account Settings: Read` |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | `AI Gateway: Edit`, `Access: Edit`, `Account Settings: Read`; add `Workers Routes: Edit` and target-zone DNS permissions for custom-domain provisioning |
+| `CLOUDFLARE_API_TOKEN_RUNTIME` | `AI Gateway: Edit`, `Access: Apps and Policies Edit`, `Access: Organizations, Identity Providers, and Groups Edit`, `Account Settings: Read`; add `Workers Routes: Edit` and target-zone DNS permissions for custom-domain provisioning |
 
 Do not store the provider, admin, setup, node, or upstream tokens as GitHub secrets. First-run setup mints those, and each surfaces only where it is used.
 
