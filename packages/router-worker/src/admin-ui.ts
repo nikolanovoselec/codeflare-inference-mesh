@@ -12,7 +12,8 @@ import {
 } from './admin-ui-contract'
 import { ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
 import { adminUiCss } from './admin-ui-css'
-import { dashboardView, loginView, setupWizardView } from './admin-ui-views'
+import { dashboardView, setupWizardView } from './admin-ui-views'
+import type { AdminUiStateView } from './admin-ui-contract'
 
 export {
   ADMIN_UI_ACTIONS,
@@ -26,23 +27,22 @@ export {
   ADMIN_UI_VIEWS,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
-export type { ActivationProfileView, AdminUiAction, AgentVersionsView, MeshHealthEntry, MeshUiStatusNode } from './admin-ui-contract'
+export type { ActivationProfileView, AdminUiAction, AdminUiStateView, AgentVersionsView, MeshHealthEntry, MeshUiStatusNode } from './admin-ui-contract'
 
-export interface AdminUiState {
-  /** True while no active admin token exists, i.e. first-run setup is open. */
-  readonly setupOpen: boolean
-}
+/** Server-computed entry state: which view to pre-render and where setup stands. */
+export type AdminUiState = AdminUiStateView
 
 const FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='4.5' fill='%2309090b'/%3E%3Crect x='6' y='6' width='12' height='12' rx='2.5' fill='%23ff5c3c'/%3E%3C/svg%3E"
 
 /**
  * Server-rendered admin console shell. The entry view is pre-rendered from
- * stored setup state (wizard while setup is open, sign-in once locked); the
- * dashboard reveals only after the client verifies an admin token.
+ * host and setup phase (wizard until setup completes, dashboard afterwards);
+ * on the custom domain the Cloudflare Access session is the authentication.
  */
 export function adminUiHtml(workerOrigin: string, state: AdminUiState): string {
   const config = scriptJson({
     workerOrigin,
+    state,
     actions: ADMIN_UI_ACTIONS,
     responsive: ADMIN_UI_RESPONSIVE,
     views: ADMIN_UI_VIEWS,
@@ -54,7 +54,7 @@ export function adminUiHtml(workerOrigin: string, state: AdminUiState): string {
     agentVersion: ADMIN_UI_AGENT_VERSION,
     profileActivation: ADMIN_UI_PROFILE_ACTIVATION
   })
-  const entryView = state.setupOpen ? 'setup' : 'login'
+  const entryView = state.view
   return `<!doctype html>
 <html lang="en" data-admin-ui="codeflare-inference-mesh" style="background:#09090b">
 <head>
@@ -83,8 +83,7 @@ export function adminUiHtml(workerOrigin: string, state: AdminUiState): string {
   </header>
   <noscript><p class="noscript-banner">This console needs JavaScript to talk to the router API.</p></noscript>
   <main>
-    ${setupWizardView(state.setupOpen)}
-    ${loginView(!state.setupOpen)}
+    ${setupWizardView(state.view === 'setup')}
     ${dashboardView()}
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

@@ -15,6 +15,11 @@ export interface AdminUiAction {
 export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'first-run-setup', method: 'POST', path: '/admin/setup', auth: 'open' },
   { id: 'admin-login', method: 'POST', path: '/admin/login', auth: 'admin' },
+  { id: 'setup-domain', method: 'POST', path: '/admin/setup/domain', auth: 'admin' },
+  { id: 'setup-access', method: 'POST', path: '/admin/setup/access', auth: 'admin' },
+  { id: 'setup-complete', method: 'POST', path: '/admin/setup/complete', auth: 'admin' },
+  { id: 'zones-refresh', method: 'GET', path: '/admin/cloudflare/zones', auth: 'admin' },
+  { id: 'gateway-options', method: 'GET', path: '/admin/cloudflare/gateway/options', auth: 'admin' },
   { id: 'status-refresh', method: 'GET', path: '/admin/status', auth: 'admin' },
   { id: 'setup-token-create', method: 'POST', path: '/admin/setup-tokens', auth: 'admin' },
   { id: 'installer-linux', method: 'GET', path: '/admin/installers/linux', auth: 'admin' },
@@ -36,11 +41,19 @@ export const ADMIN_UI_RESPONSIVE = {
   minTouchTargetPx: 44
 } as const
 
-/** Entry views are pre-rendered server-side from stored setup state. */
+/** Entry views are pre-rendered server-side from host and setup phase. */
 export const ADMIN_UI_VIEWS = {
-  modes: ['setup', 'login', 'dashboard'],
+  modes: ['setup', 'dashboard'],
   attribute: 'data-view'
 } as const
+
+/** Wire shape of the server-rendered state inside the admin-ui-config blob. */
+export interface AdminUiStateView {
+  readonly view: 'setup' | 'dashboard'
+  readonly phase: 'unclaimed' | 'claimed' | 'domain_ready' | 'access_ready' | 'complete'
+  readonly customDomain?: string
+  readonly recovery?: boolean
+}
 
 /** Dashboard IA: six noun sections; mobile reaches them through four tabs. */
 export const ADMIN_UI_NAV = {
@@ -49,10 +62,21 @@ export const ADMIN_UI_NAV = {
   moreSections: ['models', 'routing', 'settings']
 } as const
 
-/** Guided first-run flow; gateway and node steps are skippable. */
+/**
+ * Guided first-run flow across two hosts: connect/domain/access run on the
+ * bootstrap origin, then setup hands off to the custom domain for the rest.
+ * Gateway and node steps are skippable.
+ */
 export const ADMIN_UI_WIZARD = {
-  steps: ['credentials', 'gateway', 'node', 'review'],
-  skippable: ['gateway', 'node']
+  steps: ['connect', 'domain', 'access', 'gateway', 'node', 'review'],
+  skippable: ['gateway', 'node'],
+  phaseSteps: {
+    unclaimed: 'connect',
+    claimed: 'domain',
+    domain_ready: 'access',
+    access_ready: 'gateway',
+    complete: 'review'
+  }
 } as const
 
 /** Destructive controls arm into a same-button confirm that auto-disarms. */

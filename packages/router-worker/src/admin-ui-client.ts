@@ -10,6 +10,8 @@
 export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   'use strict';
   const config = JSON.parse(document.getElementById('admin-ui-config').textContent);
+  const state = config.state || { view: 'setup', phase: 'unclaimed' };
+  const onCustomDomain = Boolean(state.customDomain) && location.hostname === state.customDomain;
   const byId = (id) => document.getElementById(id);
   const tokenKey = 'codeflareInferenceMeshAdminToken';
   const savedToken = () => sessionStorage.getItem(tokenKey) || localStorage.getItem(tokenKey) || '';
@@ -69,9 +71,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // --- view + section state -------------------------------------------------
   const setView = (mode) => {
     document.body.dataset.view = mode;
-    ['setup', 'login', 'dashboard'].forEach((view) => { const el = byId('view-' + view); if (el) el.hidden = view !== mode; });
+    ['setup', 'dashboard'].forEach((view) => { const el = byId('view-' + view); if (el) el.hidden = view !== mode; });
     const signOut = byId('sign-out-btn');
-    if (signOut) signOut.hidden = mode !== 'dashboard';
+    if (signOut) signOut.hidden = mode !== 'dashboard' || !liveToken;
   };
   const setSection = (name) => {
     config.nav.sections.forEach((section) => {
@@ -100,6 +102,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
 
   // --- wizard ---------------------------------------------------------------
   const wizardSteps = config.wizard.steps;
+  const phaseStep = () => {
+    if (state.recovery) return 'domain';
+    return config.wizard.phaseSteps[state.phase] || 'connect';
+  };
   const setWizardStep = (step) => {
     wizardSteps.forEach((name, index) => {
       const panel = byId('step-' + name);
@@ -110,22 +116,26 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         marker.dataset.done = String(index < wizardSteps.indexOf(step));
       }
     });
+    if (step === 'domain') loadZones().catch(() => undefined);
+    if (step === 'gateway') loadGatewayOptions('').catch(() => undefined);
+    if (step === 'review') renderReview().catch(() => undefined);
   };
   const wizardMove = (delta) => {
     const current = wizardSteps.find((name) => { const panel = byId('step-' + name); return panel && !panel.hidden; }) || wizardSteps[0];
     const next = wizardSteps[Math.min(wizardSteps.length - 1, Math.max(0, wizardSteps.indexOf(current) + delta))];
     setWizardStep(next);
-    if (next === 'review') renderReview().catch(() => undefined);
   };
   async function renderReview() {
     const summary = byId('review-summary');
-    if (!summary || !liveToken) return;
+    if (!summary || (!liveToken && !onCustomDomain)) return;
     const status = await request('/admin/status', { headers: headers(false) });
     summary.textContent = '';
     const nodes = Array.isArray(status.nodes) ? status.nodes : [];
     const gateway = status.gateway || {};
+    const domain = status.customDomain || {};
     const lines = [
-      ['Credentials', 'created'],
+      ['Custom domain', domain.hostname ? String(domain.hostname) : 'not configured'],
+      ['Access', state.phase === 'access_ready' || state.phase === 'complete' ? 'enabled' : 'not enabled'],
       ['AI Gateway', gateway.gatewayId ? String(gateway.gatewayId) : 'not connected (available under Routing)'],
       ['Nodes enrolled', String(nodes.length)]
     ];
@@ -147,7 +157,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!el) return;
     el.classList.remove('is-error');
     el.textContent = '';
-    const entries = Object.entries(values).filter((pair) => typeof pair[1] === 'string' && pair[0] !== 'byokInstruction');
+    const entries = Object.entries(values).filter((pair) => typeof pair[1] === 'string' && pair[0] !== 'byokInstruction' && pair[0] !== 'adminToken');
     const warning = document.createElement('p');
     warning.className = 'token-warning';
     warning.setAttribute('data-token-warning', 'true');
@@ -473,8 +483,111 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (copyToClipboard && select.value === platform) { await navigator.clipboard.writeText(command); toast('Install command copied'); }
   }
   const gatewayPayload = (prefix) => {
+    if (prefix === 'wiz-') return wizardGatewayPayload();
     const value = (suffix) => readInput(prefix + 'gateway-' + suffix);
     const raw = { accountId: value('account-id'), gatewayId: value('id'), routeName: value('route-name'), publicModel: value('public-model'), providerName: value('provider-name'), workerUrl: value('worker-url') };
+    return Object.fromEntries(Object.entries(raw).filter((pair) => pair[1]));
+  };
+
+  // --- wizard data loaders ----------------------------------------------------
+  let accessEmails = [];
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  function renderEmailChips() {
+    const list = byId('wizard-access-emails');
+    if (!list) return;
+    list.textContent = '';
+    accessEmails.forEach((email) => {
+      const item = document.createElement('li');
+      item.className = 'email-chip';
+      item.setAttribute('data-email-chip', email);
+      const text = document.createElement('span');
+      text.textContent = email;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn btn-ghost';
+      remove.textContent = 'Remove';
+      remove.setAttribute('data-remove-email', email);
+      item.append(text, remove);
+      list.appendChild(item);
+    });
+  }
+  async function loadZones() {
+    const slot = byId('wizard-zone-slot');
+    if (!slot) return;
+    let zones = [];
+    try {
+      const body = await request('/admin/cloudflare/zones', { headers: headers(false) });
+      zones = Array.isArray(body.zones) ? body.zones : [];
+    } catch (error) { zones = []; }
+    slot.textContent = '';
+    const select = document.createElement('select');
+    select.id = 'wizard-domain-zone';
+    select.name = 'zoneId';
+    select.setAttribute('data-zone-select', 'true');
+    const auto = document.createElement('option');
+    auto.value = '';
+    auto.textContent = 'Auto-detect from hostname';
+    select.appendChild(auto);
+    zones.forEach((zone) => {
+      const option = document.createElement('option');
+      option.value = zone.id;
+      option.setAttribute('data-zone-option', zone.id);
+      option.textContent = zone.name;
+      select.appendChild(option);
+    });
+    slot.appendChild(select);
+  }
+  function fillChoiceSelect(slotId, selectId, name, marker, values, selectedValue, createLabel) {
+    const slot = byId(slotId);
+    if (!slot) return;
+    slot.textContent = '';
+    const select = document.createElement('select');
+    select.id = selectId;
+    select.name = name;
+    select.setAttribute(marker, 'true');
+    values.forEach((value) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.setAttribute('data-choice-option', value);
+      if (value === selectedValue) option.selected = true;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+    const createNew = document.createElement('option');
+    createNew.value = '__new__';
+    createNew.setAttribute('data-choice-option', '__new__');
+    createNew.textContent = createLabel;
+    if (selectedValue === '__new__') createNew.selected = true;
+    select.appendChild(createNew);
+    select.value = selectedValue;
+    slot.appendChild(select);
+  }
+  const toggleNewField = (wrapId, show) => { const wrap = byId(wrapId); if (wrap) wrap.hidden = !show; };
+  async function loadGatewayOptions(gatewayId) {
+    const emptyPanel = byId('wizard-gateway-empty');
+    const selects = byId('wizard-gateway-selects');
+    if (!emptyPanel || !selects) return;
+    const body = await request('/admin/cloudflare/gateway/options' + (gatewayId ? '?gateway=' + encodeURIComponent(gatewayId) : ''), { headers: headers(false) });
+    const gateways = (body.gateways || []).map((gateway) => gateway.id);
+    const routes = (body.routes || []).map((route) => route.name).filter(Boolean);
+    const defaults = body.defaults || {};
+    emptyPanel.hidden = gateways.length > 0;
+    selects.hidden = gateways.length === 0;
+    if (!gateways.length) return;
+    const wantedGateway = gatewayId || defaults.gatewayId;
+    const gatewayValue = gateways.indexOf(wantedGateway) >= 0 ? wantedGateway : '__new__';
+    fillChoiceSelect('wiz-gateway-slot', 'wiz-gateway-select', 'gatewayId', 'data-gateway-select', gateways, gatewayValue, 'Create new gateway\u2026');
+    toggleNewField('wiz-gateway-new-wrap', gatewayValue === '__new__');
+    const routeValue = routes.indexOf(defaults.routeName) >= 0 ? defaults.routeName : '__new__';
+    fillChoiceSelect('wiz-route-slot', 'wiz-route-select', 'routeName', 'data-route-select', routes, routeValue, 'Create new route\u2026');
+    toggleNewField('wiz-route-new-wrap', routeValue === '__new__');
+  }
+  const wizardGatewayPayload = () => {
+    const gatewaySelect = byId('wiz-gateway-select');
+    const routeSelect = byId('wiz-route-select');
+    const gatewayId = gatewaySelect && gatewaySelect.value && gatewaySelect.value !== '__new__' ? gatewaySelect.value : readInput('wiz-gateway-new');
+    const routeName = routeSelect && routeSelect.value && routeSelect.value !== '__new__' ? routeSelect.value : readInput('wiz-route-new');
+    const raw = { gatewayId, routeName, providerName: readInput('wiz-gateway-provider-name'), publicModel: readInput('wiz-gateway-public-model'), workerUrl: readInput('wiz-gateway-worker-url') };
     return Object.fromEntries(Object.entries(raw).filter((pair) => pair[1]));
   };
 
@@ -490,12 +603,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     }
     storeToken(candidate, remember);
     setOutput('login-output', 'Signed in');
-    showDashboard();
+    if (state.phase === 'complete') showDashboard(); else { setView('setup'); setWizardStep(phaseStep()); }
   }
   const signOut = () => {
     storeToken('', false);
     liveToken = '';
-    setView(document.body.dataset.setupOpen === 'true' ? 'setup' : 'login');
+    setView('setup');
+    setWizardStep('connect');
     setOutput('login-output', 'Signed out. The token was removed from this browser.');
     toast('Signed out');
   };
@@ -527,6 +641,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // --- actions ----------------------------------------------------------------
   const defaultOut = {
     'first-run-setup': 'setup-output',
+    'setup-domain': 'wizard-domain-output',
+    'setup-access': 'wizard-access-output',
+    'setup-complete': 'wizard-complete-output',
+    'access-email-add': 'wizard-access-output',
+    'gateway-provision-default': 'wiz-gateway-output',
     'status-refresh': 'overview-tiles',
     'setup-token-create': 'setup-token-output',
     'installer-generate': 'installer-output',
@@ -546,11 +665,45 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const body = await request('/admin/setup', { method: 'POST' });
       liveToken = body.adminToken || '';
       storeToken(liveToken, false);
-      document.body.dataset.setupOpen = 'false';
       renderTokens(out, body);
-      const next = byId('wizard-continue-credentials');
+      const next = byId('wizard-continue-connect');
       if (next) next.hidden = false;
-      toast('Credentials created');
+      toast('Deployment claimed');
+    } else if (action === 'access-email-add') {
+      const input = byId('wizard-access-email');
+      const email = input && input.value ? input.value.trim().toLowerCase() : '';
+      if (!email || !emailPattern.test(email)) { setOutput('wizard-access-output', 'Enter a valid email address.', true); return; }
+      if (accessEmails.indexOf(email) < 0) accessEmails.push(email);
+      if (input) input.value = '';
+      setOutput('wizard-access-output', '');
+      renderEmailChips();
+    } else if (action === 'setup-domain') {
+      const zoneSelect = byId('wizard-domain-zone');
+      const body = await request('/admin/setup/domain', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('wizard-domain-hostname'), zoneId: zoneSelect && zoneSelect.value ? zoneSelect.value : '' }) });
+      setOutput(out, body);
+      toast('Custom domain provisioned');
+      setWizardStep('access');
+    } else if (action === 'setup-access') {
+      const body = await request('/admin/setup/access', { method: 'POST', headers: headers(true), body: JSON.stringify({ emails: accessEmails }) });
+      setOutput(out, body);
+      const link = byId('wizard-handoff-link');
+      if (link && body.consoleUrl) link.setAttribute('href', body.consoleUrl);
+      const handoff = byId('wizard-handoff');
+      if (handoff) handoff.hidden = false;
+      if (onCustomDomain) setWizardStep('gateway');
+      toast('Access enabled');
+    } else if (action === 'setup-complete') {
+      const body = await request('/admin/setup/complete', { method: 'POST', headers: headers(false) });
+      if (onCustomDomain || !body.customDomain) {
+        setOutput(out, body);
+        showDashboard();
+        toast('Setup complete');
+      } else {
+        setOutput(out, 'Setup complete. This bootstrap origin is now locked; continue at https://' + body.customDomain + '/admin');
+      }
+    } else if (action === 'gateway-provision-default') {
+      setOutput(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
+      await loadGatewayOptions('').catch(() => undefined);
     } else if (action === 'sign-out') {
       signOut();
     } else if (action === 'status-refresh') {
@@ -583,16 +736,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'mesh-rotate') {
       const select = byId(config.meshHealth.rotateSelectId);
       setOutput(out, await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: select ? select.value : '' }) }));
-    } else if (action === 'wizard-finish') {
-      showDashboard();
     }
   }
 
   document.addEventListener('click', async (event) => {
     const copy = event.target.closest('[data-copy]');
     if (copy) { await navigator.clipboard.writeText(copy.dataset.copy || ''); toast('Copied'); return; }
-    const gotoLogin = event.target.closest('[data-goto-login]');
-    if (gotoLogin) { event.preventDefault(); setView('login'); return; }
+    const removeEmail = event.target.closest('[data-remove-email]');
+    if (removeEmail) { accessEmails = accessEmails.filter((email) => email !== removeEmail.dataset.removeEmail); renderEmailChips(); return; }
     const wizardNext = event.target.closest('[data-wizard-next]');
     if (wizardNext) { wizardMove(1); return; }
     const wizardBack = event.target.closest('[data-wizard-back]');
@@ -641,20 +792,28 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     }
   });
   document.addEventListener('change', (event) => {
-    const select = event.target.closest('[data-installer-platform]');
-    if (!select) return;
-    const prefix = select.dataset.prefix || '';
-    if (liveToken) loadInstaller(prefix, false).catch((error) => setOutput(prefix + 'installer-output', friendlyError('installer-generate', error), true));
+    const installer = event.target.closest('[data-installer-platform]');
+    if (installer) {
+      const prefix = installer.dataset.prefix || '';
+      if (liveToken || onCustomDomain) loadInstaller(prefix, false).catch((error) => setOutput(prefix + 'installer-output', friendlyError('installer-generate', error), true));
+      return;
+    }
+    const gatewaySelect = event.target.closest('[data-gateway-select]');
+    if (gatewaySelect) {
+      toggleNewField('wiz-gateway-new-wrap', gatewaySelect.value === '__new__');
+      if (gatewaySelect.value !== '__new__') loadGatewayOptions(gatewaySelect.value).catch(() => undefined);
+      return;
+    }
+    const routeSelect = event.target.closest('[data-route-select]');
+    if (routeSelect) { toggleNewField('wiz-route-new-wrap', routeSelect.value === '__new__'); }
   });
 
   // --- boot -------------------------------------------------------------------
-  const bootView = document.body.dataset.view;
-  document.body.dataset.setupOpen = bootView === 'setup' ? 'true' : 'false';
+  const bootView = state.view || document.body.dataset.view;
   setView(bootView);
-  if (bootView === 'setup') setWizardStep(config.wizard.steps[0]);
-  if (bootView === 'login' && liveToken) {
-    request('/admin/login', { method: 'POST', headers: headers(false) })
-      .then(() => showDashboard())
-      .catch(() => { storeToken('', false); liveToken = ''; });
+  if (bootView === 'setup') {
+    const target = state.recovery || liveToken || onCustomDomain || state.phase === 'unclaimed' ? phaseStep() : 'connect';
+    setWizardStep(target);
   }
+  if (bootView === 'dashboard') showDashboard();
 })();`

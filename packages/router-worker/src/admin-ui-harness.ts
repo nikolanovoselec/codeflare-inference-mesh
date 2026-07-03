@@ -177,6 +177,8 @@ export interface AdminUiHarness {
 export interface HarnessOptions {
   readonly sessionToken?: string
   readonly localToken?: string
+  /** Hostname the stub location reports; drives the client's custom-domain detection. */
+  readonly hostname?: string
 }
 
 export function adminUiHarness(html: string, respond: (path: string, init?: RequestInit) => Response | Promise<Response>, options: HarnessOptions = {}): AdminUiHarness {
@@ -293,14 +295,15 @@ export function adminUiHarness(html: string, respond: (path: string, init?: Requ
     byId,
     query,
     run() {
-      new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', 'clearTimeout', scriptMatch[1]!)(
+      new Function('document', 'sessionStorage', 'localStorage', 'navigator', 'fetch', 'setTimeout', 'clearTimeout', 'location', scriptMatch[1]!)(
         documentStub,
         session,
         local,
         { clipboard: { writeText: async (value: string) => { copied.push(value) } } },
         fetchStub,
         setTimeoutStub,
-        clearTimeoutStub
+        clearTimeoutStub,
+        { hostname: options.hostname ?? 'router.test' }
       )
     },
     click: (target) => dispatch('click', target),

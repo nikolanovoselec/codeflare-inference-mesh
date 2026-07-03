@@ -43,26 +43,73 @@ ${output({ id: `${prefix}installer-output`, kind: 'installer-command', pre: true
 
 export function setupWizardView(active: boolean): string {
   const steps = [
-    { step: 'credentials', label: 'Credentials' },
+    { step: 'connect', label: 'Connect' },
+    { step: 'domain', label: 'Domain' },
+    { step: 'access', label: 'Access' },
     { step: 'gateway', label: 'Gateway' },
     { step: 'node', label: 'First node' },
     { step: 'review', label: 'Review' }
   ]
-  const credentials = wizardStep({
-    step: 'credentials',
-    title: 'Create credentials',
-    description: 'One click creates the admin, provider, setup, and upstream tokens. Setup locks afterwards.',
+  const connect = wizardStep({
+    step: 'connect',
+    title: 'Claim this deployment',
+    description: 'Verifies the deploy secrets and claims the router for you. Machine credentials are created now; your admin session starts automatically.',
     active: true,
-    body: `<div class="wizard-actions">${button({ action: 'first-run-setup', label: 'Create credentials', variant: 'primary', out: 'setup-output' })}</div>
+    body: `<div class="wizard-actions">${button({ action: 'first-run-setup', label: 'Claim deployment', variant: 'primary', out: 'setup-output' })}</div>
 ${output({ id: 'setup-output', kind: 'setup-tokens', extraClass: 'token-grid' })}
-<div class="wizard-actions"><button class="btn" type="button" data-wizard-next id="wizard-continue-credentials" hidden>Continue</button></div>
-<p class="gate-alt" id="setup-locked-note">Already set up? <a data-goto-login href="#">Sign in</a></p>`
+<div class="wizard-actions"><button class="btn" type="button" data-wizard-next id="wizard-continue-connect" hidden>Continue</button></div>
+<details class="gate-alt" id="connect-signin"><summary>Already claimed? Sign in</summary>
+<form class="signin-form" id="login-form" data-login-form="true">
+${field({ id: 'admin-token', label: 'Admin token', control: textInput({ id: 'admin-token', name: 'adminToken', type: 'password', autocomplete: 'current-password' }) })}
+<label class="check"><input name="rememberToken" id="remember-token" type="checkbox"> Remember on this device</label>
+<button class="btn" type="submit">Sign in</button>
+${output({ id: 'login-output', kind: 'login-feedback' })}
+</form></details>`
+  })
+  const domain = wizardStep({
+    step: 'domain',
+    title: 'Set the custom domain',
+    description: 'The console and all mesh traffic move to this hostname permanently. Pick a zone from your account and choose a hostname inside it.',
+    body: `<div class="form-grid">
+${field({ id: 'wizard-domain-zone', label: 'Zone', control: '<span class="slot" id="wizard-zone-slot"><select id="wizard-domain-zone" name="zoneId" data-zone-select="true" disabled></select></span>', hint: 'Zones load from your Cloudflare account.' })}
+${field({ id: 'wizard-domain-hostname', label: 'Hostname', control: textInput({ id: 'wizard-domain-hostname', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }) })}
+</div>
+<div class="wizard-actions"><button class="btn btn-ghost" type="button" data-wizard-back>Back</button>${button({ action: 'setup-domain', label: 'Provision domain', variant: 'primary', out: 'wizard-domain-output' })}</div>
+${output({ id: 'wizard-domain-output', kind: 'setup-domain', pre: true })}`
+  })
+  const access = wizardStep({
+    step: 'access',
+    title: 'Gate admin access',
+    description: 'Cloudflare Access protects the custom domain. Add the emails allowed to sign in; each gets a one-time PIN at login, so there are no tokens to manage.',
+    body: `<div class="form-grid">
+${field({ id: 'wizard-access-email', label: 'Admin email', control: textInput({ id: 'wizard-access-email', name: 'adminEmail', inputmode: 'email', placeholder: 'e.g. you@example.com' }) })}
+</div>
+<div class="wizard-actions">${button({ action: 'access-email-add', label: 'Add email' })}</div>
+<ul class="email-chips" id="wizard-access-emails" data-email-chips="true"></ul>
+<div class="wizard-actions"><button class="btn btn-ghost" type="button" data-wizard-back>Back</button>${button({ action: 'setup-access', label: 'Enable Access', variant: 'primary', out: 'wizard-access-output' })}</div>
+${output({ id: 'wizard-access-output', kind: 'setup-access', pre: true })}
+<div class="handoff-panel" id="wizard-handoff" hidden>
+<p>Access is live. Continue setup on the custom domain \u2014 this bootstrap page locks when setup finishes.</p>
+<a class="btn btn-primary" id="wizard-handoff-link" href="#">Continue on custom domain</a>
+</div>`
   })
   const gateway = wizardStep({
     step: 'gateway',
     title: 'Connect AI Gateway',
-    description: 'Point your Cloudflare AI Gateway route at this router. You can also do this later under Routing.',
-    body: `<div class="form-grid">${gatewayFields('wiz-')}</div>
+    description: 'Choose the gateway and dynamic route your clients call, or create the defaults in one click. You can also do this later under Routing.',
+    body: `<div class="wizard-actions" id="wizard-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Create gateway + route', variant: 'primary', out: 'wiz-gateway-output' })}</div>
+<div class="form-grid" id="wizard-gateway-selects">
+${field({ id: 'wiz-gateway-select', label: 'Gateway', control: '<span class="slot" id="wiz-gateway-slot"><select id="wiz-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
+${field({ id: 'wiz-route-select', label: 'Dynamic route', control: '<span class="slot" id="wiz-route-slot"><select id="wiz-route-select" name="routeName" data-route-select="true" disabled></select></span>' })}
+</div>
+<div class="form-grid"><div id="wiz-gateway-new-wrap" hidden>${field({ id: 'wiz-gateway-new', label: 'New gateway ID', control: textInput({ id: 'wiz-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div>
+<div id="wiz-route-new-wrap" hidden>${field({ id: 'wiz-route-new', label: 'New route name', control: textInput({ id: 'wiz-route-new', name: 'newRouteName', placeholder: 'e.g. mesh-default' }) })}</div></div>
+<details class="gate-alt"><summary>Advanced overrides</summary>
+<div class="form-grid">
+${field({ id: 'wiz-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'wiz-gateway-provider-name', name: 'providerName', placeholder: 'e.g. codeflare-inference-mesh' }) })}
+${field({ id: 'wiz-gateway-public-model', label: 'Public model', control: textInput({ id: 'wiz-gateway-public-model', name: 'publicModel', placeholder: 'e.g. mesh-default' }) })}
+${field({ id: 'wiz-gateway-worker-url', label: 'Worker URL override', control: textInput({ id: 'wiz-gateway-worker-url', name: 'workerUrl', inputmode: 'url', placeholder: 'e.g. https://mesh.example.com' }), hint: 'Blank fields reuse saved settings or Worker environment defaults.' })}
+</div></details>
 <div class="wizard-actions">${button({ action: 'gateway-sync', label: 'Connect AI Gateway', variant: 'primary', out: 'wiz-gateway-output', prefix: 'wiz-' })}</div>
 ${output({ id: 'wiz-gateway-output', kind: 'gateway-sync', pre: true })}
 <div class="wizard-actions"><button class="btn btn-ghost" type="button" data-wizard-back>Back</button><button class="btn" type="button" data-wizard-next>Continue</button></div>`
@@ -76,26 +123,14 @@ ${output({ id: 'wiz-gateway-output', kind: 'gateway-sync', pre: true })}
   })
   const review = wizardStep({
     step: 'review',
-    title: 'Review',
-    description: 'What this router knows so far. Everything stays adjustable from the dashboard.',
+    title: 'Review and finish',
+    description: 'What this router knows so far. Finishing locks the bootstrap origin; everything stays adjustable from the dashboard.',
     body: `<div class="tile-grid" id="review-summary"></div>
-<div class="wizard-actions"><button class="btn btn-ghost" type="button" data-wizard-back>Back</button>${button({ action: 'wizard-finish', label: 'Open dashboard', variant: 'primary' })}</div>`
+<div class="wizard-actions"><button class="btn btn-ghost" type="button" data-wizard-back>Back</button>${button({ action: 'setup-complete', label: 'Finish setup', variant: 'primary', out: 'wizard-complete-output' })}</div>
+${output({ id: 'wizard-complete-output', kind: 'setup-complete', pre: true })}`
   })
   return `<section class="view view-gate" id="view-setup" data-wizard="${escapeHtml(ADMIN_UI_WIZARD.steps.join(' '))}"${active ? '' : ' hidden'} aria-label="Guided setup">
-<div class="gate-flow">${stepper(steps, 'credentials')}${credentials}${gateway}${node}${review}</div>
-</section>`
-}
-
-export function loginView(active: boolean): string {
-  return `<section class="view view-gate" id="view-login"${active ? '' : ' hidden'} aria-label="Sign in">
-<form class="gate-card" id="login-form" data-login-form="true">
-<h1>Sign in</h1>
-<p>Paste the admin token created during setup. It is verified against the router before it is stored, and it stays in this browser only.</p>
-${field({ id: 'admin-token', label: 'Admin token', control: textInput({ id: 'admin-token', name: 'adminToken', type: 'password', autocomplete: 'current-password' }) })}
-<label class="check"><input name="rememberToken" id="remember-token" type="checkbox"> Remember on this device</label>
-<button class="btn btn-primary" type="submit">Sign in</button>
-${output({ id: 'login-output', kind: 'login-feedback' })}
-</form>
+<div class="gate-flow">${stepper(steps, 'connect')}${connect}${domain}${access}${gateway}${node}${review}</div>
 </section>`
 }
 

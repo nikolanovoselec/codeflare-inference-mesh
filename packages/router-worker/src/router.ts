@@ -1,6 +1,6 @@
 import { verifyAccessRequest } from './access'
 import { CloudflareAccessClient, type AccessProvisionRequest, type AccessProvisionResult } from './access-provisioning'
-import { adminUiHtml } from './admin-ui'
+import { adminUiHtml, type AdminUiState } from './admin-ui'
 import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
@@ -50,14 +50,14 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
         if (uiPath) {
           if (!gate.recovery) return html(consoleMovedHtml(gate.hostname), id)
           await recordBreakGlassEntry(deps, id, now())
-          return html(adminUiHtml(url.origin, { setupOpen: true }), id)
+          return html(adminUiHtml(url.origin, await adminUiState(deps, true)), id)
         }
         const machinePath = url.pathname.startsWith('/v1/') || url.pathname.startsWith('/node/')
         if (machinePath || (!gate.recovery && url.pathname.startsWith('/admin'))) {
           return json({ error: 'console_moved', customDomain: gate.hostname, requestId: id }, 410, id)
         }
       }
-      if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/' || url.pathname === '/admin')) return html(adminUiHtml(url.origin, { setupOpen: await setupOpen(deps) }), id)
+      if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/' || url.pathname === '/admin')) return html(adminUiHtml(url.origin, await adminUiState(deps, false)), id)
       if (request.method === 'GET' && url.pathname === '/health') return json({ ok: true, service: 'inference-mesh-router' }, 200, id)
       if (request.method === 'GET' && url.pathname === '/v1/models') return await handleModels(request, deps, id, now())
       if (request.method === 'POST' && url.pathname === '/v1/chat/completions') return await handleChat(request, deps, id, now())
@@ -246,10 +246,16 @@ async function handleNodeUnregister(request: Request, deps: RouterDeps, requestI
   return json({ ok: true }, 200, requestId)
 }
 
-/** Setup is open while no active admin token exists — the same rule handleFirstSetup locks on. */
-async function setupOpen(deps: RouterDeps): Promise<boolean> {
-  const admins = await deps.store.listTokens('admin')
-  return !admins.some((token) => token.active)
+/** Entry state for the shell: wizard until setup completes, dashboard afterwards. */
+async function adminUiState(deps: RouterDeps, recovery: boolean): Promise<AdminUiState> {
+  const phase = await setupPhase(deps.store)
+  const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
+  return {
+    view: phase === 'complete' && !recovery ? 'dashboard' : 'setup',
+    phase,
+    ...(domain?.status === 'provisioned' ? { customDomain: domain.hostname } : {}),
+    recovery
+  }
 }
 
 async function handleFirstSetup(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {

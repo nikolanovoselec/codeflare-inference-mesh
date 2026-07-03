@@ -104,6 +104,7 @@ function valuesOf(value: unknown): string[] {
 }
 
 interface AdminUiTestConfig {
+  readonly state: { view: string; phase: string; customDomain?: string; recovery?: boolean }
   readonly actions: typeof ADMIN_UI_ACTIONS
   readonly responsive: typeof ADMIN_UI_RESPONSIVE
   readonly views: typeof ADMIN_UI_VIEWS
@@ -150,6 +151,11 @@ describe('router worker behavioral contracts', () => {
     expect(actionIds).toEqual([
       'first-run-setup',
       'admin-login',
+      'setup-domain',
+      'setup-access',
+      'setup-complete',
+      'zones-refresh',
+      'gateway-options',
       'status-refresh',
       'setup-token-create',
       'installer-linux',
@@ -166,6 +172,11 @@ describe('router worker behavioral contracts', () => {
     ])
     expect(config.actions.filter((action) => action.auth === 'admin').map((action) => action.path)).toEqual([
       '/admin/login',
+      '/admin/setup/domain',
+      '/admin/setup/access',
+      '/admin/setup/complete',
+      '/admin/cloudflare/zones',
+      '/admin/cloudflare/gateway/options',
       '/admin/status',
       '/admin/setup-tokens',
       '/admin/installers/linux',
@@ -181,18 +192,22 @@ describe('router worker behavioral contracts', () => {
       '/admin/mesh/rotate'
     ])
     expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 1, minTouchTargetPx: 44 })
-    expect(config.views).toEqual({ modes: ['setup', 'login', 'dashboard'], attribute: 'data-view' })
+    expect(config.views).toEqual({ modes: ['setup', 'dashboard'], attribute: 'data-view' })
     expect(config.nav).toEqual({ sections: ['overview', 'nodes', 'models', 'routing', 'mesh', 'settings'], mobileTabs: ['overview', 'nodes', 'mesh', 'more'], moreSections: ['models', 'routing', 'settings'] })
-    expect(config.wizard).toEqual({ steps: ['credentials', 'gateway', 'node', 'review'], skippable: ['gateway', 'node'] })
+    expect(config.wizard).toEqual({
+      steps: ['connect', 'domain', 'access', 'gateway', 'node', 'review'],
+      skippable: ['gateway', 'node'],
+      phaseSteps: { unclaimed: 'connect', claimed: 'domain', domain_ready: 'access', access_ready: 'gateway', complete: 'review' }
+    })
     expect(config.confirm).toEqual({ attribute: 'data-confirm', disarmMs: 5000 })
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
-    const serverControls = ['first-run-setup', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'sign-out', 'wizard-finish']
+    const serverControls = ['first-run-setup', 'setup-domain', 'access-email-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
-    expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(1)
-    expect([...html.matchAll(/id="(?:wiz-)?gateway-(?:account-id|id|route-name|public-model|provider-name|worker-url)"/g)]).toHaveLength(12)
+    expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(2)
+    expect([...html.matchAll(/id="(?:wiz-)?gateway-(?:account-id|id|route-name|public-model|provider-name|worker-url)"/g)]).toHaveLength(9)
     const liveOutputSurfaces = [...html.matchAll(/data-output="[^"]+"[^>]*role="log"[^>]*aria-live="polite"/g)]
     expect(liveOutputSurfaces.length).toBeGreaterThanOrEqual(12)
     expect(html).toMatch(/<meta name="viewport" content="width=device-width, initial-scale=1">/)
@@ -208,22 +223,28 @@ describe('router worker behavioral contracts', () => {
     expect(() => new Function(adminUiScript(html))).not.toThrow()
   })
 
-  it('REQ-ADM-007 pre-renders the entry view from stored setup state', async () => {
+  it('REQ-ADM-007 pre-renders the entry view from host and setup phase', async () => {
     // AdminEntryViewTestAnchor
-    const { router } = routerFixture()
+    const { router, store } = routerFixture()
     const fresh = await (await router(new Request('https://router.test/'))).text()
     expect(fresh).toContain('<body data-view="setup">')
     expect(fresh).not.toMatch(/id="view-setup"[^>]*hidden/)
-    expect(fresh).toMatch(/id="view-login"[^>]*hidden/)
     expect(fresh).toMatch(/id="view-dashboard" hidden/)
+    expect(adminUiConfig(fresh).state).toMatchObject({ view: 'setup', phase: 'unclaimed' })
 
     const setup = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     expect(setup.status).toBe(201)
-    const locked = await (await router(new Request('https://router.test/'))).text()
-    expect(locked).toContain('<body data-view="login">')
-    expect(locked).toMatch(/id="view-setup"[^>]*hidden/)
-    expect(locked).not.toMatch(/id="view-login"[^>]*hidden/)
-    expect(locked).toMatch(/id="view-dashboard" hidden/)
+    const claimed = await (await router(new Request('https://router.test/'))).text()
+    expect(claimed).toContain('<body data-view="setup">')
+    expect(adminUiConfig(claimed).state).toMatchObject({ view: 'setup', phase: 'claimed' })
+
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+    await store.putConfig('setup_state', { phase: 'complete', completedAt: 1_700_000_000_000 })
+    const dashboard = await (await router(new Request('https://mesh.example.com/admin'))).text()
+    expect(dashboard).toContain('<body data-view="dashboard">')
+    expect(adminUiConfig(dashboard).state).toMatchObject({ view: 'dashboard', phase: 'complete', customDomain: 'mesh.example.com' })
+    expect(dashboard).toMatch(/id="view-setup"[^>]*hidden/)
+    expect(dashboard).not.toMatch(/id="view-dashboard" hidden/)
   })
 
   it('REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation', async () => {
@@ -266,22 +287,27 @@ describe('router worker behavioral contracts', () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/'))).text()
 
-    expect(html.match(/data-wizard="([^"]+)"/)?.[1]).toBe('credentials gateway node review')
-    expect([...html.matchAll(/<li data-step="([^"]+)"/g)].map((match) => match[1])).toEqual(['credentials', 'gateway', 'node', 'review'])
-    expect(html).toMatch(/<li data-step="credentials" aria-current="step">/)
-    expect([...html.matchAll(/data-step-panel="([^"]+)"/g)].map((match) => match[1])).toEqual(['credentials', 'gateway', 'node', 'review'])
-    expect(html).not.toMatch(/data-step-panel="credentials"[^>]*hidden/)
+    expect(html.match(/data-wizard="([^"]+)"/)?.[1]).toBe('connect domain access gateway node review')
+    expect([...html.matchAll(/<li data-step="([^"]+)"/g)].map((match) => match[1])).toEqual(['connect', 'domain', 'access', 'gateway', 'node', 'review'])
+    expect(html).toMatch(/<li data-step="connect" aria-current="step">/)
+    expect([...html.matchAll(/data-step-panel="([^"]+)"/g)].map((match) => match[1])).toEqual(['connect', 'domain', 'access', 'gateway', 'node', 'review'])
+    expect(html).not.toMatch(/data-step-panel="connect"[^>]*hidden/)
+    expect(html).toMatch(/data-step-panel="domain"[^>]*hidden/)
     expect(html).toMatch(/data-step-panel="gateway"[^>]*hidden/)
-    expect(html).toMatch(/data-step-panel="node"[^>]*hidden/)
     expect(html).toMatch(/data-step-panel="review"[^>]*hidden/)
     const gatewayStep = html.slice(html.indexOf('id="step-gateway"'), html.indexOf('id="step-node"'))
     const nodeStep = html.slice(html.indexOf('id="step-node"'), html.indexOf('id="step-review"'))
     const reviewStep = html.slice(html.indexOf('id="step-review"'))
     expect(gatewayStep).toContain('data-wizard-next')
     expect(nodeStep).toContain('data-wizard-next')
-    expect(html).toMatch(/id="wizard-continue-credentials" hidden/)
-    expect(html).toContain('data-goto-login')
-    expect(reviewStep).toContain('data-action="wizard-finish"')
+    expect(html).toMatch(/id="wizard-continue-connect" hidden/)
+    expect(html).toContain('id="connect-signin"')
+    expect(html).toContain('data-login-form="true"')
+    expect(html).toContain('data-zone-select="true"')
+    expect(html).toContain('data-email-chips="true"')
+    expect(html).toMatch(/id="wizard-handoff" hidden/)
+    expect(html).toMatch(/id="wizard-gateway-empty" hidden/)
+    expect(reviewStep).toContain('data-action="setup-complete"')
   })
 
   it('REQ-ADM-007 renders setup-locked recovery affordances instead of raw JSON', async () => {
@@ -366,28 +392,28 @@ describe('router worker behavioral contracts', () => {
     const copyAll = output.children.find((child) => child.dataset.copyAll === 'true')
 
     expect(output.children[0]!.dataset.tokenWarning).toBe('true')
-    expect(cards.map((card) => card.dataset.tokenCard)).toEqual(['adminToken', 'providerToken', 'setupToken', 'upstreamToken'])
+    expect(cards.map((card) => card.dataset.tokenCard)).toEqual(['providerToken', 'setupToken', 'upstreamToken'])
     expect(copyAll).toBeDefined()
     await harness.click(copyAll!)
-    expect(harness.copied.at(-1)!.split('\n')).toEqual(['adminToken: admin-a', 'providerToken: provider-a', 'setupToken: setup-a', 'upstreamToken: upstream-a'])
+    expect(harness.copied.at(-1)!.split('\n')).toEqual(['providerToken: provider-a', 'setupToken: setup-a', 'upstreamToken: upstream-a'])
     expect(harness.events.some((event) => event.kind === 'setItem' && event.detail === 'session:codeflareInferenceMeshAdminToken=admin-a')).toBe(true)
-    expect(harness.byId('wizard-continue-credentials').hidden).toBe(false)
+    expect(harness.byId('wizard-continue-connect').hidden).toBe(false)
   })
 
   it('REQ-ADM-006 auto-loads installer command for saved tokens and platform changes', async () => {
-    const { router } = routerFixture()
-    await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
-    const html = await (await router(new Request('https://router.test/admin'))).text()
-    expect(html).toContain('<body data-view="login">')
+    const { router, store } = routerFixture()
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+    await store.putConfig('setup_state', { phase: 'complete', completedAt: 1_700_000_000_000 })
+    const html = await (await router(new Request('https://mesh.example.com/admin'))).text()
+    expect(html).toContain('<body data-view="dashboard">')
     let releaseLinux: (() => void) | undefined
     const linuxWait = new Promise<void>((resolve) => { releaseLinux = resolve })
     const harness = adminUiHarness(html, async (path) => {
-      if (path === '/admin/login') return Response.json({ ok: true, session: 'bearer-token' })
       if (path === '/admin/status') return Response.json({})
       if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
       if (path.endsWith('/linux')) await linuxWait
       return new Response('install command for ' + path, { status: 200, headers: { 'content-type': 'text/plain' } })
-    }, { localToken: 'admin-secret' })
+    }, { hostname: 'mesh.example.com' })
     harness.byId('installer-platform').value = 'linux'
     harness.run()
     await harness.flush(10)
@@ -1965,6 +1991,152 @@ describe('Access-first setup and host gating contracts', () => {
     const selected = await router(new Request('https://router.example.workers.dev/admin/cloudflare/gateway/options?gateway=other-gw', { headers: bearer('admin-secret') }))
     expect(selected.status).toBe(200)
     expect(routeCalls).toEqual(['inference-mesh', 'other-gw'])
+  })
+
+  it('REQ-ADM-011 wizard domain step loads zones and provisioning advances to the access step', async () => {
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/'))).text()
+    const harness = adminUiHarness(html, async (path) => {
+      if (path === '/admin/setup') return Response.json({ adminToken: 'admin-a', providerToken: 'provider-a', setupToken: 'setup-a', upstreamToken: 'upstream-a' }, { status: 201 })
+      if (path === '/admin/cloudflare/zones') return Response.json({ zones: [{ id: 'zone-1', name: 'example.com' }, { id: 'zone-2', name: 'example.org' }] })
+      if (path === '/admin/setup/domain') return Response.json({ valid: true, hostname: 'mesh.example.com', status: 'provisioned' })
+      return Response.json({})
+    })
+    harness.run()
+    await harness.clickAction('first-run-setup', { out: 'setup-output' })
+    const next = elementStub({ tagName: 'button' })
+    next.dataset.wizardNext = 'true'
+    await harness.click(next)
+    await harness.flush(8)
+
+    const zoneSelect = harness.byId('wizard-domain-zone')
+    expect(zoneSelect.children.map((option) => option.value)).toEqual(['', 'zone-1', 'zone-2'])
+    expect(zoneSelect.children[1]!.dataset.zoneOption).toBe('zone-1')
+
+    zoneSelect.value = 'zone-1'
+    harness.byId('wizard-domain-hostname').value = 'mesh.example.com'
+    await harness.clickAction('setup-domain', { out: 'wizard-domain-output' })
+    const domainCall = harness.fetchCalls.find((call) => call.path === '/admin/setup/domain')
+    expect(JSON.parse(String(domainCall?.init?.body))).toEqual({ hostname: 'mesh.example.com', zoneId: 'zone-1' })
+    expect(harness.byId('step-domain').hidden).toBe(true)
+    expect(harness.byId('step-access').hidden).toBe(false)
+  })
+
+  it('REQ-ADM-011 access step collects email chips and provisioning reveals the handoff link', async () => {
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/'))).text()
+    const harness = adminUiHarness(html, async (path) => {
+      if (path === '/admin/setup/access') return Response.json({ ok: true, teamDomain: 'team.cloudflareaccess.com', hostname: 'mesh.example.com', consoleUrl: 'https://mesh.example.com/admin' })
+      return Response.json({ zones: [] })
+    })
+    harness.run()
+
+    harness.byId('wizard-access-email').value = 'not-an-email'
+    await harness.clickAction('access-email-add')
+    expect(harness.byId('wizard-access-emails').children).toHaveLength(0)
+    expect(harness.byId('wizard-access-output').classList.contains('is-error')).toBe(true)
+
+    harness.byId('wizard-access-email').value = ' Operator@Example.com '
+    await harness.clickAction('access-email-add')
+    harness.byId('wizard-access-email').value = 'operator@example.com'
+    await harness.clickAction('access-email-add')
+    harness.byId('wizard-access-email').value = 'sre@example.com'
+    await harness.clickAction('access-email-add')
+    const chips = harness.byId('wizard-access-emails').children
+    expect(chips.map((chip) => chip.dataset.emailChip)).toEqual(['operator@example.com', 'sre@example.com'])
+
+    const remove = elementStub({ tagName: 'button' })
+    remove.dataset.removeEmail = 'sre@example.com'
+    await harness.click(remove)
+    expect(harness.byId('wizard-access-emails').children.map((chip) => chip.dataset.emailChip)).toEqual(['operator@example.com'])
+
+    await harness.clickAction('setup-access', { out: 'wizard-access-output' })
+    const accessCall = harness.fetchCalls.find((call) => call.path === '/admin/setup/access')
+    expect(JSON.parse(String(accessCall?.init?.body))).toEqual({ emails: ['operator@example.com'] })
+    expect(harness.byId('wizard-handoff').hidden).toBe(false)
+    expect(harness.byId('wizard-handoff-link').attributes.href).toBe('https://mesh.example.com/admin')
+  })
+
+  it('REQ-GWY-005 gateway step renders selects from live options and syncs the selection', async () => {
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/'))).text()
+    const harness = adminUiHarness(html, async (path) => {
+      if (path.startsWith('/admin/cloudflare/gateway/options')) {
+        return Response.json({
+          gateways: [{ id: 'inference-mesh' }, { id: 'other-gw' }],
+          routes: [{ id: 'route-1', name: 'mesh-default', enabled: true }],
+          defaults: { gatewayId: 'inference-mesh', routeName: 'mesh-default', providerName: 'codeflare-inference-mesh', publicModel: 'mesh-default' }
+        })
+      }
+      if (path === '/admin/cloudflare/gateway/sync') return Response.json({ deploymentId: 'deployment-a' })
+      return Response.json({ zones: [] })
+    }, { sessionToken: 'admin-secret' })
+    harness.run()
+    for (let hop = 0; hop < 3; hop += 1) {
+      const next = elementStub({ tagName: 'button' })
+      next.dataset.wizardNext = 'true'
+      await harness.click(next)
+    }
+    await harness.flush(8)
+
+    expect(harness.byId('wizard-gateway-empty').hidden).toBe(true)
+    const gatewaySelect = harness.byId('wiz-gateway-select')
+    expect(gatewaySelect.children.map((option) => option.value)).toEqual(['inference-mesh', 'other-gw', '__new__'])
+    expect(gatewaySelect.value).toBe('inference-mesh')
+    const routeSelect = harness.byId('wiz-route-select')
+    expect(routeSelect.children.map((option) => option.value)).toEqual(['mesh-default', '__new__'])
+    expect(harness.byId('wiz-gateway-new-wrap').hidden).toBe(true)
+
+    await harness.clickAction('gateway-sync', { prefix: 'wiz-', out: 'wiz-gateway-output' })
+    const syncCall = harness.fetchCalls.find((call) => call.path === '/admin/cloudflare/gateway/sync')
+    expect(JSON.parse(String(syncCall?.init?.body))).toEqual({ gatewayId: 'inference-mesh', routeName: 'mesh-default' })
+  })
+
+  it('REQ-GWY-005 gateway step offers one-click provisioning when the account has no gateway', async () => {
+    const { router } = routerFixture()
+    const html = await (await router(new Request('https://router.test/'))).text()
+    const harness = adminUiHarness(html, async (path) => {
+      if (path.startsWith('/admin/cloudflare/gateway/options')) {
+        return Response.json({ gateways: [], routes: [], defaults: { gatewayId: 'inference-mesh', routeName: 'mesh-default' } })
+      }
+      if (path === '/admin/cloudflare/gateway/sync') return Response.json({ deploymentId: 'deployment-a', gatewayId: 'inference-mesh' })
+      return Response.json({ zones: [] })
+    }, { sessionToken: 'admin-secret' })
+    harness.run()
+    for (let hop = 0; hop < 3; hop += 1) {
+      const next = elementStub({ tagName: 'button' })
+      next.dataset.wizardNext = 'true'
+      await harness.click(next)
+    }
+    await harness.flush(8)
+
+    expect(harness.byId('wizard-gateway-empty').hidden).toBe(false)
+    expect(harness.byId('wizard-gateway-selects').hidden).toBe(true)
+    await harness.clickAction('gateway-provision-default', { out: 'wiz-gateway-output' })
+    const syncCall = harness.fetchCalls.find((call) => call.path === '/admin/cloudflare/gateway/sync')
+    expect(JSON.parse(String(syncCall?.init?.body))).toEqual({})
+  })
+
+  it('REQ-ADM-011 finishing setup on the custom domain opens the dashboard', async () => {
+    const { router, store } = routerFixture()
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+    await store.putConfig('setup_state', { phase: 'access_ready' })
+    const html = await (await router(new Request('https://mesh.example.com/admin'))).text()
+    expect(adminUiConfig(html).state).toMatchObject({ view: 'setup', phase: 'access_ready', customDomain: 'mesh.example.com' })
+    const harness = adminUiHarness(html, async (path) => {
+      if (path === '/admin/setup/complete') return Response.json({ ok: true, customDomain: 'mesh.example.com' })
+      if (path.startsWith('/admin/cloudflare/gateway/options')) return Response.json({ gateways: [], routes: [], defaults: {} })
+      if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
+      if (path.endsWith('/linux') || path.endsWith('/macos') || path.endsWith('/windows')) return new Response('install', { status: 200, headers: { 'content-type': 'text/plain' } })
+      return Response.json({})
+    }, { hostname: 'mesh.example.com' })
+    harness.run()
+    await harness.flush(6)
+    expect(harness.byId('step-gateway').hidden).toBe(false)
+
+    await harness.clickAction('setup-complete', { out: 'wizard-complete-output' })
+    await harness.flush(6)
+    expect(harness.body.dataset.view).toBe('dashboard')
   })
 
   it('REQ-ADM-004 installer commands use the custom domain once recorded', async () => {

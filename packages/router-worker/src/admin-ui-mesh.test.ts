@@ -52,7 +52,7 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 async function dashboardHarness(status: Record<string, unknown> = statusFixture(), versions: Record<string, unknown> = { tags: [], stale: false }): Promise<AdminUiHarness> {
-  const html = adminUiHtml('https://router.test', { setupOpen: false })
+  const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
   const harness = adminUiHarness(html, async (path) => {
     if (path === '/admin/status') return Response.json(status)
     if (path === '/admin/agent-versions') return Response.json(versions)
@@ -62,7 +62,7 @@ async function dashboardHarness(status: Record<string, unknown> = statusFixture(
     return new Response('command', { status: 200, headers: { 'content-type': 'text/plain' } })
   }, { sessionToken: 'admin-secret' })
   harness.run()
-  // the saved session auto-verifies on boot; settle those fetches first
+  // the dashboard boots directly under the session; settle its fetches first
   await harness.flush(10)
   expect(harness.body.dataset.view).toBe('dashboard')
   return harness
@@ -83,7 +83,7 @@ function meshField(card: StubElement, field: string): StubElement {
 
 describe('admin UI mesh operations contracts', () => {
   it('REQ-ADM-009 exposes mesh health, rotation, and activation controls', () => {
-    const html = adminUiHtml('https://router.test', { setupOpen: false })
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', recovery: false })
     expect(html).toContain(`id="${ADMIN_UI_MESH_HEALTH.panelId}"`)
     expect(html).toContain('data-mesh-key-banner="true"')
     expect(html).toContain(`id="${ADMIN_UI_MESH_HEALTH.rotateSelectId}"`)
@@ -211,7 +211,7 @@ describe('admin UI mesh operations contracts', () => {
   })
 
   it('REQ-ADM-006 verifies the admin token before storing it', async () => {
-    const html = adminUiHtml('https://router.test', { setupOpen: false })
+    const html = adminUiHtml('https://router.test', { view: 'setup', phase: 'claimed', recovery: false })
     const okHarness = adminUiHarness(html, async (path) => {
       if (path === '/admin/login') return Response.json({ ok: true, session: 'bearer-token' })
       if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
@@ -229,7 +229,8 @@ describe('admin UI mesh operations contracts', () => {
     const storeIndex = okHarness.events.findIndex((event) => event.kind === 'setItem' && event.detail.includes('candidate-token'))
     expect(loginIndex).toBeGreaterThanOrEqual(0)
     expect(storeIndex).toBeGreaterThan(loginIndex)
-    expect(okHarness.body.dataset.view).toBe('dashboard')
+    expect(okHarness.body.dataset.view).toBe('setup')
+    expect(okHarness.byId('step-domain').hidden).toBe(false)
 
     const failHarness = adminUiHarness(html, async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } }))
     failHarness.run()
@@ -238,7 +239,7 @@ describe('admin UI mesh operations contracts', () => {
     await failHarness.flush()
 
     expect(failHarness.events.some((event) => event.kind === 'setItem' && event.detail.includes('wrong-token'))).toBe(false)
-    expect(failHarness.body.dataset.view).toBe('login')
+    expect(failHarness.body.dataset.view).toBe('setup')
     expect(failHarness.byId('login-output').classList.contains('is-error')).toBe(true)
   })
 
@@ -273,7 +274,7 @@ describe('admin UI mesh operations contracts', () => {
 
     await harness.clickAction('sign-out')
 
-    expect(harness.body.dataset.view).toBe('login')
+    expect(harness.body.dataset.view).toBe('setup')
     const afterSignOut = harness.events.slice(eventsBefore)
     expect(afterSignOut.filter((event) => event.kind === 'removeItem').length).toBeGreaterThanOrEqual(2)
 
@@ -285,7 +286,7 @@ describe('admin UI mesh operations contracts', () => {
   })
 
   it('REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard', async () => {
-    const html = adminUiHtml('https://router.test', { setupOpen: true })
+    const html = adminUiHtml('https://router.test', { view: 'setup', phase: 'unclaimed', recovery: false })
     const harness = adminUiHarness(html, async (path) => {
       if (path === '/admin/setup') return Response.json({ adminToken: 'admin-a', providerToken: 'provider-a', setupToken: 'setup-a', upstreamToken: 'upstream-a', byokInstruction: 'Paste providerToken as the AI Gateway custom provider API key.' }, { status: 201 })
       return Response.json({})
@@ -297,19 +298,19 @@ describe('admin UI mesh operations contracts', () => {
     const output = harness.byId('setup-output')
     expect(output.children[0]!.dataset.tokenWarning).toBe('true')
     const cards = output.children.filter((child) => child.dataset.tokenCard)
-    expect(cards.map((card) => card.dataset.tokenCard)).toEqual(['adminToken', 'providerToken', 'setupToken', 'upstreamToken'])
+    expect(cards.map((card) => card.dataset.tokenCard)).toEqual(['providerToken', 'setupToken', 'upstreamToken'])
     cards.forEach((card) => {
       const copy = card.children.find((child) => child.dataset.copy)
       expect(copy, `token card ${card.dataset.tokenCard} has no copy control`).toBeDefined()
     })
     expect(harness.events.some((event) => event.kind === 'setItem' && event.detail === 'session:codeflareInferenceMeshAdminToken=admin-a')).toBe(true)
-    expect(harness.byId('wizard-continue-credentials').hidden).toBe(false)
+    expect(harness.byId('wizard-continue-connect').hidden).toBe(false)
 
     const next = elementStub({ tagName: 'button', textContent: 'Continue' })
     next.dataset.wizardNext = ''
     await harness.click(next)
-    expect(harness.byId('step-gateway').hidden).toBe(false)
-    expect(harness.byId('step-credentials').hidden).toBe(true)
-    expect(harness.query('[data-step="credentials"]').dataset.done).toBe('true')
+    expect(harness.byId('step-domain').hidden).toBe(false)
+    expect(harness.byId('step-connect').hidden).toBe(true)
+    expect(harness.query('[data-step="connect"]').dataset.done).toBe('true')
   })
 })
