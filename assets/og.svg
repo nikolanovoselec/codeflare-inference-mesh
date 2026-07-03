@@ -9,8 +9,8 @@
       <stop offset="0" stop-color="#ff5c3c" stop-opacity="0.18"/>
       <stop offset="0.55" stop-color="#ff5c3c" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="mesh" cx="0.85" cy="0.82" r="0.5">
-      <stop offset="0" stop-color="#ff5c3c" stop-opacity="0.10"/>
+    <radialGradient id="mesh" cx="0.82" cy="0.5" r="0.42">
+      <stop offset="0" stop-color="#ff5c3c" stop-opacity="0.12"/>
       <stop offset="1" stop-color="#ff5c3c" stop-opacity="0"/>
     </radialGradient>
   </defs>
@@ -19,20 +19,22 @@
   <rect width="1200" height="630" fill="url(#glow)"/>
   <rect width="1200" height="630" fill="url(#mesh)"/>
 
-  <!-- Hub-and-spoke mesh motif, lower-right: one coral router hub, dashed links to status-dot nodes. -->
-  <g stroke="#ff5c3c" stroke-opacity="0.5" stroke-width="2" stroke-dasharray="3 6" fill="none">
-    <path d="M980,470 L860,368"/>
-    <path d="M980,470 L1112,372"/>
-    <path d="M980,470 L858,556"/>
-    <path d="M980,470 L1120,556"/>
-    <path d="M980,470 L980,342"/>
+  <!-- Hub-and-spoke mesh motif, right column: one coral router hub, dashed links to even ready-node dots. -->
+  <g stroke="#ff5c3c" stroke-opacity="0.8" stroke-width="2" stroke-dasharray="3 6" fill="none">
+    <path d="M985,315 L1115,315"/>
+    <path d="M985,315 L1050,202"/>
+    <path d="M985,315 L920,202"/>
+    <path d="M985,315 L855,315"/>
+    <path d="M985,315 L920,428"/>
+    <path d="M985,315 L1050,428"/>
   </g>
-  <circle cx="980" cy="470" r="15" fill="#ff5c3c"/>
-  <circle cx="860" cy="368" r="8" fill="#fafafa"/>
-  <circle cx="1112" cy="372" r="8" fill="#fafafa"/>
-  <circle cx="858" cy="556" r="8" fill="#a1a1aa"/>
-  <circle cx="1120" cy="556" r="8" fill="#fafafa"/>
-  <circle cx="980" cy="342" r="8" fill="#71717a"/>
+  <circle cx="1115" cy="315" r="8" fill="#e4e4e7"/>
+  <circle cx="1050" cy="202" r="8" fill="#e4e4e7"/>
+  <circle cx="920" cy="202" r="8" fill="#e4e4e7"/>
+  <circle cx="855" cy="315" r="8" fill="#e4e4e7"/>
+  <circle cx="920" cy="428" r="8" fill="#e4e4e7"/>
+  <circle cx="1050" cy="428" r="8" fill="#e4e4e7"/>
+  <circle cx="985" cy="315" r="16" fill="#ff5c3c"/>
 
   <!-- Brand lockup: the Codeflare code-glyph mark (coral tile, dark glyph) + wordmark with product suffix. -->
   <rect x="80" y="56" width="64" height="64" rx="15" fill="#ff5c3c"/>
@@ -43,12 +45,12 @@
 
   <!-- Main block: one font (JetBrains Mono), three sizes (52 headline / 34 wordmark / 20 the rest). -->
   <text x="80" y="236" font-family="JetBrains Mono, monospace" font-size="20" font-weight="600" fill="#ff5c3c" letter-spacing="3">NO DEDICATED GPU RACKS</text>
-  <text x="80" y="306" font-family="JetBrains Mono, monospace" font-size="52" font-weight="700" fill="#fafafa" letter-spacing="-1.6">Private LLM inference</text>
-  <text x="80" y="370" font-family="JetBrains Mono, monospace" font-size="52" font-weight="700" fill="#fafafa" letter-spacing="-1.6">on hardware you own.</text>
+  <text x="80" y="306" font-family="JetBrains Mono, monospace" font-size="52" font-weight="700" fill="#fafafa" letter-spacing="-0.5">Private LLM inference</text>
+  <text x="80" y="370" font-family="JetBrains Mono, monospace" font-size="52" font-weight="700" fill="#fafafa" letter-spacing="-0.5">on hardware you own.</text>
   <text x="80" y="424" font-family="JetBrains Mono, monospace" font-size="20" font-weight="400" fill="#a1a1aa" letter-spacing="0">One OpenAI-compatible endpoint over machines you already run.</text>
   <text x="80" y="454" font-family="JetBrains Mono, monospace" font-size="20" font-weight="400" fill="#a1a1aa" letter-spacing="0">Private nodes on your network. Failover to any provider.</text>
 
   <!-- Foot: separated by space, no rule. -->
   <text x="80" y="588" font-family="JetBrains Mono, monospace" font-size="20" font-weight="600" fill="#fafafa" letter-spacing="3">CODEFLARE.CH</text>
-  <text x="1120" y="588" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="20" font-weight="400" fill="#71717a" letter-spacing="2">GRAY MATTER GMBH</text>
+  <text x="1120" y="588" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="20" font-weight="400" fill="#a1a1aa" letter-spacing="2">GRAY MATTER GMBH</text>
 </svg>
