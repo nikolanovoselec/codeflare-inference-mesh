@@ -12,6 +12,7 @@
 - [Model never appears in ready models](#model-never-appears-in-ready-models)
 - [Requests fail briefly after mesh rotation](#requests-fail-briefly-after-mesh-rotation)
 - [Admin status shows mesh_state_key_missing](#admin-status-shows-mesh_state_key_missing)
+- [Dashboard shows "The router hit a temporary error"](#dashboard-shows-the-router-hit-a-temporary-error)
 - [Update staging checksum mismatch](#update-staging-checksum-mismatch)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
@@ -94,6 +95,14 @@
 **Cause:** The `MESH_STATE_KEY` Worker secret is unset, so the Worker cannot encrypt or decrypt mesh state and the mesh endpoints fail closed.
 
 **Fix:** Run the deploy workflow, which validates the secret and sets it on the Worker, then confirm the banner clears from admin status. ([REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle))
+
+## Dashboard shows "The router hit a temporary error"
+
+**Symptom:** An admin or read-only user action in the console shows a toast and result reading "The router hit a temporary error. Give it a moment and try again. (request <id>)" instead of completing.
+
+**Cause:** The action's admin route threw an uncaught exception and hit the Worker's top-level catch-all, which appends a `router_error` audit event and returns `{ "error": "internal_error", "requestId": string }` at `500`. This is commonly a transient D1 cold-start or a read race during setup, but it can also mask a real defect. ([REQ-ADM-007](../../sdd/spec/setup-admin.md#req-adm-007-operator-dashboard))
+
+**Fix:** Retry the action after a few seconds. If it persists, look up the `router_error` audit entry by the `requestId` shown in the toast (or in the Worker runtime logs) to find the underlying exception, and check D1 availability if the action touches profile or mesh state. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.ts::createRouter -->
 
 ## Update staging checksum mismatch
 
