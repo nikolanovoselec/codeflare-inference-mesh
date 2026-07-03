@@ -219,12 +219,12 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. Admin requests present an Access JWT via the assertion header or the Access cookie.
-2. JWT verification checks the signature against the team's published keys plus audience, issuer, and validity window.
-3. A present-but-invalid JWT is rejected without falling back to bearer authentication.
-4. Verification keys are cached between requests and refreshed without a per-request fetch.
-5. Successful Access authentication records the authenticated email as the audit actor.
-6. Bearer admin authentication is accepted only before Access provisioning completes or while break-glass recovery is active.
+1. Admin requests present an Access JWT via the assertion header or the Access cookie. <!-- @impl: packages/router-worker/src/access.ts::extractAccessJwt --> <!-- @test: packages/router-worker/src/access.test.ts (REQ-SEC-009 accepts the Access JWT from the CF_Authorization cookie when the header is absent) -->
+2. JWT verification checks the signature against the team's published keys plus audience, issuer, and validity window. <!-- @impl: packages/router-worker/src/access.ts::verifyAccessRequest --> <!-- @test: packages/router-worker/src/access.test.ts (REQ-SEC-009 verifies a valid Access JWT from the assertion header and reports the email) --> <!-- @test: packages/router-worker/src/access.test.ts (REQ-SEC-009 rejects expired and not-yet-valid JWTs) -->
+3. A present-but-invalid JWT is rejected without falling back to bearer authentication. <!-- @impl: packages/router-worker/src/router.ts::requireAdmin --> <!-- @test: packages/router-worker/src/access.test.ts (REQ-SEC-009 distinguishes a present-but-invalid JWT from an absent one) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-009 requires a valid Access JWT on admin routes once access config is stored) -->
+4. Verification keys are cached between requests and refreshed without a per-request fetch. <!-- @impl: packages/router-worker/src/access.ts::JWKS_CACHE_TTL_MS = 60 * 60 * 1000 --> <!-- @test: packages/router-worker/src/access.test.ts (REQ-SEC-009 caches the published keys between verifications instead of fetching per request) --> <!-- @test: packages/router-worker/src/access.test.ts (REQ-SEC-009 refetches the published keys on an unknown key id once the cache is stale enough) -->
+5. Successful Access authentication records the authenticated email as the audit actor. <!-- @impl: packages/router-worker/src/router.ts::requireAdmin --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-009 records the Access email as the audit actor for admin actions) -->
+6. Bearer admin authentication is accepted only before Access provisioning completes or while break-glass recovery is active. <!-- @impl: packages/router-worker/src/router.ts::requireAdmin --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-013 reopens the bootstrap origin while the reopen secret is unconsumed and audits entry once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-009 requires a valid Access JWT on admin routes once access config is stored) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -234,7 +234,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

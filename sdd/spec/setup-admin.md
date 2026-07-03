@@ -39,7 +39,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. Until Access provisioning completes, admin routes accept the bootstrap admin token or an admin session derived from it. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
-2. Once Access configuration is stored, admin routes require a valid Access JWT and refuse bearer-only requests outside break-glass recovery.
+2. Once Access configuration is stored, admin routes require a valid Access JWT and refuse bearer-only requests outside break-glass recovery. <!-- @impl: packages/router-worker/src/router.ts::requireAdmin --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-009 requires a valid Access JWT on admin routes once access config is stored) -->
 3. Admin token verification uses a stored verifier rather than plaintext token storage. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
 4. Admin authentication is never accepted for provider route-family requests or node heartbeat identity. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
 5. Failed admin authentication does not reveal whether setup has completed. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status) -->
@@ -53,7 +53,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -91,7 +91,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Admin UI generates Linux/macOS and Windows install commands that pass only the router base URL — the custom domain once recorded — setup token, and optional node name. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans) -->
+1. The Admin UI generates Linux/macOS and Windows install commands that pass only the router base URL — the custom domain once recorded — setup token, and optional node name. <!-- @impl: packages/router-worker/src/router.ts::handleInstaller --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 installer commands use the custom domain once recorded) -->
 2. The Unix installer route installs the matching agent artifact and service wrapper. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans) -->
 3. The Windows installer route installs the matching agent artifact and registers startup supervision without requiring the foreground CLI to implement the Windows service-control protocol. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans) -->
 4. Install scripts verify downloaded artifact checksums before installation. <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-004 returns installer commands backed by release-tagged platform artifact plans) -->
@@ -106,7 +106,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -119,7 +119,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. The Worker origin and Admin entry point serve the Admin configuration UI as HTML with no bearer token required to load the shell. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-2. On the custom domain the UI operates entirely under the Access session, with no token entry, token storage, or sign-in view.
+2. On the custom domain the UI operates entirely under the Access session, with no token entry, token storage, or sign-in view. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 auto-loads installer command for saved tokens and platform changes) -->
 3. The UI displays generated admin/provider/setup/upstream tokens only from creation responses, surfaces mesh invite tokens only as presence, status, and age, and never reads plaintext credential values back from status. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 shows mesh invite tokens as presence, status, and age only) -->
 4. The UI remains usable on desktop and mobile viewports. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_RESPONSIVE --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
 5. Admin UI HTML responses prevent browser framing. <!-- @impl: packages/router-worker/src/router.ts::html --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
@@ -133,7 +133,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -158,7 +158,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -170,7 +170,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Worker pre-renders the entry view from host and setup phase: the setup wizard while setup is in progress, the locked console page on the bootstrap origin after completion, and the dashboard on the custom domain.
+1. The Worker pre-renders the entry view from host and setup phase: the setup wizard while setup is in progress, the locked console page on the bootstrap origin after completion, and the dashboard on the custom domain. <!-- @impl: packages/router-worker/src/router.ts::adminUiState --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_VIEWS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 pre-renders the entry view from host and setup phase) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-014 locks non-custom-domain hosts after setup completes) -->
 2. The authenticated dashboard separates operations into Overview, Nodes, Models, Routing, Mesh, and Settings sections behind persistent navigation that marks the active section. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_NAV --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
 3. Each navigation entry resolves to a rendered dashboard section, and mobile viewports reach every section through a bottom tab bar. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
 4. Every text, number, and select control carries a visible label, with inline hints and per-action feedback in predictable placement. <!-- @impl: packages/router-worker/src/admin-ui-components.ts::ADMIN_UI_FIELD_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 labels every dashboard control visibly) -->
@@ -185,7 +185,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -198,10 +198,10 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. While setup is open, the Worker origin renders the setup wizard as the entry view with a visible step indicator. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
-2. The wizard sequences connectivity check, custom-domain provisioning, and Access provisioning before handoff, then Gateway connection, first-node enrollment, and review on the custom domain, in that order.
-3. Completing the connectivity step claims the deployment and establishes the admin session for the remaining steps without displaying a credential to manage.
-4. The Access step requires at least one admin email before provisioning and accepts additional emails.
-5. After Access provisioning succeeds, the wizard presents the custom-domain console link as the continuation point.
+2. The wizard sequences connectivity check, custom-domain provisioning, and Access provisioning before handoff, then Gateway connection, first-node enrollment, and review on the custom domain, in that order. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
+3. Completing the connectivity step claims the deployment and establishes the admin session for the remaining steps without displaying a credential to manage. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 copies all generated setup tokens from rendered token controls) -->
+4. The Access step requires at least one admin email before provisioning and accepts additional emails. <!-- @impl: packages/router-worker/src/router.ts::handleSetupAccess --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-012 provisions Access from captured emails and stores the config) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 access step collects email chips and provisioning reveals the handoff link) -->
+5. After Access provisioning succeeds, the wizard presents the custom-domain console link as the continuation point. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 access step collects email chips and provisioning reveals the handoff link) -->
 6. Generated machine credentials render only from creation responses as one-time reveal cards with copy affordances and an explicit shown-once warning. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard) -->
 7. The Gateway connection and node enrollment steps are individually skippable, and every wizard capability remains available from the dashboard afterward. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
 
@@ -213,7 +213,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -252,12 +252,12 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The domain step lists the account's zones for selection and provisions DNS and a Worker route for the entered hostname. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::provisionCustomDomain -->
+1. The domain step lists the account's zones for selection and provisions DNS and a Worker route for the entered hostname. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::provisionCustomDomain --> <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.listZones --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 lists account zones for the domain step) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase) -->
 2. Custom domain setup falls back to the bootstrap request origin when the deploy URL is absent or still a placeholder. <!-- @impl: packages/router-worker/src/router.ts::handleCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 provisions custom domains from the bootstrap request origin when deploy URL is a placeholder) -->
 3. Custom domain setup refuses conflicting DNS records instead of overwriting unrelated hostname records. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::provisionCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 refuses to overwrite conflicting custom-domain DNS records) -->
 4. Custom domain provisioning failure leaves the current origin usable and the domain step retryable. <!-- @impl: packages/router-worker/src/router.ts::handleCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 leaves the existing Worker origin usable when custom-domain provisioning fails) -->
-5. Successful provisioning durably records the custom domain and advances setup to the Access step.
-6. After Access provisioning succeeds, setup continues on the custom-domain console.
+5. Successful provisioning durably records the custom domain and advances setup to the Access step. <!-- @impl: packages/router-worker/src/router.ts::handleCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase) -->
+6. After Access provisioning succeeds, setup continues on the custom-domain console. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 finishing setup on the custom domain opens the dashboard) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -267,7 +267,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -302,11 +302,11 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Access step provisions an Access application for the custom domain with an allow policy containing exactly the captured admin emails.
-2. Provisioning creates bypass coverage for the provider, node, health, and installer paths so machine traffic needs no Access session.
-3. When the bypass policy cannot be created, provisioning removes the bypass application rather than leaving machine paths blocked.
-4. Provisioning durably stores the Access team domain, application audience, and application identifiers for verification and re-runs.
-5. Re-running provisioning updates the existing managed applications instead of duplicating them.
+1. The Access step provisions an Access application for the custom domain with an allow policy containing exactly the captured admin emails. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 creates the admin app with an allow policy containing exactly the captured emails) -->
+2. Provisioning creates bypass coverage for the provider, node, health, and installer paths so machine traffic needs no Access session. <!-- @impl: packages/router-worker/src/access-provisioning.ts::MACHINE_BYPASS_SUFFIXES --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 creates bypass coverage for machine paths with an everyone bypass policy) -->
+3. When the bypass policy cannot be created, provisioning removes the bypass application rather than leaving machine paths blocked. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 removes the bypass app when its bypass policy cannot be created) -->
+4. Provisioning durably stores the Access team domain, application audience, and application identifiers for verification and re-runs. <!-- @impl: packages/router-worker/src/router.ts::handleSetupAccess --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-012 provisions Access from captured emails and stores the config) --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 returns the team domain, audience, and application identifiers for durable storage) -->
+5. Re-running provisioning updates the existing managed applications instead of duplicating them. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 updates existing managed applications instead of duplicating them) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -316,7 +316,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -328,10 +328,10 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. When the reopen secret is set and its value is unconsumed, the bootstrap origin serves the recovery surface instead of the locked page.
-2. Completing recovery records the secret value as consumed so the surface closes until a new value is set.
-3. The recovery surface re-runs the domain and Access steps against currently stored state.
-4. Entering and completing recovery each record an audit event.
+1. When the reopen secret is set and its value is unconsumed, the bootstrap origin serves the recovery surface instead of the locked page. <!-- @impl: packages/router-worker/src/setup-state.ts::breakGlassActive --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-013 reopens the bootstrap origin while the reopen secret is unconsumed and audits entry once) -->
+2. Completing recovery records the secret value as consumed so the surface closes until a new value is set. <!-- @impl: packages/router-worker/src/router.ts::handleSetupComplete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-013 consuming the reopen secret closes the recovery surface) -->
+3. The recovery surface re-runs the domain and Access steps against currently stored state. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-013 reopens the bootstrap origin while the reopen secret is unconsumed and audits entry once) -->
+4. Entering and completing recovery each record an audit event. <!-- @impl: packages/router-worker/src/router.ts::recordBreakGlassEntry --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-013 reopens the bootstrap origin while the reopen secret is unconsumed and audits entry once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-013 consuming the reopen secret closes the recovery surface) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -341,7 +341,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -353,10 +353,10 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. After setup completes, admin UI requests on non-custom-domain hostnames receive a console-moved page naming the custom domain.
-2. After setup completes, provider and node route families on non-custom-domain hostnames are refused.
-3. The custom domain serves the full console and all machine route families.
-4. Break-glass recovery reopens only the admin surface on the bootstrap origin, never machine routes.
+1. After setup completes, admin UI requests on non-custom-domain hostnames receive a console-moved page naming the custom domain. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::consoleMovedHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-014 locks non-custom-domain hosts after setup completes) -->
+2. After setup completes, provider and node route families on non-custom-domain hostnames are refused. <!-- @impl: packages/router-worker/src/router.ts::resolveHostGate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-014 locks non-custom-domain hosts after setup completes) -->
+3. The custom domain serves the full console and all machine route families. <!-- @impl: packages/router-worker/src/router.ts::resolveHostGate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-014 locks non-custom-domain hosts after setup completes) -->
+4. Break-glass recovery reopens only the admin surface on the bootstrap origin, never machine routes. <!-- @impl: packages/router-worker/src/router.ts::resolveHostGate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-013 reopens the bootstrap origin while the reopen secret is unconsumed and audits entry once) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -366,7 +366,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

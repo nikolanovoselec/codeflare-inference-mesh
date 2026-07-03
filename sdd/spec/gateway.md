@@ -115,11 +115,11 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Acceptance Criteria:**
 
-1. The gateway options endpoint lists the account's AI Gateways and the selected gateway's dynamic routes.
-2. The Gateway step renders gateway and route selections populated from the options endpoint, each with a create-new choice.
-3. When the account has no gateway, the step offers a single primary action that creates the default gateway and route.
-4. Provisioning a selection stores it and runs the existing sync flow against it.
-5. Provider name, public model alias, and Worker URL overrides are folded behind an explicit advanced disclosure.
+1. The gateway options endpoint lists the account's AI Gateways and the selected gateway's dynamic routes. <!-- @impl: packages/router-worker/src/router.ts::handleGatewayOptions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 lists gateways, routes, and defaults for the gateway step) -->
+2. The Gateway step renders gateway and route selections populated from the options endpoint, each with a create-new choice. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step renders selects from live options and syncs the selection) -->
+3. When the account has no gateway, the step offers a single primary action that creates the default gateway and route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step offers one-click provisioning when the account has no gateway) -->
+4. Provisioning a selection stores it and runs the existing sync flow against it. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step renders selects from live options and syncs the selection) -->
+5. Provider name, public model alias, and Worker URL overrides are folded behind an explicit advanced disclosure. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::setupWizardView --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -129,7 +129,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
