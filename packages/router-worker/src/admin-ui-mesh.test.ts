@@ -243,6 +243,28 @@ describe('admin UI mesh operations contracts', () => {
     expect(failHarness.byId('login-output').classList.contains('is-error')).toBe(true)
   })
 
+  it('renders a humane retry message for a 5xx failure without leaking the raw server error token', async () => {
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const harness = adminUiHarness(html, async (path) => {
+      if (path === '/admin/status') return Response.json(statusFixture())
+      if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
+      if (path === '/admin/profiles/activate') {
+        return new Response(JSON.stringify({ error: 'internal_error', requestId: 'req-xyz' }), { status: 503, headers: { 'content-type': 'application/json' } })
+      }
+      return new Response('command', { status: 200, headers: { 'content-type': 'text/plain' } })
+    }, { sessionToken: 'admin-secret' })
+    harness.run()
+    await harness.flush(10)
+
+    await harness.clickAction('profile-activate', { out: 'profile-activate-output' })
+    await harness.flush()
+
+    const output = harness.byId('profile-activate-output')
+    expect(output.classList.contains('is-error')).toBe(true)
+    expect(output.textContent).not.toContain('internal_error')
+    expect(output.textContent).toContain('req-xyz')
+  })
+
   it('REQ-ADM-007 arms destructive controls and auto-disarms before submitting', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')

@@ -207,7 +207,7 @@ export function adminUiHarness(html: string, respond: (path: string, init?: Requ
   }
   const byId = (id: string): StubElement => {
     const element = getById(id)
-    if (!element) throw new Error(`unknown element id "${id}" — not in served HTML`)
+    if (!element) throw new Error(`unknown element id "${id}": not in served HTML`)
     return element
   }
   byId('admin-ui-config').textContent = configMatch[1]!

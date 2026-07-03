@@ -40,6 +40,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const requestId = error && error.body && error.body.requestId ? ' (request ' + error.body.requestId + ')' : '';
     if (action === 'first-run-setup' && error.status === config.setupLockedFeedback.status) return 'Setup is already complete for this router. Sign in with the existing admin token instead.';
     if (error.status === 401) return 'Admin token missing or invalid. Sign in again, then retry this action.' + requestId;
+    if (error.status >= 500) return 'The router hit a temporary error. Give it a moment and try again.' + requestId;
     return ((error.body && error.body.error) || error.message || 'Request failed') + requestId;
   };
   let toastTimer;
@@ -537,7 +538,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     option.setAttribute('data-profile-option', profile.id);
     option.setAttribute('data-split', profile.meshllm && profile.meshllm.split ? 'true' : 'false');
     if (profile.id === selectedId) option.selected = true;
-    option.textContent = profile.id + (profile.meshllm && profile.meshllm.split ? ' \\u2014 split' : ' \\u2014 single-node');
+    option.textContent = profile.id + (profile.meshllm && profile.meshllm.split ? ' (split)' : ' (single-node)');
     return option;
   };
   function fillProfileSelect(select, profiles, selectedId) {
@@ -647,12 +648,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       config.meshHealth.fields.forEach((fieldName) => {
         const line = document.createElement('code');
         line.setAttribute('data-mesh-field', fieldName);
-        let value = '\\u2014';
-        if (fieldName === 'coordinator') value = entry.coordinatorNodeId || '\\u2014';
+        let value = 'none';
+        if (fieldName === 'coordinator') value = entry.coordinatorNodeId || 'none';
         else if (fieldName === 'peers') value = String((entry.peerNodeIds || []).length);
-        else if (fieldName === 'ready-models') value = (entry.readyModels || []).join(', ') || '\\u2014';
-        else if (fieldName === 'failed-nodes') value = (entry.failedNodeIds || []).join(', ') || '\\u2014';
-        else if (fieldName === 'last-error') value = entry.lastError || '\\u2014';
+        else if (fieldName === 'ready-models') value = (entry.readyModels || []).join(', ') || 'none';
+        else if (fieldName === 'failed-nodes') value = (entry.failedNodeIds || []).join(', ') || 'none';
+        else if (fieldName === 'last-error') value = entry.lastError || 'none';
         else if (fieldName === 'rotation') value = 'r' + entry.rotation;
         else if (fieldName === 'secret') value = entry.tokenCount > 0 ? 'present' + (entry.secretAgeMs != null ? ' · ' + fmtAge(entry.secretAgeMs) : '') : 'absent';
         line.textContent = fieldName.replace(/-/g, ' ') + ': ' + value;
@@ -975,7 +976,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const body = await request('/admin/setup', { method: 'POST' });
       liveToken = body.adminToken || '';
       storeToken(liveToken, false);
-      revealKey(out, 'Setup access token', liveToken, 'Save this — it is how you sign back into setup on this page until Access is live. Stored hashed and shown only once.');
+      revealKey(out, 'Setup access token', liveToken, 'Save this. It is how you sign back into setup on this page until Access is live. Stored hashed and shown only once.');
       const next = byId('wizard-continue-connect');
       if (next) next.hidden = false;
       toast('Deployment claimed');
