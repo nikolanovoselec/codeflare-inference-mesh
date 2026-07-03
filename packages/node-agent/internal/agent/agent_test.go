@@ -99,7 +99,7 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 	})
 }
 
-func TestREQNODE002DetectsUnambiguousMeshIP(t *testing.T) {
+func TestREQNODE008DetectsUnambiguousMeshIP(t *testing.T) {
 	t.Run("REQ-NODE-002", func(t *testing.T) {
 		meshAddr := &net.IPNet{IP: net.ParseIP("100.64.1.10"), Mask: net.CIDRMask(32, 32)}
 		lanAddr := &net.IPNet{IP: net.ParseIP("192.168.1.10"), Mask: net.CIDRMask(32, 32)}
@@ -117,7 +117,7 @@ func TestREQNODE002DetectsUnambiguousMeshIP(t *testing.T) {
 	})
 }
 
-func TestREQNODE002AppliesDetectedMeshIPBeforeClaim(t *testing.T) {
+func TestREQNODE008AppliesDetectedMeshIPBeforeClaim(t *testing.T) {
 	t.Run("REQ-NODE-002", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.json")
 		cfg := DefaultConfig(t.TempDir())
@@ -145,7 +145,7 @@ func TestREQNODE002AppliesDetectedMeshIPBeforeClaim(t *testing.T) {
 	})
 }
 
-func TestREQNODE002HeartbeatResendsMeshIdentityEveryTick(t *testing.T) {
+func TestREQNODE007HeartbeatResendsMeshIdentityEveryTick(t *testing.T) {
 	t.Run("REQ-NODE-002 REQ-RUN-006", func(t *testing.T) {
 		cfg := DefaultConfig(t.TempDir())
 		identity := HeartbeatIdentity{MeshID: "mesh-1", MeshToken: "tok-1", AgentVersion: "v2.0.0"}
@@ -172,7 +172,7 @@ func TestREQNODE002HeartbeatResendsMeshIdentityEveryTick(t *testing.T) {
 	})
 }
 
-func TestREQNODE002ResponsesCarryMeshBootstrapAndDesiredVersion(t *testing.T) {
+func TestREQNODE007ResponsesCarryMeshBootstrapAndDesiredVersion(t *testing.T) {
 	t.Run("REQ-NODE-002", func(t *testing.T) {
 		var claim ClaimResponse
 		if err := json.Unmarshal([]byte(`{"nodeId":"n","nodeToken":"t","upstreamToken":"u","profiles":[],"meshBootstrap":{"action":"wait","rotation":3},"desiredAgentVersion":"v1.2.3"}`), &claim); err != nil {
@@ -456,7 +456,7 @@ func TestREQNODE004DashboardReportsMeshLLMRuntimePanel(t *testing.T) {
 	})
 }
 
-func TestREQNODE004DashboardRedactsCredentials(t *testing.T) {
+func TestREQSEC008DashboardRedactsCredentials(t *testing.T) {
 	t.Run("REQ-NODE-004", func(t *testing.T) {
 		handler := DashboardHandler(func() DashboardStatus {
 			return DashboardStatus{Config: Config{NodeToken: "node-token", UpstreamToken: "upstream-token", DashboardToken: "dashboard-token", DisplayName: "Node A"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
@@ -674,7 +674,7 @@ func TestREQRUN007RestartWithInputRelaunchesWithNewProfileArgs(t *testing.T) {
 	})
 }
 
-func TestREQOBS003ReportsLastRuntimeError(t *testing.T) {
+func TestREQOBS009ReportsLastRuntimeError(t *testing.T) {
 	t.Run("REQ-OBS-003 REQ-RUN-003", func(t *testing.T) {
 		manager := NewMeshLLMManager(MeshLLMRenderInput{ProfileID: "prof", ModelRef: "target-model", Rotation: 1}, 0, t.TempDir(), "definitely-missing-mesh-llm-for-test")
 
@@ -693,7 +693,7 @@ func TestREQOBS003ReportsLastRuntimeError(t *testing.T) {
 	})
 }
 
-func TestREQOBS003BestEffortHardwareMetrics(t *testing.T) {
+func TestREQOBS009BestEffortHardwareMetrics(t *testing.T) {
 	t.Run("REQ-OBS-003", func(t *testing.T) {
 		metrics := ParseNvidiaSMI("RTX 3090, 12000, 24576")
 		if metrics.GPUName != "RTX 3090" || metrics.GPUMemoryUsedMiB != 12000 || metrics.GPUMemoryTotalMiB != 24576 {
@@ -719,7 +719,7 @@ func TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches(t *testing.T) {
 	})
 }
 
-func TestREQNODE005ServiceDefinitionsGuaranteeAutoRestart(t *testing.T) {
+func TestREQNODE009ServiceDefinitionsGuaranteeAutoRestart(t *testing.T) {
 	t.Run("REQ-NODE-005", func(t *testing.T) {
 		cases := []struct {
 			platform   string

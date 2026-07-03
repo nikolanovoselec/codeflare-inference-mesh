@@ -167,7 +167,7 @@ const meshEntries: readonly MeshHealthEntry[] = [
 ]
 
 describe('admin UI mesh operations contracts', () => {
-  it('REQ-ADM-006 exposes mesh health, rotation, and activation controls', () => {
+  it('REQ-ADM-009 exposes mesh health, rotation, and activation controls', () => {
     // AdminMeshControlsSurfaceTestAnchor
     const html = adminUiHtml('https://router.test')
     const config = adminUiConfig(html)
@@ -225,7 +225,7 @@ describe('admin UI mesh operations contracts', () => {
     expect(panel).not.toMatch(/data-mesh-field="secret">[^<]*\b2\b/)
   })
 
-  it('REQ-ADM-006 wires the one-click rotate action to the mesh rotate endpoint', async () => {
+  it('REQ-ADM-009 wires the one-click rotate action to the mesh rotate endpoint', async () => {
     // AdminMeshRotateWiringTestAnchor
     expect(ADMIN_UI_ACTIONS.find((action) => action.id === 'mesh-rotate')).toEqual({
       id: 'mesh-rotate',
@@ -255,7 +255,7 @@ describe('admin UI mesh operations contracts', () => {
     expect(scope.dataset['state']).toBe('ready')
   })
 
-  it('REQ-ADM-006 renders the profile activation selection control', async () => {
+  it('REQ-ADM-009 renders the profile activation selection control', async () => {
     // AdminProfileActivationControlTestAnchor
     expect(ADMIN_UI_ACTIONS.find((action) => action.id === 'profile-activate')).toEqual({
       id: 'profile-activate',

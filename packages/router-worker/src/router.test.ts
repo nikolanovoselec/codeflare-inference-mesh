@@ -616,7 +616,7 @@ describe('router worker behavioral contracts', () => {
     expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['mesh-default', 'qwen3.6-coder', 'mesh-smoke']))
   })
 
-  it('REQ-RUN-002 migrates changed default profile rows without keeping retired alias owners active', async () => {
+  it('REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active', async () => {
     const store = new MemoryStore()
     await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-mm', publicAliases: ['mesh-default', 'qwen3.6:35b-a3b', 'qwen3.6-coder'], version: 1 }))
     await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-text', publicAliases: ['mesh-default', 'legacy-text-alias'], version: 4 }))
@@ -632,7 +632,7 @@ describe('router worker behavioral contracts', () => {
     expect(current).toMatchObject({ id: 'mesh-default-qwen36-35b', runtime: 'meshllm', sourceMode: 'meshllm-ref' })
   })
 
-  it('REQ-RUN-002 deactivates non-meshllm profile rows regardless of version', async () => {
+  it('REQ-RUN-009 deactivates non-meshllm profile rows regardless of version', async () => {
     const store = new MemoryStore()
     await store.setProfile(legacyRuntimeProfile({ id: 'legacy-standalone-row', publicAliases: ['legacy-only-alias'], version: 7 }))
 
@@ -654,7 +654,7 @@ describe('router worker behavioral contracts', () => {
     expect(swept).toMatchObject({ active: false, rolloutPercent: 0, version: 4 })
   })
 
-  it('REQ-SCH-003 lists only active profile aliases in the public model listing', async () => {
+  it('REQ-SCH-005 lists only active profile aliases in the public model listing', async () => {
     const { router, store } = routerFixture()
     await store.setProfile({ ...DEFAULT_MODEL_PROFILES[2]!, id: 'ghost-profile', publicAliases: ['ghost-alias'], rolloutPercent: 0, active: false })
 
@@ -856,7 +856,7 @@ describe('router worker behavioral contracts', () => {
     expect(isSafeMeshTarget('8.8.8.8', 8080)).toBe(false)
   })
 
-  it('REQ-SCH-003 returns no-node when no eligible node has capacity', async () => {
+  it('REQ-SCH-005 returns no-node when no eligible node has capacity', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ capacity: 1, inFlight: 1 }))
@@ -871,7 +871,7 @@ describe('router worker behavioral contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'no-node', requestId: 'request-a' })
   })
 
-  it('REQ-SCH-003 returns no-profile when the public model has no configured profile', async () => {
+  it('REQ-SCH-005 returns no-profile when the public model has no configured profile', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
 
@@ -1371,7 +1371,7 @@ describe('router worker behavioral contracts', () => {
     expect(calls.map((call) => call.method)).toEqual(['GET', 'GET'])
   })
 
-  it('REQ-GWY-003 refuses to sync Gateway to an unprovisioned custom domain', async () => {
+  it('REQ-ADM-010 refuses to sync Gateway to an unprovisioned custom domain', async () => {
     const { router, store } = routerFixture({ env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', WORKER_BASE_URL: 'https://router.example.workers.dev' } })
     await store.putConfig('custom_domain', { hostname: 'ai.example.com' })
 
@@ -1525,7 +1525,7 @@ describe('router worker behavioral contracts', () => {
     expect(profile.version).toBe(2)
   })
 
-  it('REQ-RUN-002 activation deactivates alias-overlapping active profiles', async () => {
+  it('REQ-RUN-009 activation deactivates alias-overlapping active profiles', async () => {
     const { router, store } = routerFixture()
 
     const activateSplit = await router(new Request('https://router.test/admin/profiles/activate', {
@@ -1565,7 +1565,7 @@ describe('router worker behavioral contracts', () => {
     expect(afterRollout.find((profile) => profile.id === 'mesh-default-qwen36-35b')).toMatchObject({ active: false, rolloutPercent: 0 })
   })
 
-  it('REQ-ADM-006 activates profiles alias-exclusively and records the audit event', async () => {
+  it('REQ-ADM-009 activates profiles alias-exclusively and records the audit event', async () => {
     const { router, store } = routerFixture()
 
     const unauthorized = await router(new Request('https://router.test/admin/profiles/activate', {
@@ -1727,7 +1727,7 @@ describe('router worker behavioral contracts', () => {
     expect(body.desiredAgentVersion).toBe('v0.2.0')
   })
 
-  it('REQ-SEC-006 admin status reports token presence, age, and count without values', async () => {
+  it('REQ-SEC-007 admin status reports token presence, age, and count without values', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
     const heartbeat = await router(new Request('https://router.test/node/heartbeat', {
@@ -1748,7 +1748,7 @@ describe('router worker behavioral contracts', () => {
     expect(JSON.stringify(body)).not.toContain('invite-token-value-a')
   })
 
-  it('REQ-SEC-006 node revoke removes the node mesh tokens from distribution', async () => {
+  it('REQ-SEC-007 node revoke removes the node mesh tokens from distribution', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
     await router(new Request('https://router.test/node/heartbeat', {

@@ -43,11 +43,6 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 3. `mesh-smoke-qwen25-1.5b` ships active with rollout percent `100`, aliases `mesh-smoke` and `smoke-test`, model ref `unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M`, split disabled, and mesh bind port `4320`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
 4. Profile definitions include public aliases, upstream model name, source mode `meshllm-ref`, context limit, runtime `meshllm`, MeshLLM settings (model ref, split flag, mandatory mesh bind port, optional max VRAM), profile version, rollout percent, and active flag. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and meshllm contract values) -->
 5. Each default profile's upstream model name is the verbatim `/v1/models` id MeshLLM reports for its model ref. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and meshllm contract values) -->
-6. Default seeding refreshes an existing managed default row when the shipped profile definition changes. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 migrates changed default profile rows without keeping retired alias owners active) -->
-7. Default seeding retires stale active managed defaults that still own a public alias now owned by a shipped default profile. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 migrates changed default profile rows without keeping retired alias owners active) -->
-8. Default seeding deactivates every profile row whose runtime is not `meshllm`, regardless of profile version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 deactivates non-meshllm profile rows regardless of version) -->
-9. `POST /admin/profiles/activate` activates the target profile and atomically deactivates any active profile sharing one of its public aliases, so no alias has two active owners. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 activation deactivates alias-overlapping active profiles) -->
-
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P0
@@ -60,30 +55,76 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ---
 
+### REQ-RUN-009: Profile seeding and retirement
+
+**Intent:** Deployed profile rows must converge to the shipped default definitions on every deploy: changed defaults refresh in place, stale alias owners retire, non-MeshLLM rows deactivate, and activation is alias-exclusive so no public alias ever has two active owners.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Default seeding refreshes an existing managed default row when the shipped profile definition changes. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active) -->
+2. Default seeding retires stale active managed defaults that still own a public alias now owned by a shipped default profile. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active) -->
+3. Default seeding deactivates every profile row whose runtime is not `meshllm`, regardless of profile version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 deactivates non-meshllm profile rows regardless of version) -->
+4. `POST /admin/profiles/activate` activates the target profile and atomically deactivates any active profile sharing one of its public aliases, so no alias has two active owners. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 activation deactivates alias-overlapping active profiles) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-RUN-002](#req-run-002-default-model-profiles)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ### REQ-RUN-003: Managed MeshLLM runtime
 
-**Intent:** The node agent supervises one managed `mesh-llm` process so nodes are prepared consistently. MeshLLM owns model acquisition and embeds its inference runtime, so the agent renders a deterministic serve command and never manages model files itself.
+**Intent:** The node agent renders one deterministic `mesh-llm serve` command from the selected profile so nodes are prepared consistently. MeshLLM owns model acquisition and embeds its inference runtime, so the rendered argv passes model references verbatim and the agent never manages model files itself.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. The agent renders `mesh-llm serve` as an exact argument list with `--model <model ref>`, `--split` only for split profiles, `--headless`, `--mesh-discovery-mode mdns`, `--mesh-name codeflare-<profileId>-r<rotation>`, and `--log-format json`. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
+2. The rendered argv sets `--bind-ip` to the node's Mesh IP, `--bind-port` to the profile's mandatory mesh bind port, and `--port`/`--console` to node-local agent config values (defaults `9337`/`3131`). <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
+3. `--max-vram` is rendered only when the profile sets a VRAM cap, and `--llama-flavor` only from hardware detection or an agent config override. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
+4. Rendered argv never contains `--publish`, `--listen-all`, `--auto`, `--discover`, or `--mesh-discovery-mode nostr`. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererForbidsPublicDiscoveryFlags) -->
+5. Profiles carry the single source mode `meshllm-ref`; the agent passes the model ref to MeshLLM verbatim and never downloads or checksums model files itself. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
+6. When a supported MeshLLM configuration key expresses the profile context limit, the agent renders a per-profile config file passed as `--config <data dir>/meshllm-<profileId>.toml`; otherwise the context limit is client-facing metadata only. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003ContextLimitConfigRendering) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-002](#req-run-002-default-model-profiles)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-010: MeshLLM process lifecycle
+
+**Intent:** The node agent supervises one managed `mesh-llm` process end to end: it applies desired profile state from heartbeats, launches only the provisioned binary, keeps the runtime environment controlled, and stops the process gracefully before escalating.
 
 **Applies To:** Node Agent
 
 **Acceptance Criteria:**
 
 1. The agent can fetch desired model profile state from the heartbeat response. <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003HeartbeatDesiredProfilesUpdateConfig) -->
-2. The agent renders `mesh-llm serve` as an exact argument list with `--model <model ref>`, `--split` only for split profiles, `--headless`, `--mesh-discovery-mode mdns`, `--mesh-name codeflare-<profileId>-r<rotation>`, and `--log-format json`. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
-3. The rendered argv sets `--bind-ip` to the node's Mesh IP, `--bind-port` to the profile's mandatory mesh bind port, and `--port`/`--console` to node-local agent config values (defaults `9337`/`3131`). <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
-4. `--max-vram` is rendered only when the profile sets a VRAM cap, and `--llama-flavor` only from hardware detection or an agent config override. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
-5. Rendered argv never contains `--publish`, `--listen-all`, `--auto`, `--discover`, or `--mesh-discovery-mode nostr`. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererForbidsPublicDiscoveryFlags) -->
-6. The runtime process inherits the agent service environment and always sets `MESH_LLM_NO_SELF_UPDATE=1`. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN003RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate) -->
-7. Profiles carry the single source mode `meshllm-ref`; the agent passes the model ref to MeshLLM verbatim and never downloads or checksums model files itself. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
-8. When a supported MeshLLM configuration key expresses the profile context limit, the agent renders a per-profile config file passed as `--config <data dir>/meshllm-<profileId>.toml`; otherwise the context limit is client-facing metadata only. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003ContextLimitConfigRendering) -->
-9. The agent stops the runtime with SIGTERM first and escalates to kill only after a grace period. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN003StopSendsSIGTERMBeforeKill) -->
-10. The agent launches the `mesh-llm` binary provisioned per REQ-NODE-006; a missing or failed install surfaces as a dependency-missing error instead of a runtime start. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN003MissingBinaryReportsDependencyMissing) -->
+2. The runtime process inherits the agent service environment and always sets `MESH_LLM_NO_SELF_UPDATE=1`. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate) -->
+3. The agent stops the runtime with SIGTERM first and escalates to kill only after a grace period. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010StopSendsSIGTERMBeforeKill) -->
+4. The agent launches the `mesh-llm` binary provisioned per REQ-NODE-006; a missing or failed install surfaces as a dependency-missing error instead of a runtime start. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010MissingBinaryReportsDependencyMissing) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-002](#req-run-002-default-model-profiles), [REQ-NODE-006](node-agent.md#req-node-006-meshllm-binary-install-and-update)
+**Dependencies:** [REQ-RUN-003](#req-run-003-managed-meshllm-runtime), [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-NODE-006](node-agent.md#req-node-006-meshllm-binary-install-and-update)
 
 **Verification:** Automated test
 
@@ -148,27 +189,49 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ### REQ-RUN-006: Private mesh formation
 
-**Intent:** Nodes serving the same MeshLLM profile must form one private mesh with no public discovery, relay, or STUN egress, over WARP unicast where multicast discovery cannot work. The router is the membership authority: it elects the seed node, captures every node's invite token, and distributes the live token set so mesh membership always converges toward router state.
+**Intent:** Nodes serving the same MeshLLM profile must form one private mesh with no public discovery, relay, or STUN egress, over WARP unicast where multicast discovery cannot work. The agent acts only on router directives: it defers launch until told to create or join, reports its own invite token, and reforms the mesh when the router's directive changes.
 
 **Applies To:** Node Agent
 
 **Acceptance Criteria:**
 
-1. When an active MeshLLM profile has no recorded seed, the router records the first seed-eligible heartbeating node with a store-if-absent write serialized through the registry Durable Object; eligibility requires a fresh heartbeat, runtime `meshllm`, and an active profile, not API readiness. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-006 elects the first seed-eligible heartbeater with a store-if-absent write) -->
-2. The elected seed's heartbeat response carries mesh bootstrap action `create` with the current rotation counter; other nodes receive `wait` until live tokens exist, then `join` with the mesh id and every live join token. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-006 returns create to the seed and wait then join with live tokens to peers) -->
-3. On `wait` the agent reports the runtime starting without launching `mesh-llm`; on `join` it renders one `--join <token>` argument per distributed token. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006WaitDefersLaunchAndJoinRendersTokens) -->
-4. The agent includes its current invite token and mesh id, read from the console status, in every heartbeat request; the router upserts changed values into the profile's token set. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN006HeartbeatCarriesMeshTokenAndMeshId) --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-006 upserts reported invite tokens into the profile token set) -->
-5. An elected seed that reports no invite token within four heartbeat intervals is cleared and election reruns. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-006 clears a seed that reports no token within four heartbeat intervals and re-elects) -->
-6. The agent drains and restarts the runtime when the response rotation differs from the running rotation, when the response mesh id differs from the running mesh id and join tokens are present, or when `create` arrives while a mesh is running. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006RestartTriggersDrainAndRelaunch) -->
-7. Token entries are removed when their node is revoked or offline more than 24 hours; an empty token set with no live seed clears mesh state, preserves the rotation counter, and re-elects on the next heartbeat. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-006 prunes revoked and stale tokens and re-elects when the set empties) -->
-8. Rendered mesh transport always binds `--bind-ip` to the node's Mesh IP so invite tokens embed dialable addresses; the `mdns` discovery mode only suppresses public relay, STUN, and Nostr egress and is never a formation mechanism. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN006BindsMeshIPSoTokensEmbedDialableAddresses) -->
-9. The agent runs at most one `mesh-llm` process; when several active MeshLLM profiles apply to a node, the first active profile is selected. <!-- @impl: packages/node-agent/internal/agent/runtime.go::SelectedProfile --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006SingleProcessSelectsFirstActiveProfile) -->
+1. On `wait` the agent reports the runtime starting without launching `mesh-llm`; on `join` it renders one `--join <token>` argument per distributed token. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006WaitDefersLaunchAndJoinRendersTokens) -->
+2. The agent includes its current invite token and mesh id, read from the console status, in every heartbeat request. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManagerAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN006HeartbeatCarriesMeshTokenAndMeshId) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006PollStatusCapturesTokenAndMeshID) -->
+3. The agent drains and restarts the runtime when the response rotation differs from the running rotation, when the response mesh id differs from the running mesh id and join tokens are present, or when `create` arrives while a mesh is running. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006RestartTriggersDrainAndRelaunch) -->
+4. Rendered mesh transport always binds `--bind-ip` to the node's Mesh IP so invite tokens embed dialable addresses; the `mdns` discovery mode only suppresses public relay, STUN, and Nostr egress and is never a formation mechanism. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN006BindsMeshIPSoTokensEmbedDialableAddresses) -->
+5. The agent runs at most one `mesh-llm` process; when several active MeshLLM profiles apply to a node, the first active profile is selected. <!-- @impl: packages/node-agent/internal/agent/runtime.go::SelectedProfile --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006SingleProcessSelectsFirstActiveProfile) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-RUN-003](#req-run-003-managed-meshllm-runtime), [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle)
+**Dependencies:** [REQ-RUN-003](#req-run-003-managed-meshllm-runtime), [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-008](#req-run-008-router-mesh-membership-authority)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-008: Router mesh membership authority
+
+**Intent:** The router is the mesh membership authority: it elects the seed node, captures every node's invite token, and distributes the live token set so mesh membership always converges toward router state.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. When an active MeshLLM profile has no recorded seed, the router records the first seed-eligible heartbeating node with a store-if-absent write serialized through the registry Durable Object; eligibility requires a fresh heartbeat, runtime `meshllm`, and an active profile, not API readiness. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-008 elects the first seed-eligible heartbeater with a store-if-absent write) -->
+2. The elected seed's heartbeat response carries mesh bootstrap action `create` with the current rotation counter; other nodes receive `wait` until live tokens exist, then `join` with the mesh id and every live join token. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-008 returns create to the seed and wait then join with live tokens to peers) -->
+3. The router upserts changed invite-token and mesh-id values reported in heartbeat requests into the profile's token set. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-008 upserts reported invite tokens into the profile token set) -->
+4. An elected seed that reports no invite token within four heartbeat intervals is cleared and election reruns. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-008 clears a seed that reports no token within four heartbeat intervals and re-elects) -->
+5. Token entries are removed when their node is revoked or offline more than 24 hours; an empty token set with no live seed clears mesh state, preserves the rotation counter, and re-elects on the next heartbeat. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-008 prunes revoked and stale tokens and re-elects when the set empties) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle)
 
 **Verification:** Automated test
 

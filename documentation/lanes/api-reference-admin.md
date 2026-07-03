@@ -148,7 +148,7 @@ GET /admin/status
 
 **Implements:** [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-007](../../sdd/spec/observability.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
-**Notes:** `meshHealth` carries one entry per MeshLLM profile: `{ profileId, meshId?, rotation, seedNodeId?, coordinatorNodeId?, peerNodeIds, tokenCount, secretAgeMs?, lastError?, readyModels, failedNodeIds }`. Mesh secrets appear only as presence, age, and count (`tokenCount`, `secretAgeMs`); invite-token values are never included in any admin response. When the `MESH_STATE_KEY` Worker secret is not configured, each entry reports `lastError: "mesh_state_key_missing"`. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-006](../../sdd/spec/security.md))
+**Notes:** `meshHealth` carries one entry per MeshLLM profile: `{ profileId, meshId?, rotation, seedNodeId?, coordinatorNodeId?, peerNodeIds, tokenCount, secretAgeMs?, lastError?, readyModels, failedNodeIds }`. Mesh secrets appear only as presence, age, and count (`tokenCount`, `secretAgeMs`); invite-token values are never included in any admin response. When the `MESH_STATE_KEY` Worker secret is not configured, each entry reports `lastError: "mesh_state_key_missing"`. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-007](../../sdd/spec/security.md))
 
 ### POST /admin/setup-tokens
 
@@ -252,7 +252,7 @@ POST /admin/cloudflare/gateway/sync
 | `409` | No provisioned custom domain exists for Gateway sync, or the stored custom domain is not provisioned and no `workerUrl` override was supplied. | `{ "error": "custom_domain_required" }` or `{ "error": "custom_domain_not_provisioned", "hostname": string }` |
 | `503` | Required runtime Cloudflare configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
-**Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/custom-domain/validate
 
@@ -278,7 +278,7 @@ POST /admin/custom-domain/validate
 | `409` | Existing DNS records conflict with the Worker route target. | `{ "error": "dns_record_conflict", "hostname": string }` |
 | `503` | Runtime Cloudflare account, Worker URL, or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
-**Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/profiles/rollout
 
@@ -304,7 +304,7 @@ POST /admin/profiles/rollout
 
 **Implements:** [REQ-RUN-004](../../sdd/spec/runtime-profiles.md)
 
-**Notes:** A rollout percentage above zero applies the alias-exclusive activation invariant: any other active profile sharing a public alias with the target is deactivated first, so no alias ever has two active owners. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md))
+**Notes:** A rollout percentage above zero applies the alias-exclusive activation invariant: any other active profile sharing a public alias with the target is deactivated first, so no alias ever has two active owners. ([REQ-RUN-009](../../sdd/spec/runtime-profiles.md))
 
 ### POST /admin/profiles/activate
 
@@ -329,7 +329,7 @@ POST /admin/profiles/activate
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | Profile does not exist. | `{ "error": "unknown_profile", "requestId": string }` |
 
-**Implements:** [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-RUN-009](../../sdd/spec/runtime-profiles.md), [REQ-ADM-009](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/mesh/rotate
 
@@ -355,7 +355,7 @@ POST /admin/mesh/rotate
 | `404` | Profile does not exist. | `{ "error": "unknown_profile" }` |
 | `500` | The `MESH_STATE_KEY` Worker secret is not configured. | `{ "error": "mesh_state_key_missing" }` |
 
-**Implements:** [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-009](../../sdd/spec/setup-admin.md)
 
 **Notes:** The audit event carries profile id, rotation, and the previous mesh id — never token material. Invite-token values are never returned by this or any other admin endpoint. ([REQ-SEC-006](../../sdd/spec/security.md))
 

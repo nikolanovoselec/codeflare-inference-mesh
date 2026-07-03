@@ -89,7 +89,7 @@ function auditTypes(store: MemoryStore): readonly string[] {
 }
 
 describe('mesh state core', () => {
-  it('REQ-RUN-006 elects the first seed-eligible heartbeater with a store-if-absent write', async () => {
+  it('REQ-RUN-008 elects the first seed-eligible heartbeater with a store-if-absent write', async () => {
     const { store, env, profile } = await meshFixture(meshNode('node-a'), meshNode('node-b'))
 
     const winner = await meshBootstrapFor(store, env, meshNode('node-a'), profile, NOW)
@@ -114,7 +114,7 @@ describe('mesh state core', () => {
     expect(staleFixture.store.config.has(STATE_CONFIG_KEY)).toBe(false)
   })
 
-  it('REQ-RUN-006 returns create to the seed and wait then join with live tokens to peers', async () => {
+  it('REQ-RUN-008 returns create to the seed and wait then join with live tokens to peers', async () => {
     const nodeA = meshNode('node-a')
     const nodeB = meshNode('node-b')
     const { store, env, profile } = await meshFixture(nodeA, nodeB)
@@ -159,7 +159,7 @@ describe('mesh state core', () => {
     expect(JSON.stringify(entries)).not.toContain('invite-token')
   })
 
-  it('REQ-RUN-006 answers create to the seed only until its invite token lands', async () => {
+  it('REQ-RUN-008 answers create to the seed only until its invite token lands', async () => {
     const nodeA = meshNode('node-a')
     const { store, env, profile } = await meshFixture(nodeA)
 
@@ -187,7 +187,7 @@ describe('mesh state core', () => {
     })
   })
 
-  it('REQ-RUN-006 upserts reported invite tokens into the profile token set', async () => {
+  it('REQ-RUN-008 upserts reported invite tokens into the profile token set', async () => {
     const nodeA = meshNode('node-a')
     const { store, env } = await meshFixture(nodeA)
 
@@ -204,7 +204,7 @@ describe('mesh state core', () => {
     expect(store.audit.filter((event) => event.type === 'mesh_state_stored')).toHaveLength(2)
   })
 
-  it('REQ-RUN-006 clears a seed that reports no token within four heartbeat intervals and re-elects', async () => {
+  it('REQ-RUN-008 clears a seed that reports no token within four heartbeat intervals and re-elects', async () => {
     const nodeA = meshNode('node-a')
     const nodeB = meshNode('node-b')
     const { store, env, profile } = await meshFixture(nodeA, nodeB)
@@ -226,7 +226,7 @@ describe('mesh state core', () => {
     expect(auditTypes(store)).toContain('mesh_state_cleared')
   })
 
-  it('REQ-RUN-006 prunes revoked and stale tokens and re-elects when the set empties', async () => {
+  it('REQ-RUN-008 prunes revoked and stale tokens and re-elects when the set empties', async () => {
     const nodeA = meshNode('node-a')
     const nodeB = meshNode('node-b')
     const { store, env, profile } = await meshFixture(nodeA, nodeB)
@@ -414,7 +414,7 @@ describe('mesh state core', () => {
     })
   })
 
-  it('REQ-SEC-006 revoke removes the node token entry and audits', async () => {
+  it('REQ-SEC-007 revoke removes the node token entry and audits', async () => {
     const nodeA = meshNode('node-a')
     const nodeB = meshNode('node-b')
     const { store, env, profile } = await meshFixture(nodeA, nodeB)
@@ -439,7 +439,7 @@ describe('mesh state core', () => {
     expect(auditTypes(store)).toContain('mesh_state_cleared')
   })
 
-  it('REQ-SEC-006 readmits a revoked node only after re-enrollment', async () => {
+  it('REQ-SEC-007 readmits a revoked node only after re-enrollment', async () => {
     const nodeA = meshNode('node-a')
     const nodeB = meshNode('node-b')
     const { store, env, profile } = await meshFixture(nodeA, nodeB)

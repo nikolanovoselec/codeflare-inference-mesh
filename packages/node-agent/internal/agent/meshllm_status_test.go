@@ -150,7 +150,7 @@ func TestREQRUN005ParseModelsResponseExtractsIds(t *testing.T) {
 	}
 }
 
-func TestREQOBS003MapsMeshLLMNodeStates(t *testing.T) {
+func TestREQOBS008MapsMeshLLMNodeStates(t *testing.T) {
 	const upstream = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S"
 	cases := []struct {
 		name             string

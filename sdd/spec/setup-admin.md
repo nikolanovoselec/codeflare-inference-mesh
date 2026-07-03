@@ -119,20 +119,41 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. The Worker origin and Admin entry point serve the Admin configuration UI as HTML with no bearer token required to load the shell. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-2. The UI exposes initial setup, admin login, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain validation, node revocation, the mesh health panel, mesh-profile readiness, profile activation, mesh-secret rotation, and profile rollout controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 exposes mesh health, rotation, and activation controls) -->
-3. The UI stores admin tokens only in browser-controlled session/local storage and sends them as bearer credentials only when an admin action requires authentication. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-4. The UI displays generated admin/provider/setup/upstream tokens only from creation responses, surfaces mesh invite tokens only as presence, status, and age, and never reads plaintext credential values back from status. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 shows mesh invite tokens as presence, status, and age only) -->
-5. The UI remains usable on desktop and mobile viewports. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_RESPONSIVE --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-6. Admin UI HTML responses prevent browser framing. <!-- @impl: packages/router-worker/src/router.ts::html --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
-7. The UI provides a one-click "Rotate mesh secret" action that submits `POST /admin/mesh/rotate` for the selected mesh profile. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 wires the one-click rotate action to the mesh rotate endpoint) -->
-8. The UI presents the single-node and split serving profiles as one activation selection control that submits `POST /admin/profiles/activate`. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 renders the profile activation selection control) -->
-9. Activating a profile atomically deactivates every active profile that shares a public alias with it and records a `profile_activated` audit event. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 activates profiles alias-exclusively and records the audit event) -->
+2. The UI stores admin tokens only in browser-controlled session/local storage and sends them as bearer credentials only when an admin action requires authentication. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
+3. The UI displays generated admin/provider/setup/upstream tokens only from creation responses, surfaces mesh invite tokens only as presence, status, and age, and never reads plaintext credential values back from status. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-006 shows mesh invite tokens as presence, status, and age only) -->
+4. The UI remains usable on desktop and mobile viewports. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_RESPONSIVE --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
+5. Admin UI HTML responses prevent browser framing. <!-- @impl: packages/router-worker/src/router.ts::html --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-ADM-001](#req-adm-001-first-run-setup), [REQ-ADM-002](#req-adm-002-mvp-admin-auth), [REQ-ADM-003](#req-adm-003-setup-token-lifecycle), [REQ-ADM-004](#req-adm-004-one-line-installers), [REQ-ADM-005](#req-adm-005-optional-custom-domain), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-OBS-002](observability.md#req-obs-002-admin-status-surface)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-009: Admin mesh operation controls
+
+**Intent:** Mesh lifecycle operations — health visibility, one-click rotation, and profile activation — must be operable from the Admin UI so operators never reproduce them with raw API calls.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The UI exposes initial setup, admin login, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain validation, node revocation, the mesh health panel, mesh-profile readiness, profile activation, mesh-secret rotation, and profile rollout controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 exposes mesh health, rotation, and activation controls) -->
+2. The UI provides a one-click "Rotate mesh secret" action that submits `POST /admin/mesh/rotate` for the selected mesh profile. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 wires the one-click rotate action to the mesh rotate endpoint) -->
+3. The UI presents the single-node and split serving profiles as one activation selection control that submits `POST /admin/profiles/activate`. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 renders the profile activation selection control) -->
+4. Activating a profile records a `profile_activated` audit event. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-009 activates profiles alias-exclusively and records the audit event) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle), [REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-retirement)
 
 **Verification:** Automated test
 
@@ -207,14 +228,35 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 4. Custom domain setup falls back to the bootstrap request origin when the deploy URL is absent or still a placeholder. <!-- @impl: packages/router-worker/src/router.ts::handleCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 provisions custom domains from the bootstrap request origin when deploy URL is a placeholder) -->
 5. Custom domain setup refuses conflicting DNS records instead of overwriting unrelated hostname records. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::provisionCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 refuses to overwrite conflicting custom-domain DNS records) -->
 6. Custom domain setup failure leaves the existing Worker origin usable. <!-- @impl: packages/router-worker/src/router.ts::handleCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 leaves the existing Worker origin usable when custom-domain provisioning fails) -->
-7. AI Gateway sync refuses to use a stored custom-domain hostname until provisioning has succeeded. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 refuses to sync Gateway to an unprovisioned custom domain) -->
-8. The setup UI records the provisioned custom domain in D1. <!-- @impl: packages/router-worker/src/router.ts::handleCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 provisions custom domains from the configured Worker origin when deploy URL is usable) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-ADM-001](#req-adm-001-first-run-setup), [REQ-GWY-001](gateway.md#req-gwy-001-gateway-custom-provider)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-010: Provisioning downstream effects
+
+**Intent:** Custom-domain provisioning must gate its downstream consumers: Gateway sync never targets an unprovisioned hostname, and successful provisioning is durably recorded so later flows reuse it.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. AI Gateway sync refuses to use a stored custom-domain hostname until provisioning has succeeded. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-010 refuses to sync Gateway to an unprovisioned custom domain) -->
+2. The setup UI records the provisioned custom domain in D1. <!-- @impl: packages/router-worker/src/router.ts::handleCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 provisions custom domains from the configured Worker origin when deploy URL is usable) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-005](#req-adm-005-optional-custom-domain), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation)
 
 **Verification:** Automated test
 

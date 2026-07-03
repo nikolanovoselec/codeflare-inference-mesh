@@ -56,7 +56,7 @@ Optional custom-domain provisioning uses the runtime Cloudflare token after depl
 
 ## Greenfield bootstrap
 
-There is no fleet migration. The first deploy seeds the shipped MeshLLM profiles, deactivates every active profile row whose runtime is not `meshllm` regardless of version, and `/v1/models` lists only active aliases — that sweep is the entire cutover. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md))
+There is no fleet migration. The first deploy seeds the shipped MeshLLM profiles, deactivates every active profile row whose runtime is not `meshllm` regardless of version, and `/v1/models` lists only active aliases — that sweep is the entire cutover. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md)) ([REQ-RUN-009](../../sdd/spec/runtime-profiles.md))
 
 1. Configure the `MESH_STATE_KEY` GitHub Actions secret, then deploy the Worker (integration first); the workflow fails closed without the secret. ([REQ-SEC-006](../../sdd/spec/security.md))
 2. Complete first-run setup and mint a single-use enrollment token per node. ([REQ-ADM-003](../../sdd/spec/setup-admin.md))
@@ -72,7 +72,9 @@ Manual verification for a new environment using two WARP-enrolled nodes. Expecte
 2. **Second node joins.** Install the agent on node B. The router distributes join tokens through heartbeat mesh bootstrap — no manual token handling. Expect `peerNodeIds` to list both nodes and `tokenCount` 2.
 3. **Split readiness.** Activate the split profile from the Admin UI. Both nodes restart `mesh-llm` in split mode; nodes are not ready while reloading. Expect `readyModels` to repopulate with the split profile's model once layer distribution completes.
 4. **Failover and rejoin.** Stop the agent service on node B. Expect node B to appear in `failedNodeIds` while node A keeps serving; after restart, node B rejoins from distributed tokens and `failedNodeIds` clears.
-5. **Rotation test.** Rotate the mesh token from the Admin UI. Expect `rotation` to increment, mesh state to reset, `tokenCount` to recover as heartbeats store fresh tokens, and the mesh to reform within two minutes under idle or short-stream load ([CON-SEC-003](../../sdd/spec/constraints.md#con-sec-003-mesh-secret-custody-and-rotation)); model readiness restoration additionally waits on model reload. A node holding only a pre-rotation token must not rejoin until it receives a fresh one. ([REQ-SEC-006](../../sdd/spec/security.md))
+5. **Rotation test.** Rotate the mesh token from the Admin UI. Expect `rotation` to increment, mesh state to reset, `tokenCount` to recover as heartbeats store fresh tokens, and the mesh to reform within two minutes under idle or short-stream load. ([CON-SEC-003](../../sdd/spec/constraints.md#con-sec-003-mesh-secret-custody-and-rotation)) ([REQ-SEC-006](../../sdd/spec/security.md))
+   - Model readiness restoration additionally waits on model reload.
+   - A node holding only a pre-rotation token must not rejoin until it receives a fresh one. ([REQ-SEC-007](../../sdd/spec/security.md))
 6. **Gateway chat.** Send a chat completion for the public alias through the AI Gateway dynamic route and confirm a mesh-served response. ([REQ-GWY-003](../../sdd/spec/gateway.md))
 
 ## Release channels
@@ -81,7 +83,7 @@ Production releases use stable semantic tags such as `v0.1.0`. Integration relea
 
 ## Agent self-update
 
-Node binaries need no manual redeploy after first install. Operators select a release tag from the Admin UI agent-version dropdown; every heartbeat response carries that desired version, and a node whose running version differs — newer or older — downloads the tagged release binary with `checksums.txt`, verifies the SHA-256, stages it, applies it by atomic swap, and exits so the service manager restarts it (systemd `Restart=always`, launchd `KeepAlive`, Windows `sc.exe` failure actions). A failure at any step reports the node's last error and leaves the current version running; the node retries only when the desired version changes or after one hour. ([REQ-ADM-008](../../sdd/spec/setup-admin.md)) ([REQ-NODE-005](../../sdd/spec/node-agent.md))
+Node binaries need no manual redeploy after first install. Operators select a release tag from the Admin UI agent-version dropdown; every heartbeat response carries that desired version, and a node whose running version differs — newer or older — downloads the tagged release binary with `checksums.txt`, verifies the SHA-256, stages it, applies it by atomic swap, and exits so the service manager restarts it (systemd `Restart=always`, launchd `KeepAlive`, Windows `sc.exe` failure actions). A failure at any step reports the node's last error and leaves the current version running; the node retries only when the desired version changes or after one hour. ([REQ-ADM-008](../../sdd/spec/setup-admin.md)) ([REQ-NODE-005](../../sdd/spec/node-agent.md)) ([REQ-NODE-009](../../sdd/spec/node-agent.md))
 
 ## Rollback
 
@@ -99,7 +101,7 @@ For integration rollback, restore the safe code onto the selected integration br
 
 **Rollback:** If the rollback workflow fails before Worker deploy, the existing Worker remains active. If it fails after publishing a release but before deploy, delete the unused rollback GitHub Release tag and rerun from the restored safe ref with a fresh tag.
 
-Model profile rollback switches the public alias back to a previously ready profile. Node update rollback selects the previous verified release tag from the agent-version dropdown; nodes converge to it automatically through the same checksum-verified self-update flow (downgrade is version inequality, not ordering). ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-005](../../sdd/spec/node-agent.md)) ([REQ-ADM-008](../../sdd/spec/setup-admin.md))
+Model profile rollback switches the public alias back to a previously ready profile. Node update rollback selects the previous verified release tag from the agent-version dropdown; nodes converge to it automatically through the same checksum-verified self-update flow (downgrade is version inequality, not ordering). ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-005](../../sdd/spec/node-agent.md)) ([REQ-NODE-009](../../sdd/spec/node-agent.md)) ([REQ-ADM-008](../../sdd/spec/setup-admin.md))
 
 ## CI verification policy
 

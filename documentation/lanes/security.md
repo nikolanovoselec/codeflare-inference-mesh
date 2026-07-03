@@ -7,6 +7,7 @@
 - [Token storage](#token-storage)
 - [Header filtering](#header-filtering)
 - [Runtime safety](#runtime-safety)
+- [Admin token storage in the browser](#admin-token-storage-in-the-browser)
 - [Mesh secret custody and rotation](#mesh-secret-custody-and-rotation)
 - [Mesh egress posture](#mesh-egress-posture)
 - [Update trust chain](#update-trust-chain)
@@ -31,7 +32,7 @@
 | Recovery to Worker | Admin recovery token | Replaces a lost admin token only on `POST /admin/recovery/reset`; not accepted for normal admin, provider, node, or setup routes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | Installer to Worker | Setup token | Claims one node once. | [REQ-ADM-003](../../sdd/spec/setup-admin.md) |
 | Node to Worker | Node token | Authorizes heartbeat and unregister. | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-005](../../sdd/spec/observability.md) |
-| Local dashboard to node agent | Dashboard token | Authorizes localhost runtime-control POSTs. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
+| Local dashboard to node agent | Dashboard token | Authorizes localhost runtime-control POSTs. | [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-008](../../sdd/spec/security.md) |
 | Worker to node | Upstream token | Authorizes Mesh-facing inference proxy. | [REQ-NODE-003](../../sdd/spec/node-agent.md) |
 | Node to private mesh | Mesh invite token | Admits a node's MeshLLM process to a profile's private mesh; held at rest only as an AES-GCM envelope in D1 under the `MESH_STATE_KEY` Worker secret. | [REQ-SEC-006](../../sdd/spec/security.md) |
 | Workflow to Cloudflare | Deploy token | Deploys Worker and migrates D1. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
@@ -75,17 +76,32 @@
 
 **Verification:** `packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController` asserts dashboard-token enforcement; `packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` asserts upstream proxy auth and header filtering; `TestREQRUN006PollStatusCapturesTokenAndMeshID` asserts the invite token is captured from the localhost console status poll, never from process stdout. <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager_test.go::TestREQRUN006PollStatusCapturesTokenAndMeshID -->
 
-**Implements:** [REQ-SEC-004](../../sdd/spec/security.md), [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-006](../../sdd/spec/security.md)
+**Implements:** [REQ-SEC-004](../../sdd/spec/security.md), [REQ-SEC-008](../../sdd/spec/security.md), [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md)
+
+## Admin token storage in the browser
+
+**Threat:** The admin bearer token is kept in browser `sessionStorage` or `localStorage` (`packages/router-worker/src/admin-ui.ts`) rather than an httpOnly cookie, so any JavaScript executing in the Worker's origin — including a future XSS bug in the admin UI — can read and exfiltrate it.
+
+**Mitigation:** The admin UI escapes every interpolated status value, and no third-party script is loaded. No Content-Security-Policy header is currently set on Worker responses. Operators who need defense-in-depth against this exposure should front the admin surface with Cloudflare Access after attaching a custom domain (see [SECURITY.md](../../SECURITY.md)).
+
+**Verification:** audit pending — no automated test currently asserts a CSP header or an admin-UI output-encoding boundary. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
+
+**Implements:** [REQ-SEC-001](../../sdd/spec/security.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md)
 
 ## Mesh secret custody and rotation
 
 **Threat:** A leaked mesh secret or invite token could admit an attacker's node to the private inference mesh, and an eviction that only stopped token distribution would leave the evicted holder able to rejoin.
 
-**Mitigation:** The router owns mesh secret custody. It captures each node's invite token from authenticated heartbeats, stores per-profile mesh state AES-GCM envelope-encrypted in D1 under the `MESH_STATE_KEY` Worker secret (the durable record holds only `{iv, ciphertext}`), and distributes join tokens only in heartbeat responses to live, non-revoked nodes on the mesh profile; when the key is absent, mesh rotation and bootstrap fail closed with `mesh_state_key_missing`. Rotation increments a per-profile counter that is baked into the rendered mesh identity (`--mesh-name codeflare-<profileId>-r<rotation>`), so a rotation is a hard cut into a different mesh that every member drains and restarts into; reconvergence within about two minutes is an operational constraint, not an acceptance criterion. Eviction is honest about its boundary: revoking a node removes its token entry, and rotation excludes it from the new mesh, but a malicious holder of the old secret could still rejoin the old mesh name — which no longer receives traffic. Join-level eviction of stale-token holders is upstream MeshLLM's `--trust-policy allowlist` plus `--owner-key` backstop, not managed by this project. Node tokens have no in-place rotation: a revoked node regains mesh access only by re-enrolling with a fresh single-use setup token. Admin surfaces show token presence, age, and count — never values.
+**Mitigation:** The router owns mesh secret custody.
+
+- It captures each node's invite token from authenticated heartbeats, stores per-profile mesh state AES-GCM envelope-encrypted in D1 under the `MESH_STATE_KEY` Worker secret (the durable record holds only `{iv, ciphertext}`), and distributes join tokens only in heartbeat responses to live, non-revoked nodes on the mesh profile; when the key is absent, mesh rotation and bootstrap fail closed with `mesh_state_key_missing`.
+- Rotation increments a per-profile counter that is baked into the rendered mesh identity (`--mesh-name codeflare-<profileId>-r<rotation>`), so a rotation is a hard cut into a different mesh that every member drains and restarts into; reconvergence within about two minutes is an operational constraint, not an acceptance criterion.
+- Eviction is honest about its boundary: revoking a node removes its token entry, and rotation excludes it from the new mesh, but a malicious holder of the old secret could still rejoin the old mesh name — which no longer receives traffic. Join-level eviction of stale-token holders is upstream MeshLLM's `--trust-policy allowlist` plus `--owner-key` backstop, not managed by this project.
+- Node tokens have no in-place rotation: a revoked node regains mesh access only by re-enrolling with a fresh single-use setup token. Admin surfaces show token presence, age, and count — never values.
 
 **Verification:** The mesh-state tests assert ciphertext-only storage, fail-closed behavior on a missing key, live-node-only token distribution, rotate and revoke auditing, and re-enrollment-only readmission; `TestREQRUN006RestartTriggersDrainAndRelaunch` asserts members drain and relaunch on a rotation or mesh-identity change. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @impl: packages/router-worker/src/mesh-crypto.ts::MESH_CRYPTO_ANCHORS --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager_test.go::TestREQRUN006RestartTriggersDrainAndRelaunch -->
 
-**Implements:** [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-003](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-SEC-006](../../sdd/spec/security.md), [REQ-SEC-007](../../sdd/spec/security.md), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-ADM-003](../../sdd/spec/setup-admin.md)
 
 ## Mesh egress posture
 
@@ -103,9 +119,9 @@
 
 **Mitigation:** The trust anchor for agent updates is the GitHub repository and its release process, with an operator in the loop: the desired agent version is only ever an admin-selected tag from the validated release list, distributed via heartbeat, and the agent stages a downloaded binary only after its SHA-256 matches the release's `checksums.txt`; any failure leaves the current version running. The MeshLLM runtime binary uses a stronger pin — its per-asset checksums are embedded in the agent at build time, so a compromised MeshLLM release cannot affect nodes. The deploy pipeline additionally signs `checksums.txt` with cosign when `COSIGN_PRIVATE_KEY` is configured; the signature is an out-of-band operator verification artifact, and the agent does not verify it during self-update.
 
-**Verification:** `TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches` asserts checksum-gated staging; `TestREQNODE005FailureReportsLastErrorAndKeepsCurrentVersion` asserts failed updates leave the running version; the agent-version selection tests assert only listed release tags are accepted. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS -->
+**Verification:** `TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches` asserts checksum-gated staging; `TestREQNODE009FailureReportsLastErrorAndKeepsCurrentVersion` asserts failed updates leave the running version; the agent-version selection tests assert only listed release tags are accepted. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS -->
 
-**Implements:** [REQ-NODE-005](../../sdd/spec/node-agent.md), [REQ-NODE-006](../../sdd/spec/node-agent.md), [REQ-REL-003](../../sdd/spec/release-ci.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-NODE-005](../../sdd/spec/node-agent.md), [REQ-NODE-009](../../sdd/spec/node-agent.md), [REQ-NODE-006](../../sdd/spec/node-agent.md), [REQ-REL-003](../../sdd/spec/release-ci.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
 ## Access position
 

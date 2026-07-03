@@ -68,14 +68,56 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 1. Heartbeat metrics include runtime state, ready models, active profile ID/version, and in-flight requests. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 2. Heartbeat metrics include mesh ID, mesh role, peer count, split and stage state, MeshLLM API and console readiness, and the MeshLLM version. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
-3. Node runtime metrics are decoded from the MeshLLM console status through a tolerant parser that reads the needed subset and ignores unknown fields. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
-4. Heartbeat metrics include the last runtime error when the runtime manager reports one. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS003ReportsLastRuntimeError) -->
-5. GPU metrics are best-effort from platform tools first and absent rather than fabricated when unavailable. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseNvidiaSMI --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS003BestEffortHardwareMetrics) -->
-6. Token-throughput metrics are read from the MeshLLM console status `tok_per_sec` value when the console exposes it. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
-7. Prompt-versus-generation throughput splits are absent rather than fabricated when the MeshLLM status does not expose them. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
-8. A node reports runtime state ready only while the console reports serving and the selected profile's upstream model is routable in the node's own model list. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003MapsMeshLLMNodeStates) -->
-9. Console state loading is reported as downloading, standby is reported as starting, and an unreachable console after grace or a process exit is reported as failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003MapsMeshLLMNodeStates) -->
-10. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
+3. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
+
+**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-005](runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-OBS-008: Runtime state derivation
+
+**Intent:** Reported runtime state must be derived from the MeshLLM console honestly: tolerant parsing of the needed subset, ready only when the requested model is actually routable, and console states mapped to scheduler-meaningful states.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. Node runtime metrics are decoded from the MeshLLM console status through a tolerant parser that reads the needed subset and ignores unknown fields. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
+2. A node reports runtime state ready only while the console reports serving and the selected profile's upstream model is routable in the node's own model list. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS008MapsMeshLLMNodeStates) -->
+3. Console state loading is reported as downloading, standby is reported as starting, and an unreachable console after grace or a process exit is reported as failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS008MapsMeshLLMNodeStates) -->
+
+**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-005](runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-OBS-009: Hardware and throughput metrics
+
+**Intent:** Error, hardware, and throughput signals must be real measurements: best-effort platform probes and MeshLLM-reported throughput are used when available and stay absent rather than fabricated when not.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. Heartbeat metrics include the last runtime error when the runtime manager reports one. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS009ReportsLastRuntimeError) -->
+2. GPU metrics are best-effort from platform tools first and absent rather than fabricated when unavailable. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseNvidiaSMI --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS009BestEffortHardwareMetrics) -->
+3. Token-throughput metrics are read from the MeshLLM console status `tok_per_sec` value when the console exposes it. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
+4. Prompt-versus-generation throughput splits are absent rather than fabricated when the MeshLLM status does not expose them. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
@@ -109,7 +151,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 **Priority:** P1
 
-**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-RTR-003](router-worker.md#req-rtr-003-streaming-pass-through)
+**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-SCH-005](state-scheduling.md#req-sch-005-scheduler-miss-responses), [REQ-RTR-003](router-worker.md#req-rtr-003-streaming-pass-through)
 
 **Verification:** Automated test
 

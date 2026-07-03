@@ -84,7 +84,7 @@ POST /v1/chat/completions
 | `503` | No upstream token is available after reservation. | `{ "error": "upstream_token_missing", "requestId": string }` |
 | `5xx` | Upstream forwarding failed after releasing any reservation and recording a node failure signal. | Gateway-style error. |
 
-**Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md)
+**Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-005](../../sdd/spec/state-scheduling.md)
 
 ### POST /node/claim
 
@@ -108,7 +108,7 @@ POST /node/claim
 | `400` | Claim body is missing required node fields or has invalid capacity. | `{ "error": "invalid_claim", "fields": string[] }` |
 | `401` | Setup token is expired, claimed, missing, or invalid. | Error object. |
 
-**Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md)
+**Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-NODE-007](../../sdd/spec/node-agent.md), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md)
 
 **Notes:** `meshBootstrap` and `desiredAgentVersion` follow the same contract as `POST /node/heartbeat` responses. Mesh material never rides the installer or enrollment path itself; it is returned only inside this credentialed claim response and later node-token-authenticated heartbeat responses. ([REQ-SEC-006](../../sdd/spec/security.md))
 
@@ -136,7 +136,7 @@ POST /node/heartbeat
 | `403` | Node is revoked and cannot restore eligibility. | `{ "error": "node_revoked" }` |
 | `404` | Node record does not exist. | `{ "error": "unknown_node" }` |
 
-**Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-NODE-007](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
 **Notes:** `metrics` carries the MeshLLM status fields alongside the existing runtime state and throughput fields: `meshRole` (`coordinator` when the node owns stage 0, else `serving-peer` or `api-client`), `readyModels` (the model ids from the node's own `/v1/models` — the mesh-wide union), `peerCount`, `splitEnabled`, `stageCount`, `apiReady`, `consoleReady`, and `meshllmVersion`. `meshBootstrap` is computed per node as `{ "action": "create" | "join" | "wait", "rotation": number, "meshId"?: string, "joinTokens"?: string[] }`: the elected seed receives `create`, every node receives `join` with all live invite tokens once tokens are stored, and non-seed nodes receive `wait` before then. Invite-token values (`meshToken`, `joinTokens`) are stored encrypted, never logged, and never surfaced through any admin or status response. ([REQ-SEC-006](../../sdd/spec/security.md))
 
@@ -259,9 +259,9 @@ POST /api/runtime/start
 | `409` | Runtime control was requested when no managed runtime controller is available. | `runtime controller unavailable` error body. |
 | `502` | Runtime controller returned an error. | Controller error body. |
 
-**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md)
+**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-008](../../sdd/spec/security.md)
 
-**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
+**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-008](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
 
 ### POST /api/runtime/stop
 
@@ -286,9 +286,9 @@ POST /api/runtime/stop
 | `409` | Runtime control was requested when no managed runtime controller is available. | `runtime controller unavailable` error body. |
 | `502` | Runtime controller returned an error. | Controller error body. |
 
-**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md)
+**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-008](../../sdd/spec/security.md)
 
-**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
+**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-008](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
 
 ### POST /api/runtime/restart
 
@@ -313,9 +313,9 @@ POST /api/runtime/restart
 | `409` | Runtime control was requested when no managed runtime controller is available. | `runtime controller unavailable` error body. |
 | `502` | Runtime controller returned an error. | Controller error body. |
 
-**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md)
+**Implements:** [REQ-NODE-004](../../sdd/spec/node-agent.md), [REQ-SEC-008](../../sdd/spec/security.md)
 
-**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-004](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
+**Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-008](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
 
 ## Source anchors and specification backlinks
 

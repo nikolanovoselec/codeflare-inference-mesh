@@ -88,7 +88,7 @@ The Worker config is in [`packages/router-worker/wrangler.toml`](packages/router
 | --- | --- | --- |
 | `DB` | D1 binding | Durable router state. |
 | `REGISTRY` | Durable Object | Serialized scheduling and reservation release. |
-| `MESH` | Workers VPC Network | Worker-to-private-node `fetch()` path. |
+| `MESH` | Workers VPC Network | Worker-to-private-node `fetch()` path; ships commented in `wrangler.toml` and is enabled by the deploy workflow — see [configuration.md](documentation/lanes/configuration.md). |
 | `MAX_REQUEST_BYTES` | Var | Chat request size limit. |
 | `HEARTBEAT_TTL_SECONDS` | Var | Node freshness window. |
 | `AI_GATEWAY_ID` | Var | Default Gateway ID. |

@@ -32,7 +32,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ### REQ-NODE-002: Node claim and heartbeat
 
-**Intent:** A newly installed node must exchange a short-lived setup token for durable node credentials, then keep the router informed about reachability, mesh membership, and runtime readiness.
+**Intent:** A newly installed node must exchange a short-lived setup token for durable node credentials, then keep the router informed about reachability and runtime readiness through authenticated heartbeats.
 
 **Applies To:** Node Agent
 
@@ -41,19 +41,61 @@ This domain covers the local cross-platform service that registers nodes, proxie
 1. The agent claims a setup token once and receives permanent node, upstream, and profile configuration. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 2. A claimed node stores credentials in the platform-specific service data directory. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 3. Heartbeats include node identity, detected Mesh IP, listener port, runtime status, ready profiles, metrics, and agent version. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
-4. Once captured, the node's mesh id and its own mesh join token are resent in every heartbeat request, so token delivery is idempotent. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002HeartbeatResendsMeshIdentityEveryTick) -->
-5. Heartbeat metrics report mesh id, mesh role, peer count, ready model ids from the node's own MeshLLM `/v1/models`, split state, stage count, API and console readiness, and MeshLLM version. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002HeartbeatMetricsCarryMeshState) -->
-6. The node reports mesh role `coordinator` exactly when it owns stage 0 of its mesh. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQRUN007DerivesCoordinatorFromStageZeroOwnership) -->
-7. The Worker persists heartbeat state to D1 and refreshes the scheduler's live lease. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
-8. Claim and heartbeat responses may include desired profile actions, the desired agent version, and a mesh bootstrap directive (`create`, `join`, or `wait`) carrying rotation and, for joins, mesh id and join tokens. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ResponsesCarryMeshBootstrapAndDesiredVersion) -->
-9. Mesh IP detection succeeds only when exactly one private IPv4 candidate is present. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002AppliesDetectedMeshIPBeforeClaim) -->
-10. Before first claim, the agent persists an unambiguous detected Mesh IP into config. <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002AppliesDetectedMeshIPBeforeClaim) -->
+4. The Worker persists heartbeat state to D1 and refreshes the scheduler's live lease. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-NODE-007: Heartbeat mesh-state reporting
+
+**Intent:** Heartbeats are the only channel between a node and the router, so they must carry the node's mesh identity and mesh metrics idempotently and bring back the router's profile, version, and mesh directives.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. Once captured, the node's mesh id and its own mesh join token are resent in every heartbeat request, so token delivery is idempotent. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE007HeartbeatResendsMeshIdentityEveryTick) -->
+2. Heartbeat metrics report mesh id, mesh role, peer count, ready model ids from the node's own MeshLLM `/v1/models`, split state, stage count, API and console readiness, and MeshLLM version. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE007HeartbeatMetricsCarryMeshState) -->
+3. The node reports mesh role `coordinator` exactly when it owns stage 0 of its mesh. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQRUN007DerivesCoordinatorFromStageZeroOwnership) -->
+4. Claim and heartbeat responses may include desired profile actions, the desired agent version, and a mesh bootstrap directive (`create`, `join`, or `wait`) carrying rotation and, for joins, mesh id and join tokens. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE007ResponsesCarryMeshBootstrapAndDesiredVersion) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-NODE-008: Mesh IP detection
+
+**Intent:** Mesh transport and invite tokens embed the node's private address, so the agent must detect the Mesh IP only when it is unambiguous and persist it before first claim.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. Mesh IP detection succeeds only when exactly one private IPv4 candidate is present. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008AppliesDetectedMeshIPBeforeClaim) -->
+2. Before first claim, the agent persists an unambiguous detected Mesh IP into config. <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008AppliesDetectedMeshIPBeforeClaim) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-NODE-001](#req-node-001-cross-platform-service)
 
 **Verification:** Automated test
 
@@ -126,16 +168,36 @@ This domain covers the local cross-platform service that registers nodes, proxie
 2. The agent downloads the matching `inference-mesh-agent-<os>-<arch>[.exe]` artifact and `checksums.txt` from the GitHub release tagged with the desired version. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/selfupdate_test.go (TestREQNODE005DownloadsArtifactAndChecksumsFromReleaseTag) -->
 3. The downloaded binary is verified against its `checksums.txt` SHA-256 entry and written into the protected staging directory. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
 4. A checksum mismatch fails staging and does not mark an update ready. <!-- @impl: packages/node-agent/internal/agent/update.go::UpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches) -->
-5. A staged update is applied by atomically swapping the service binary, after which the agent exits so the service manager restarts it. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/selfupdate_test.go (TestREQNODE005AppliesUpdateByAtomicSwapThenExits) -->
-6. Service definitions installed by the agent guarantee automatic restart after an update exit on every supported platform. <!-- @impl: packages/node-agent/internal/agent/service.go::ServiceAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE005ServiceDefinitionsGuaranteeAutoRestart) -->
-7. A failure at any update step is reported as the node's last error and leaves the current version running. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/selfupdate_test.go (TestREQNODE005FailureReportsLastErrorAndKeepsCurrentVersion) -->
-8. After a failed update, the agent retries only when the desired version changes or after one hour. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/selfupdate_test.go (TestREQNODE005RetriesOnlyOnVersionChangeOrAfterOneHour) -->
-
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat), [REQ-REL-003](release-ci.md#req-rel-003-node-agent-release-artifacts)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-NODE-009: Update application and retry
+
+**Intent:** Applying a staged update must never leave a node dead: the binary swap is atomic, the service manager guarantees restart, and failures report and back off instead of looping.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. A staged update is applied by atomically swapping the service binary, after which the agent exits so the service manager restarts it. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/selfupdate_test.go (TestREQNODE009AppliesUpdateByAtomicSwapThenExits) -->
+2. Service definitions installed by the agent guarantee automatic restart after an update exit on every supported platform. <!-- @impl: packages/node-agent/internal/agent/service.go::ServiceAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE009ServiceDefinitionsGuaranteeAutoRestart) -->
+3. A failure at any update step is reported as the node's last error and leaves the current version running. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/selfupdate_test.go (TestREQNODE009FailureReportsLastErrorAndKeepsCurrentVersion) -->
+4. After a failed update, the agent retries only when the desired version changes or after one hour. <!-- @impl: packages/node-agent/internal/agent/selfupdate.go::SelfUpdateAnchors --> <!-- @test: packages/node-agent/internal/agent/selfupdate_test.go (TestREQNODE009RetriesOnlyOnVersionChangeOrAfterOneHour) -->
+
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-NODE-005](#req-node-005-agent-update-staging)
 
 **Verification:** Automated test
 

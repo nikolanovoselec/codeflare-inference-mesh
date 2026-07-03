@@ -296,7 +296,7 @@ func TestREQRUN003ContextLimitConfigRendering(t *testing.T) {
 	}
 }
 
-func TestREQRUN003MeshLLMEnvAppendsNoSelfUpdate(t *testing.T) {
+func TestREQRUN010MeshLLMEnvAppendsNoSelfUpdate(t *testing.T) {
 	base := []string{"PATH=/usr/bin", "HF_TOKEN=secret"}
 	got := MeshLLMEnv(base)
 	want := []string{"PATH=/usr/bin", "HF_TOKEN=secret", "MESH_LLM_NO_SELF_UPDATE=1"}

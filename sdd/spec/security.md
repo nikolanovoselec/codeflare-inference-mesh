@@ -97,17 +97,37 @@ This domain covers credential separation, route-level auth, header filtering, to
 2. The MeshLLM console API binds localhost-only and is never proxied to the Mesh. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMRenderAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004ArgvListForbidsPublicExposureFlags) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
 3. Managed MeshLLM processes always run in headless mode, keeping runtime web UI features disabled. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMRenderAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004RendererEnforcesHeadlessMode) -->
 4. The rendered MeshLLM argv list never contains `--publish`, `--listen-all`, `--auto`, `--discover`, or the `nostr` discovery mode. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMRenderAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004ArgvListForbidsPublicExposureFlags) -->
-5. The Mesh-facing listener requires upstream token verification before any inference proxy call. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
-6. Local dashboard endpoints bind to localhost and do not accept Worker upstream tokens as dashboard auth. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
-7. Runtime-control dashboard POSTs require the local dashboard token. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE004DashboardRuntimeControlsUseController) -->
-8. Runtime-control dashboard POSTs reject browser Origin headers that do not match the dashboard origin. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
-9. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE004DashboardRedactsCredentials) -->
-
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-NODE-003](node-agent.md#req-node-003-upstream-proxy), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-SEC-008: Dashboard access control and log redaction
+
+**Intent:** Node-local control surfaces need their own authentication boundaries: the Mesh-facing listener verifies upstream tokens, dashboard controls require the local dashboard token and a matching browser origin, and runtime logs never leak credentials.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. The Mesh-facing listener requires upstream token verification before any inference proxy call. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
+2. Local dashboard endpoints bind to localhost and do not accept Worker upstream tokens as dashboard auth. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
+3. Runtime-control dashboard POSTs require the local dashboard token. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE004DashboardRuntimeControlsUseController) -->
+4. Runtime-control dashboard POSTs reject browser Origin headers that do not match the dashboard origin. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
+5. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC008DashboardRedactsCredentials) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-003](node-agent.md#req-node-003-upstream-proxy), [REQ-NODE-004](node-agent.md#req-node-004-local-dashboard)
 
 **Verification:** Automated test
 
@@ -141,29 +161,48 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 ### REQ-SEC-006: Mesh token lifecycle
 
-**Intent:** Mesh invite tokens admit nodes to the private inference mesh, so the router must own their capture, encrypted storage, distribution, rotation, and revocation without exposing token values. Rotation and revocation evict a node from scheduling and token distribution immediately; join-level eviction of stale-token holders is enforced by rotation forcing a new mesh identity, with `--trust-policy allowlist` plus `--owner-key` as the backstop.
+**Intent:** Mesh invite tokens admit nodes to the private inference mesh, so the router must own their encrypted storage, distribution, and rotation without exposing token values. Rotation evicts stale-token holders by forcing a new mesh identity, with `--trust-policy allowlist` plus `--owner-key` as the backstop.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. The node agent captures the mesh invite token and mesh id from the MeshLLM console status API, never from process stdout, and reports them in every heartbeat request. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManagerAnchors --> <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006PollStatusCapturesTokenAndMeshID) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN006HeartbeatCarriesMeshTokenAndMeshId) -->
-2. The Worker stores per-profile mesh state AES-GCM envelope-encrypted under the `MESH_STATE_KEY` Worker secret, and the D1 record holds only `{iv, ciphertext}`. <!-- @impl: packages/router-worker/src/mesh-crypto.ts::MESH_CRYPTO_ANCHORS --> <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 stores mesh state as round-tripping ciphertext and never plaintext tokens) -->
-3. When `MESH_STATE_KEY` is absent, the mesh rotation endpoint and mesh bootstrap computation fail closed with a `mesh_state_key_missing` error while claim, heartbeat persistence, and scheduling of already-ready nodes continue. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 fails closed on missing MESH_STATE_KEY for mesh endpoints only) -->
-4. The `mesh_state_key_missing` condition surfaces as an admin status banner. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-SEC-006 surfaces mesh_state_key_missing as an admin status banner) -->
-5. Mesh invite tokens are distributed only in heartbeat responses to live, non-revoked nodes assigned to the mesh profile. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 distributes join tokens only to live non-revoked nodes) -->
-6. `POST /admin/mesh/rotate` increments the profile's rotation counter, clears stored mesh state, and appends a `mesh_token_rotated` audit event. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 rotate increments the counter, clears state, and audits) -->
-7. Heartbeat responses issued after a rotation carry the incremented rotation counter and freshly computed mesh bootstrap. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 post-rotation heartbeats carry the new rotation and bootstrap) -->
-8. The node agent drains and restarts its MeshLLM process when a heartbeat response carries a rotation different from the running rotation. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManagerAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006RestartTriggersDrainAndRelaunch) -->
-9. Revoking a node removes its invite-token entry from stored mesh state and appends a `mesh_token_removed` audit event. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 revoke removes the node token entry and audits) -->
-10. A revoked node regains mesh access only through re-enrollment with a fresh single-use setup token; node tokens have no in-place rotation. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 readmits a revoked node only after re-enrollment) -->
-11. Admin surfaces show mesh token presence, age, and count, never token values. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-006 admin status reports token presence, age, and count without values) -->
+1. The Worker stores per-profile mesh state AES-GCM envelope-encrypted under the `MESH_STATE_KEY` Worker secret, and the D1 record holds only `{iv, ciphertext}`. <!-- @impl: packages/router-worker/src/mesh-crypto.ts::MESH_CRYPTO_ANCHORS --> <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 stores mesh state as round-tripping ciphertext and never plaintext tokens) -->
+2. When `MESH_STATE_KEY` is absent, the mesh rotation endpoint and mesh bootstrap computation fail closed with a `mesh_state_key_missing` error while claim, heartbeat persistence, and scheduling of already-ready nodes continue. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 fails closed on missing MESH_STATE_KEY for mesh endpoints only) -->
+3. The `mesh_state_key_missing` condition surfaces as an admin status banner. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-SEC-006 surfaces mesh_state_key_missing as an admin status banner) -->
+4. Mesh invite tokens are distributed only in heartbeat responses to live, non-revoked nodes assigned to the mesh profile. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 distributes join tokens only to live non-revoked nodes) -->
+5. `POST /admin/mesh/rotate` increments the profile's rotation counter, clears stored mesh state, and appends a `mesh_token_rotated` audit event. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 rotate increments the counter, clears state, and audits) -->
+6. Heartbeat responses issued after a rotation carry the incremented rotation counter and freshly computed mesh bootstrap. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 post-rotation heartbeats carry the new rotation and bootstrap) -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets), [CON-SEC-003](constraints.md#con-sec-003-mesh-secret-custody-and-rotation)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-SEC-001](#req-sec-001-credential-boundaries), [REQ-SEC-002](#req-sec-002-secret-storage-and-rotation-readiness), [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-SEC-007: Mesh token revocation
+
+**Intent:** Revoking a node must remove it from mesh token distribution immediately and make re-enrollment the only path back, while admin surfaces expose token presence without ever exposing values.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Revoking a node removes its invite-token entry from stored mesh state and appends a `mesh_token_removed` audit event. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-007 revoke removes the node token entry and audits) -->
+2. A revoked node regains mesh access only through re-enrollment with a fresh single-use setup token; node tokens have no in-place rotation. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-007 readmits a revoked node only after re-enrollment) -->
+3. Admin surfaces show mesh token presence, age, and count, never token values. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-007 admin status reports token presence, age, and count without values) -->
+
+**Constraints:** [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets), [CON-SEC-003](constraints.md#con-sec-003-mesh-secret-custody-and-rotation)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-SEC-006](#req-sec-006-mesh-token-lifecycle), [REQ-SEC-002](#req-sec-002-secret-storage-and-rotation-readiness)
 
 **Verification:** Automated test
 

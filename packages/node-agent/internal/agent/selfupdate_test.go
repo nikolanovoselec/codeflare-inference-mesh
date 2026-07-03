@@ -242,7 +242,7 @@ func TestREQNODE005DownloadsArtifactAndChecksumsFromReleaseTag(t *testing.T) {
 	})
 }
 
-func TestREQNODE005AppliesUpdateByAtomicSwapThenExits(t *testing.T) {
+func TestREQNODE009AppliesUpdateByAtomicSwapThenExits(t *testing.T) {
 	t.Run("REQ-NODE-005", func(t *testing.T) {
 		now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
 		updater, env, binary, _ := newSelfUpdateFixture(t, "v1.0.0", "v1.1.0")
@@ -275,7 +275,7 @@ func TestREQNODE005AppliesUpdateByAtomicSwapThenExits(t *testing.T) {
 	})
 }
 
-func TestREQNODE005FailureReportsLastErrorAndKeepsCurrentVersion(t *testing.T) {
+func TestREQNODE009FailureReportsLastErrorAndKeepsCurrentVersion(t *testing.T) {
 	t.Run("REQ-NODE-005", func(t *testing.T) {
 		now := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
 
@@ -350,7 +350,7 @@ func TestREQNODE005FailureReportsLastErrorAndKeepsCurrentVersion(t *testing.T) {
 	})
 }
 
-func TestREQNODE005RetriesOnlyOnVersionChangeOrAfterOneHour(t *testing.T) {
+func TestREQNODE009RetriesOnlyOnVersionChangeOrAfterOneHour(t *testing.T) {
 	t.Run("REQ-NODE-005", func(t *testing.T) {
 		start := time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
 

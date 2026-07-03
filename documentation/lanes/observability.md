@@ -26,9 +26,9 @@ Provider responses include request ID, session ID when present, and selected nod
 
 ## Node metrics
 
-Heartbeats report runtime state, loaded model, active profile ID/version, in-flight count, last runtime error, and Mesh IP, plus the MeshLLM mesh view: mesh ID, mesh role (`coordinator` when the node owns stage 0, else `serving-peer` or `api-client`), peer count, ready models, split flag and stage count, API and console readiness, and the MeshLLM version. Runtime metrics are decoded from the MeshLLM console status through a tolerant parser that reads only the needed subset and ignores unknown fields. ([REQ-OBS-003](../../sdd/spec/observability.md))
+Heartbeats report runtime state, loaded model, active profile ID/version, in-flight count, last runtime error, and Mesh IP, plus the MeshLLM mesh view: mesh ID, mesh role (`coordinator` when the node owns stage 0, else `serving-peer` or `api-client`), peer count, ready models, split flag and stage count, API and console readiness, and the MeshLLM version. Runtime metrics are decoded from the MeshLLM console status through a tolerant parser that reads only the needed subset and ignores unknown fields. ([REQ-OBS-003](../../sdd/spec/observability.md)) ([REQ-OBS-008](../../sdd/spec/observability.md))
 
-Token throughput (`tokensPerSecond`) is read from the console status `tok_per_sec` value when the console exposes it. Metrics the upstream surface does not provide are absent from heartbeats and admin status rather than fabricated or zero-filled: prompt-versus-generation throughput splits stay absent because the console reports a single throughput value, and GPU metrics stay absent when best-effort platform probes are unsupported. ([REQ-OBS-003](../../sdd/spec/observability.md))
+Token throughput (`tokensPerSecond`) is read from the console status `tok_per_sec` value when the console exposes it. Metrics the upstream surface does not provide are absent from heartbeats and admin status rather than fabricated or zero-filled: prompt-versus-generation throughput splits stay absent because the console reports a single throughput value, and GPU metrics stay absent when best-effort platform probes are unsupported. ([REQ-OBS-009](../../sdd/spec/observability.md))
 
 Runtime state maps from the console `node_state`:
 
@@ -41,7 +41,7 @@ Runtime state maps from the console `node_state`:
 
 ## Mesh health
 
-Admin status carries one mesh health entry per MeshLLM profile so operators can confirm the mesh formed, identify its coordinator, and diagnose failing members. Entries expose secret presence, age, and count only — never token or secret values. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-006](../../sdd/spec/security.md))
+Admin status carries one mesh health entry per MeshLLM profile so operators can confirm the mesh formed, identify its coordinator, and diagnose failing members. Entries expose secret presence, age, and count only — never token or secret values. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-007](../../sdd/spec/security.md))
 
 | Field | Meaning |
 | --- | --- |
@@ -67,7 +67,7 @@ Audit history records setup completion, provider route provisioning, setup-token
 | --- | --- | --- |
 | Missed heartbeat | Lease expires and node becomes ineligible. | [REQ-OBS-004](../../sdd/spec/observability.md) |
 | Unsafe Mesh target | Node is ineligible for scheduler selection. | [REQ-OBS-004](../../sdd/spec/observability.md) |
-| Scheduler miss | Router returns `429` for `no-node` scheduler misses and `404` for `no-profile`; nodes with non-ready runtimes or stale loaded models are treated as ineligible. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
+| Scheduler miss | Router returns `429` for `no-node` scheduler misses and `404` for `no-profile`; nodes with non-ready runtimes or stale loaded models are treated as ineligible. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-005](../../sdd/spec/state-scheduling.md) |
 | Mid-stream crash | Reservation releases and failure score increases. | [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-OBS-004](../../sdd/spec/observability.md) |
 | Invalid Mesh data | Node record is rejected or ineligible. | [REQ-RTR-004](../../sdd/spec/router-worker.md) |
 

@@ -12,20 +12,18 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 
 **Acceptance Criteria:**
 
-1. D1 stores setup state, admin token verifier, provider token verifier, and the default public model alias. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) -->
-2. D1 stores Cloudflare resource identifiers created or selected during setup. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) -->
-3. D1 stores setup token verifiers, claim state, expiration, and claimed node identity. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) -->
-4. D1 stores node records, model profiles, public aliases, session mappings, reservation records, and audit events. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) -->
-5. D1 stores one mesh state record per MeshLLM profile under the `mesh_state:<profileId>` router configuration key as AES-GCM ciphertext, never as plaintext token material. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SCH-001 stores mesh state as AES-GCM ciphertext and round-trips it from D1) -->
-6. D1 stores the agent release-tag cache (`agent_versions_cache`) and the selected fleet agent version (`desired_agent_version`) as router configuration records. <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-SCH-001 persists the release-tag cache and desired agent version) -->
-7. Profile seeding deactivates every stored profile row whose runtime is not `meshllm`, regardless of row version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-001 deactivates non-meshllm profile rows during seeding) -->
-8. Router startup can rebuild scheduler hot state from D1 without requiring manual repair. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) -->
+1. D1 stores setup state, admin token verifier, provider token verifier, the default public model alias, setup token verifiers, claim state, expiration, and claimed node identity. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) -->
+2. D1 stores Cloudflare resource identifiers created or selected during setup, the agent release-tag cache (`agent_versions_cache`), and the selected fleet agent version (`desired_agent_version`) as router configuration records. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-SCH-001 persists the release-tag cache and desired agent version) -->
+3. D1 stores node records, model profiles, public aliases, session mappings, reservation records, and audit events. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) -->
+4. D1 stores one mesh state record per MeshLLM profile under the `mesh_state:<profileId>` router configuration key as AES-GCM ciphertext, never as plaintext token material. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SCH-001 stores mesh state as AES-GCM ciphertext and round-trips it from D1) -->
+5. Profile seeding deactivates every stored profile row whose runtime is not `meshllm`, regardless of row version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-001 deactivates non-meshllm profile rows during seeding) -->
+6. Router startup can rebuild scheduler hot state from D1 without requiring manual repair. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 persists durable router state and reloads scheduler state from D1) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle)
+**Dependencies:** None.
 
 **Verification:** Automated test
 
@@ -61,7 +59,7 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 
 ### REQ-SCH-003: Node eligibility and scheduler miss responses
 
-**Intent:** The router must schedule only nodes whose MeshLLM runtime can serve the requested model, and must distinguish model-configuration misses and normal capacity exhaustion from server failure. Missing profiles return not-found, unavailable eligible capacity returns no-node instead of an internal error, and advertised aliases never point at profiles that cannot resolve.
+**Intent:** The router must schedule only nodes whose MeshLLM runtime can serve the requested model, so eligibility is a conjunction of lease freshness, runtime identity, API readiness, model routability, runtime state, profile assignment, and capacity, failure, and connection safety.
 
 **Applies To:** Client
 
@@ -74,17 +72,38 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 5. A node whose reported runtime state is not ready or running stays ineligible even when its ready-model list includes the requested model. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 keeps standby nodes unschedulable even when ready models list the requested model) -->
 6. A node is ineligible when the requested profile is not among its active profiles or the profile's public aliases do not intersect the node's advertised models. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
 7. A node is ineligible while it is over capacity, under an active failure penalty, or its Mesh connection data fails validation. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
-8. The public model listing includes only aliases of active profiles. <!-- @impl: packages/router-worker/src/router.ts::handleModels --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 lists only active profile aliases in the public model listing) -->
-9. The scheduler returns `no-profile` when no profile is configured for the requested public alias. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-profile when the public model has no configured profile) -->
-10. The scheduler returns `no-node` when no node is eligible for the requested profile. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
-11. The Worker translates `no-profile` into `404` with a request ID and scheduler reason. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-profile when the public model has no configured profile) -->
-12. The Worker translates `no-node` into `429` with a request ID and scheduler reason. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 returns no-node when no eligible node has capacity) -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation)
 
 **Priority:** P0
 
 **Dependencies:** [REQ-SCH-002](#req-sch-002-node-reservations), [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-SCH-005: Scheduler miss responses
+
+**Intent:** Model-configuration misses and normal capacity exhaustion must be distinguishable from server failure: missing profiles return not-found, unavailable eligible capacity returns no-node instead of an internal error, and advertised aliases never point at profiles that cannot resolve.
+
+**Applies To:** Client
+
+**Acceptance Criteria:**
+
+1. The public model listing includes only aliases of active profiles. <!-- @impl: packages/router-worker/src/router.ts::handleModels --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-005 lists only active profile aliases in the public model listing) -->
+2. The scheduler returns `no-profile` when no profile is configured for the requested public alias. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-005 returns no-profile when the public model has no configured profile) -->
+3. The scheduler returns `no-node` when no node is eligible for the requested profile. <!-- @impl: packages/router-worker/src/scheduler.ts::reserve --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling) -->
+4. The Worker translates `no-profile` into `404` with a request ID and scheduler reason. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-005 returns no-profile when the public model has no configured profile) -->
+5. The Worker translates `no-node` into `429` with a request ID and scheduler reason. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-005 returns no-node when no eligible node has capacity) -->
+
+**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-SCH-003](#req-sch-003-node-eligibility-and-scheduler-miss-responses)
 
 **Verification:** Automated test
 

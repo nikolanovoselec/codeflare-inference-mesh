@@ -14,16 +14,16 @@ This ledger records binding technical choices for the first implementation. It i
 | [AD-006](#ad-006-default-model-profile-set) | Superseded by AD-012 | Make Qwen3.6 27B the primary `mesh-default` profile, Gemma 4 26B-A4B the fallback benchmark profile, and a small smoke-test profile available. | [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles) |
 | [AD-007](#ad-007-gateway-route-automation-with-manual-byok) | Accepted | Automate Gateway provider and dynamic route creation, but keep BYOK/provider-key entry manual in v1. | [REQ-GWY-002](../../sdd/spec/gateway.md#req-gwy-002-provider-token-contract), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation) |
 | [AD-008](#ad-008-node-listener-binding-policy) | Accepted | Bind the node listener to Mesh IP when possible and allow `0.0.0.0` fallback only with strict token auth. | [REQ-NODE-001](../../sdd/spec/node-agent.md#req-node-001-cross-platform-service), [REQ-RTR-004](../../sdd/spec/router-worker.md#req-rtr-004-mesh-destination-safety) |
-| [AD-009](#ad-009-best-effort-hardware-metrics-first) | Accepted | Start hardware metrics with best-effort platform probes rather than native GPU libraries. | [REQ-OBS-003](../../sdd/spec/observability.md#req-obs-003-node-metrics) |
+| [AD-009](#ad-009-best-effort-hardware-metrics-first) | Accepted | Start hardware metrics with best-effort platform probes rather than native GPU libraries. | [REQ-OBS-009](../../sdd/spec/observability.md#req-obs-009-hardware-and-throughput-metrics) |
 | [AD-010](#ad-010-public-release-artifacts-after-mesh-proof) | Accepted | Publish public GitHub Release artifacts for installers and update staging after the first Worker path is proven. | [REQ-REL-003](../../sdd/spec/release-ci.md#req-rel-003-node-agent-release-artifacts), [REQ-NODE-005](../../sdd/spec/node-agent.md#req-node-005-agent-update-staging) |
 | [AD-011](#ad-011-first-run-setup-is-the-one-time-bootstrap-gate) | Accepted | Keep first-run setup open until completed; do not require a separate initial setup token. | [REQ-ADM-001](../../sdd/spec/setup-admin.md#req-adm-001-first-run-setup), [REQ-ADM-002](../../sdd/spec/setup-admin.md#req-adm-002-mvp-admin-auth) |
-| [AD-012](#ad-012-meshllm-only-private-inference-backend) | Accepted | Remove llama.cpp from the product contract; the agent installs and supervises a pinned `mesh-llm` as the only runtime, with router-owned private-mesh membership and private-only shipped profiles. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation), [REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update), [REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle) |
+| [AD-012](#ad-012-meshllm-only-private-inference-backend) | Accepted | Remove llama.cpp from the product contract; the agent installs and supervises a pinned `mesh-llm` as the only runtime, with router-owned private-mesh membership and private-only shipped profiles. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md#req-run-008-router-mesh-membership-authority), [REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update), [REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle) |
 
 ## AD-012: MeshLLM-only private inference backend
 
 **Status:** Accepted
 
-**Context:** The llama.cpp path required an operator-installed CUDA `llama-server` on every node and bound each node to one loaded model process. MeshLLM is a supervisable Apache-2.0 Rust binary with an OpenAI-compatible API, invite-token private meshes that run over WARP CGNAT unicast, and Skippy split serving across nodes. AD-006 had also drifted: it names Qwen3.6 27B and Gemma 4 profiles while the shipped defaults were already Qwen3.6-35B.
+**Context:** The llama.cpp path required an operator-installed CUDA `llama-server` on every node and bound each node to one loaded model process. MeshLLM is a supervisable Apache-2.0 Rust binary with an OpenAI-compatible API, invite-token private meshes that run over WARP CGNAT unicast, and Skippy split serving across nodes. AD-006 had also drifted: it names Qwen3.6 27B and Gemma 4 profiles while the shipped defaults were already Qwen3.6-35B. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager -->
 
 **Decision:** Remove llama.cpp from the product contract entirely. The agent installs and supervises a pinned `mesh-llm` as the only managed runtime. Mesh membership is router-owned: the invite-token set, AES-GCM-encrypted mesh state, and a rotation counter live in the Worker. Shipped profiles are private-only with zero public discovery, publishing, Nostr, or relay/STUN egress. Fleet agent versions are router-driven.
 
@@ -33,7 +33,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Profile schema, eligibility, heartbeat metrics, dashboards, and installers move to MeshLLM semantics in one coupled spec, test, and doc change. AD-005 and AD-006 are superseded. The mesh invite token becomes a new stored credential class. The darwin/amd64 agent lane is dropped.
 
-**Related requirements:** [REQ-RUN-003](../../sdd/spec/runtime-profiles.md), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md), [REQ-RUN-007](../../sdd/spec/runtime-profiles.md), [REQ-NODE-006](../../sdd/spec/node-agent.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-REL-003](../../sdd/spec/release-ci.md)
+**Related requirements:** [REQ-RUN-003](../../sdd/spec/runtime-profiles.md), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-RUN-007](../../sdd/spec/runtime-profiles.md), [REQ-NODE-006](../../sdd/spec/node-agent.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-REL-003](../../sdd/spec/release-ci.md)
 
 ## AD-011: First-run setup is the one-time bootstrap gate
 
@@ -193,7 +193,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** Metrics must never be fabricated, and scheduling must tolerate missing GPU metrics.
 
-**Related requirements:** [REQ-OBS-003](../../sdd/spec/observability.md)
+**Related requirements:** [REQ-OBS-009](../../sdd/spec/observability.md)
 
 ## AD-010: Public release artifacts after Mesh proof
 

@@ -37,7 +37,7 @@
 
 **Cause:** No eligible node can currently serve the requested public model.
 
-**Fix:** Use the request ID to inspect admin status, free an in-flight request, start another compatible node, or switch the public alias to a ready fallback profile. ([REQ-SCH-003](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
+**Fix:** Use the request ID to inspect admin status, free an in-flight request, start another compatible node, or switch the public alias to a ready fallback profile. ([REQ-SCH-005](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
 
 ## Session latency suddenly increases
 
@@ -61,7 +61,7 @@
 
 **Cause:** The agent could not install or find the pinned `mesh-llm` release: the downloaded asset's SHA-256 did not match the embedded pin (the install is refused), no pinned asset exists for the detected OS/architecture/flavor, or egress to `github.com` release downloads is blocked.
 
-**Fix:** Check the agent log for the `runtime dependency missing` cause, confirm the flavor configuration matches the node hardware, allow GitHub egress from the node, then restart the agent service. ([REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update)) ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
+**Fix:** Check the agent log for the `runtime dependency missing` cause, confirm the flavor configuration matches the node hardware, allow GitHub egress from the node, then restart the agent service. ([REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update)) ([REQ-RUN-010](../../sdd/spec/runtime-profiles.md#req-run-010-meshllm-process-lifecycle)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
 
 ## Peer count stays at one
 
@@ -69,7 +69,7 @@
 
 **Cause:** UDP is blocked on the profile's mesh bind port between the nodes' WARP IPs, the WARP split-tunnel configuration excludes `100.96.0.0/12` so mesh traffic bypasses the tunnel, or the joining node is dialing with stale join tokens.
 
-**Fix:** Verify WARP routes include the mesh range on both nodes, allow UDP on the configured bind port between the WARP IPs, and check `tokenCount` and `rotation` in the `/admin/status` mesh health entry; rotate the mesh once to reissue tokens when they are stale. ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation)) ([REQ-OBS-007](../../sdd/spec/observability.md#req-obs-007-mesh-health-surface))
+**Fix:** Verify WARP routes include the mesh range on both nodes, allow UDP on the configured bind port between the WARP IPs, and check `tokenCount` and `rotation` in the `/admin/status` mesh health entry; rotate the mesh once to reissue tokens when they are stale. ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation)) ([REQ-RUN-008](../../sdd/spec/runtime-profiles.md#req-run-008-router-mesh-membership-authority)) ([REQ-OBS-007](../../sdd/spec/observability.md#req-obs-007-mesh-health-surface))
 
 ## Model never appears in ready models
 
