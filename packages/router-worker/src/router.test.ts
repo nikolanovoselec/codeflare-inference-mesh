@@ -248,8 +248,8 @@ describe('router worker behavioral contracts', () => {
     // AdminLabeledControlsTestAnchor
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
-    const controlIds = [...html.matchAll(/<(?:input|select)[^>]*\bid="([^"]+)"/g)].map((match) => match[1])
-    const labelled = new Set([...html.matchAll(/<label for="([^"]+)">/g)].map((match) => match[1]))
+    const controlIds = [...html.matchAll(/<(?:input|select)[^>]*\bid="([^"]+)"/g)].map((match) => match[1]!)
+    const labelled = new Set([...html.matchAll(/<label for="([^"]+)">/g)].map((match) => match[1]!))
     const wrappedInLabel = new Set(['remember-token'])
 
     expect(controlIds.length).toBeGreaterThan(15)
