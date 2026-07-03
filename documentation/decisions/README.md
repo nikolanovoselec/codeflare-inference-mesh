@@ -19,6 +19,23 @@ This ledger records binding technical choices for the first implementation. It i
 | [AD-011](#ad-011-first-run-setup-is-the-one-time-bootstrap-gate) | Accepted | Keep first-run setup open until completed; do not require a separate initial setup token. | [REQ-ADM-001](../../sdd/spec/setup-admin.md#req-adm-001-first-run-setup), [REQ-ADM-002](../../sdd/spec/setup-admin.md#req-adm-002-admin-authentication) |
 | [AD-012](#ad-012-meshllm-only-private-inference-backend) | Accepted | Remove llama.cpp from the product contract; the agent installs and supervises a pinned `mesh-llm` as the only runtime, with router-owned private-mesh membership and private-only shipped profiles. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md#req-run-008-router-mesh-membership-authority), [REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update), [REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle) |
 | [AD-013](#ad-013-cloudflare-access-is-the-human-admin-entrance) | Accepted | Gate human admin access with Cloudflare Access on the operator's custom domain; bearer tokens remain machine-and-recovery-only and the bootstrap origin locks after handoff. | [REQ-SEC-009](../../sdd/spec/security.md#req-sec-009-cloudflare-access-admin-authentication), [REQ-SEC-010](../../sdd/spec/security.md#req-sec-010-role-based-console-access), [REQ-ADM-012](../../sdd/spec/setup-admin.md#req-adm-012-domain-and-access-provisioning), [REQ-ADM-013](../../sdd/spec/setup-admin.md#req-adm-013-break-glass-recovery), [REQ-ADM-014](../../sdd/spec/setup-admin.md#req-adm-014-host-gating-and-console-lock) |
+| [AD-014](#ad-014-public-model-alias-renamed-to-codeflare-mesh) | Accepted | Rename the default public model alias and gateway route from `mesh-default` to `codeflare-mesh` across code, spec, and docs; internal profile IDs and derived mesh-network names are unchanged. | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-public-model-aliases), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation) |
+
+## AD-014: Public model alias renamed to codeflare-mesh
+
+**Status:** Accepted
+
+**Context:** The README described the client-facing model alias as `codeflare-mesh`, but the shipped default alias, the default gateway route name, the spec, and the glossary all still said `mesh-default`, so the documentation named an alias the system did not serve. The alias is admin-configurable, but its shipped default and every reference must agree. <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES -->
+
+**Decision:** Rename the default public model alias and the default gateway route name from `mesh-default` to `codeflare-mesh` across the shipped profiles, Worker and node-agent defaults, spec, glossary, and operational docs. Internal profile IDs such as `mesh-default-qwen36-35b` and the derived mesh-network names such as `codeflare-mesh-default-qwen36-35b` keep their existing values; only the client-facing alias and the route default change.
+
+**Alternatives considered:** Reverting the README to `mesh-default` (keeps the shipped name but drops the product-aligned alias); renaming the internal profile IDs and mesh names too (that couples to the `codeflare-<profileId>` mesh-name derivation, would produce a `codeflare-codeflare-mesh` double prefix without a matching format change, and would need a live stored-state migration for no client-facing benefit).
+
+**Rationale:** `codeflare-mesh` matches the product name and the existing private mesh-network naming, and making the shipped default agree with the docs closes the aspirational-documentation gap the spec review flagged. Leaving profile IDs and mesh names unchanged keeps this to a pure default rename with no stored-config migration.
+
+**Consequences:** New deployments default to the `codeflare-mesh` alias and route. Existing deployments keep serving their current alias until the operator re-syncs the Gateway with the new default; stored config and profile IDs are unaffected. Clients or scripts that hardcoded `mesh-default` must switch to `codeflare-mesh`, or the operator can set `AI_GATEWAY_PUBLIC_MODEL` back.
+
+**Related requirements:** [REQ-RUN-001](../../sdd/spec/runtime-profiles.md), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-GWY-003](../../sdd/spec/gateway.md)
 
 ## AD-013: Cloudflare Access is the human admin entrance
 

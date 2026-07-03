@@ -9,13 +9,13 @@ const dashboardNodes = [
     id: 'node-big',
     status: 'online',
     agentVersion: 'v1.3.0',
-    metrics: { runtimeState: 'running', readyModels: ['mesh-default', 'qwen3.6:35b-a3b'], gpuMemoryTotalMiB: 24_576, gpuMemoryUsedMiB: 20_000, tokensPerSecond: 42.5, activeRequests: 1 }
+    metrics: { runtimeState: 'running', readyModels: ['codeflare-mesh', 'qwen3.6:35b-a3b'], gpuMemoryTotalMiB: 24_576, gpuMemoryUsedMiB: 20_000, tokensPerSecond: 42.5, activeRequests: 1 }
   },
   {
     id: 'node-small',
     status: 'online',
     agentVersion: 'v1.2.0',
-    metrics: { runtimeState: 'ready', readyModels: ['mesh-default'], gpuMemoryTotalMiB: 8_192, gpuMemoryUsedMiB: 4_000, tokensPerSecond: 61.25, activeRequests: 0 }
+    metrics: { runtimeState: 'ready', readyModels: ['codeflare-mesh'], gpuMemoryTotalMiB: 8_192, gpuMemoryUsedMiB: 4_000, tokensPerSecond: 61.25, activeRequests: 0 }
   },
   {
     id: 'node-down',
@@ -25,7 +25,7 @@ const dashboardNodes = [
 ]
 
 const dashboardProfiles = [
-  { id: 'mesh-default-qwen36-35b', publicAliases: ['mesh-default', 'qwen3.6:35b-a3b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+  { id: 'mesh-default-qwen36-35b', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
   { id: 'mesh-split-qwen36-35b', publicAliases: ['mesh-split'], active: false, rolloutPercent: 100, meshllm: { split: true } }
 ]
 
@@ -36,7 +36,7 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
     profileReadiness: [],
     audit: [],
     generatedAt: 1_700_000_200_000,
-    gateway: { gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default' },
+    gateway: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' },
     customDomain: { hostname: 'router.test', status: 'provisioned' },
     desiredAgentVersion: 'v1.3.0',
     meshHealth: [],
@@ -160,7 +160,7 @@ describe('dashboard overview contracts', () => {
     expect(field('version')!.dataset.reported).toBe('v1.2.0')
     expect(field('version')!.dataset.desiredMatch).toBe('false')
     const models = fields.filter((node) => node.dataset.drawerModel)
-    expect(models.map((node) => node.dataset.drawerModel)).toEqual(['mesh-default'])
+    expect(models.map((node) => node.dataset.drawerModel)).toEqual(['codeflare-mesh'])
     const revoke = fields.find((node) => node.dataset.action === 'node-revoke')
     expect(revoke).toBeDefined()
     expect(revoke!.dataset.nodeId).toBe('node-small')
@@ -179,7 +179,7 @@ describe('dashboard overview contracts', () => {
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const servingNodes = fields.filter((node) => node.dataset.drawerServingNode)
     expect(servingNodes.map((node) => node.dataset.drawerServingNode).sort()).toEqual(['node-big', 'node-small'])
-    expect(fields.find((node) => node.dataset.drawerField === 'aliases')!.dataset.value).toBe('mesh-default, qwen3.6:35b-a3b')
+    expect(fields.find((node) => node.dataset.drawerField === 'aliases')!.dataset.value).toBe('codeflare-mesh, qwen3.6:35b-a3b')
   })
 })
 
@@ -287,8 +287,8 @@ describe('dashboard throughput trace and playground contracts', () => {
   it('REQ-ADM-016 populates the playground model select from active profile aliases', async () => {
     const harness = await dashboardHarness()
     const select = harness.byId(ADMIN_UI_PLAYGROUND.selectId)
-    expect(select.children.map((option) => option.value)).toEqual(['mesh-default', 'qwen3.6:35b-a3b'])
-    expect(select.children.map((option) => option.dataset.playgroundModelOption)).toEqual(['mesh-default', 'qwen3.6:35b-a3b'])
+    expect(select.children.map((option) => option.value)).toEqual(['codeflare-mesh', 'qwen3.6:35b-a3b'])
+    expect(select.children.map((option) => option.dataset.playgroundModelOption)).toEqual(['codeflare-mesh', 'qwen3.6:35b-a3b'])
   })
 
   it('REQ-ADM-016 streams the playground response incrementally as chunks arrive', async () => {
@@ -313,7 +313,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toBe('Hello mesh')
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/chat')
     expect(call?.init?.method).toBe('POST')
-    expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'mesh-default', messages: [{ role: 'user', content: 'hello mesh' }] })
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hello mesh' }] })
   })
 })
 

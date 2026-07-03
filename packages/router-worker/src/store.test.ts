@@ -194,12 +194,12 @@ describe('D1 store behavioral contracts', () => {
     const writer = new D1Store(db as unknown as D1Database, () => 1_700_000_000_000)
     const profile = DEFAULT_MODEL_PROFILES[0]!
     const node = nodeFixture({ nodeTokenVerifier: 'sha256:node-token', upstreamTokenVerifier: 'sha256:upstream-token' })
-    const config = { setupComplete: true, defaultPublicModel: 'mesh-default', resources: { d1DatabaseId: 'd1-a', workerName: 'router-a' } }
+    const config = { setupComplete: true, defaultPublicModel: 'codeflare-mesh', resources: { d1DatabaseId: 'd1-a', workerName: 'router-a' } }
     const providerToken: TokenRecord = { kind: 'provider', id: 'provider-a', verifier: 'sha256:provider', active: true, createdAt: 1_700_000_000_001 }
     const adminToken: TokenRecord = { kind: 'admin', id: 'admin-a', verifier: 'sha256:admin', active: true, createdAt: 1_700_000_000_002 }
     const setupToken: TokenRecord = { kind: 'setup', id: 'setup-a', verifier: 'sha256:setup', active: true, nodeId: 'node-a', createdAt: 1_700_000_000_003, expiresAt: 1_700_000_060_000 }
-    const session: SessionRecord = { sessionId: 'session-a', nodeId: 'node-a', publicModel: 'mesh-default', profileId: profile.id, upstreamModel: profile.upstreamModel, expiresAt: 1_700_086_400_000 }
-    const reservation: ReservationRecord = { reservationId: 'reservation-a', nodeId: 'node-a', sessionId: 'session-a', publicModel: 'mesh-default', profileId: profile.id, upstreamModel: profile.upstreamModel, expiresAt: 1_700_001_800_000 }
+    const session: SessionRecord = { sessionId: 'session-a', nodeId: 'node-a', publicModel: 'codeflare-mesh', profileId: profile.id, upstreamModel: profile.upstreamModel, expiresAt: 1_700_086_400_000 }
+    const reservation: ReservationRecord = { reservationId: 'reservation-a', nodeId: 'node-a', sessionId: 'session-a', publicModel: 'codeflare-mesh', profileId: profile.id, upstreamModel: profile.upstreamModel, expiresAt: 1_700_001_800_000 }
     const audit: AuditEvent = { id: 'audit-a', type: 'setup.completed', at: 1_700_000_000_010, actor: 'admin', target: 'router', detail: { workerName: 'router-a' } }
 
     await writer.putConfig('setup', config)
@@ -214,19 +214,19 @@ describe('D1 store behavioral contracts', () => {
 
     const reader = new D1Store(db as unknown as D1Database, () => 1_700_000_000_020)
     const scheduler = new StoreScheduler(reader, () => 'reservation-b')
-    const rebuilt = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_020 })
+    const rebuilt = await scheduler.reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-a', now: 1_700_000_000_020 })
 
     expect(await reader.getConfig('setup')).toEqual(config)
     expect(await reader.getToken('provider', 'provider-a')).toEqual(providerToken)
     expect(await reader.getToken('admin', 'admin-a')).toEqual(adminToken)
     expect(await reader.getToken('setup', 'setup-a')).toEqual(setupToken)
-    expect(await reader.getProfileByPublicModel('mesh-default')).toEqual(profile)
+    expect(await reader.getProfileByPublicModel('codeflare-mesh')).toEqual(profile)
     expect(await reader.listProfiles()).toEqual([profile])
     expect(await reader.getNode('node-a')).toEqual({ ...node, inFlight: 1 })
     expect(await reader.getSession('session-a')).toEqual({ ...session, expiresAt: 1_700_086_400_020 })
     expect(await reader.getReservation('reservation-a')).toEqual(reservation)
     expect(await reader.listAudit(1)).toEqual([audit])
-    expect(rebuilt.reservation).toMatchObject({ reservationId: 'reservation-b', nodeId: 'node-a', publicModel: 'mesh-default', profileId: profile.id })
+    expect(rebuilt.reservation).toMatchObject({ reservationId: 'reservation-b', nodeId: 'node-a', publicModel: 'codeflare-mesh', profileId: profile.id })
   })
 
   it('gate config cache elides D1 reads within the TTL and invalidates on write', async () => {

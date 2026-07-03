@@ -440,7 +440,7 @@ func TestREQRUN007VersionBumpRestartsEverySplitServingNode(t *testing.T) {
 		fake := newFakeMeshRuntime(counter)
 		currentProfile := agent.ModelProfile{
 			ID:             "split-prof",
-			PublicAliases:  []string{"mesh-default"},
+			PublicAliases:  []string{"codeflare-mesh"},
 			UpstreamModel:  "hf://meshllm/layers@rev1",
 			SourceMode:     "meshllm-ref",
 			Runtime:        "meshllm",
@@ -462,7 +462,7 @@ func TestREQRUN007VersionBumpRestartsEverySplitServingNode(t *testing.T) {
 			MeshLLMConsolePort: 3131,
 			Profiles:           []agent.ModelProfile{currentProfile},
 			ActiveProfileIDs:   []string{"split-prof"},
-			PublicModels:       []string{"mesh-default"},
+			PublicModels:       []string{"codeflare-mesh"},
 			RuntimeModel:       currentProfile.UpstreamModel,
 			Capacity:           1,
 		}

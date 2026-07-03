@@ -47,7 +47,7 @@ func DefaultConfig(dataDir string) Config {
 		MeshLLMAPIPort:     9337,
 		MeshLLMConsolePort: 3131,
 		RuntimeModel:       "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
-		PublicModels:       []string{"mesh-default"},
+		PublicModels:       []string{"codeflare-mesh"},
 		ActiveProfileIDs:   []string{"mesh-default-qwen36-35b"},
 		Profiles:           nil,
 		Capacity:           1,

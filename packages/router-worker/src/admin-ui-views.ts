@@ -31,8 +31,8 @@ function gatewayFields(prefix: string): string {
   return [
     field({ id: `${prefix}gateway-account-id`, label: 'Cloudflare account ID', control: textInput({ id: `${prefix}gateway-account-id`, name: 'accountId' }) }),
     field({ id: `${prefix}gateway-id`, label: 'Gateway ID', control: textInput({ id: `${prefix}gateway-id`, name: 'gatewayId', placeholder: 'e.g. inference-mesh' }) }),
-    field({ id: `${prefix}gateway-route-name`, label: 'Route name', control: textInput({ id: `${prefix}gateway-route-name`, name: 'routeName', placeholder: 'e.g. mesh-default' }) }),
-    field({ id: `${prefix}gateway-public-model`, label: 'Public model', control: textInput({ id: `${prefix}gateway-public-model`, name: 'publicModel', placeholder: 'e.g. mesh-default' }) }),
+    field({ id: `${prefix}gateway-route-name`, label: 'Route name', control: textInput({ id: `${prefix}gateway-route-name`, name: 'routeName', placeholder: 'e.g. codeflare-mesh' }) }),
+    field({ id: `${prefix}gateway-public-model`, label: 'Public model', control: textInput({ id: `${prefix}gateway-public-model`, name: 'publicModel', placeholder: 'e.g. codeflare-mesh' }) }),
     field({ id: `${prefix}gateway-provider-name`, label: 'Provider name', control: textInput({ id: `${prefix}gateway-provider-name`, name: 'providerName', placeholder: 'e.g. codeflare-inference-mesh' }) }),
     field({ id: `${prefix}gateway-worker-url`, label: 'Worker URL override', control: textInput({ id: `${prefix}gateway-worker-url`, name: 'workerUrl', inputmode: 'url', placeholder: 'e.g. https://router.example.workers.dev' }), hint: 'Blank fields reuse saved settings or Worker environment defaults.' })
   ].join('')
@@ -113,11 +113,11 @@ ${field({ id: 'wiz-gateway-select', label: 'Gateway', control: '<span class="slo
 ${field({ id: 'wiz-route-select', label: 'Dynamic route', control: '<span class="slot" id="wiz-route-slot"><select id="wiz-route-select" name="routeName" data-route-select="true" disabled></select></span>' })}
 </div>
 <div class="form-grid"><div id="wiz-gateway-new-wrap" hidden>${field({ id: 'wiz-gateway-new', label: 'New gateway ID', control: textInput({ id: 'wiz-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div>
-<div id="wiz-route-new-wrap" hidden>${field({ id: 'wiz-route-new', label: 'New route name', control: textInput({ id: 'wiz-route-new', name: 'newRouteName', placeholder: 'e.g. mesh-default' }) })}</div></div>
+<div id="wiz-route-new-wrap" hidden>${field({ id: 'wiz-route-new', label: 'New route name', control: textInput({ id: 'wiz-route-new', name: 'newRouteName', placeholder: 'e.g. codeflare-mesh' }) })}</div></div>
 <details class="gate-alt"><summary>Advanced overrides</summary>
 <div class="form-grid">
 ${field({ id: 'wiz-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'wiz-gateway-provider-name', name: 'providerName', placeholder: 'e.g. codeflare-inference-mesh' }) })}
-${field({ id: 'wiz-gateway-public-model', label: 'Public model', control: textInput({ id: 'wiz-gateway-public-model', name: 'publicModel', placeholder: 'e.g. mesh-default' }) })}
+${field({ id: 'wiz-gateway-public-model', label: 'Public model', control: textInput({ id: 'wiz-gateway-public-model', name: 'publicModel', placeholder: 'e.g. codeflare-mesh' }) })}
 ${field({ id: 'wiz-gateway-worker-url', label: 'Worker URL override', control: textInput({ id: 'wiz-gateway-worker-url', name: 'workerUrl', inputmode: 'url', placeholder: 'e.g. https://mesh.example.com' }), hint: 'Blank fields reuse saved settings or Worker environment defaults.' })}
 </div></details>
 <div class="wizard-actions">${button({ action: 'gateway-sync', label: 'Connect AI Gateway', variant: 'primary', out: 'wiz-gateway-output', prefix: 'wiz-' })}</div>

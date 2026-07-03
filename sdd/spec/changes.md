@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-07-04
+
+- Renamed the default public model alias and default gateway route from `mesh-default` to `codeflare-mesh` so the shipped default matches the documentation; internal profile IDs and derived mesh-network names are unchanged, and existing deployments switch on the next Gateway re-sync. ([REQ-RUN-001](runtime-profiles.md#req-run-001-public-model-aliases), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation))
+
 ## 2026-07-03
 
 - Reworked AI Gateway dynamic-route sync to the current Cloudflare API, which sets a route's routing elements inline on create or update and returns the version and deployment in that one call, replacing the removed separate version-create and deployment-create requests the current API no longer supports. ([REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation))

@@ -222,7 +222,7 @@ describe('agent version management behavioral contracts', () => {
     const heartbeat = () => router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { authorization: 'Bearer node-secret', 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 0 } })
     }))
 
     const before = await (await heartbeat()).json() as { desiredAgentVersion?: string }

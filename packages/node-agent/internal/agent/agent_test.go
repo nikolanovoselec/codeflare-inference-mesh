@@ -64,7 +64,7 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 		}))
 		defer server.Close()
 		client := Client{RouterURL: server.URL, HTTPClient: server.Client()}
-		claim, err := client.Claim(context.Background(), "setup-token", ClaimRequest{DisplayName: "Node A", MeshIP: "100.64.1.10", InferencePort: 8080, PublicModels: []string{"mesh-default"}, ActiveProfileIDs: []string{"mesh-default-qwen36-35b"}, Capacity: 2})
+		claim, err := client.Claim(context.Background(), "setup-token", ClaimRequest{DisplayName: "Node A", MeshIP: "100.64.1.10", InferencePort: 8080, PublicModels: []string{"codeflare-mesh"}, ActiveProfileIDs: []string{"mesh-default-qwen36-35b"}, Capacity: 2})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +83,7 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 		if loaded.NodeID != "node-a" {
 			t.Fatalf("config was not saved")
 		}
-		_, err = client.Heartbeat(context.Background(), cfg.NodeToken, HeartbeatFromConfig(cfg, RuntimeMetrics("ready", "mesh-default", 0), 0, HeartbeatIdentity{AgentVersion: "v-test"}))
+		_, err = client.Heartbeat(context.Background(), cfg.NodeToken, HeartbeatFromConfig(cfg, RuntimeMetrics("ready", "codeflare-mesh", 0), 0, HeartbeatIdentity{AgentVersion: "v-test"}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -277,7 +277,7 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 		cfg := DefaultConfig(t.TempDir())
 		cfg.Profiles = []ModelProfile{{
 			ID:             "old-profile",
-			PublicAliases:  []string{"mesh-default"},
+			PublicAliases:  []string{"codeflare-mesh"},
 			UpstreamModel:  "old-upstream",
 			SourceMode:     "meshllm-ref",
 			ContextWindow:  262144,
@@ -288,11 +288,11 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 			Active:         true,
 		}}
 		cfg.ActiveProfileIDs = []string{"old-profile"}
-		cfg.PublicModels = []string{"mesh-default"}
+		cfg.PublicModels = []string{"codeflare-mesh"}
 		cfg.RuntimeModel = "old-upstream"
 		desired := []ModelProfile{{
 			ID:             "new-profile",
-			PublicAliases:  []string{"mesh-default", "mesh-next"},
+			PublicAliases:  []string{"codeflare-mesh", "mesh-next"},
 			UpstreamModel:  "new-upstream",
 			SourceMode:     "meshllm-ref",
 			ContextWindow:  262144,
@@ -325,7 +325,7 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 		if len(next.ActiveProfileIDs) != 1 || next.ActiveProfileIDs[0] != "new-profile" {
 			t.Fatalf("active profile IDs were not replaced: %#v", next.ActiveProfileIDs)
 		}
-		if len(next.PublicModels) != 2 || next.PublicModels[0] != "mesh-default" || next.PublicModels[1] != "mesh-next" {
+		if len(next.PublicModels) != 2 || next.PublicModels[0] != "codeflare-mesh" || next.PublicModels[1] != "mesh-next" {
 			t.Fatalf("public aliases were not updated: %#v", next.PublicModels)
 		}
 		payload := HeartbeatFromConfig(next, RuntimeMetrics("ready", "old-upstream", 0), 0, HeartbeatIdentity{})
@@ -379,7 +379,7 @@ func TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(t *testing.T) {
 func TestREQNODE004DashboardRendersOperationalStatusUI(t *testing.T) {
 	t.Run("REQ-NODE-004", func(t *testing.T) {
 		handler := DashboardHandler(func() DashboardStatus {
-			return DashboardStatus{Config: Config{MeshIP: "100.64.1.10", InferencePort: 8080, DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token", MeshLLMAPIPort: 9337, MeshLLMConsolePort: 3131, RuntimeModel: "mesh-default"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
+			return DashboardStatus{Config: Config{MeshIP: "100.64.1.10", InferencePort: 8080, DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token", MeshLLMAPIPort: 9337, MeshLLMConsolePort: 3131, RuntimeModel: "codeflare-mesh"}, Metrics: RuntimeMetrics("ready", "codeflare-mesh", 0), RuntimeState: "ready", Version: "test"}
 		})
 		resp := httptest.NewRecorder()
 
@@ -459,7 +459,7 @@ func TestREQNODE004DashboardReportsMeshLLMRuntimePanel(t *testing.T) {
 func TestREQSEC008DashboardRedactsCredentials(t *testing.T) {
 	t.Run("REQ-SEC-008 REQ-NODE-004", func(t *testing.T) {
 		handler := DashboardHandler(func() DashboardStatus {
-			return DashboardStatus{Config: Config{NodeToken: "node-token", UpstreamToken: "upstream-token", DashboardToken: "dashboard-token", DisplayName: "Node A"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
+			return DashboardStatus{Config: Config{NodeToken: "node-token", UpstreamToken: "upstream-token", DashboardToken: "dashboard-token", DisplayName: "Node A"}, Metrics: RuntimeMetrics("ready", "codeflare-mesh", 0), RuntimeState: "ready", Version: "test"}
 		})
 		resp := httptest.NewRecorder()
 		handler.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/status", nil))
@@ -480,7 +480,7 @@ func TestREQNODE004DashboardRuntimeControlsUseController(t *testing.T) {
 	t.Run("REQ-NODE-004 REQ-SEC-004", func(t *testing.T) {
 		controller := &fakeRuntimeController{}
 		handler := DashboardHandler(func() DashboardStatus {
-			return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("ready", "mesh-default", 0), RuntimeState: "ready", Version: "test"}
+			return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("ready", "codeflare-mesh", 0), RuntimeState: "ready", Version: "test"}
 		}, controller)
 
 		forbidden := httptest.NewRecorder()
@@ -520,7 +520,7 @@ func TestREQNODE004DashboardRuntimeControlsUseController(t *testing.T) {
 func TestREQNODE004DashboardRuntimeControlsReportUnavailableWithoutController(t *testing.T) {
 	t.Run("REQ-NODE-004 REQ-SEC-004", func(t *testing.T) {
 		handler := DashboardHandler(func() DashboardStatus {
-			return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("external", "mesh-default", 0), RuntimeState: "external", Version: "test"}
+			return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("external", "codeflare-mesh", 0), RuntimeState: "external", Version: "test"}
 		})
 		resp := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/start", nil)

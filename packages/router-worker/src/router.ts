@@ -563,8 +563,8 @@ function gatewaySettings(input: { env: Partial<RouterEnv>; body?: Partial<Gatewa
     accountId: cleanString(source.accountId) ?? input.env.CLOUDFLARE_ACCOUNT_ID ?? input.env.AI_GATEWAY_ACCOUNT_ID ?? '',
     gatewayId: cleanString(source.gatewayId) ?? input.env.AI_GATEWAY_ID ?? 'inference-mesh',
     providerName: cleanString(source.providerName) ?? input.env.AI_GATEWAY_PROVIDER_NAME ?? 'codeflare-inference-mesh',
-    routeName: cleanString(source.routeName) ?? input.env.AI_GATEWAY_ROUTE_NAME ?? 'mesh-default',
-    publicModel: cleanString(source.publicModel) ?? input.env.AI_GATEWAY_PUBLIC_MODEL ?? 'mesh-default',
+    routeName: cleanString(source.routeName) ?? input.env.AI_GATEWAY_ROUTE_NAME ?? 'codeflare-mesh',
+    publicModel: cleanString(source.publicModel) ?? input.env.AI_GATEWAY_PUBLIC_MODEL ?? 'codeflare-mesh',
     ...(cleanString(source.workerUrl) ? { workerUrl: cleanString(source.workerUrl)! } : {})
   }
 }

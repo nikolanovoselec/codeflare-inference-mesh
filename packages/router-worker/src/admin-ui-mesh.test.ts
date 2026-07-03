@@ -4,7 +4,7 @@ import type { MeshHealthEntry, MeshUiStatusNode } from './admin-ui'
 import { adminUiHarness, descendants, elementStub, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
 const meshNodes: readonly MeshUiStatusNode[] = [
-  { id: 'node-coord', status: 'online', agentVersion: 'v1.3.0', metrics: { runtimeState: 'running', readyModels: ['qwen3.6:35b-a3b', 'mesh-default'] } },
+  { id: 'node-coord', status: 'online', agentVersion: 'v1.3.0', metrics: { runtimeState: 'running', readyModels: ['qwen3.6:35b-a3b', 'codeflare-mesh'] } },
   { id: 'node-peer-a', status: 'online', agentVersion: 'v1.2.0', metrics: { runtimeState: 'running', readyModels: ['qwen3.6:35b-a3b'] } },
   { id: 'node-peer-b', status: 'online', metrics: { runtimeState: 'failed' } },
   { id: 'node-outside', status: 'online', metrics: { runtimeState: 'running', readyModels: ['outside-model'] } }
@@ -18,7 +18,7 @@ const meshEntries: readonly MeshHealthEntry[] = [
     seedNodeId: 'node-coord',
     coordinatorNodeId: 'node-coord',
     peerNodeIds: ['node-peer-a', 'node-peer-b'],
-    readyModels: ['qwen3.6:35b-a3b', 'mesh-default'],
+    readyModels: ['qwen3.6:35b-a3b', 'codeflare-mesh'],
     failedNodeIds: ['node-peer-b'],
     tokenCount: 2,
     secretAgeMs: 300_000,
@@ -28,8 +28,8 @@ const meshEntries: readonly MeshHealthEntry[] = [
 ]
 
 const statusProfiles = [
-  { id: 'mesh-default-qwen36-35b', publicAliases: ['mesh-default', 'qwen3.6:35b-a3b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
-  { id: 'mesh-split-qwen36-35b', publicAliases: ['mesh-default', 'qwen3.6:35b-a3b'], active: false, rolloutPercent: 100, meshllm: { split: true } },
+  { id: 'mesh-default-qwen36-35b', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+  { id: 'mesh-split-qwen36-35b', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b'], active: false, rolloutPercent: 100, meshllm: { split: true } },
   { id: 'mesh-smoke-qwen25-1.5b', publicAliases: ['mesh-smoke'], active: true, rolloutPercent: 100, meshllm: { split: false } }
 ]
 
@@ -43,7 +43,7 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
       { id: 'audit-2', type: 'node_claimed', at: 1_700_000_100_000, actor: 'setup', target: 'node-coord' }
     ],
     generatedAt: 1_700_000_200_000,
-    gateway: { gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default' },
+    gateway: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' },
     customDomain: { hostname: 'ai.example.com', status: 'provisioned' },
     desiredAgentVersion: 'v1.3.0',
     meshHealth: meshEntries,
@@ -204,7 +204,7 @@ describe('admin UI mesh operations contracts', () => {
     expect(card.dataset.meshRotation).toBe('3')
     expect(meshField(card, 'coordinator').textContent).toBe('coordinator: node-coord')
     expect(meshField(card, 'peers').textContent).toBe('peers: 2')
-    expect(meshField(card, 'ready-models').textContent).toBe('ready models: qwen3.6:35b-a3b, mesh-default')
+    expect(meshField(card, 'ready-models').textContent).toBe('ready models: qwen3.6:35b-a3b, codeflare-mesh')
     expect(meshField(card, 'failed-nodes').textContent).toBe('failed nodes: node-peer-b')
     expect(meshField(card, 'last-error').textContent).toBe('last error: node-peer-b: mesh runner exited')
     expect(meshField(card, 'rotation').textContent).toBe('rotation: r3')

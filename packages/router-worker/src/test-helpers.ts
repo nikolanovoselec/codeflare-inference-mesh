@@ -178,7 +178,7 @@ export function nodeFixture(overrides: Partial<NodeRecord> = {}): NodeRecord {
     inferencePort: 8080,
     localDashboardPort: 17777,
     status: 'online',
-    publicModels: ['mesh-default'],
+    publicModels: ['codeflare-mesh'],
     activeProfileIds: ['mesh-default-qwen36-35b'],
     capacity: 2,
     inFlight: 0,

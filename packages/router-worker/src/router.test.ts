@@ -88,7 +88,7 @@ function heartbeatBody(overrides: Record<string, unknown> = {}): string {
     inferencePort: 8080,
     localDashboardPort: 17777,
     status: 'online',
-    publicModels: ['mesh-default'],
+    publicModels: ['codeflare-mesh'],
     activeProfileIds: ['mesh-default-qwen36-35b'],
     capacity: 2,
     inFlight: 0,
@@ -362,7 +362,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-GWY-002 gateway sync mints and reveals a fresh provider key, rotating prior ones', async () => {
     // ProviderKeyAtGatewayTestAnchor
-    const gatewayResult = { providerId: 'prov', providerSlug: 'custom-inference-mesh-router-test', routeId: 'route', routeVersionId: 'ver', deploymentId: 'dep', gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default', workerUrl: 'https://mesh.example.com', manualProviderKeyRequired: true as const, providerTokenInstructions: 'x' }
+    const gatewayResult = { providerId: 'prov', providerSlug: 'custom-inference-mesh-router-test', routeId: 'route', routeVersionId: 'ver', deploymentId: 'dep', gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', workerUrl: 'https://mesh.example.com', manualProviderKeyRequired: true as const, providerTokenInstructions: 'x' }
     const { router, store } = routerFixture({
       env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
       cloudflareClient: {
@@ -541,19 +541,19 @@ describe('router worker behavioral contracts', () => {
     const body = await response.json() as { data: Array<{ id: string }> }
 
     expect(response.status).toBe(200)
-    expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['mesh-default', 'qwen3.6-coder', 'mesh-smoke']))
+    expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['codeflare-mesh', 'qwen3.6-coder', 'mesh-smoke']))
   })
 
   it('REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active', async () => {
     const store = new MemoryStore()
-    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-mm', publicAliases: ['mesh-default', 'qwen3.6:35b-a3b', 'qwen3.6-coder'], version: 1 }))
-    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-text', publicAliases: ['mesh-default', 'legacy-text-alias'], version: 4 }))
+    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-mm', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'], version: 1 }))
+    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-text', publicAliases: ['codeflare-mesh', 'legacy-text-alias'], version: 4 }))
 
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     const profiles = await store.listProfiles()
     const retired = profiles.find((profile) => profile.id === 'legacy-default-mm')!
     const retiredVersioned = profiles.find((profile) => profile.id === 'legacy-default-text')!
-    const current = await store.getProfileByPublicModel('mesh-default')
+    const current = await store.getProfileByPublicModel('codeflare-mesh')
 
     expect(retired).toMatchObject({ active: false, rolloutPercent: 0, version: 2 })
     expect(retiredVersioned).toMatchObject({ active: false, rolloutPercent: 0, version: 5 })
@@ -591,7 +591,7 @@ describe('router worker behavioral contracts', () => {
     const ids = body.data.map((model) => model.id)
 
     expect(response.status).toBe(200)
-    expect(ids).toEqual(expect.arrayContaining(['mesh-default', 'qwen3.6:35b-a3b', 'qwen3.6-coder', 'mesh-smoke', 'smoke-test']))
+    expect(ids).toEqual(expect.arrayContaining(['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder', 'mesh-smoke', 'smoke-test']))
     expect(ids).not.toContain('ghost-alias')
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -607,14 +607,14 @@ describe('router worker behavioral contracts', () => {
       'mesh-smoke-qwen25-1.5b'
     ])
     expect(single).toMatchObject({
-      publicAliases: ['mesh-default', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
+      publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
       meshllm: { modelRef: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', split: false, bindPort: 4300 },
       contextWindow: 262144,
       rolloutPercent: 100,
       active: true
     })
     expect(split).toMatchObject({
-      publicAliases: ['mesh-default', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
+      publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
       meshllm: { modelRef: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd', split: true, bindPort: 4310 },
       contextWindow: 262144,
       rolloutPercent: 0,
@@ -649,7 +649,7 @@ describe('router worker behavioral contracts', () => {
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json', 'x-inference-mesh-session': 'session-a' },
-      body: JSON.stringify({ model: 'mesh-default', messages: [{ role: 'user', content: 'hello' }] })
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hello' }] })
     }))
     await response.text()
     const forwarded = await capture.request!.json() as { model: string }
@@ -683,19 +683,19 @@ describe('router worker behavioral contracts', () => {
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1 })
     }))
     const claimed = await claim.json() as { nodeId: string; nodeToken: string; upstreamToken: string }
     await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer(claimed.nodeToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: claimed.nodeId, displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 0, runtime: 'meshllm', runtimeModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', metrics: { runtimeState: 'ready', loadedModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', activeRequests: 0, apiReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'] } })
+      body: JSON.stringify({ nodeId: claimed.nodeId, displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 0, runtime: 'meshllm', runtimeModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', metrics: { runtimeState: 'ready', loadedModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', activeRequests: 0, apiReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'] } })
     }))
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'mesh-default', messages: [] })
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
     }))
 
     expect(response.status).toBe(200)
@@ -714,7 +714,7 @@ describe('router worker behavioral contracts', () => {
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'mesh-default', messages: [] })
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
     }))
 
     const node = await store.getNode('node-a')
@@ -744,7 +744,7 @@ describe('router worker behavioral contracts', () => {
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'mesh-default', stream: true, messages: [] })
+      body: JSON.stringify({ model: 'codeflare-mesh', stream: true, messages: [] })
     }))
 
     expect(response.headers.get('content-type')?.split(';')[0]).toBe('text/event-stream')
@@ -771,7 +771,7 @@ describe('router worker behavioral contracts', () => {
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'mesh-default', stream: true, messages: [] })
+      body: JSON.stringify({ model: 'codeflare-mesh', stream: true, messages: [] })
     }))
 
     await expect(response.text()).rejects.toThrow('stream failed')
@@ -794,7 +794,7 @@ describe('router worker behavioral contracts', () => {
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'mesh-default', messages: [] })
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
     }))
 
     expect(response.status).toBe(429)
@@ -833,7 +833,7 @@ describe('router worker behavioral contracts', () => {
       const store = new MemoryStore()
       await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
       await store.upsertNode(node)
-      const result = await new StoreScheduler(store).reserve({ publicModel: 'mesh-default', sessionId: `session-${node.id}`, now })
+      const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: `session-${node.id}`, now })
 
       expect(result.reason).toBe('no-node')
       expect(result.reservation).toBeUndefined()
@@ -845,7 +845,7 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode({ ...nodeFixture(), runtime: 'legacy-runtime' } as unknown as NodeRecord)
 
-    const result = await new StoreScheduler(store).reserve({ publicModel: 'mesh-default', sessionId: 'session-runtime', now: 1_700_000_000_000 })
+    const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-runtime', now: 1_700_000_000_000 })
 
     expect(result.reason).toBe('no-node')
     expect(result.reservation).toBeUndefined()
@@ -856,7 +856,7 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: false, readyModels: [QWEN_UPSTREAM] } }))
 
-    const result = await new StoreScheduler(store).reserve({ publicModel: 'mesh-default', sessionId: 'session-api-ready', now: 1_700_000_000_000 })
+    const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-api-ready', now: 1_700_000_000_000 })
 
     expect(result.reason).toBe('no-node')
     expect(result.reservation).toBeUndefined()
@@ -867,7 +867,7 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: ['unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'] } }))
 
-    const result = await new StoreScheduler(store).reserve({ publicModel: 'mesh-default', sessionId: 'session-ready-models', now: 1_700_000_000_000 })
+    const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-ready-models', now: 1_700_000_000_000 })
 
     expect(result.reason).toBe('no-node')
     expect(result.reservation).toBeUndefined()
@@ -877,10 +877,10 @@ describe('router worker behavioral contracts', () => {
     const store = new MemoryStore()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'starting', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM] } }))
-    const standby = await new StoreScheduler(store, () => 'reservation-standby').reserve({ publicModel: 'mesh-default', sessionId: 'session-standby', now: 1_700_000_000_000 })
+    const standby = await new StoreScheduler(store, () => 'reservation-standby').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-standby', now: 1_700_000_000_000 })
 
     await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM] } }))
-    const ready = await new StoreScheduler(store, () => 'reservation-ready').reserve({ publicModel: 'mesh-default', sessionId: 'session-standby-ready', now: 1_700_000_000_000 })
+    const ready = await new StoreScheduler(store, () => 'reservation-ready').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-standby-ready', now: 1_700_000_000_000 })
 
     expect(standby.reason).toBe('no-node')
     expect(standby.reservation).toBeUndefined()
@@ -892,10 +892,10 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 1, capacity: 1 }))
     await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 0 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-a', publicModel: 'mesh-default', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_700_000_100_000 })
+    await store.putSession({ sessionId: 'session-a', nodeId: 'node-a', publicModel: 'codeflare-mesh', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_700_000_100_000 })
     const scheduler = new StoreScheduler(store, () => 'reservation-c')
 
-    const result = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_000 })
+    const result = await scheduler.reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-a', now: 1_700_000_000_000 })
 
     expect(result.reservation?.nodeId).toBe('node-b')
   })
@@ -905,10 +905,10 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 0 }))
     await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 0 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'mesh-default', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_700_000_100_000 })
+    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'codeflare-mesh', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_700_000_100_000 })
     const scheduler = new StoreScheduler(store, () => 'reservation-b')
 
-    const result = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_000 })
+    const result = await scheduler.reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-a', now: 1_700_000_000_000 })
 
     expect(result.reservation?.nodeId).toBe('node-b')
   })
@@ -918,10 +918,10 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 0, capacity: 2 }))
     await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 1, capacity: 2 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'mesh-default', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_699_999_999_999 })
+    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'codeflare-mesh', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_699_999_999_999 })
     const scheduler = new StoreScheduler(store, () => 'reservation-expired')
 
-    const result = await scheduler.reserve({ publicModel: 'mesh-default', sessionId: 'session-a', now: 1_700_000_000_000 })
+    const result = await scheduler.reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-a', now: 1_700_000_000_000 })
 
     expect(result.reservation?.nodeId).toBe('node-a')
     expect(store.sessions.get('session-a')?.nodeId).toBe('node-a')
@@ -935,7 +935,7 @@ describe('router worker behavioral contracts', () => {
     const expired = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer('expired-setup'), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Expired Node', meshIp: '100.64.1.9', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1 })
+      body: JSON.stringify({ displayName: 'Expired Node', meshIp: '100.64.1.9', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1 })
     }))
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const claimAdmin = (await setupResponse.json() as { adminToken: string }).adminToken
@@ -943,12 +943,12 @@ describe('router worker behavioral contracts', () => {
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
     }))
     const consumed = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
+      body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
     }))
 
     expect(expired.status).toBe(401)
@@ -966,7 +966,7 @@ describe('router worker behavioral contracts', () => {
     const response = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2, inFlight: 1, runtime: 'meshllm', runtimeModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', metrics: { runtimeState: 'ready', loadedModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', activeRequests: 1, gpuName: 'RTX 3090', apiReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'] } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2, inFlight: 1, runtime: 'meshllm', runtimeModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', metrics: { runtimeState: 'ready', loadedModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', activeRequests: 1, gpuName: 'RTX 3090', apiReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'] } })
     }))
 
     const stored = await store.getNode('node-a')
@@ -1002,7 +1002,7 @@ describe('router worker behavioral contracts', () => {
     const heartbeat = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 0 } })
     }))
     const unregister = await router(new Request('https://router.test/node/unregister', {
       method: 'POST',
@@ -1039,7 +1039,7 @@ describe('router worker behavioral contracts', () => {
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
     }))
     const claimed = await claim.json() as { nodeId: string; nodeToken: string }
 
@@ -1060,7 +1060,7 @@ describe('router worker behavioral contracts', () => {
     const staleHigh = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 1, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 1 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 1, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 1 } })
     }))
     const afterStaleHigh = await store.getNode('node-a')
     await store.upsertNode({ ...afterStaleHigh!, inFlight: 1 })
@@ -1068,7 +1068,7 @@ describe('router worker behavioral contracts', () => {
     const staleZero = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 0 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 0 } })
     }))
     const afterStaleZero = await store.getNode('node-a')
 
@@ -1168,11 +1168,11 @@ describe('router worker behavioral contracts', () => {
       if (url.pathname.endsWith('/custom-providers') && method === 'POST') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev' } })
       if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [] } } })
       // Creating a route with elements inline yields the version and deployment in one call.
-      return Response.json({ success: true, result: { id: 'route-a', name: 'mesh-default', version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
+      return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
     }) as typeof fetch
     const client = new CloudflareGatewayClient('runtime-token', fetcher)
 
-    const result = await client.syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev/v1/chat/completions', providerName: 'Codeflare Inference Mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerTokenInstructions: 'manual' })
+    const result = await client.syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev/v1/chat/completions', providerName: 'Codeflare Inference Mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', providerTokenInstructions: 'manual' })
     const routeBody = calls.find((call) => call.path.endsWith('/routes') && call.method === 'POST')!.body as { name: string; enabled: boolean; elements: Array<{ type: string; properties?: Record<string, unknown> }> }
     const modelNode = routeBody.elements.find((element) => element.type === 'model')!
 
@@ -1186,10 +1186,10 @@ describe('router worker behavioral contracts', () => {
     ])
     expect(calls[1]!.body).toEqual({ id: 'gateway-a', cache_invalidate_on_update: false, cache_ttl: 0, collect_logs: true, rate_limiting_interval: 0, rate_limiting_limit: 0 })
     expect(calls[3]!.body).toEqual({ name: 'Codeflare Inference Mesh', slug: 'codeflare-inference-mesh-router-example-workers-dev', base_url: 'https://router.example.workers.dev', description: 'Codeflare Inference Mesh OpenAI-compatible router', enable: true })
-    expect(routeBody.name).toBe('mesh-default')
+    expect(routeBody.name).toBe('codeflare-mesh')
     expect(routeBody.enabled).toBe(true)
-    expect(modelNode.properties).toEqual({ provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'mesh-default', retries: 1, timeout: 120000 })
-    expect(result).toMatchObject({ providerId: 'provider-a', providerSlug: 'codeflare-inference-mesh-router-example-workers-dev', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: 'gateway-a', routeName: 'mesh-default', publicModel: 'mesh-default', workerUrl: 'https://router.example.workers.dev', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
+    expect(modelNode.properties).toEqual({ provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'codeflare-mesh', retries: 1, timeout: 120000 })
+    expect(result).toMatchObject({ providerId: 'provider-a', providerSlug: 'codeflare-inference-mesh-router-example-workers-dev', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: 'gateway-a', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', workerUrl: 'https://router.example.workers.dev', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
   })
 
   it('CloudflareGatewayClient invokes the fetcher as a free function so the global fetch keeps its native receiver (no Workers illegal invocation)', async () => {
@@ -1368,13 +1368,13 @@ describe('router worker behavioral contracts', () => {
       if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
       if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://old.example.com' }] })
       if (url.pathname.endsWith('/custom-providers/provider-a') && method === 'PATCH') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: body!.name, base_url: body!.base_url } })
-      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default' }] } } })
-      if (url.pathname.endsWith('/routes/route-a') && method === 'GET') return Response.json({ success: true, result: { id: 'route-a', name: 'mesh-default', elements: [] } })
+      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'codeflare-mesh' }] } } })
+      if (url.pathname.endsWith('/routes/route-a') && method === 'GET') return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', elements: [] } })
       return Response.json({ success: true, result: { id: 'route-a', version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
     }) as typeof fetch
     const client = new CloudflareGatewayClient('runtime-token', fetcher)
 
-    await client.syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev', providerName: 'Codeflare Inference Mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerTokenInstructions: 'manual' })
+    await client.syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev', providerName: 'Codeflare Inference Mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', providerTokenInstructions: 'manual' })
 
     expect(calls.some((call) => call.method === 'PATCH' && call.path.endsWith('/custom-providers/provider-a') && call.body?.base_url === 'https://router.example.workers.dev')).toBe(true)
     expect(calls.some((call) => call.method === 'PATCH' && call.path.endsWith('/routes/route-a') && Array.isArray((call.body as { elements?: unknown }).elements) && (call.body as { enabled?: unknown }).enabled === true)).toBe(true)
@@ -1382,26 +1382,26 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-GWY-003 reuses existing Cloudflare Gateway resources on repeat sync', async () => {
     const calls: string[] = []
-    const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'mesh-default', retries: 1, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
+    const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'codeflare-mesh', retries: 1, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
     const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
       const method = init?.method ?? 'GET'
       calls.push(`${method} ${url.pathname}`)
       if (url.pathname.endsWith('/ai-gateway/gateways')) return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
       if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
-      if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default' }] } } })
-      if (url.pathname.endsWith('/routes/route-a')) return Response.json({ success: true, result: { id: 'route-a', name: 'mesh-default', elements, version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
+      if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'codeflare-mesh' }] } } })
+      if (url.pathname.endsWith('/routes/route-a')) return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', elements, version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
       throw new Error(`unexpected ${method} ${url.pathname}`)
     }) as typeof fetch
 
-    const result = await new CloudflareGatewayClient('runtime-token', fetcher).syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev', providerName: 'Codeflare Inference Mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerTokenInstructions: 'manual' })
+    const result = await new CloudflareGatewayClient('runtime-token', fetcher).syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev', providerName: 'Codeflare Inference Mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', providerTokenInstructions: 'manual' })
 
     expect(calls.every((call) => call.startsWith('GET '))).toBe(true)
     expect(result).toMatchObject({ providerId: 'provider-a', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a' })
   })
 
   it('REQ-GWY-003 re-enables a disabled route even when its routing elements already match', async () => {
-    const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'mesh-default', retries: 1, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
+    const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'codeflare-mesh', retries: 1, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
     const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
     const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
@@ -1410,12 +1410,12 @@ describe('router worker behavioral contracts', () => {
       calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
       if (url.pathname.endsWith('/ai-gateway/gateways')) return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
       if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
-      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default' }] } } })
-      if (url.pathname.endsWith('/routes/route-a') && method === 'GET') return Response.json({ success: true, result: { id: 'route-a', name: 'mesh-default', elements, enabled: false } })
+      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'codeflare-mesh' }] } } })
+      if (url.pathname.endsWith('/routes/route-a') && method === 'GET') return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', elements, enabled: false } })
       return Response.json({ success: true, result: { id: 'route-a', enabled: true, version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
     }) as typeof fetch
 
-    await new CloudflareGatewayClient('runtime-token', fetcher).syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev', providerName: 'Codeflare Inference Mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerTokenInstructions: 'manual' })
+    await new CloudflareGatewayClient('runtime-token', fetcher).syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev', providerName: 'Codeflare Inference Mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', providerTokenInstructions: 'manual' })
 
     expect(calls.some((call) => call.method === 'PATCH' && call.path.endsWith('/routes/route-a') && (call.body as { enabled?: unknown }).enabled === true)).toBe(true)
   })
@@ -1473,7 +1473,7 @@ describe('router worker behavioral contracts', () => {
     await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json', 'cf-access-client-secret': 'secret' },
-      body: JSON.stringify({ model: 'mesh-default', messages: [] })
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
     }))
 
     expect(capture.request!.headers.get('authorization')).toBe('Bearer upstream-secret')
@@ -1528,7 +1528,7 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ profileId: 'mesh-split-qwen36-35b', rolloutPercent: 40 })
     }))
     const afterRollout = await store.listProfiles()
-    const activeOwners = afterRollout.filter((profile) => profile.active && profile.publicAliases.includes('mesh-default'))
+    const activeOwners = afterRollout.filter((profile) => profile.active && profile.publicAliases.includes('codeflare-mesh'))
 
     expect(rollout.status).toBe(200)
     expect(activeOwners.map((profile) => profile.id)).toEqual(['mesh-split-qwen36-35b'])
@@ -1602,7 +1602,7 @@ describe('router worker behavioral contracts', () => {
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
     }))
     const claimed = await claim.json() as { nodeId: string; nodeToken: string; meshBootstrap?: { action: string }; desiredAgentVersion?: string }
     const heartbeat = await router(new Request('https://router.test/node/heartbeat', {
@@ -1968,7 +1968,7 @@ describe('Access-first setup and host gating contracts', () => {
     const key = await accessTestKey('key-1')
     const store = new MemoryStore()
     await store.putConfig('access_config', roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }))
-    await store.putConfig('cloudflare_gateway', { gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default' })
+    await store.putConfig('cloudflare_gateway', { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' })
     await store.putConfig('custom_domain', { hostname: HOST, status: 'provisioned' })
     await store.putConfig('setup_state', { phase: 'complete', completedAt: NOW })
     const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]), identityFetcher: identityGroupsFetcher([]) })
@@ -1989,7 +1989,7 @@ describe('Access-first setup and host gating contracts', () => {
   it('REQ-ADM-016 REQ-ADM-017 lets the read-only user role reach the playground endpoint', async () => {
     const { router, key } = await roleRouter(roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }), [])
     const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
-    const response = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt }, body: JSON.stringify({ model: 'mesh-default', messages: [] }) }))
+    const response = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [] }) }))
     // A user role clears the requireUser gate (a rejected role would be 401); here it reaches the gateway-config check.
     expect(response.status).not.toBe(401)
     expect(await response.json()).toMatchObject({ error: 'gateway_not_configured' })
@@ -2202,7 +2202,7 @@ describe('Access-first setup and host gating contracts', () => {
         listGateways: async () => [{ id: 'inference-mesh' }, { id: 'other-gw' }],
         listRoutes: async (_accountId: string, gatewayId: string) => {
           routeCalls.push(gatewayId)
-          return [{ id: 'route-1', name: 'mesh-default', enabled: true }]
+          return [{ id: 'route-1', name: 'codeflare-mesh', enabled: true }]
         }
       }
     })
@@ -2210,8 +2210,8 @@ describe('Access-first setup and host gating contracts', () => {
     expect(response.status).toBe(200)
     const body = await response.json() as { gateways: readonly { id: string }[]; routes: readonly { name?: string }[]; defaults: { gatewayId: string; routeName: string; publicModel: string } }
     expect(body.gateways.map((gateway) => gateway.id)).toEqual(['inference-mesh', 'other-gw'])
-    expect(body.routes.map((route) => route.name)).toEqual(['mesh-default'])
-    expect(body.defaults).toMatchObject({ gatewayId: 'inference-mesh', routeName: 'mesh-default' })
+    expect(body.routes.map((route) => route.name)).toEqual(['codeflare-mesh'])
+    expect(body.defaults).toMatchObject({ gatewayId: 'inference-mesh', routeName: 'codeflare-mesh' })
     expect(routeCalls).toEqual(['inference-mesh'])
 
     const selected = await router(new Request('https://router.example.workers.dev/admin/cloudflare/gateway/options?gateway=other-gw', { headers: bearer('admin-secret') }))
@@ -2296,8 +2296,8 @@ describe('Access-first setup and host gating contracts', () => {
       if (path.startsWith('/admin/cloudflare/gateway/options')) {
         return Response.json({
           gateways: [{ id: 'inference-mesh' }, { id: 'other-gw' }],
-          routes: [{ id: 'route-1', name: 'mesh-default', enabled: true }],
-          defaults: { gatewayId: 'inference-mesh', routeName: 'mesh-default', providerName: 'codeflare-inference-mesh', publicModel: 'mesh-default' }
+          routes: [{ id: 'route-1', name: 'codeflare-mesh', enabled: true }],
+          defaults: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', providerName: 'codeflare-inference-mesh', publicModel: 'codeflare-mesh' }
         })
       }
       if (path === '/admin/cloudflare/gateway/sync') return Response.json({ deploymentId: 'deployment-a' })
@@ -2316,12 +2316,12 @@ describe('Access-first setup and host gating contracts', () => {
     expect(gatewaySelect.children.map((option) => option.value)).toEqual(['inference-mesh', 'other-gw', '__new__'])
     expect(gatewaySelect.value).toBe('inference-mesh')
     const routeSelect = harness.byId('wiz-route-select')
-    expect(routeSelect.children.map((option) => option.value)).toEqual(['mesh-default', '__new__'])
+    expect(routeSelect.children.map((option) => option.value)).toEqual(['codeflare-mesh', '__new__'])
     expect(harness.byId('wiz-gateway-new-wrap').hidden).toBe(true)
 
     await harness.clickAction('gateway-sync', { prefix: 'wiz-', out: 'wiz-gateway-output' })
     const syncCall = harness.fetchCalls.find((call) => call.path === '/admin/cloudflare/gateway/sync')
-    expect(JSON.parse(String(syncCall?.init?.body))).toEqual({ gatewayId: 'inference-mesh', routeName: 'mesh-default' })
+    expect(JSON.parse(String(syncCall?.init?.body))).toEqual({ gatewayId: 'inference-mesh', routeName: 'codeflare-mesh' })
   })
 
   it('REQ-GWY-005 gateway step offers one-click provisioning when the account has no gateway', async () => {
@@ -2329,7 +2329,7 @@ describe('Access-first setup and host gating contracts', () => {
     const html = await (await router(new Request('https://router.test/'))).text()
     const harness = adminUiHarness(html, async (path) => {
       if (path.startsWith('/admin/cloudflare/gateway/options')) {
-        return Response.json({ gateways: [], routes: [], defaults: { gatewayId: 'inference-mesh', routeName: 'mesh-default' } })
+        return Response.json({ gateways: [], routes: [], defaults: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh' } })
       }
       if (path === '/admin/cloudflare/gateway/sync') return Response.json({ deploymentId: 'deployment-a', gatewayId: 'inference-mesh' })
       return Response.json({ zones: [] })
@@ -2385,7 +2385,7 @@ describe('Access-first setup and host gating contracts', () => {
 
 describe('operator playground contracts', () => {
   // PlaygroundTestAnchor
-  const connectedGateway = { gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerSlug: 'custom-inference-mesh-router-test', manualProviderKeyRequired: true }
+  const connectedGateway = { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', providerSlug: 'custom-inference-mesh-router-test', manualProviderKeyRequired: true }
 
   function sseFetcher(capture: { url?: string; init?: RequestInit | undefined }): typeof fetch {
     return (async (url: string, init?: RequestInit) => {
@@ -2405,7 +2405,7 @@ describe('operator playground contracts', () => {
   it('REQ-ADM-016 rejects unauthenticated playground requests', async () => {
     const { router } = routerFixture()
     const response = await router(new Request('https://router.test/admin/playground/chat', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'mesh-default', messages: [] })
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
     }))
     expect(response.status).toBe(401)
   })
@@ -2413,7 +2413,7 @@ describe('operator playground contracts', () => {
   it('REQ-ADM-016 returns gateway_not_configured until a gateway is connected', async () => {
     const { router } = routerFixture()
     const response = await router(new Request('https://router.test/admin/playground/chat', {
-      method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'mesh-default', messages: [] })
+      method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
     }))
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ error: 'gateway_not_configured' })
@@ -2428,12 +2428,12 @@ describe('operator playground contracts', () => {
 
     const response = await router(new Request('https://router.test/admin/playground/chat', {
       method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'mesh-default', messages: [{ role: 'user', content: 'hello' }] })
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hello' }] })
     }))
 
     expect(response.status).toBe(200)
     expect(capture.url).toBe('https://gateway.ai.cloudflare.com/v1/acct-1/inference-mesh/compat/chat/completions')
-    expect(JSON.parse(String(capture.init?.body))).toEqual({ model: 'dynamic/mesh-default', stream: true, messages: [{ role: 'user', content: 'hello' }] })
+    expect(JSON.parse(String(capture.init?.body))).toEqual({ model: 'dynamic/codeflare-mesh', stream: true, messages: [{ role: 'user', content: 'hello' }] })
     expect(response.headers.get('cf-aig-log-id')).toBeNull()
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('content-type')).toContain('text/event-stream')

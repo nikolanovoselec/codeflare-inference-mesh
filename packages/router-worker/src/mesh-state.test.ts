@@ -13,7 +13,7 @@ const STATE_CONFIG_KEY = `mesh_state:${PROFILE_ID}`
 function meshProfile(overrides: Partial<ModelProfile> = {}): ModelProfile {
   return {
     id: PROFILE_ID,
-    publicAliases: ['mesh-default'],
+    publicAliases: ['codeflare-mesh'],
     upstreamModel: UPSTREAM_MODEL,
     sourceMode: 'meshllm-ref',
     contextWindow: 262144,
