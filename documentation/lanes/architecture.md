@@ -40,7 +40,7 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## Control plane lifecycle
 
-1. Admin opens the bootstrap origin; the wizard claims the deployment, provisions the custom domain, and provisions role-gated Access plus machine-path bypass, then hands off. See [security.md](security.md#role-based-console-access) for policy shape. ([REQ-ADM-011](../../sdd/spec/setup-admin.md)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-ADM-014](../../sdd/spec/setup-admin.md))
+1. Admin opens the bootstrap origin; the wizard claims the deployment, provisions the custom domain, and provisions role-gated Access plus machine-path bypass, then hands off and the origin locks. ([security.md](security.md#role-based-console-access): policy shape; [security.md](security.md#break-glass-recovery-and-host-gating): the lock.) ([REQ-ADM-011](../../sdd/spec/setup-admin.md)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-ADM-014](../../sdd/spec/setup-admin.md))
 2. Admin connects AI Gateway from the wizard's Gateway step — gateway and route dropdowns populated from the live account, with one-click default provisioning — or later from the dashboard Routing section. ([REQ-GWY-005](../../sdd/spec/gateway.md)) ([REQ-GWY-003](../../sdd/spec/gateway.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
 3. Admin creates a one-time setup token from the wizard's enrollment step or the dashboard Nodes section. ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
 4. Node operator runs the generated install command. ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
