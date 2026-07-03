@@ -188,12 +188,22 @@ export function adminUiHarness(html: string, respond: (path: string, init?: Requ
   if (!viewMatch) throw new Error('served HTML carries no body view mode')
 
   const elements = new Map<string, StubElement>()
+  // Mirror getElementById's null contract: only ids present in the served
+  // HTML (or registered later via createElement id assignment) resolve, so
+  // a view regression that drops an id fails tests instead of being masked
+  // by a fabricated element.
+  const servedIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]!))
+  const getById = (id: string): StubElement | null => {
+    const existing = elements.get(id)
+    if (existing) return existing
+    if (!servedIds.has(id)) return null
+    const element = elementStub({ id })
+    elements.set(id, element)
+    return element
+  }
   const byId = (id: string): StubElement => {
-    let element = elements.get(id)
-    if (!element) {
-      element = elementStub({ id })
-      elements.set(id, element)
-    }
+    const element = getById(id)
+    if (!element) throw new Error(`unknown element id "${id}" — not in served HTML`)
     return element
   }
   byId('admin-ui-config').textContent = configMatch[1]!
@@ -229,7 +239,7 @@ export function adminUiHarness(html: string, respond: (path: string, init?: Requ
   }
   const documentStub = {
     body,
-    getElementById: (id: string) => byId(id),
+    getElementById: (id: string) => getById(id),
     querySelector: (selector: string) => query(selector),
     createElement,
     addEventListener: (name: string, listener: StubListener) => documentListeners.set(name, listener)

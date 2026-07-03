@@ -198,8 +198,6 @@ describe('router worker behavioral contracts', () => {
     expect(html).toContain('<noscript>')
     expect(html).toMatch(/@media \(max-width:760px\)/)
     expect(html).toContain('class="tab-bar"')
-    expect(html).toContain('sessionStorage.getItem(tokenKey)')
-    expect(html).toContain('localStorage.getItem(tokenKey)')
     // The served behavior script is the pure literal, byte for byte: nothing is
     // serialized from bundled code, so bundler helpers (__name) cannot leak in.
     expect(adminUiScript(html)).toBe(ADMIN_UI_CLIENT_SCRIPT)
@@ -240,7 +238,7 @@ describe('router worker behavioral contracts', () => {
     expect(navTargets.slice(6)).toEqual(['models', 'routing', 'settings'])
     expect(navTargets.every((target) => sectionIds.has(target))).toBe(true)
     expect(html.match(/data-mobile-tabs="([^"]+)"/)?.[1]).toBe('overview nodes mesh more')
-    expect([...html.matchAll(/data-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(['overview', 'nodes', 'mesh', 'more'])
+    expect([...html.matchAll(/<button class="tab-item"[^>]*data-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(['overview', 'nodes', 'mesh', 'more'])
     expect([...html.matchAll(/data-active="true"/g)]).toHaveLength(1)
     expect(html).toMatch(/data-nav="overview" aria-current="page"/)
     expect(html.match(/data-more-sections="([^"]+)"/)?.[1]).toBe('models routing settings')

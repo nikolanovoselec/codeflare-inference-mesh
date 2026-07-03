@@ -86,7 +86,7 @@
 
 **Verification:** `packages/router-worker/src/router.test.ts` (`AdminConfigurationUiTestAnchor`) asserts the `content-security-policy` and `x-frame-options` header values on the admin response, and `packages/router-worker/src/admin-ui-mesh.test.ts` (`REQ-ADM-006 verifies the admin token before storing it`) asserts the verify-before-store order against the executed client script; no automated test currently asserts an admin-UI output-encoding boundary, so that narrower gap remains audit pending. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminConfigurationUiTestAnchor -->
 
-**Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
 ## Mesh secret custody and rotation
 

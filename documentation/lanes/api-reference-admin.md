@@ -14,7 +14,7 @@ Admin routes use the MVP admin token or an admin session derived from it after f
 
 ### GET /
 
-Serves the responsive command-center Admin configuration UI shell.
+Serves the state-gated Admin UI shell: the setup wizard while setup is open, the sign-in view once locked, and the sectioned operator dashboard after sign-in.
 
 ```http
 GET /
@@ -30,7 +30,7 @@ GET /
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Admin UI shell served with anti-framing headers, pre-rendered into the setup wizard while setup is open and the sign-in view once locked; the shell loads without a bearer token, while dashboard data and controls still require bearer authentication. `HEAD` returns the same status and headers. | HTML. |
+| `200` | Admin UI shell with anti-framing headers, pre-rendered into the setup wizard while setup is open and the sign-in view once locked; the shell loads without a bearer token. `HEAD` returns the same status and headers. | HTML. |
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md), [REQ-ADM-011](../../sdd/spec/setup-admin.md)
 
@@ -54,7 +54,7 @@ GET /admin
 | --- | --- | --- |
 | `200` | Same state-gated Admin UI shell and anti-framing headers as `/`. | HTML. |
 
-**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md), [REQ-ADM-011](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/setup
 

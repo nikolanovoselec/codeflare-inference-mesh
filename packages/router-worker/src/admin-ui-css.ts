@@ -70,7 +70,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,su
 .btn-ghost:hover{background:var(--surface-2);color:var(--text)}
 .btn-danger{background:transparent;border-color:var(--danger-line);color:var(--danger)}
 .btn-danger:hover{background:var(--danger-soft)}
-.btn-danger.is-armed,.btn-danger[data-armed=true]{background:var(--danger);border-color:transparent;color:#fff}
+.btn-danger.is-armed,.btn-danger[data-armed=true]{background:var(--danger-hover);border-color:transparent;color:#fff}
 .field{display:grid;gap:.35rem;min-width:0}
 .field>label{color:var(--muted);font-size:var(--fs-xs);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
 .field-hint{color:var(--muted);font-size:var(--fs-xs)}

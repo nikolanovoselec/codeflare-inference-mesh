@@ -267,6 +267,23 @@ describe('admin UI mesh operations contracts', () => {
     expect(rotate.dataset.armed).toBeUndefined()
   })
 
+  it('REQ-ADM-006 signs out and clears the stored admin token', async () => {
+    const harness = await dashboardHarness()
+    const eventsBefore = harness.events.length
+
+    await harness.clickAction('sign-out')
+
+    expect(harness.body.dataset.view).toBe('login')
+    const afterSignOut = harness.events.slice(eventsBefore)
+    expect(afterSignOut.filter((event) => event.kind === 'removeItem').length).toBeGreaterThanOrEqual(2)
+
+    const callsBefore = harness.fetchCalls.length
+    await harness.clickAction('status-refresh')
+    const call = harness.fetchCalls[callsBefore]!
+    expect(call.path).toBe('/admin/status')
+    expect(Object.keys((call.init?.headers ?? {}) as Record<string, string>)).not.toContain('authorization')
+  })
+
   it('REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard', async () => {
     const html = adminUiHtml('https://router.test', { setupOpen: true })
     const harness = adminUiHarness(html, async (path) => {

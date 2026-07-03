@@ -546,6 +546,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const body = await request('/admin/setup', { method: 'POST' });
       liveToken = body.adminToken || '';
       storeToken(liveToken, false);
+      document.body.dataset.setupOpen = 'false';
       renderTokens(out, body);
       const next = byId('wizard-continue-credentials');
       if (next) next.hidden = false;
