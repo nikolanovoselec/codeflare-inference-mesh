@@ -482,7 +482,7 @@ describe('router worker behavioral contracts', () => {
     // TokenVerifierStorageTestAnchor
     const { router, store } = routerFixture()
     const response = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
-    const body = await response.json() as Record<string, string>
+    const body = await response.json() as { adminToken: string }
 
     expect(response.status).toBe(201)
     // Claim reveals only the bootstrap token; machine tokens surface at their own steps.
@@ -2345,7 +2345,7 @@ describe('operator playground contracts', () => {
   // PlaygroundTestAnchor
   const connectedGateway = { gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerSlug: 'custom-inference-mesh-router-test', manualProviderKeyRequired: true }
 
-  function sseFetcher(capture: { url?: string; init?: RequestInit }): typeof fetch {
+  function sseFetcher(capture: { url?: string; init?: RequestInit | undefined }): typeof fetch {
     return (async (url: string, init?: RequestInit) => {
       capture.url = String(url)
       capture.init = init
@@ -2381,7 +2381,7 @@ describe('operator playground contracts', () => {
     const store = new MemoryStore()
     await store.putConfig('cloudflare_gateway', connectedGateway)
     await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1', gatewayId: 'inference-mesh' })
-    const capture: { url?: string; init?: RequestInit } = {}
+    const capture: { url?: string; init?: RequestInit | undefined } = {}
     const { router } = routerFixture({ store, playgroundFetcher: sseFetcher(capture) })
 
     const response = await router(new Request('https://router.test/admin/playground/chat', {
@@ -2402,7 +2402,7 @@ describe('operator playground contracts', () => {
     const store = new MemoryStore()
     await store.putConfig('cloudflare_gateway', connectedGateway)
     await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1' })
-    const capture: { url?: string; init?: RequestInit } = {}
+    const capture: { url?: string; init?: RequestInit | undefined } = {}
     const { router } = routerFixture({ store, playgroundFetcher: sseFetcher(capture) })
 
     await router(new Request('https://router.test/admin/playground/chat', {
