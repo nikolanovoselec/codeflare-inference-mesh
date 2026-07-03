@@ -71,7 +71,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,su
 .btn-danger{background:transparent;border-color:var(--danger-line);color:var(--danger)}
 .btn-danger:hover{background:var(--danger-soft)}
 .btn-danger.is-armed,.btn-danger[data-armed=true]{background:var(--danger-hover);border-color:transparent;color:#fff}
-.field{display:grid;gap:.35rem;min-width:0}
+.field{display:grid;gap:.35rem;min-width:0;align-content:start}
 .field>label{color:var(--muted);font-size:var(--fs-xs);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
 .field-hint{color:var(--muted);font-size:var(--fs-xs)}
 input,select{min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px;width:100%;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text);padding:.55rem .7rem;transition:border-color var(--speed-base) ease-out}
