@@ -12,6 +12,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const config = JSON.parse(document.getElementById('admin-ui-config').textContent);
   const state = config.state || { view: 'setup', phase: 'unclaimed' };
   const onCustomDomain = Boolean(state.customDomain) && location.hostname === state.customDomain;
+  let lastStatus;
+  let nodeSort = { key: '', dir: 1 };
+  let pollTimer;
   const byId = (id) => document.getElementById(id);
   const tokenKey = 'codeflareInferenceMeshAdminToken';
   const savedToken = () => sessionStorage.getItem(tokenKey) || localStorage.getItem(tokenKey) || '';
@@ -92,12 +95,33 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const sheet = byId('more-sheet');
     if (sheet) sheet.hidden = true;
   };
+  const schedulePoll = () => {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => {
+      pollTimer = undefined;
+      if (document.hidden) return;
+      refreshStatus().catch(() => undefined);
+      schedulePoll();
+    }, config.polling.intervalMs);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.body.dataset.view !== 'dashboard') return;
+    if (document.hidden) {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = undefined;
+      return;
+    }
+    refreshStatus().catch(() => undefined);
+    schedulePoll();
+  });
   const showDashboard = () => {
     setView('dashboard');
     setSection(config.nav.sections[0]);
     refreshStatus().catch(() => undefined);
     loadVersions().catch(() => undefined);
     loadInstaller('', false).catch(() => undefined);
+    closeDrawer();
+    schedulePoll();
   };
 
   // --- wizard ---------------------------------------------------------------
@@ -196,16 +220,22 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (ms < 3600000) return Math.floor(ms / 60000) + 'm';
     return Math.floor(ms / 3600000) + 'h';
   };
-  const tile = (label, value) => {
+  const tile = (label, value, stat) => {
     const el = document.createElement('div');
     el.className = 'tile';
+    if (stat) el.setAttribute('data-stat', stat);
     const strong = document.createElement('strong');
     strong.textContent = label;
     const code = document.createElement('code');
     code.textContent = value;
+    code.setAttribute('data-value', value);
     el.append(strong, code);
     return el;
   };
+  const nodeToks = (node) => (node.metrics && node.metrics.tokensPerSecond) || 0;
+  const nodeVramTotal = (node) => (node.metrics && node.metrics.gpuMemoryTotalMiB) || 0;
+  const nodeModelCount = (node) => (node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0);
+  const round1 = (value) => String(Math.round(value * 10) / 10);
   const statusDot = (tone, label) => {
     const wrap = document.createElement('span');
     wrap.className = 'chip';
@@ -225,50 +255,204 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (node.status === 'online' && (runtime === 'running' || runtime === 'ready')) return 'ok';
     return 'warn';
   };
-  function renderNodes(nodes, desiredVersion) {
-    const list = byId('node-list');
-    if (!list) return;
-    list.textContent = '';
+  const revokeButton = (nodeId) => {
+    const revoke = document.createElement('button');
+    revoke.type = 'button';
+    revoke.className = 'btn btn-danger';
+    revoke.textContent = 'Revoke';
+    revoke.dataset.action = 'node-revoke';
+    revoke.dataset.nodeId = nodeId;
+    revoke.dataset.confirm = 'Confirm revoke?';
+    revoke.dataset.out = 'node-output';
+    return revoke;
+  };
+  const versionCode = (node, desiredVersion) => {
+    const reported = node.agentVersion || 'unreported';
+    const match = Boolean(desiredVersion) && node.agentVersion === desiredVersion;
+    const version = document.createElement('code');
+    version.setAttribute('data-node-version', node.id);
+    version.setAttribute('data-reported', reported);
+    version.setAttribute('data-desired-match', match ? 'true' : 'false');
+    version.textContent = reported + (match || !desiredVersion ? '' : ' \u2192 ' + desiredVersion);
+    return version;
+  };
+  const nodeSortValue = (node, key) => {
+    if (key === 'status') { const tone = nodeTone(node); return tone === 'ok' ? 2 : tone === 'warn' ? 1 : 0; }
+    if (key === 'toks') return nodeToks(node);
+    if (key === 'vram') return nodeVramTotal(node);
+    if (key === 'models') return nodeModelCount(node);
+    if (key === 'version') return node.agentVersion || '';
+    return node.id;
+  };
+  function renderNodesTable(nodes, desiredVersion) {
+    const bodyEl = byId(config.nodesTable.bodyId);
+    if (!bodyEl) return;
+    bodyEl.textContent = '';
     if (!nodes.length) {
-      const empty = document.createElement('p');
-      empty.className = 'empty-note';
-      empty.textContent = 'No nodes enrolled yet. Create a setup token below and run the install command on a machine.';
-      list.appendChild(empty);
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.className = 'empty-note';
+      cell.textContent = 'No nodes enrolled yet. Create a setup token below and run the install command on a machine.';
+      row.appendChild(cell);
+      bodyEl.appendChild(row);
       return;
     }
-    nodes.forEach((node) => {
-      const row = document.createElement('div');
-      row.className = 'row-item';
+    const ordered = nodes.slice();
+    if (nodeSort.key) {
+      ordered.sort((left, right) => {
+        const a = nodeSortValue(left, nodeSort.key);
+        const b = nodeSortValue(right, nodeSort.key);
+        return (a < b ? -1 : a > b ? 1 : 0) * nodeSort.dir;
+      });
+    }
+    ordered.forEach((node) => {
+      const row = document.createElement('tr');
       row.setAttribute('data-node-row', node.id);
+      const cell = (name, value, text) => {
+        const td = document.createElement('td');
+        td.setAttribute('data-cell', name);
+        if (value !== undefined) td.setAttribute('data-value', value);
+        if (text !== undefined) td.textContent = text;
+        row.appendChild(td);
+        return td;
+      };
+      const idCell = cell('id', undefined, undefined);
+      const idButton = document.createElement('button');
+      idButton.type = 'button';
+      idButton.className = 'link-btn';
+      idButton.dataset.action = 'node-detail';
+      idButton.dataset.nodeId = node.id;
+      idButton.textContent = node.id;
+      idCell.appendChild(idButton);
       const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
-      row.appendChild(statusDot(nodeTone(node), (node.status || 'unknown') + ' · ' + runtime));
-      const body = document.createElement('div');
-      body.className = 'grow';
-      const idCode = document.createElement('code');
-      idCode.textContent = node.id;
-      const detail = document.createElement('small');
-      const ready = node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0;
-      detail.textContent = ready + ' ready models';
-      body.append(idCode, detail);
-      row.appendChild(body);
-      const reported = node.agentVersion || 'unreported';
-      const match = Boolean(desiredVersion) && node.agentVersion === desiredVersion;
-      const version = document.createElement('code');
-      version.setAttribute('data-node-version', node.id);
-      version.setAttribute('data-reported', reported);
-      version.setAttribute('data-desired-match', match ? 'true' : 'false');
-      version.textContent = reported + (match || !desiredVersion ? '' : ' \\u2192 ' + desiredVersion);
-      row.appendChild(version);
-      const revoke = document.createElement('button');
-      revoke.type = 'button';
-      revoke.className = 'btn btn-danger';
-      revoke.textContent = 'Revoke';
-      revoke.dataset.action = 'node-revoke';
-      revoke.dataset.nodeId = node.id;
-      revoke.dataset.confirm = 'Confirm revoke?';
-      revoke.dataset.out = 'node-output';
-      row.appendChild(revoke);
-      list.appendChild(row);
+      cell('status', undefined, undefined).appendChild(statusDot(nodeTone(node), (node.status || 'unknown') + ' \u00b7 ' + runtime));
+      cell('toks', String(nodeToks(node)), round1(nodeToks(node)));
+      cell('vram', String(nodeVramTotal(node)), Math.round(nodeVramTotal(node) / 1024) + ' GB');
+      cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
+      const versionCell = cell('version', undefined, undefined);
+      versionCell.appendChild(versionCode(node, desiredVersion));
+      versionCell.appendChild(revokeButton(node.id));
+      bodyEl.appendChild(row);
+    });
+  }
+  const topoNodeButton = (node) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'topo-node tone-' + nodeTone(node);
+    button.dataset.action = 'node-detail';
+    button.dataset.nodeId = node.id;
+    button.textContent = node.id;
+    return button;
+  };
+  function renderTopology(nodes) {
+    const canvas = byId(config.topology.canvasId);
+    const list = byId(config.topology.listId);
+    const caption = byId(config.topology.captionId);
+    const serving = nodes.filter((node) => nodeTone(node) === 'ok').length;
+    if (caption) {
+      caption.dataset.nodes = String(nodes.length);
+      caption.dataset.serving = String(serving);
+      caption.textContent = nodes.length + ' nodes \u00b7 ' + serving + ' serving';
+    }
+    if (canvas) {
+      canvas.textContent = '';
+      const hub = document.createElement('div');
+      hub.className = 'topo-hub';
+      hub.setAttribute('data-topo-hub', 'true');
+      hub.textContent = 'router';
+      canvas.appendChild(hub);
+      nodes.forEach((node, index) => {
+        const angle = (index / Math.max(1, nodes.length)) * 2 * Math.PI - Math.PI / 2;
+        const spoke = document.createElement('span');
+        spoke.className = 'topo-spoke';
+        spoke.setAttribute('aria-hidden', 'true');
+        spoke.setAttribute('style', 'transform:rotate(' + Math.round(angle * 180 / Math.PI) + 'deg)');
+        canvas.appendChild(spoke);
+        const button = topoNodeButton(node);
+        const x = 50 + 38 * Math.cos(angle);
+        const y = 50 + 38 * Math.sin(angle);
+        button.setAttribute('style', 'left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%');
+        canvas.appendChild(button);
+      });
+    }
+    if (list) {
+      list.textContent = '';
+      nodes.forEach((node) => list.appendChild(topoNodeButton(node)));
+    }
+  }
+  const openDrawer = (title) => {
+    const drawer = byId(config.drawer.containerId);
+    const titleEl = byId(config.drawer.titleId);
+    const bodyEl = byId(config.drawer.bodyId);
+    if (!drawer || !titleEl || !bodyEl) return undefined;
+    titleEl.textContent = title;
+    bodyEl.textContent = '';
+    drawer.hidden = false;
+    return bodyEl;
+  };
+  const closeDrawer = () => {
+    const drawer = byId(config.drawer.containerId);
+    if (drawer) drawer.hidden = true;
+  };
+  const drawerField = (name, label, value, datasetValue) => {
+    const row = document.createElement('div');
+    row.className = 'drawer-row';
+    row.setAttribute('data-drawer-field', name);
+    if (datasetValue !== undefined) row.setAttribute('data-value', datasetValue);
+    const labelEl = document.createElement('strong');
+    labelEl.textContent = label;
+    const valueEl = document.createElement('code');
+    valueEl.textContent = value;
+    row.append(labelEl, valueEl);
+    return row;
+  };
+  function openNodeDrawer(nodeId) {
+    const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
+    const node = nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) return;
+    const bodyEl = openDrawer(node.id);
+    if (!bodyEl) return;
+    const metrics = node.metrics || {};
+    const runtime = metrics.runtimeState || 'unknown';
+    bodyEl.appendChild(drawerField('status', 'Status', (node.status || 'unknown') + ' \u00b7 ' + runtime));
+    bodyEl.appendChild(drawerField('toks', 'Tokens/s', round1(nodeToks(node)), String(nodeToks(node))));
+    bodyEl.appendChild(drawerField('vram', 'VRAM MiB', (metrics.gpuMemoryUsedMiB || 0) + ' / ' + (metrics.gpuMemoryTotalMiB || 0), (metrics.gpuMemoryUsedMiB || 0) + '/' + (metrics.gpuMemoryTotalMiB || 0)));
+    if (metrics.gpuName) bodyEl.appendChild(drawerField('gpu', 'GPU', metrics.gpuName));
+    const desired = lastStatus ? lastStatus.desiredAgentVersion : undefined;
+    const reported = node.agentVersion || 'unreported';
+    const match = Boolean(desired) && node.agentVersion === desired;
+    const versionRow = drawerField('version', 'Agent version', reported + (match || !desired ? '' : ' \u2192 ' + desired));
+    versionRow.setAttribute('data-reported', reported);
+    versionRow.setAttribute('data-desired-match', match ? 'true' : 'false');
+    bodyEl.appendChild(versionRow);
+    const models = Array.isArray(metrics.readyModels) ? metrics.readyModels : [];
+    models.forEach((model) => {
+      const item = document.createElement('div');
+      item.className = 'drawer-row';
+      item.setAttribute('data-drawer-model', model);
+      item.textContent = model;
+      bodyEl.appendChild(item);
+    });
+    bodyEl.appendChild(revokeButton(node.id));
+  }
+  function openModelDrawer(profileId) {
+    const profiles = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
+    const profile = profiles.find((candidate) => candidate.id === profileId);
+    if (!profile) return;
+    const bodyEl = openDrawer(profile.id);
+    if (!bodyEl) return;
+    const aliases = profile.publicAliases || [];
+    bodyEl.appendChild(drawerField('aliases', 'Aliases', aliases.join(', '), aliases.join(', ')));
+    bodyEl.appendChild(drawerField('active', 'Active', profile.active ? 'yes' : 'standby'));
+    const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
+    const servingNodes = nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.some((model) => aliases.indexOf(model) >= 0));
+    bodyEl.appendChild(drawerField('serving', 'Serving nodes', String(servingNodes.length), String(servingNodes.length)));
+    servingNodes.forEach((node) => {
+      const item = document.createElement('div');
+      item.className = 'drawer-row';
+      item.setAttribute('data-drawer-serving-node', node.id);
+      item.textContent = node.id;
+      bodyEl.appendChild(item);
     });
   }
   const profileOption = (profile, selectedId) => {
@@ -319,6 +503,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       detail.textContent = (profile.publicAliases || []).join(', ') + ' · rollout ' + profile.rolloutPercent + '%' + (ready ? ' · ready ' + ready.ready + ' · failed ' + ready.failed : '');
       body.append(idCode, detail);
       row.appendChild(body);
+      const details = document.createElement('button');
+      details.type = 'button';
+      details.className = 'btn btn-ghost';
+      details.textContent = 'Details';
+      details.dataset.action = 'model-detail';
+      details.dataset.profileId = profile.id;
+      row.appendChild(details);
       list.appendChild(row);
     });
     renderActivationSelect(profiles);
@@ -412,13 +603,18 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       tiles.textContent = '';
       const gateway = status.gateway || {};
       const domain = status.customDomain || {};
-      tiles.appendChild(tile('Nodes', String(nodes.length)));
-      tiles.appendChild(tile('Profiles', String(profiles.length)));
-      tiles.appendChild(tile('Audit events', String(audit.length)));
-      tiles.appendChild(tile('Gateway', [gateway.gatewayId, gateway.routeName].filter(Boolean).join(' / ') || 'not connected'));
+      const serving = nodes.filter((node) => nodeTone(node) === 'ok').length;
+      const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
+      const toks = nodes.reduce((total, node) => total + nodeToks(node), 0);
+      tiles.appendChild(tile('Nodes serving', serving + '/' + nodes.length, 'nodes'));
+      tiles.appendChild(tile('Active models', String(profiles.filter((profile) => profile.active).length), 'models'));
+      tiles.appendChild(tile('Mesh VRAM GB', String(Math.round(vramMiB / 1024)), 'vram'));
+      tiles.appendChild(tile('Tokens/s', round1(toks), 'toks'));
+      tiles.appendChild(tile('Gateway', [gateway.gatewayId, gateway.routeName].filter(Boolean).join(' / ') || 'not connected', 'gateway'));
       tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured'));
-      tiles.appendChild(tile('Fleet version', status.desiredAgentVersion || 'not pinned'));
+      tiles.appendChild(tile('Fleet version', status.desiredAgentVersion || 'not pinned', 'version'));
     }
+    renderTopology(nodes);
     const rollup = byId('overview-mesh');
     if (rollup) {
       rollup.textContent = '';
@@ -432,7 +628,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const gateway = status.gateway || {};
       gatewayCurrent.textContent = gateway.gatewayId ? 'Current target: ' + [gateway.gatewayId, gateway.routeName, gateway.publicModel].filter(Boolean).join(' / ') : 'No Gateway connected yet.';
     }
-    renderNodes(nodes, status.desiredAgentVersion);
+    lastStatus = status;
+    renderNodesTable(nodes, status.desiredAgentVersion);
     renderProfiles(profiles, readiness);
     renderMeshHealth(meshEntries);
     renderAudit(audit);
@@ -704,6 +901,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'gateway-provision-default') {
       setOutput(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
       await loadGatewayOptions('').catch(() => undefined);
+    } else if (action === 'nodes-sort') {
+      const key = button.dataset.sort || 'id';
+      nodeSort = { key: key, dir: nodeSort.key === key ? -nodeSort.dir : -1 };
+      if (lastStatus) renderNodesTable(Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [], lastStatus.desiredAgentVersion);
+    } else if (action === 'node-detail') {
+      openNodeDrawer(button.dataset.nodeId || '');
+    } else if (action === 'model-detail') {
+      openModelDrawer(button.dataset.profileId || '');
+    } else if (action === config.drawer.closeAction) {
+      closeDrawer();
     } else if (action === 'sign-out') {
       signOut();
     } else if (action === 'status-refresh') {

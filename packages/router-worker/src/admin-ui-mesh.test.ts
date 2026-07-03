@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_MESH_HEALTH, ADMIN_UI_PROFILE_ACTIVATION, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, ADMIN_UI_PROFILE_ACTIVATION, adminUiHtml } from './admin-ui'
 import type { MeshHealthEntry, MeshUiStatusNode } from './admin-ui'
 import { adminUiHarness, descendants, elementStub, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
@@ -170,7 +170,7 @@ describe('admin UI mesh operations contracts', () => {
     expect(select.value).toBe('v1.3.0')
 
     await harness.clickAction('status-refresh')
-    const rowNodes = harness.byId('node-list').children.flatMap((row) => [row, ...descendants(row)])
+    const rowNodes = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.flatMap((row) => [row, ...descendants(row)])
     const versionOf = (nodeId: string) => rowNodes.find((node) => node.dataset.nodeVersion === nodeId)!
     expect(versionOf('node-coord').dataset.reported).toBe('v1.3.0')
     expect(versionOf('node-coord').dataset.desiredMatch).toBe('true')

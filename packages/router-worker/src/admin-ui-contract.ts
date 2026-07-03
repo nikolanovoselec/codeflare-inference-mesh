@@ -90,6 +90,34 @@ export const ADMIN_UI_SETUP_LOCKED_FEEDBACK = {
   variant: 'setup-locked'
 } as const
 
+/** Overview topology: hub-and-spoke, every node selectable, list fallback on mobile. */
+export const ADMIN_UI_TOPOLOGY = {
+  containerId: 'overview-topology',
+  canvasId: 'topo-canvas',
+  listId: 'topo-list',
+  captionId: 'topo-caption'
+} as const
+
+/** Slide-over detail drawer shared by node and model selections. */
+export const ADMIN_UI_DRAWER = {
+  containerId: 'detail-drawer',
+  titleId: 'drawer-title',
+  bodyId: 'drawer-body',
+  closeAction: 'drawer-close'
+} as const
+
+/** Dashboard status polling: visibility-aware, live badge reflects freshness. */
+export const ADMIN_UI_POLLING = {
+  intervalMs: 5000
+} as const
+
+/** Sortable nodes table; sort keys are data-driven, never copy. */
+export const ADMIN_UI_NODES_TABLE = {
+  bodyId: 'nodes-table-body',
+  sortAttribute: 'data-sort',
+  columns: ['id', 'status', 'toks', 'vram', 'models', 'version']
+} as const
+
 export const ADMIN_UI_MESH_HEALTH = {
   panelId: 'mesh-health-output',
   rotateSelectId: 'mesh-rotate-profile',

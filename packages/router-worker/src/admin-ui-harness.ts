@@ -172,6 +172,8 @@ export interface AdminUiHarness {
   change(target: StubElement): Promise<void>
   runTimers(): void
   flush(times?: number): Promise<void>
+  /** Sets document.hidden and fires the visibilitychange listener, like a tab switch. */
+  setHidden(hidden: boolean): Promise<void>
 }
 
 export interface HarnessOptions {
@@ -241,6 +243,7 @@ export function adminUiHarness(html: string, respond: (path: string, init?: Requ
   }
   const documentStub = {
     body,
+    hidden: false,
     getElementById: (id: string) => getById(id),
     querySelector: (selector: string) => query(selector),
     createElement,
@@ -319,6 +322,10 @@ export function adminUiHarness(html: string, respond: (path: string, init?: Requ
     runTimers() {
       const pending = timers.splice(0, timers.length)
       pending.filter((timer) => !timer.cancelled).forEach((timer) => timer.fn())
+    },
+    async setHidden(hidden: boolean) {
+      documentStub.hidden = hidden
+      await dispatch('visibilitychange', body)
     },
     async flush(times = 6) {
       for (let index = 0; index < times; index += 1) await Promise.resolve()

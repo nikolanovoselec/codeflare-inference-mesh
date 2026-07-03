@@ -229,7 +229,7 @@ describe('D1 store behavioral contracts', () => {
     expect(rebuilt.reservation).toMatchObject({ reservationId: 'reservation-b', nodeId: 'node-a', publicModel: 'mesh-default', profileId: profile.id })
   })
 
-  it('REQ-ADM-014 caches gate config reads per binding with TTL expiry and write invalidation', async () => {
+  it('gate config cache elides D1 reads within the TTL and invalidates on write', async () => {
     const db = new FakeD1Database()
     let now = 1_700_000_000_000
     const store = new D1Store(db as unknown as D1Database, () => now)

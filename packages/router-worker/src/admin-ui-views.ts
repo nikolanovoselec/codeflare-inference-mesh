@@ -1,9 +1,12 @@
 import {
   ADMIN_UI_ACTIONS,
   ADMIN_UI_AGENT_VERSION,
+  ADMIN_UI_DRAWER,
   ADMIN_UI_MESH_HEALTH,
   ADMIN_UI_NAV,
+  ADMIN_UI_NODES_TABLE,
   ADMIN_UI_PROFILE_ACTIVATION,
+  ADMIN_UI_TOPOLOGY,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
 import { button, escapeHtml, field, navItem, output, sectionPanel, stepper, tabItem, textInput, wizardStep } from './admin-ui-components'
@@ -141,7 +144,12 @@ function overviewSection(): string {
     description: 'Live state of the router, mesh, and recent activity.',
     actions: button({ action: 'status-refresh', label: 'Refresh' }),
     active: true,
-    body: `<div class="tile-grid" id="overview-tiles" data-output="status"><p class="empty-note">Status loads automatically after sign-in.</p></div>
+    body: `<div class="tile-grid" id="overview-tiles" data-output="status"><p class="empty-note">Status loads automatically.</p></div>
+<div class="topology" id="${ADMIN_UI_TOPOLOGY.containerId}">
+<p class="topo-caption" id="${ADMIN_UI_TOPOLOGY.captionId}" data-output="topology-caption"></p>
+<div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
+<div class="topo-list" id="${ADMIN_UI_TOPOLOGY.listId}" data-output="topology-list"></div>
+</div>
 <div class="subpanel"><h3>Mesh</h3><div class="form-actions" id="overview-mesh"></div></div>
 <div class="subpanel"><h3>Recent activity</h3><div class="feed" id="overview-audit" data-output="audit"></div></div>`
   })
@@ -153,7 +161,10 @@ function nodesSection(): string {
     title: 'Nodes',
     description: 'Enrolled machines, their runtime state, and agent versions.',
     actions: button({ action: 'status-refresh', label: 'Refresh' }),
-    body: `<div class="row-list" id="node-list" data-output="nodes"><p class="empty-note">Nodes appear here after sign-in.</p></div>
+    body: `<div class="table-wrap"><table class="nodes-table" data-output="nodes-table">
+<thead><tr>${ADMIN_UI_NODES_TABLE.columns.map((column) => `<th scope="col"><button class="sort-btn" type="button" data-action="nodes-sort" data-sort="${column}">${column === 'toks' ? 'tok/s' : column === 'vram' ? 'VRAM' : column}</button></th>`).join('')}</tr></thead>
+<tbody id="${ADMIN_UI_NODES_TABLE.bodyId}"><tr><td class="empty-note" colspan="${ADMIN_UI_NODES_TABLE.columns.length}">Nodes appear here once enrolled.</td></tr></tbody>
+</table></div>
 ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}
 <div class="subpanel"><h3>Enroll a node</h3>${enrollControls('')}</div>`
   })
@@ -259,6 +270,10 @@ export function dashboardView(active: boolean): string {
 <div class="sections">${overviewSection()}${nodesSection()}${modelsSection()}${routingSection()}${meshSection()}${settingsSection()}</div>
 <nav class="tab-bar" aria-label="Console sections" data-mobile-tabs="${escapeHtml(ADMIN_UI_NAV.mobileTabs.join(' '))}">${tabs}</nav>
 <div class="more-sheet" id="more-sheet" data-more-sections="${escapeHtml(ADMIN_UI_NAV.moreSections.join(' '))}" hidden>${moreItems}</div>
+<aside class="drawer" id="${ADMIN_UI_DRAWER.containerId}" role="dialog" aria-labelledby="${ADMIN_UI_DRAWER.titleId}" hidden>
+<div class="drawer-head"><h2 id="${ADMIN_UI_DRAWER.titleId}"></h2><button class="btn btn-ghost" type="button" data-action="${ADMIN_UI_DRAWER.closeAction}">Close</button></div>
+<div class="drawer-body" id="${ADMIN_UI_DRAWER.bodyId}"></div>
+</aside>
 </div>`
 }
 

@@ -169,6 +169,32 @@ details summary{cursor:pointer;color:var(--text-2);font-size:var(--fs-sm);font-w
 .toast.is-error{border-color:var(--danger-line);color:var(--danger)}
 .toast .btn{min-height:2rem;padding:.25rem .55rem}
 .noscript-banner{display:block;border:1px solid var(--warn);color:var(--warn);border-radius:var(--radius-sm);font-size:var(--fs-sm);margin:1rem;padding:.7rem .85rem;text-align:center}
+.topology{display:grid;gap:.5rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);padding:1rem;margin-top:1rem}
+.topo-caption{margin:0;font-family:var(--font-mono);font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)}
+.topo-canvas{position:relative;aspect-ratio:2/1;min-height:220px}
+.topo-hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;display:grid;place-items:center;width:64px;height:64px;border:1px solid var(--accent-line);border-radius:50%;background:var(--accent-soft);color:var(--accent);font-family:var(--font-mono);font-size:var(--fs-xs)}
+.topo-spoke{position:absolute;left:50%;top:50%;width:38%;height:0;border-top:1px dashed var(--line-strong);transform-origin:left center}
+.topo-node{position:absolute;transform:translate(-50%,-50%);z-index:3;max-width:9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-2);color:var(--text);font-family:var(--font-mono);font-size:var(--fs-xs);padding:.35rem .6rem;cursor:pointer;min-height:0}
+.topo-node.tone-ok{border-color:var(--ok);box-shadow:0 0 12px rgb(34 197 94/.25)}
+.topo-node.tone-warn{border-color:var(--warn)}
+.topo-node.tone-danger{border-color:var(--danger)}
+.topo-list{display:none;gap:.35rem}
+.topo-list .topo-node{position:static;transform:none;max-width:none;text-align:left;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface)}
+.nodes-table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+.nodes-table th{text-align:left;border-bottom:1px solid var(--line-strong);padding:.2rem .45rem}
+.nodes-table td{border-bottom:1px solid var(--line);padding:.5rem .65rem;vertical-align:middle}
+.nodes-table td .btn{margin-left:.5rem}
+.sort-btn{border:0;background:none;color:var(--text-2);font-family:var(--font-mono);font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:.45rem .2rem;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px}
+.sort-btn:hover{color:var(--text)}
+.link-btn{border:0;background:none;color:var(--text);font-family:var(--font-mono);font-size:var(--fs-sm);cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:.35rem 0;min-height:0}
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:40;width:min(26rem,92vw);border-left:1px solid var(--line-strong);background:var(--surface);box-shadow:-16px 0 48px rgb(0 0 0/.45);padding:1.25rem;overflow-y:auto}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:1rem}
+.drawer-head h2{margin:0;font-family:var(--font-mono);font-size:var(--fs-lg);overflow:hidden;text-overflow:ellipsis}
+.drawer-body{display:grid;gap:.45rem}
+.drawer-row{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;border-bottom:1px solid var(--line);padding:.4rem 0;font-size:var(--fs-sm)}
+.drawer-row strong{color:var(--text-2);font-weight:600}
+.drawer-row code{font-family:var(--font-mono)}
 @media (min-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx + 1}px){
 .section-panel[data-active=false]{display:none}
 }
@@ -186,6 +212,9 @@ main{padding-bottom:calc(var(--tab-h) + 2rem)}
 .more-sheet .nav-item{border-left:0;border-radius:var(--radius-sm)}
 .more-sheet .nav-item:hover{background:var(--surface-2)}
 .row-item .btn{margin-left:0;width:100%}
+.topo-canvas{display:none}
+.topo-list{display:grid}
+.drawer{width:100vw;border-left:0}
 .form-actions .btn,.wizard-actions .btn{width:100%}
 }
 @media (max-width:480px){

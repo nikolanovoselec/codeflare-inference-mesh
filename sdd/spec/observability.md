@@ -240,11 +240,13 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 **Acceptance Criteria:**
 
-1. The Overview stats strip reports node counts, active model count, total mesh VRAM, and aggregate generation throughput from live status data.
-2. The dashboard refreshes status on an approximately five-second cadence while the page is visible.
-3. Status polling pauses while the page is hidden and resumes when it becomes visible.
-4. A live indicator reflects whether the latest poll succeeded within the freshness window.
+1. The Overview stats strip reports node counts, active model count, total mesh VRAM, and aggregate generation throughput from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 computes the stats strip aggregates from admin status) -->
+2. The dashboard refreshes status on an approximately five-second cadence while the page is visible. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_POLLING = 5000 --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 refreshes admin status on the poll interval) -->
+3. Status polling pauses while the page is hidden and resumes when it becomes visible. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 pauses polling while the tab is hidden and resumes with a fresh read) -->
+4. A live indicator reflects whether the latest poll succeeded within the freshness window. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 flips the live badge when a poll fails and recovers on the next success) -->
 5. The throughput trace renders a rolling window of samples smoothed between polls.
+
+**Notes:** The throughput trace (AC5) is the remaining gap; strip, polling, pause, and live indicator are built and verified.
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
@@ -254,7 +256,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Partial
 
 ---
 

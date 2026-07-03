@@ -378,12 +378,12 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Overview section renders a topology visual with the router hub and one selectable element per node, styled by node status.
-2. The topology caption reports node and serving counts derived from live status data.
-3. Selecting a node opens a detail drawer showing status, hardware, throughput, models, and reported-versus-desired agent version.
-4. Selecting a model opens a detail drawer showing its alias, availability, and serving nodes.
-5. The Nodes section renders nodes as a sortable table whose rows open the node drawer.
-6. Below the mobile breakpoint the topology falls back to a list presentation.
+1. The Overview section renders a topology visual with the router hub and one selectable element per node, styled by node status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
+2. The topology caption reports node and serving counts derived from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
+3. Selecting a node opens a detail drawer showing status, hardware, throughput, models, and reported-versus-desired agent version. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a node drawer with metrics, version drift, and an armed revoke control) -->
+4. Selecting a model opens a detail drawer showing its alias, availability, and serving nodes. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer listing the nodes serving each alias) -->
+5. The Nodes section renders nodes as a sortable table whose rows open the node drawer. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 sorts the nodes table by the clicked column and flips direction on repeat) -->
+6. Below the mobile breakpoint the topology falls back to a list presentation. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_TOPOLOGY --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
@@ -393,7 +393,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

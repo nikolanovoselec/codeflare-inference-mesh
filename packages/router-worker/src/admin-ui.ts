@@ -2,11 +2,15 @@ import {
   ADMIN_UI_ACTIONS,
   ADMIN_UI_AGENT_VERSION,
   ADMIN_UI_CONFIRM,
+  ADMIN_UI_DRAWER,
   ADMIN_UI_MESH_HEALTH,
   ADMIN_UI_NAV,
+  ADMIN_UI_NODES_TABLE,
+  ADMIN_UI_POLLING,
   ADMIN_UI_PROFILE_ACTIVATION,
   ADMIN_UI_RESPONSIVE,
   ADMIN_UI_SETUP_LOCKED_FEEDBACK,
+  ADMIN_UI_TOPOLOGY,
   ADMIN_UI_VIEWS,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
@@ -19,11 +23,15 @@ export {
   ADMIN_UI_ACTIONS,
   ADMIN_UI_AGENT_VERSION,
   ADMIN_UI_CONFIRM,
+  ADMIN_UI_DRAWER,
   ADMIN_UI_MESH_HEALTH,
   ADMIN_UI_NAV,
+  ADMIN_UI_NODES_TABLE,
+  ADMIN_UI_POLLING,
   ADMIN_UI_PROFILE_ACTIVATION,
   ADMIN_UI_RESPONSIVE,
   ADMIN_UI_SETUP_LOCKED_FEEDBACK,
+  ADMIN_UI_TOPOLOGY,
   ADMIN_UI_VIEWS,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
@@ -52,7 +60,11 @@ export function adminUiHtml(workerOrigin: string, state: AdminUiState): string {
     setupLockedFeedback: ADMIN_UI_SETUP_LOCKED_FEEDBACK,
     meshHealth: ADMIN_UI_MESH_HEALTH,
     agentVersion: ADMIN_UI_AGENT_VERSION,
-    profileActivation: ADMIN_UI_PROFILE_ACTIVATION
+    profileActivation: ADMIN_UI_PROFILE_ACTIVATION,
+    topology: ADMIN_UI_TOPOLOGY,
+    drawer: ADMIN_UI_DRAWER,
+    polling: ADMIN_UI_POLLING,
+    nodesTable: ADMIN_UI_NODES_TABLE
   })
   const entryView = state.view
   return `<!doctype html>
