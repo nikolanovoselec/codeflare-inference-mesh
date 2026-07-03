@@ -44,9 +44,14 @@ export interface CustomDomainProvisionResult {
 
 interface ProviderRecord { readonly id: string; readonly slug?: string; readonly name?: string; readonly base_url?: string }
 export interface GatewayRecord { readonly id: string }
-export interface RouteRecord { readonly id: string; readonly name?: string; readonly enabled?: boolean }
-interface VersionRecord { readonly id?: string; readonly version_id?: string; readonly data?: unknown; readonly elements?: unknown }
-interface DeploymentRecord { readonly id?: string; readonly deployment_id?: string; readonly version_id?: string }
+export interface RouteRecord {
+  readonly id: string
+  readonly name?: string
+  readonly enabled?: boolean
+  readonly elements?: unknown
+  readonly version?: { readonly version_id?: string }
+  readonly deployment?: { readonly deployment_id?: string; readonly version_id?: string }
+}
 export interface ZoneRecord { readonly id: string; readonly name: string }
 interface DnsRecord { readonly id: string; readonly type: string; readonly name: string; readonly content: string; readonly proxied?: boolean }
 interface WorkerRouteRecord { readonly id: string; readonly pattern: string; readonly script?: string }
@@ -112,19 +117,17 @@ export class CloudflareGatewayClient {
     }
     const provider = await this.upsertCustomProvider(input.accountId, providerSlug, providerBody)
 
-    const route = await this.upsertGatewayRoute(input.accountId, input.gatewayId, input.routeName)
     const elements = routeGraph(`custom-${provider.slug ?? providerSlug}`, input.publicModel)
-    const version = await this.findMatchingVersion(input.accountId, input.gatewayId, route.id, elements)
-      ?? await this.accountRequest<VersionRecord>(input.accountId, `/ai-gateway/gateways/${input.gatewayId}/routes/${route.id}/versions`, 'POST', { elements })
-    const routeVersionId = version.version_id ?? version.id ?? ''
-    const deployment = await this.findDeployment(input.accountId, input.gatewayId, route.id, routeVersionId)
-      ?? await this.accountRequest<DeploymentRecord>(input.accountId, `/ai-gateway/gateways/${input.gatewayId}/routes/${route.id}/deployments`, 'POST', { version_id: routeVersionId })
+    // The AI Gateway dynamic-routing API sets a route's elements inline on create/update and
+    // produces the route's version and deployment in that same call, so there is no separate
+    // version-create or deployment-create step; the route response carries both identifiers.
+    const route = await this.upsertGatewayRoute(input.accountId, input.gatewayId, input.routeName, elements)
     return {
       providerId: provider.id,
       providerSlug: provider.slug ?? providerSlug,
       routeId: route.id,
-      routeVersionId,
-      deploymentId: deployment.deployment_id ?? deployment.id ?? '',
+      routeVersionId: route.version?.version_id ?? route.deployment?.version_id ?? '',
+      deploymentId: route.deployment?.deployment_id ?? '',
       gatewayId: input.gatewayId,
       routeName: input.routeName,
       publicModel: input.publicModel,
@@ -145,23 +148,14 @@ export class CloudflareGatewayClient {
     return await this.accountRequest<ProviderRecord>(accountId, `/ai-gateway/custom-providers/${existing.id}`, 'PATCH', body)
   }
 
-  private async upsertGatewayRoute(accountId: string, gatewayId: string, routeName: string): Promise<RouteRecord> {
+  private async upsertGatewayRoute(accountId: string, gatewayId: string, routeName: string, elements: unknown): Promise<RouteRecord> {
     const routes = listFrom<RouteRecord>(await this.accountRequest<unknown>(accountId, `/ai-gateway/gateways/${gatewayId}/routes`, 'GET'), 'routes')
     const existing = routes.find((route) => route.name === routeName)
-    if (!existing) return await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes`, 'POST', { name: routeName, enabled: true })
-    if (existing.enabled === false) return await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes/${existing.id}`, 'PATCH', { name: routeName, enabled: true })
-    return existing
-  }
-
-  private async findMatchingVersion(accountId: string, gatewayId: string, routeId: string, elements: unknown): Promise<VersionRecord | undefined> {
-    const versions = listFrom<VersionRecord>(await this.accountRequest<unknown>(accountId, `/ai-gateway/gateways/${gatewayId}/routes/${routeId}/versions`, 'GET'), 'versions')
-    const wanted = stableJson(elements)
-    return versions.find((version) => stableJson(version.elements ?? (version.data as { elements?: unknown } | undefined)?.elements ?? version.data) === wanted)
-  }
-
-  private async findDeployment(accountId: string, gatewayId: string, routeId: string, versionId: string): Promise<DeploymentRecord | undefined> {
-    const deployments = listFrom<DeploymentRecord>(await this.accountRequest<unknown>(accountId, `/ai-gateway/gateways/${gatewayId}/routes/${routeId}/deployments`, 'GET'), 'deployments')
-    return deployments.find((deployment) => deployment.version_id === versionId)
+    const body = { name: routeName, elements }
+    if (!existing) return await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes`, 'POST', body)
+    const current = await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes/${existing.id}`, 'GET')
+    if (stableJson(current.elements) === stableJson(elements)) return current
+    return await this.accountRequest<RouteRecord>(accountId, `/ai-gateway/gateways/${gatewayId}/routes/${existing.id}`, 'PATCH', body)
   }
 
   private findBySlug(records: readonly ProviderRecord[], slug: string): ProviderRecord | undefined {

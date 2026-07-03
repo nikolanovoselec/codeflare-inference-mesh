@@ -1167,17 +1167,14 @@ describe('router worker behavioral contracts', () => {
       if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [] })
       if (url.pathname.endsWith('/custom-providers') && method === 'POST') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev' } })
       if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [] } } })
-      if (url.pathname.endsWith('/routes') && method === 'POST') return Response.json({ success: true, result: { id: 'route-a', name: 'mesh-default' } })
-      if (url.pathname.endsWith('/versions') && method === 'GET') return Response.json({ success: true, result: { data: { versions: [] } } })
-      if (url.pathname.endsWith('/versions') && method === 'POST') return Response.json({ success: true, result: { id: 'version-a' } })
-      if (url.pathname.endsWith('/deployments') && method === 'GET') return Response.json({ success: true, result: { data: { deployments: [] } } })
-      return Response.json({ success: true, result: { id: 'deployment-a' } })
+      // Creating a route with elements inline yields the version and deployment in one call.
+      return Response.json({ success: true, result: { id: 'route-a', name: 'mesh-default', version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
     }) as typeof fetch
     const client = new CloudflareGatewayClient('runtime-token', fetcher)
 
     const result = await client.syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev/v1/chat/completions', providerName: 'Codeflare Inference Mesh', routeName: 'mesh-default', publicModel: 'mesh-default', providerTokenInstructions: 'manual' })
-    const versionBody = calls.find((call) => call.path.endsWith('/versions') && call.method === 'POST')!.body as { elements: Array<{ type: string; properties?: Record<string, unknown> }> }
-    const modelNode = versionBody.elements.find((element) => element.type === 'model')!
+    const routeBody = calls.find((call) => call.path.endsWith('/routes') && call.method === 'POST')!.body as { name: string; elements: Array<{ type: string; properties?: Record<string, unknown> }> }
+    const modelNode = routeBody.elements.find((element) => element.type === 'model')!
 
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
       'GET /client/v4/accounts/account-a/ai-gateway/gateways',
@@ -1185,14 +1182,11 @@ describe('router worker behavioral contracts', () => {
       'GET /client/v4/accounts/account-a/ai-gateway/custom-providers',
       'POST /client/v4/accounts/account-a/ai-gateway/custom-providers',
       'GET /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes',
-      'POST /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes',
-      'GET /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes/route-a/versions',
-      'POST /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes/route-a/versions',
-      'GET /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes/route-a/deployments',
-      'POST /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes/route-a/deployments'
+      'POST /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes'
     ])
     expect(calls[1]!.body).toEqual({ id: 'gateway-a', cache_invalidate_on_update: false, cache_ttl: 0, collect_logs: true, rate_limiting_interval: 0, rate_limiting_limit: 0 })
     expect(calls[3]!.body).toEqual({ name: 'Codeflare Inference Mesh', slug: 'codeflare-inference-mesh-router-example-workers-dev', base_url: 'https://router.example.workers.dev', description: 'Codeflare Inference Mesh OpenAI-compatible router', enable: true })
+    expect(routeBody.name).toBe('mesh-default')
     expect(modelNode.properties).toEqual({ provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'mesh-default', retries: 1, timeout: 120000 })
     expect(result).toMatchObject({ providerId: 'provider-a', providerSlug: 'codeflare-inference-mesh-router-example-workers-dev', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: 'gateway-a', routeName: 'mesh-default', publicModel: 'mesh-default', workerUrl: 'https://router.example.workers.dev', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
   })
@@ -1370,12 +1364,12 @@ describe('router worker behavioral contracts', () => {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
       calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
+      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
       if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://old.example.com' }] })
       if (url.pathname.endsWith('/custom-providers/provider-a') && method === 'PATCH') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: body!.name, base_url: body!.base_url } })
-      if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default', enabled: true }] } } })
-      if (url.pathname.endsWith('/versions')) return Response.json({ success: true, result: { data: { versions: [] } } })
-      if (url.pathname.endsWith('/deployments')) return Response.json({ success: true, result: { data: { deployments: [] } } })
-      return Response.json({ success: true, result: { id: 'created-a' } })
+      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default' }] } } })
+      if (url.pathname.endsWith('/routes/route-a') && method === 'GET') return Response.json({ success: true, result: { id: 'route-a', name: 'mesh-default', elements: [] } })
+      return Response.json({ success: true, result: { id: 'route-a', version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
     }) as typeof fetch
     const client = new CloudflareGatewayClient('runtime-token', fetcher)
 
@@ -1393,9 +1387,8 @@ describe('router worker behavioral contracts', () => {
       calls.push(`${method} ${url.pathname}`)
       if (url.pathname.endsWith('/ai-gateway/gateways')) return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
       if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
-      if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default', enabled: true }] } } })
-      if (url.pathname.endsWith('/versions')) return Response.json({ success: true, result: { data: { versions: [{ id: 'version-a', elements }] } } })
-      if (url.pathname.endsWith('/deployments')) return Response.json({ success: true, result: { data: { deployments: [{ deployment_id: 'deployment-a', version_id: 'version-a' }] } } })
+      if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default' }] } } })
+      if (url.pathname.endsWith('/routes/route-a')) return Response.json({ success: true, result: { id: 'route-a', name: 'mesh-default', elements, version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
       throw new Error(`unexpected ${method} ${url.pathname}`)
     }) as typeof fetch
 
