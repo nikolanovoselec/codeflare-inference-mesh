@@ -12,6 +12,10 @@
 - [Mesh egress posture](#mesh-egress-posture)
 - [Update trust chain](#update-trust-chain)
 - [Access position](#access-position)
+- [Cloudflare Access admin authentication](#cloudflare-access-admin-authentication)
+- [Role-based console access](#role-based-console-access)
+- [Domain and Access provisioning](#domain-and-access-provisioning)
+- [Break-glass recovery and host gating](#break-glass-recovery-and-host-gating)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Trust boundaries

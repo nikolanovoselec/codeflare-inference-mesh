@@ -120,13 +120,35 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 3. When the account has no gateway, the step offers a single primary action that creates the default gateway and route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step offers one-click provisioning when the account has no gateway) -->
 4. Provisioning a selection stores it and runs the existing sync flow against it. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step renders selects from live options and syncs the selection) -->
 5. Provider name, public model alias, and Worker URL overrides are folded behind an explicit advanced disclosure. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::setupWizardView --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
-6. A failed Cloudflare API call surfaces Cloudflare's error code and message in the thrown error so a rejected setup step is diagnosable from the audit log without redeploying. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::formatCloudflareApiErrors --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 surfaces the Cloudflare error code and message on a failed API call) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-GWY-003](#req-gwy-003-dynamic-route-automation), [REQ-ADM-011](setup-admin.md#req-adm-011-guided-first-run-setup)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-GWY-006: Cloudflare API error surfacing
+
+**Intent:** When a Cloudflare API call made during setup fails, the operator should see Cloudflare's own error code and message, not just an HTTP status, so a rejected step is diagnosable from the audit log without redeploying.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. A failed Cloudflare Gateway or gateway-options API call includes Cloudflare's error code and message in the thrown error. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::formatCloudflareApiErrors --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-006 surfaces the Cloudflare error code and message on a failed API call) -->
+2. A failed Cloudflare Access provisioning API call includes Cloudflare's error code and message in the thrown error. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.accountRequest --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-GWY-006 surfaces the Cloudflare error code and message on a failed Access API call) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
+
+**Priority:** P1
+
+**Dependencies:** None.
 
 **Verification:** Automated test
 
