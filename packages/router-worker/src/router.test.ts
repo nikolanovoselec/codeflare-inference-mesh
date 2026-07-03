@@ -1953,6 +1953,15 @@ describe('Access-first setup and host gating contracts', () => {
     expect(adminBody.audit).toBeDefined()
   })
 
+  it('REQ-ADM-016 REQ-ADM-017 lets the read-only user role reach the playground endpoint', async () => {
+    const { router, key } = await roleRouter(roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }), [])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
+    const response = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt }, body: JSON.stringify({ model: 'mesh-default', messages: [] }) }))
+    // A user role clears the requireUser gate (a rejected role would be 401); here it reaches the gateway-config check.
+    expect(response.status).not.toBe(401)
+    expect(await response.json()).toMatchObject({ error: 'gateway_not_configured' })
+  })
+
   it('REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase', async () => {
     const store = new MemoryStore()
     await store.putConfig('setup_state', { phase: 'claimed', claimedAt: NOW })
