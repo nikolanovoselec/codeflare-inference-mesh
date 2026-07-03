@@ -130,17 +130,50 @@
 
 **Threat:** Admin UI exposure could exceed the intended bootstrap/admin boundary.
 
-**Mitigation:** The Admin UI shell is public so first-run setup works on `workers.dev`, but state-changing admin actions require admin bearer authentication after setup completes. First-run setup is intentionally open only until setup completes; after an active admin token exists, setup/admin routes require admin auth. Cloudflare Access is an optional hardening layer after a custom domain exists.
+**Mitigation:** The Admin UI shell is public so first-run setup works on the bootstrap origin, but state-changing admin actions require admin authentication. Before Cloudflare Access is provisioned, admin routes accept the bootstrap admin bearer token (or a session derived from it). Once the setup wizard provisions Access, the Worker verifies the Access JWT for every human admin request via `requireAdmin` in `packages/router-worker/src/router.ts`; bearer credentials work only before Access exists or during an active break-glass window. See [AD-013](../decisions/README.md#ad-013-cloudflare-access-is-the-human-admin-entrance).
 
 **Verification:** The first-run setup router test asserts setup token generation and claim, the admin-status router test asserts admin-only status, and the credential-boundary router test asserts credential-class separation. <!-- @impl: packages/router-worker/src/router.test.ts::FirstRunSetupTokenTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminStatusRedactionTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor -->
 
-**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-SEC-009](../../sdd/spec/security.md), [REQ-ADM-013](../../sdd/spec/setup-admin.md)
+
+## Cloudflare Access admin authentication
+
+**Threat:** A long-lived human admin token on a public hostname can leak and grants full control-plane access.
+
+**Mitigation:** Human admin identity comes from the Cloudflare Access JWT (`Cf-Access-Jwt-Assertion` header or `CF_Authorization` cookie), verified in the Worker against the team's published keys with audience, issuer, and validity-window checks. Keys are cached for an hour with an unknown-key-id refresh. A present-but-invalid JWT is rejected outright — it never falls back to bearer auth — and the verified email becomes the audit actor. <!-- @impl: packages/router-worker/src/access.ts::verifyAccessRequest -->
+
+**Verification:** The access test suite signs real RS256 JWTs and asserts acceptance, audience/issuer/expiry rejection, cache behavior, and the present-versus-absent distinction; router tests assert bearer-only requests fail once Access config exists. <!-- @impl: packages/router-worker/src/access.test.ts::AccessJwtTestAnchor -->
+
+**Implements:** [REQ-SEC-009](../../sdd/spec/security.md)
+
+## Domain and Access provisioning
+
+**Threat:** Hand-assembled Zero Trust policies can leave the console exposed or machine paths blocked.
+
+**Mitigation:** The setup wizard provisions the Access application with an allow policy containing exactly the captured admin emails, plus a separate bypass application covering the provider, node, health, and installer paths so machine traffic needs no Access session. If the bypass policy cannot be created, the bypass application is removed rather than left policy-less (deny-all). Re-runs update the managed applications instead of duplicating them. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess -->
+
+**Verification:** Provisioning tests assert the exact application and policy payloads, the bypass destinations, rollback on policy failure, and idempotent re-runs. <!-- @impl: packages/router-worker/src/access-provisioning.test.ts::AccessProvisioningTestAnchor -->
+
+**Implements:** [REQ-ADM-012](../../sdd/spec/setup-admin.md)
+
+## Break-glass recovery and host gating
+
+**Threat:** An operator locked out of the Access-gated custom domain has no way back in; a live bootstrap origin after handoff doubles the admin attack surface.
+
+**Mitigation:** After setup completes, non-custom-domain hostnames serve only a console-moved page and refuse provider/node routes; the custom domain is the single gate for humans and machines. Recovery requires Cloudflare account control: `wrangler secret put SETUP_REOPEN` reopens the bootstrap admin surface until the secret value is recorded as consumed, and entering and completing recovery are both audited. <!-- @impl: packages/router-worker/src/router.ts::resolveHostGate --> <!-- @impl: packages/router-worker/src/setup-state.ts::breakGlassActive -->
+
+**Verification:** Router tests assert the moved page, machine-route refusal, recovery reopening, single entry audit, and consumption closing the surface. <!-- @impl: packages/router-worker/src/router.test.ts::HostGatingTestAnchor -->
+
+**Implements:** [REQ-ADM-013](../../sdd/spec/setup-admin.md), [REQ-ADM-014](../../sdd/spec/setup-admin.md)
 
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |
 |---|---|---|
 | Credential classes | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/auth.ts::AUTH_ANCHORS` <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> |
+| Access JWT verification | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/access.ts::ACCESS_ANCHORS` <!-- @impl: packages/router-worker/src/access.ts::ACCESS_ANCHORS --> |
+| Access provisioning | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/access-provisioning.ts::ACCESS_PROVISIONING_ANCHORS` <!-- @impl: packages/router-worker/src/access-provisioning.ts::ACCESS_PROVISIONING_ANCHORS --> |
+| Setup phases and break-glass | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/setup-state.ts::SETUP_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/setup-state.ts::SETUP_STATE_ANCHORS --> |
 | Header filtering | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/proxy.go::ProxyAnchors` <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> |
 | Runtime exposure | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/config.go::ConfigAnchors` <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> |
 | Dashboard token lifecycle | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/config.go::LoadConfig` <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig --> |

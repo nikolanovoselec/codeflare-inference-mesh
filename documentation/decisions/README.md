@@ -86,11 +86,11 @@ This ledger records binding technical choices for the first implementation. It i
 
 ## AD-002: App-level bearer-token auth first
 
-**Status:** Accepted
+**Status:** Superseded by AD-013 (human auth only — bearer-token classes remain the machine-auth spine)
 
 **Context:** Gateway, admin UI, setup flow, node heartbeat, and Worker-to-node calls have different trust boundaries. <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS -->
 
-**Decision:** MVP auth uses separate app-level bearer-token classes. Cloudflare Access is optional admin hardening after a custom domain exists.
+**Decision:** MVP auth uses separate app-level bearer-token classes. Cloudflare Access was optional admin hardening after a custom domain existed; [AD-013](#ad-013-cloudflare-access-is-the-human-admin-entrance) supersedes this for human admin auth, making Access mandatory once provisioned.
 
 **Alternatives considered:** One shared token; Cloudflare Access as mandatory primary auth; mTLS between Worker and nodes.
 

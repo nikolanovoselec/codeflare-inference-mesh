@@ -36,6 +36,11 @@ interface OrganizationRecord {
 export class CloudflareAccessClient {
   constructor(private readonly token: string, private readonly fetcher: typeof fetch = fetch) {}
 
+  /**
+   * Upserts by managed name, so re-runs are idempotent: a failed run (for
+   * example a rejected bypass policy) is recovered by retrying, which
+   * converges on the same managed applications instead of duplicating them.
+   */
   async provisionAccess(input: AccessProvisionRequest): Promise<AccessProvisionResult> {
     const teamDomain = await this.teamDomain(input.accountId)
     const apps = await this.listApps(input.accountId)
@@ -74,9 +79,11 @@ export class CloudflareAccessClient {
       throw error
     }
 
+    const audience = adminApp.app.aud
+    if (!audience) throw new Error('Cloudflare Access application returned no audience')
     return {
       teamDomain,
-      audience: adminApp.app.aud ?? '',
+      audience,
       appId: adminApp.app.id,
       bypassAppId: bypassApp.app.id,
       adminEmails: input.adminEmails

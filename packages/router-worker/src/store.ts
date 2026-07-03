@@ -1,5 +1,12 @@
 import type { AuditEvent, CredentialKind, ModelProfile, NodeRecord, ReservationRecord, SessionRecord, Store, TokenRecord } from './types'
 
+// The host gate reads these two config keys on every request; cache them
+// per D1 binding with a short TTL so the hot path avoids two D1 round-trips.
+// putConfig writes through the cache, keeping same-isolate reads exact.
+const GATE_CONFIG_KEYS = new Set(['setup_state', 'custom_domain'])
+const GATE_CONFIG_TTL_MS = 5000
+const gateConfigCache = new WeakMap<D1Database, Map<string, { at: number; value: unknown }>>()
+
 export class D1Store implements Store {
   constructor(private readonly db: D1Database, private readonly now: () => number = Date.now) {}
 
@@ -130,11 +137,23 @@ export class D1Store implements Store {
     await this.db.prepare('INSERT OR REPLACE INTO router_config (key, value_json, updated_at) VALUES (?, ?, ?)')
       .bind(key, JSON.stringify(value), this.now())
       .run()
+    if (GATE_CONFIG_KEYS.has(key)) gateConfigCache.get(this.db)?.delete(key)
   }
 
   async getConfig<T>(key: string): Promise<T | undefined> {
+    const cacheable = GATE_CONFIG_KEYS.has(key)
+    if (cacheable) {
+      const cached = gateConfigCache.get(this.db)?.get(key)
+      if (cached && this.now() - cached.at < GATE_CONFIG_TTL_MS) return cached.value as T | undefined
+    }
     const row = await this.db.prepare('SELECT value_json FROM router_config WHERE key = ?').bind(key).first<{ value_json: string }>()
-    return row ? parseJson<T>(row.value_json) : undefined
+    const value = row ? parseJson<T>(row.value_json) : undefined
+    if (cacheable) {
+      const perDb = gateConfigCache.get(this.db) ?? new Map<string, { at: number; value: unknown }>()
+      perDb.set(key, { at: this.now(), value })
+      gateConfigCache.set(this.db, perDb)
+    }
+    return value
   }
 
   async appendAudit(event: AuditEvent): Promise<void> {

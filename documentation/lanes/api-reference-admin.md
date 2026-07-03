@@ -8,13 +8,13 @@
 
 ## Conventions
 
-Admin routes use the MVP admin token or an admin session derived from it after first-run setup completes. They never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. Admin routes do not implement a dedicated Origin-header gate; bearer/admin authentication is the route guard. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+Admin routes accept the bootstrap admin bearer token until Cloudflare Access is provisioned; once Access configuration is stored, every human admin request must carry a valid Access JWT, and bearer credentials work only during break-glass recovery. "Admin authentication" below means this guard. Admin routes never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity, and do not implement a dedicated Origin-header gate. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-009](../../sdd/spec/security.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
 ## Endpoints
 
 ### GET /
 
-Serves the state-gated Admin UI shell: the setup wizard while setup is open, the sign-in view once locked, and the sectioned operator dashboard after sign-in.
+Serves the state-gated Admin UI shell: the setup wizard until setup completes, and the sectioned operator dashboard on the custom domain afterwards. After completion, non-custom-domain hostnames receive a console-moved page instead (or the recovery wizard while break-glass is active).
 
 ```http
 GET /
@@ -30,9 +30,9 @@ GET /
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Admin UI shell with anti-framing headers, pre-rendered into the setup wizard while setup is open and the sign-in view once locked; the shell loads without a bearer token. `HEAD` returns the same status and headers. | HTML. |
+| `200` | Admin UI shell with anti-framing headers, pre-rendered from host and setup phase (wizard until complete, dashboard on the custom domain, moved page elsewhere); the shell loads without a bearer token. `HEAD` returns the same status and headers. | HTML. |
 
-**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md), [REQ-ADM-011](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md), [REQ-ADM-011](../../sdd/spec/setup-admin.md), [REQ-ADM-014](../../sdd/spec/setup-admin.md)
 
 ### GET /admin
 
@@ -271,6 +271,130 @@ POST /admin/custom-domain/validate
 
 **Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md)
 
+### POST /admin/setup/domain
+
+Provisions DNS and Worker routing for the wizard's domain step and advances the setup phase to `domain_ready`. Same request/response contract as `POST /admin/custom-domain/validate`.
+
+```http
+POST /admin/setup/domain
+```
+
+**Authentication:** admin authentication
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `hostname`; optional `zoneId`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Domain provisioned and stored; setup phase advances to `domain_ready`. | Same shape as `POST /admin/custom-domain/validate`. |
+| `400` | Hostname is missing/invalid, or supplied zone ID is invalid. | `{ "valid": false, "hostname"?: string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `409` | Existing DNS records conflict with the Worker route target. | `{ "error": "dns_record_conflict", "hostname": string }` |
+| `503` | Runtime Cloudflare account, Worker URL, or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
+
+**Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-012](../../sdd/spec/setup-admin.md)
+
+### POST /admin/setup/access
+
+Provisions the Access application and admin-email allow policy for the provisioned custom domain, plus machine-path bypass coverage, and advances the setup phase to `access_ready`.
+
+```http
+POST /admin/setup/access
+```
+
+**Authentication:** admin authentication
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `emails` (array of strings; trimmed, lowercased, deduplicated, validated as email addresses).
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Access application, allow policy, and machine-path bypass provisioned; config stored; phase advances to `access_ready`. | `{ "ok": true, "teamDomain": string, "hostname": string, "consoleUrl": string }` |
+| `400` | No valid email supplied. | `{ "error": "invalid_emails", "requestId": string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `409` | Custom domain step has not completed yet. | `{ "error": "custom_domain_required", "requestId": string }` |
+| `503` | Runtime Cloudflare account or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
+
+**Implements:** [REQ-ADM-012](../../sdd/spec/setup-admin.md), [REQ-ADM-011](../../sdd/spec/setup-admin.md)
+
+### POST /admin/setup/complete
+
+Finishes setup: locks the bootstrap origin, records break-glass consumption when recovery was active, and audits completion.
+
+```http
+POST /admin/setup/complete
+```
+
+**Authentication:** admin authentication
+
+**Origin check:** n/a
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Setup phase becomes `complete`; the bootstrap origin locks to the console-moved page. | `{ "ok": true, "customDomain"?: string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `409` | Access provisioning has not completed yet. | `{ "error": "setup_incomplete", "phase": string, "requestId": string }` |
+
+**Implements:** [REQ-ADM-013](../../sdd/spec/setup-admin.md), [REQ-ADM-014](../../sdd/spec/setup-admin.md)
+
+### GET /admin/cloudflare/zones
+
+Lists the account's zones for the wizard's domain-step selection.
+
+```http
+GET /admin/cloudflare/zones
+```
+
+**Authentication:** admin authentication
+
+**Origin check:** n/a
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Zones listed. | `{ "zones": [{ "id": string, "name": string }] }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `503` | Runtime Cloudflare account or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
+
+**Implements:** [REQ-ADM-005](../../sdd/spec/setup-admin.md)
+
+### GET /admin/cloudflare/gateway/options
+
+Lists the account's AI Gateways and the selected gateway's dynamic routes, alongside resolved provisioning defaults, for the wizard's gateway dropdowns.
+
+```http
+GET /admin/cloudflare/gateway/options?gateway=<id>
+```
+
+**Authentication:** admin authentication
+
+**Origin check:** n/a
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Gateways and routes listed. | `{ "gateways": [...], "routes": [...], "defaults": { "accountId": string, "gatewayId": string, "providerName": string, "routeName": string, "publicModel": string } }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `503` | Runtime Cloudflare account or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
+
+**Implements:** [REQ-GWY-005](../../sdd/spec/gateway.md)
+
 ### POST /admin/profiles/rollout
 
 Stores a versioned profile rollout percentage.
@@ -405,5 +529,8 @@ POST /admin/agent-version
 | Admin routes | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Installer routes | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/installers.ts::INSTALLER_ANCHORS` <!-- @impl: packages/router-worker/src/installers.ts::INSTALLER_ANCHORS --> |
 | Gateway sync | [gateway.md](../../sdd/spec/gateway.md) | `packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS` <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CLOUDFLARE_API_ANCHORS --> |
+| Access verification | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/access.ts::ACCESS_ANCHORS` <!-- @impl: packages/router-worker/src/access.ts::ACCESS_ANCHORS --> |
+| Access provisioning | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/access-provisioning.ts::ACCESS_PROVISIONING_ANCHORS` <!-- @impl: packages/router-worker/src/access-provisioning.ts::ACCESS_PROVISIONING_ANCHORS --> |
+| Setup phases | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/setup-state.ts::SETUP_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/setup-state.ts::SETUP_STATE_ANCHORS --> |
 | Mesh rotation | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
 | Agent versions | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS` <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> |

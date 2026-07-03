@@ -40,8 +40,8 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## Control plane lifecycle
 
-1. Admin opens `/` or `/admin`; the Worker pre-renders the guided setup wizard while setup is open and the sign-in view once setup is locked, and first-run setup completes in the browser. ([REQ-ADM-001](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md)) ([REQ-ADM-011](../../sdd/spec/setup-admin.md))
-2. Admin configures AI Gateway provider and route automation from the wizard's Gateway step or the dashboard Routing section. ([REQ-GWY-003](../../sdd/spec/gateway.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
+1. Admin opens `/` or `/admin` on the bootstrap origin; the Worker pre-renders the guided wizard, which claims the deployment, provisions the custom domain from the account's zones, and provisions Cloudflare Access (admin-email allow policy plus machine-path bypass) before handing off to the custom domain. Setup advances through `claimed` → `domain_ready` → `access_ready` → `complete` phases stored in `router_config` (`packages/router-worker/src/setup-state.ts`); after completion the bootstrap origin serves only a console-moved page. ([REQ-ADM-011](../../sdd/spec/setup-admin.md)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md)) ([REQ-ADM-014](../../sdd/spec/setup-admin.md))
+2. Admin connects AI Gateway from the wizard's Gateway step — gateway and route dropdowns populated from the live account, with one-click default provisioning — or later from the dashboard Routing section. ([REQ-GWY-005](../../sdd/spec/gateway.md)) ([REQ-GWY-003](../../sdd/spec/gateway.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
 3. Admin creates a one-time setup token from the wizard's enrollment step or the dashboard Nodes section. ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
 4. Node operator runs the generated install command. ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
 5. Node agent claims the token and starts heartbeat. ([REQ-NODE-002](../../sdd/spec/node-agent.md))
