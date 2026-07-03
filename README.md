@@ -21,9 +21,21 @@ The mesh pools the capacity you have. A request lands on one stable Gateway rout
 
 ## How it works
 
-```
-OpenAI client ──▶ Cloudflare AI Gateway ──▶ Worker router ──▶ ready node ──▶ mesh-llm
-     (stable route)        (one alias)      (D1 + DO scheduler)   (WARP-private)   (local GPU)
+```mermaid
+flowchart LR
+    client["OpenAI-compatible<br/>client"]
+    subgraph edge["Cloudflare edge (public)"]
+        gateway["AI Gateway<br/>one stable alias"]
+        router["Worker router<br/>D1 · DO scheduler"]
+    end
+    subgraph priv["Your private network (WARP)"]
+        node["Ready node"]
+        llm["mesh-llm<br/>local GPU"]
+    end
+    provider["External provider<br/>OpenAI · Anthropic · ..."]
+
+    client --> gateway --> router --> node --> llm
+    gateway -.->|fails over when local capacity is short| provider
 ```
 
 - Clients call one public model alias such as `mesh-default`, and the Gateway route stays fixed as nodes come and go.
