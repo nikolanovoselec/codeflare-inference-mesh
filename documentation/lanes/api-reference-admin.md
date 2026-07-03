@@ -8,7 +8,7 @@
 
 ## Conventions
 
-Admin routes accept the bootstrap admin bearer token until Cloudflare Access is provisioned; once Access configuration is stored, every human admin request must carry a valid Access JWT, and bearer credentials work only during break-glass recovery. "Admin authentication" below means this guard. Once Access is configured, each verified caller resolves to a console **role** — `admin` (full control) or read-only `user` — by matching the caller's Access groups and email against the configured admin and user sets; "any console role" below means the reader guard that both roles pass, while "admin authentication" additionally requires the `admin` role (see [security.md](security.md#role-based-console-access)). Admin routes never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity, and do not implement a dedicated Origin-header gate. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-009](../../sdd/spec/security.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+Admin routes accept the bootstrap admin bearer token until Cloudflare Access is provisioned; once Access configuration is stored, every human admin request must carry a valid Access JWT, and bearer credentials work only during break-glass recovery. "Admin authentication" below means this guard. Once Access is configured, each verified caller resolves to a console **role** — `admin` or read-only `user` — from their Access groups and email ([security.md](security.md#role-based-console-access)); "any console role" below means the reader guard both roles pass, while "admin authentication" requires the `admin` role. Admin routes never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity, and do not implement a dedicated Origin-header gate. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-009](../../sdd/spec/security.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
 ## Endpoints
 
@@ -193,9 +193,9 @@ POST /admin/playground/chat
 | --- | --- | --- |
 | `200` | Upstream response streamed back to the caller. | Event-stream / JSON pass-through from the AI Gateway route. |
 | `401` | No valid console role resolved for the caller. | Error object. |
-| `503` | The AI Gateway route is not configured yet. | Error object. |
+| `409` | The AI Gateway route is not configured yet. | `{ "error": "gateway_not_configured", "requestId": string }` |
 
-**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/setup-tokens
 

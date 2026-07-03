@@ -246,7 +246,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Acceptance Criteria:**
 
-1. A verified identity whose email or Access group is in the admin set resolves to the admin role. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 resolves the admin role from an admin group and lets admins write config) -->
+1. A verified identity whose email (matched case-insensitively) or Access group is in the admin set resolves to the admin role. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 resolves the admin role from an admin group and lets admins write config) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 matches configured emails case-insensitively against the JWT claim) -->
 2. A caller matching both the admin and user sets resolves to admin because the higher privilege wins. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 grants admin when a caller matches both admin and user groups) -->
 3. A verified identity matching only the user set resolves to the read-only user role. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 resolves the read-only user role from a user group and refuses config writes) -->
 4. When no user set is configured, any verified non-admin identity resolves to the read-only user role. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 grants read-only user to any verified identity when no user set is configured) -->
@@ -258,7 +258,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Priority:** P0
 
-**Dependencies:** [REQ-SEC-009](#req-sec-009-cloudflare-access-admin-authentication), [REQ-ADM-012](setup-admin.md#req-adm-012-domain-and-access-provisioning)
+**Dependencies:** [REQ-SEC-009](#req-sec-009-cloudflare-access-admin-authentication)
 
 **Verification:** Automated test
 

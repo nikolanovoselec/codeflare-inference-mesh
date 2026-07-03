@@ -295,13 +295,23 @@ async function handleAdminLogin(request: Request, deps: RouterDeps, requestId: s
 async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
+  const isAdmin = viewer.role === 'admin'
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
-  const setup = await deps.store.getConfig('setup_state')
-  const gateway = await deps.store.getConfig('cloudflare_gateway')
-  const customDomain = await deps.store.getConfig('custom_domain')
   const desiredVersion = await desiredAgentVersion(deps.store)
-  const redacted = redactSecrets({ nodes, profiles, profileReadiness: profileReadiness(profiles, nodes), setup, gateway, customDomain, audit: await deps.store.listAudit(20), generatedAt: now }) as Record<string, unknown>
+  // The read-only user role sees the live operational picture (nodes, profiles,
+  // mesh health, throughput) but never configuration state or the admin action log:
+  // those carry gateway/domain internals and operator emails and stay admin-only,
+  // matching the server-enforced surface for the user role (REQ-ADM-017).
+  const adminOnly = isAdmin
+    ? {
+        setup: await deps.store.getConfig('setup_state'),
+        gateway: await deps.store.getConfig('cloudflare_gateway'),
+        customDomain: await deps.store.getConfig('custom_domain'),
+        audit: await deps.store.listAudit(20)
+      }
+    : {}
+  const redacted = redactSecrets({ nodes, profiles, profileReadiness: profileReadiness(profiles, nodes), ...adminOnly, generatedAt: now }) as Record<string, unknown>
   // meshHealth is composed after redaction: its contract carries token presence/age/count
   // fields (never values), which the key-name redactor would otherwise blank out.
   return json({
@@ -719,23 +729,26 @@ interface RoleVerdict {
 async function resolveRole(request: Request, deps: RouterDeps, now: number): Promise<RoleVerdict | undefined> {
   const access = await accessConfig(deps.store)
   if (!access) {
-    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? { role: 'admin', actor: 'bootstrap' } : undefined
+    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? { role: 'admin', actor: 'admin' } : undefined
   }
   const verdict = await verifyAccessRequest(request, { teamDomain: access.teamDomain, audience: access.audience }, now, deps.jwksFetcher ?? fetch)
   if (verdict.outcome === 'absent' && await breakGlassActive(deps.store, deps.env)) {
-    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? { role: 'admin', actor: 'bootstrap' } : undefined
+    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? { role: 'admin', actor: 'admin' } : undefined
   }
   if (verdict.outcome !== 'verified') return undefined
   const email = verdict.email
+  // Configured emails are lowercased at capture; match the JWT claim case-insensitively
+  // so a mixed-case IdP email never locks out the admin it names.
+  const emailKey = email.toLowerCase()
   const adminEmails = access.adminEmails ?? []
   const adminGroups = access.adminGroups ?? []
   const userEmails = access.userEmails ?? []
   const userGroups = access.userGroups ?? []
   const groups = await fetchIdentityGroups(request, access.teamDomain, deps.identityFetcher ?? deps.jwksFetcher ?? fetch)
   const inAny = (names: readonly string[]) => names.length > 0 && names.some((name) => groups.includes(name))
-  if (adminEmails.includes(email) || inAny(adminGroups)) return { role: 'admin', actor: email }
+  if (adminEmails.includes(emailKey) || inAny(adminGroups)) return { role: 'admin', actor: email }
   const usersOpen = userEmails.length === 0 && userGroups.length === 0
-  if (usersOpen || userEmails.includes(email) || inAny(userGroups)) return { role: 'user', actor: email }
+  if (usersOpen || userEmails.includes(emailKey) || inAny(userGroups)) return { role: 'user', actor: email }
   return undefined
 }
 

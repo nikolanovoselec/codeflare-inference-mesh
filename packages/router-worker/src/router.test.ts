@@ -360,7 +360,7 @@ describe('router worker behavioral contracts', () => {
     expect(JSON.parse(harness.byId('gateway-output').textContent) as { deploymentId: string }).toEqual({ deploymentId: 'deployment-a' })
   })
 
-  it('REQ-GWY-003 gateway sync mints and reveals a fresh provider key, rotating prior ones', async () => {
+  it('REQ-GWY-002 gateway sync mints and reveals a fresh provider key, rotating prior ones', async () => {
     // ProviderKeyAtGatewayTestAnchor
     const gatewayResult = { providerId: 'prov', providerSlug: 'custom-inference-mesh-router-test', routeId: 'route', routeVersionId: 'ver', deploymentId: 'dep', gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default', workerUrl: 'https://mesh.example.com', manualProviderKeyRequired: true as const, providerTokenInstructions: 'x' }
     const { router, store } = routerFixture({
@@ -518,7 +518,8 @@ describe('router worker behavioral contracts', () => {
     expect(response.status).toBe(201)
     expect(body.setupToken).toMatch(/^setup_/)
     expect(body.expiresAt).toBe(1_700_086_400_000)
-    expect(activeSetupTokens.map((token) => token.expiresAt)).toEqual([1_700_086_400_000, 1_700_086_400_000])
+    // Claim no longer mints a setup token, so only the one created here is active.
+    expect(activeSetupTokens.map((token) => token.expiresAt)).toEqual([1_700_086_400_000])
   })
 
   it('REQ-GWY-004 REQ-SEC-001 prevents credential classes from crossing route families', async () => {
@@ -1920,6 +1921,36 @@ describe('Access-first setup and host gating contracts', () => {
     expect((await whoami.json() as { role: string }).role).toBe('user')
     const write = await router(new Request(`https://${HOST}/admin/setup/access`, { method: 'POST', headers, body: JSON.stringify({ adminEmails: ['x@example.com'] }) }))
     expect(write.status).toBe(401)
+  })
+
+  it('REQ-SEC-010 matches configured emails case-insensitively against the JWT claim', async () => {
+    const { router, key } = await roleRouter(roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }), [])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'Admin@Example.com' }))
+    const whoami = await router(new Request(`https://${HOST}/admin/whoami`, { headers: { 'cf-access-jwt-assertion': jwt } }))
+    expect((await whoami.json() as { role: string }).role).toBe('admin')
+  })
+
+  it('REQ-ADM-017 withholds configuration state and the audit log from the read-only user role', async () => {
+    resetJwksCache()
+    const key = await accessTestKey('key-1')
+    const store = new MemoryStore()
+    await store.putConfig('access_config', roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }))
+    await store.putConfig('cloudflare_gateway', { gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default' })
+    await store.putConfig('custom_domain', { hostname: HOST, status: 'provisioned' })
+    await store.putConfig('setup_state', { phase: 'complete', completedAt: NOW })
+    const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]), identityFetcher: identityGroupsFetcher([]) })
+
+    const userStatus = await router(new Request(`https://${HOST}/admin/status`, { headers: { 'cf-access-jwt-assertion': await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' })) } }))
+    const userBody = await userStatus.json() as Record<string, unknown>
+    expect(userBody.viewerRole).toBe('user')
+    expect(userBody.nodes).toBeDefined()
+    for (const field of ['gateway', 'customDomain', 'setup', 'audit']) expect(userBody[field]).toBeUndefined()
+
+    const adminStatus = await router(new Request(`https://${HOST}/admin/status`, { headers: { 'cf-access-jwt-assertion': await signAccessJwt(key, accessPayload({ email: 'admin@example.com' })) } }))
+    const adminBody = await adminStatus.json() as Record<string, unknown>
+    expect(adminBody.viewerRole).toBe('admin')
+    expect(adminBody.gateway).toBeDefined()
+    expect(adminBody.audit).toBeDefined()
   })
 
   it('REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase', async () => {
