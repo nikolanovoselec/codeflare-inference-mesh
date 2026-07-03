@@ -295,3 +295,21 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'mesh-default', messages: [{ role: 'user', content: 'hello mesh' }] })
   })
 })
+
+describe('read-only user console contracts', () => {
+  it('REQ-ADM-017 hides every configuration section and keeps only overview and playground for the user role', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ viewerRole: 'user' }) })
+    expect(harness.byId('overview').hidden).toBe(false)
+    expect(harness.byId('playground').hidden).toBe(false)
+    for (const section of ['nodes', 'models', 'routing', 'mesh', 'settings']) {
+      expect(harness.byId(section).hidden).toBe(true)
+    }
+  })
+
+  it('REQ-ADM-017 leaves every section visible for the admin role', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ viewerRole: 'admin' }) })
+    for (const section of ['overview', 'nodes', 'models', 'routing', 'mesh', 'playground', 'settings']) {
+      expect(harness.byId(section).hidden).toBe(false)
+    }
+  })
+})

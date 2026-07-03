@@ -49,6 +49,7 @@ function routerFixture(overrides: Partial<Parameters<typeof createRouter>[0]> = 
       ...(overrides.releasesFetcher !== undefined ? { releasesFetcher: overrides.releasesFetcher } : {}),
       ...(overrides.accessClient !== undefined ? { accessClient: overrides.accessClient } : {}),
       ...(overrides.jwksFetcher !== undefined ? { jwksFetcher: overrides.jwksFetcher } : {}),
+      ...(overrides.identityFetcher !== undefined ? { identityFetcher: overrides.identityFetcher } : {}),
       ...(overrides.playgroundFetcher !== undefined ? { playgroundFetcher: overrides.playgroundFetcher } : {})
     })
   }
@@ -205,7 +206,7 @@ describe('router worker behavioral contracts', () => {
     expect(config.confirm).toEqual({ attribute: 'data-confirm', disarmMs: 5000 })
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
-    const serverControls = ['first-run-setup', 'setup-domain', 'access-email-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'playground-send', 'sign-out']
+    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'playground-send', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
@@ -307,7 +308,7 @@ describe('router worker behavioral contracts', () => {
     expect(html).toContain('id="connect-signin"')
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-zone-select="true"')
-    expect(html).toContain('data-email-chips="true"')
+    expect(html).toContain('data-ident-chips="admin"')
     expect(html).toMatch(/id="wizard-handoff" hidden/)
     expect(html).toMatch(/id="wizard-gateway-empty" hidden/)
     expect(reviewStep).toContain('data-action="setup-complete"')
@@ -1858,6 +1859,69 @@ describe('Access-first setup and host gating contracts', () => {
     expect(created?.actor).toBe('operator@example.com')
   })
 
+  function roleConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2', adminEmails: [], adminGroups: [], userEmails: [], userGroups: [], usersOpen: false, ...overrides }
+  }
+
+  function identityGroupsFetcher(groups: readonly string[]): typeof fetch {
+    return (async () => Response.json({ groups })) as typeof fetch
+  }
+
+  async function roleRouter(config: Record<string, unknown>, groups: readonly string[]) {
+    resetJwksCache()
+    const key = await accessTestKey('key-1')
+    const store = new MemoryStore()
+    await store.putConfig('access_config', config)
+    const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]), identityFetcher: identityGroupsFetcher(groups) })
+    return { router, key }
+  }
+
+  it('REQ-SEC-010 resolves the admin role from an admin group and lets admins write config', async () => {
+    const { router, key } = await roleRouter(roleConfig({ adminGroups: ['admins'], userGroups: ['viewers'] }), ['admins', 'viewers'])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'person@example.com' }))
+    const headers = { 'cf-access-jwt-assertion': jwt }
+    const whoami = await router(new Request(`https://${HOST}/admin/whoami`, { headers }))
+    expect(whoami.status).toBe(200)
+    expect(await whoami.json()).toMatchObject({ role: 'admin', actor: 'person@example.com' })
+    const status = await router(new Request(`https://${HOST}/admin/status`, { headers }))
+    expect((await status.json() as { viewerRole: string }).viewerRole).toBe('admin')
+  })
+
+  it('REQ-SEC-010 resolves the read-only user role from a user group and refuses config writes', async () => {
+    const { router, key } = await roleRouter(roleConfig({ adminGroups: ['admins'], userGroups: ['viewers'] }), ['viewers'])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
+    const headers = { 'cf-access-jwt-assertion': jwt }
+    const status = await router(new Request(`https://${HOST}/admin/status`, { headers }))
+    expect(status.status).toBe(200)
+    expect((await status.json() as { viewerRole: string }).viewerRole).toBe('user')
+    const write = await router(new Request(`https://${HOST}/admin/setup/access`, { method: 'POST', headers, body: JSON.stringify({ adminEmails: ['x@example.com'] }) }))
+    expect(write.status).toBe(401)
+  })
+
+  it('REQ-SEC-010 grants admin when a caller matches both admin and user groups', async () => {
+    const { router, key } = await roleRouter(roleConfig({ adminGroups: ['admins'], userGroups: ['viewers'] }), ['admins', 'viewers'])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'both@example.com' }))
+    const whoami = await router(new Request(`https://${HOST}/admin/whoami`, { headers: { 'cf-access-jwt-assertion': jwt } }))
+    expect((await whoami.json() as { role: string }).role).toBe('admin')
+  })
+
+  it('REQ-SEC-010 refuses a verified identity that matches neither set when a user set is configured', async () => {
+    const { router, key } = await roleRouter(roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }), [])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'stranger@example.com' }))
+    const status = await router(new Request(`https://${HOST}/admin/status`, { headers: { 'cf-access-jwt-assertion': jwt } }))
+    expect(status.status).toBe(401)
+  })
+
+  it('REQ-SEC-010 grants read-only user to any verified identity when no user set is configured', async () => {
+    const { router, key } = await roleRouter(roleConfig({ adminEmails: ['admin@example.com'], usersOpen: true }), [])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'anyone@example.com' }))
+    const headers = { 'cf-access-jwt-assertion': jwt }
+    const whoami = await router(new Request(`https://${HOST}/admin/whoami`, { headers }))
+    expect((await whoami.json() as { role: string }).role).toBe('user')
+    const write = await router(new Request(`https://${HOST}/admin/setup/access`, { method: 'POST', headers, body: JSON.stringify({ adminEmails: ['x@example.com'] }) }))
+    expect(write.status).toBe(401)
+  })
+
   it('REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase', async () => {
     const store = new MemoryStore()
     await store.putConfig('setup_state', { phase: 'claimed', claimedAt: NOW })
@@ -1901,35 +1965,76 @@ describe('Access-first setup and host gating contracts', () => {
     expect(body.zones.map((zone) => zone.id)).toEqual(['zone-1', 'zone-2'])
   })
 
-  it('REQ-ADM-012 provisions Access from captured emails and stores the config', async () => {
+  it('REQ-ADM-012 REQ-SEC-010 provisions Access from captured admin and user identities and stores the role config', async () => {
     const store = new MemoryStore()
     await store.putConfig('custom_domain', provisionedDomain())
     await store.putConfig('setup_state', { phase: 'domain_ready' })
-    const provisionCalls: { accountId: string; hostname: string; adminEmails: readonly string[] }[] = []
+    const provisionCalls: {
+      accountId: string; hostname: string; workerName: string
+      adminEmails: readonly string[]; adminGroups: readonly string[]; userEmails: readonly string[]; userGroups: readonly string[]
+    }[] = []
     const { router } = routerFixture({
       store,
-      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1' },
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', WORKER_NAME: 'router' },
       accessClient: {
-        provisionAccess: async (input: { accountId: string; hostname: string; adminEmails: readonly string[] }) => {
+        provisionAccess: async (input) => {
           provisionCalls.push(input)
-          return { teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2', adminEmails: input.adminEmails }
+          return {
+            teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2',
+            adminEmails: input.adminEmails, adminGroups: input.adminGroups,
+            userEmails: input.userEmails, userGroups: input.userGroups,
+            usersOpen: input.userEmails.length === 0 && input.userGroups.length === 0
+          }
         }
       }
     })
     const invalid = await router(new Request('https://router.example.workers.dev/admin/setup/access', {
-      method: 'POST', headers: bearer('admin-secret'), body: JSON.stringify({ emails: [] })
+      method: 'POST', headers: bearer('admin-secret'), body: JSON.stringify({ adminEmails: [], adminGroups: [] })
     }))
     expect(invalid.status).toBe(400)
 
     const response = await router(new Request('https://router.example.workers.dev/admin/setup/access', {
-      method: 'POST', headers: bearer('admin-secret'), body: JSON.stringify({ emails: ['operator@example.com', 'sre@example.com'] })
+      method: 'POST', headers: bearer('admin-secret'), body: JSON.stringify({
+        adminEmails: ['operator@example.com'], adminGroups: ['ops-admins'],
+        userEmails: ['viewer@example.com'], userGroups: ['ops-viewers']
+      })
     }))
     expect(response.status).toBe(200)
-    expect(provisionCalls[0]).toEqual({ accountId: 'acct-1', hostname: HOST, adminEmails: ['operator@example.com', 'sre@example.com'] })
-    expect(await store.getConfig('access_config')).toMatchObject({ teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2' })
+    expect(provisionCalls[0]).toMatchObject({
+      accountId: 'acct-1', hostname: HOST, workerName: 'router',
+      adminEmails: ['operator@example.com'], adminGroups: ['ops-admins'],
+      userEmails: ['viewer@example.com'], userGroups: ['ops-viewers']
+    })
+    expect(await store.getConfig('access_config')).toMatchObject({ teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2', usersOpen: false })
     expect(await store.getConfig('setup_state')).toMatchObject({ phase: 'access_ready' })
-    const body = await response.json() as { consoleUrl: string }
+    const body = await response.json() as { consoleUrl: string; usersOpen: boolean }
     expect(body.consoleUrl).toBe(`https://${HOST}/admin`)
+    expect(body.usersOpen).toBe(false)
+  })
+
+  it('REQ-SEC-010 opens Access to everyone as read-only when no user set is configured', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('custom_domain', provisionedDomain())
+    await store.putConfig('setup_state', { phase: 'domain_ready' })
+    const { router } = routerFixture({
+      store,
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1' },
+      accessClient: {
+        provisionAccess: async (input) => ({
+          teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2',
+          adminEmails: input.adminEmails, adminGroups: input.adminGroups,
+          userEmails: input.userEmails, userGroups: input.userGroups,
+          usersOpen: input.userEmails.length === 0 && input.userGroups.length === 0
+        })
+      }
+    })
+    const response = await router(new Request('https://router.example.workers.dev/admin/setup/access', {
+      method: 'POST', headers: bearer('admin-secret'), body: JSON.stringify({ adminEmails: ['operator@example.com'] })
+    }))
+    expect(response.status).toBe(200)
+    const body = await response.json() as { usersOpen: boolean }
+    expect(body.usersOpen).toBe(true)
+    expect(await store.getConfig('access_config')).toMatchObject({ usersOpen: true })
   })
 
   it('REQ-ADM-012 refuses Access provisioning before the custom domain is provisioned', async () => {
@@ -2070,37 +2175,43 @@ describe('Access-first setup and host gating contracts', () => {
     expect(harness.byId('step-access').hidden).toBe(false)
   })
 
-  it('REQ-ADM-011 access step collects email chips and provisioning reveals the handoff link', async () => {
+  it('REQ-ADM-011 REQ-SEC-010 access step collects admin and user identities and reveals the handoff link', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/'))).text()
     const harness = adminUiHarness(html, async (path) => {
-      if (path === '/admin/setup/access') return Response.json({ ok: true, teamDomain: 'team.cloudflareaccess.com', hostname: 'mesh.example.com', consoleUrl: 'https://mesh.example.com/admin' })
+      if (path === '/admin/setup/access') return Response.json({ ok: true, teamDomain: 'team.cloudflareaccess.com', hostname: 'mesh.example.com', consoleUrl: 'https://mesh.example.com/admin', usersOpen: false })
       return Response.json({ zones: [] })
     })
     harness.run()
 
-    harness.byId('wizard-access-email').value = 'not-an-email'
-    await harness.clickAction('access-email-add')
-    expect(harness.byId('wizard-access-emails').children).toHaveLength(0)
+    // A malformed '@' string is neither a valid email nor a group name.
+    harness.byId('wizard-admin-ident').value = 'not@an'
+    await harness.clickAction('access-ident-add', { identInput: 'wizard-admin-ident', identList: 'admin' })
+    expect(harness.byId('wizard-admin-idents').children).toHaveLength(0)
     expect(harness.byId('wizard-access-output').classList.contains('is-error')).toBe(true)
 
-    harness.byId('wizard-access-email').value = ' Operator@Example.com '
-    await harness.clickAction('access-email-add')
-    harness.byId('wizard-access-email').value = 'operator@example.com'
-    await harness.clickAction('access-email-add')
-    harness.byId('wizard-access-email').value = 'sre@example.com'
-    await harness.clickAction('access-email-add')
-    const chips = harness.byId('wizard-access-emails').children
-    expect(chips.map((chip) => chip.dataset.emailChip)).toEqual(['operator@example.com', 'sre@example.com'])
+    // Emails normalize + dedupe; group names (no '@') are accepted verbatim.
+    harness.byId('wizard-admin-ident').value = ' Operator@Example.com '
+    await harness.clickAction('access-ident-add', { identInput: 'wizard-admin-ident', identList: 'admin' })
+    harness.byId('wizard-admin-ident').value = 'operator@example.com'
+    await harness.clickAction('access-ident-add', { identInput: 'wizard-admin-ident', identList: 'admin' })
+    harness.byId('wizard-admin-ident').value = 'ops-admins'
+    await harness.clickAction('access-ident-add', { identInput: 'wizard-admin-ident', identList: 'admin' })
+    expect(harness.byId('wizard-admin-idents').children.map((chip) => chip.dataset.identChip)).toEqual(['operator@example.com', 'ops-admins'])
+
+    harness.byId('wizard-user-ident').value = 'viewer@example.com'
+    await harness.clickAction('access-ident-add', { identInput: 'wizard-user-ident', identList: 'user' })
+    expect(harness.byId('wizard-user-idents').children.map((chip) => chip.dataset.identChip)).toEqual(['viewer@example.com'])
 
     const remove = elementStub({ tagName: 'button' })
-    remove.dataset.removeEmail = 'sre@example.com'
+    remove.dataset.removeIdent = 'ops-admins'
+    remove.dataset.removeKind = 'admin'
     await harness.click(remove)
-    expect(harness.byId('wizard-access-emails').children.map((chip) => chip.dataset.emailChip)).toEqual(['operator@example.com'])
+    expect(harness.byId('wizard-admin-idents').children.map((chip) => chip.dataset.identChip)).toEqual(['operator@example.com'])
 
     await harness.clickAction('setup-access', { out: 'wizard-access-output' })
     const accessCall = harness.fetchCalls.find((call) => call.path === '/admin/setup/access')
-    expect(JSON.parse(String(accessCall?.init?.body))).toEqual({ emails: ['operator@example.com'] })
+    expect(JSON.parse(String(accessCall?.init?.body))).toEqual({ adminEmails: ['operator@example.com'], adminGroups: [], userEmails: ['viewer@example.com'], userGroups: [] })
     expect(harness.byId('wizard-handoff').hidden).toBe(false)
     expect(harness.byId('wizard-handoff-link').attributes.href).toBe('https://mesh.example.com/admin')
   })

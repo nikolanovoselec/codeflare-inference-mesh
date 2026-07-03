@@ -96,6 +96,25 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const sheet = byId('more-sheet');
     if (sheet) sheet.hidden = true;
   };
+  let appliedRole;
+  const userAllowedSections = ['overview', 'playground'];
+  function applyRole(role) {
+    if (role === appliedRole) return;
+    appliedRole = role;
+    const restricted = role === 'user';
+    config.nav.sections.forEach((section) => {
+      const restrict = restricted && userAllowedSections.indexOf(section) < 0;
+      const panel = byId(section);
+      if (panel) panel.hidden = restrict;
+      const navItem = document.querySelector('[data-nav="' + section + '"]');
+      if (navItem) navItem.hidden = restrict;
+    });
+    config.nav.mobileTabs.forEach((tab) => {
+      const item = document.querySelector('[data-tab="' + tab + '"]');
+      if (item) item.hidden = restricted && (tab === 'nodes' || tab === 'mesh');
+    });
+    if (restricted) setSection('overview');
+  }
   const schedulePoll = () => {
     if (pollTimer) clearTimeout(pollTimer);
     pollTimer = setTimeout(() => {
@@ -673,6 +692,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     });
   }
   function renderStatus(status) {
+    applyRole(status.viewerRole || 'admin');
     const nodes = Array.isArray(status.nodes) ? status.nodes : [];
     const profiles = Array.isArray(status.profiles) ? status.profiles : [];
     const readiness = Array.isArray(status.profileReadiness) ? status.profileReadiness : [];
@@ -770,23 +790,31 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
 
   // --- wizard data loaders ----------------------------------------------------
-  let accessEmails = [];
-  const emailPattern = /^[^ @]+@[^ @]+[.][^ @]+$/;
-  function renderEmailChips() {
-    const list = byId('wizard-access-emails');
+  let accessIdents = { admin: [], user: [] };
+  const isGroupIdent = (value) => value.indexOf('@') < 0;
+  const looksLikeEmail = (value) => {
+    const at = value.indexOf('@');
+    if (at <= 0 || at !== value.lastIndexOf('@')) return false;
+    const dot = value.indexOf('.', at + 1);
+    return dot > at + 1 && dot < value.length - 1;
+  };
+  function renderIdentChips(kind) {
+    const list = byId('wizard-' + kind + '-idents');
     if (!list) return;
     list.textContent = '';
-    accessEmails.forEach((email) => {
+    accessIdents[kind].forEach((ident) => {
       const item = document.createElement('li');
       item.className = 'email-chip';
-      item.setAttribute('data-email-chip', email);
+      item.setAttribute('data-ident-chip', ident);
+      item.setAttribute('data-ident-kind', kind);
       const text = document.createElement('span');
-      text.textContent = email;
+      text.textContent = ident + (isGroupIdent(ident) ? ' (group)' : '');
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'btn btn-ghost';
       remove.textContent = 'Remove';
-      remove.setAttribute('data-remove-email', email);
+      remove.setAttribute('data-remove-ident', ident);
+      remove.setAttribute('data-remove-kind', kind);
       item.append(text, remove);
       list.appendChild(item);
     });
@@ -925,7 +953,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'setup-domain': 'wizard-domain-output',
     'setup-access': 'wizard-access-output',
     'setup-complete': 'wizard-complete-output',
-    'access-email-add': 'wizard-access-output',
+    'access-ident-add': 'wizard-access-output',
     'gateway-provision-default': 'wiz-gateway-output',
     'status-refresh': 'overview-tiles',
     'setup-token-create': 'setup-token-output',
@@ -951,14 +979,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const next = byId('wizard-continue-connect');
       if (next) next.hidden = false;
       toast('Deployment claimed');
-    } else if (action === 'access-email-add') {
-      const input = byId('wizard-access-email');
-      const email = input && input.value ? input.value.trim().toLowerCase() : '';
-      if (!email || !emailPattern.test(email)) { setOutput('wizard-access-output', 'Enter a valid email address.', true); return; }
-      if (accessEmails.indexOf(email) < 0) accessEmails.push(email);
+    } else if (action === 'access-ident-add') {
+      const kind = button.dataset.identList === 'user' ? 'user' : 'admin';
+      const input = byId(button.dataset.identInput || '');
+      const raw = input && input.value ? input.value.trim() : '';
+      const ident = isGroupIdent(raw) ? raw : raw.toLowerCase();
+      if (!ident || (!isGroupIdent(ident) && !looksLikeEmail(ident))) { setOutput('wizard-access-output', 'Enter an email address or an Access group name.', true); return; }
+      if (accessIdents[kind].indexOf(ident) < 0) accessIdents[kind].push(ident);
       if (input) input.value = '';
       setOutput('wizard-access-output', '');
-      renderEmailChips();
+      renderIdentChips(kind);
     } else if (action === 'setup-domain') {
       const zoneSelect = byId('wizard-domain-zone');
       const body = await request('/admin/setup/domain', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('wizard-domain-hostname'), zoneId: zoneSelect && zoneSelect.value ? zoneSelect.value : '' }) });
@@ -966,7 +996,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       toast('Custom domain provisioned');
       setWizardStep('access');
     } else if (action === 'setup-access') {
-      const body = await request('/admin/setup/access', { method: 'POST', headers: headers(true), body: JSON.stringify({ emails: accessEmails }) });
+      const split = (list) => ({ emails: list.filter((value) => !isGroupIdent(value)), groups: list.filter(isGroupIdent) });
+      const admins = split(accessIdents.admin);
+      const users = split(accessIdents.user);
+      const body = await request('/admin/setup/access', { method: 'POST', headers: headers(true), body: JSON.stringify({ adminEmails: admins.emails, adminGroups: admins.groups, userEmails: users.emails, userGroups: users.groups }) });
       setOutput(out, body);
       const link = byId('wizard-handoff-link');
       if (link && body.consoleUrl) link.setAttribute('href', body.consoleUrl);
@@ -1064,8 +1097,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   document.addEventListener('click', async (event) => {
     const copy = event.target.closest('[data-copy]');
     if (copy) { await navigator.clipboard.writeText(copy.dataset.copy || ''); toast('Copied'); return; }
-    const removeEmail = event.target.closest('[data-remove-email]');
-    if (removeEmail) { accessEmails = accessEmails.filter((email) => email !== removeEmail.dataset.removeEmail); renderEmailChips(); return; }
+    const removeIdent = event.target.closest('[data-remove-ident]');
+    if (removeIdent) { const kind = removeIdent.dataset.removeKind === 'user' ? 'user' : 'admin'; accessIdents[kind] = accessIdents[kind].filter((value) => value !== removeIdent.dataset.removeIdent); renderIdentChips(kind); return; }
     const wizardNext = event.target.closest('[data-wizard-next]');
     if (wizardNext) { wizardMove(1); return; }
     const wizardBack = event.target.closest('[data-wizard-back]');

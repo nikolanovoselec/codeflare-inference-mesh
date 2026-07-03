@@ -15,6 +15,10 @@ export interface AccessConfigRecord {
   readonly appId: string
   readonly bypassAppId: string
   readonly adminEmails: readonly string[]
+  readonly adminGroups: readonly string[]
+  readonly userEmails: readonly string[]
+  readonly userGroups: readonly string[]
+  readonly usersOpen: boolean
 }
 
 export const SETUP_STATE_KEY = 'setup_state'

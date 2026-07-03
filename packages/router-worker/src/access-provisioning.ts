@@ -5,7 +5,11 @@ export const MACHINE_BYPASS_SUFFIXES = ['/v1/*', '/node/*', '/health', '/install
 export interface AccessProvisionRequest {
   readonly accountId: string
   readonly hostname: string
+  readonly workerName: string
   readonly adminEmails: readonly string[]
+  readonly adminGroups: readonly string[]
+  readonly userEmails: readonly string[]
+  readonly userGroups: readonly string[]
 }
 
 export interface AccessProvisionResult {
@@ -14,6 +18,11 @@ export interface AccessProvisionResult {
   readonly appId: string
   readonly bypassAppId: string
   readonly adminEmails: readonly string[]
+  readonly adminGroups: readonly string[]
+  readonly userEmails: readonly string[]
+  readonly userGroups: readonly string[]
+  /** True when no user set is configured: the console is open to everyone in the Access org as read-only. */
+  readonly usersOpen: boolean
 }
 
 interface AccessAppRecord {
@@ -29,6 +38,11 @@ interface AccessPolicyRecord {
   readonly decision?: string
 }
 
+interface AccessGroupRecord {
+  readonly id: string
+  readonly name?: string
+}
+
 interface OrganizationRecord {
   readonly auth_domain?: string
 }
@@ -37,13 +51,36 @@ export class CloudflareAccessClient {
   constructor(private readonly token: string, private readonly fetcher: typeof fetch = fetch) {}
 
   /**
-   * Upserts by managed name, so re-runs are idempotent: a failed run (for
-   * example a rejected bypass policy) is recovered by retrying, which
-   * converges on the same managed applications instead of duplicating them.
+   * REQ-ADM-012 / REQ-SEC-010: provision the console Access app with an allow
+   * policy covering the admin AND user sets. Emails become managed Access groups
+   * (`<worker>-admins` / `<worker>-users`); named groups are referenced by the
+   * operator's existing Access groups. When no user set is configured the policy
+   * opens to everyone — the mesh's own role check then grants read-only `user` to
+   * whoever passes Access. Upserts by managed name so re-runs are idempotent.
    */
   async provisionAccess(input: AccessProvisionRequest): Promise<AccessProvisionResult> {
     const teamDomain = await this.teamDomain(input.accountId)
     const apps = await this.listApps(input.accountId)
+    const groups = await this.listGroups(input.accountId)
+
+    const adminGroupIds: string[] = []
+    const userGroupIds: string[] = []
+    if (input.adminEmails.length > 0) adminGroupIds.push(await this.upsertGroup(input.accountId, groups, `${input.workerName}-admins`, input.adminEmails))
+    if (input.userEmails.length > 0) userGroupIds.push(await this.upsertGroup(input.accountId, groups, `${input.workerName}-users`, input.userEmails))
+    for (const name of input.adminGroups) {
+      const id = groups.find((group) => group.name === name)?.id
+      if (id) adminGroupIds.push(id)
+    }
+    for (const name of input.userGroups) {
+      const id = groups.find((group) => group.name === name)?.id
+      if (id) userGroupIds.push(id)
+    }
+    if (adminGroupIds.length === 0) throw new Error('No admin Access group resolved: configure at least one admin email or an existing Access group name')
+
+    const usersOpen = input.userEmails.length === 0 && input.userGroups.length === 0
+    const include = usersOpen
+      ? [{ everyone: {} }]
+      : [...adminGroupIds, ...userGroupIds].map((id) => ({ group: { id } }))
 
     const adminApp = await this.upsertApp(input.accountId, apps, {
       name: ADMIN_APP_NAME,
@@ -53,9 +90,9 @@ export class CloudflareAccessClient {
       skip_interstitial: true
     })
     await this.upsertPolicy(input.accountId, adminApp.app.id, {
-      name: 'Allow admins',
+      name: 'Allow console',
       decision: 'allow',
-      include: input.adminEmails.map((email) => ({ email: { email } }))
+      include
     })
 
     const bypassApp = await this.upsertApp(input.accountId, apps, {
@@ -86,7 +123,11 @@ export class CloudflareAccessClient {
       audience,
       appId: adminApp.app.id,
       bypassAppId: bypassApp.app.id,
-      adminEmails: input.adminEmails
+      adminEmails: input.adminEmails,
+      adminGroups: input.adminGroups,
+      userEmails: input.userEmails,
+      userGroups: input.userGroups,
+      usersOpen
     }
   }
 
@@ -100,6 +141,28 @@ export class CloudflareAccessClient {
   private async listApps(accountId: string): Promise<readonly AccessAppRecord[]> {
     const result = await this.accountRequest<unknown>(accountId, '/access/apps', 'GET')
     return Array.isArray(result) ? result as readonly AccessAppRecord[] : []
+  }
+
+  private async listGroups(accountId: string): Promise<readonly AccessGroupRecord[]> {
+    const result = await this.accountRequest<unknown>(accountId, '/access/groups', 'GET')
+    return Array.isArray(result) ? result as readonly AccessGroupRecord[] : []
+  }
+
+  /** Upsert a managed email Access group by name, returning its id. */
+  private async upsertGroup(
+    accountId: string,
+    groups: readonly AccessGroupRecord[],
+    name: string,
+    emails: readonly string[]
+  ): Promise<string> {
+    const body = { name, include: emails.map((email) => ({ email: { email } })) }
+    const existing = groups.find((group) => group.name === name)
+    if (existing) {
+      await this.accountRequest(accountId, `/access/groups/${existing.id}`, 'PUT', body)
+      return existing.id
+    }
+    const created = await this.accountRequest<AccessGroupRecord>(accountId, '/access/groups', 'POST', body)
+    return created.id
   }
 
   private async upsertApp(
@@ -146,5 +209,6 @@ export class CloudflareAccessClient {
 }
 
 export const ACCESS_PROVISIONING_ANCHORS = {
-  REQ_ADM_012: 'REQ-ADM-012'
+  REQ_ADM_012: 'REQ-ADM-012',
+  REQ_SEC_010: 'REQ-SEC-010'
 } as const

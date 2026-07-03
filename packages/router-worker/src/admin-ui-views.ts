@@ -84,13 +84,18 @@ ${output({ id: 'wizard-domain-output', kind: 'setup-domain', pre: true })}`
   })
   const access = wizardStep({
     step: 'access',
-    title: 'Gate admin access',
-    description: 'Cloudflare Access protects the custom domain. Add the emails allowed to sign in; each gets a one-time PIN at login, so there are no tokens to manage.',
+    title: 'Gate access with roles',
+    description: 'Cloudflare Access protects the custom domain. Add admin and \u2014 optionally \u2014 user identities: an email or an existing Access group name for each. Admins reconfigure everything; users get a read-only console with the playground. Each person signs in with a one-time PIN.',
     body: `<div class="form-grid">
-${field({ id: 'wizard-access-email', label: 'Admin email', control: textInput({ id: 'wizard-access-email', name: 'adminEmail', inputmode: 'email', placeholder: 'e.g. you@example.com' }) })}
+${field({ id: 'wizard-admin-ident', label: 'Admin email or Access group', control: textInput({ id: 'wizard-admin-ident', name: 'adminIdent', placeholder: 'you@example.com or an Access group name' }), hint: 'Admins see and reconfigure everything. At least one is required.' })}
 </div>
-<div class="wizard-actions">${button({ action: 'access-email-add', label: 'Add email' })}</div>
-<ul class="email-chips" id="wizard-access-emails" data-email-chips="true"></ul>
+<div class="wizard-actions"><button class="btn" type="button" data-action="access-ident-add" data-ident-input="wizard-admin-ident" data-ident-list="admin">Add admin</button></div>
+<ul class="email-chips" id="wizard-admin-idents" data-ident-chips="admin"></ul>
+<div class="form-grid">
+${field({ id: 'wizard-user-ident', label: 'User email or Access group (optional)', control: textInput({ id: 'wizard-user-ident', name: 'userIdent', placeholder: 'read-only: dashboard, stats, playground' }), hint: 'Leave empty to let anyone who can pass Access read the console.' })}
+</div>
+<div class="wizard-actions"><button class="btn" type="button" data-action="access-ident-add" data-ident-input="wizard-user-ident" data-ident-list="user">Add user</button></div>
+<ul class="email-chips" id="wizard-user-idents" data-ident-chips="user"></ul>
 <div class="wizard-actions"><button class="btn btn-ghost" type="button" data-wizard-back>Back</button>${button({ action: 'setup-access', label: 'Enable Access', variant: 'primary', out: 'wizard-access-output' })}</div>
 ${output({ id: 'wizard-access-output', kind: 'setup-access', pre: true })}
 <div class="handoff-panel" id="wizard-handoff" hidden>

@@ -238,6 +238,34 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 ---
 
+### REQ-SEC-010: Role-based console access
+
+**Intent:** Access admits more than one kind of person, so the mesh must map each verified identity to an admin or a read-only user by comparing the caller's Access groups and email against the operator-configured sets — granting the higher privilege on overlap and refusing anyone who matches neither when a user set exists.
+
+**Applies To:** Admin, User
+
+**Acceptance Criteria:**
+
+1. A verified identity whose email or Access group is in the admin set resolves to the admin role. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 resolves the admin role from an admin group and lets admins write config) -->
+2. A caller matching both the admin and user sets resolves to admin because the higher privilege wins. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 grants admin when a caller matches both admin and user groups) -->
+3. A verified identity matching only the user set resolves to the read-only user role. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 resolves the read-only user role from a user group and refuses config writes) -->
+4. When no user set is configured, any verified non-admin identity resolves to the read-only user role. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 grants read-only user to any verified identity when no user set is configured) -->
+5. When a user set is configured, a verified identity matching neither set is refused. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 refuses a verified identity that matches neither set when a user set is configured) -->
+6. Caller Access groups come from a live get-identity lookup restricted to the team's `cloudflareaccess.com` domain. <!-- @impl: packages/router-worker/src/access.ts::fetchIdentityGroups --> <!-- @test: packages/router-worker/src/access.test.ts (REQ-SEC-010 returns the caller Access groups from get-identity using the request JWT) --> <!-- @test: packages/router-worker/src/access.test.ts (REQ-SEC-010 refuses to call a team domain outside cloudflareaccess.com) -->
+7. Setup opens the Access allow policy to everyone when no user set is configured. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-SEC-010 opens the console policy to everyone when no user set is configured) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-SEC-009](#req-sec-009-cloudflare-access-admin-authentication), [REQ-ADM-012](setup-admin.md#req-adm-012-domain-and-access-provisioning)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/security.md](../../documentation/lanes/security.md)

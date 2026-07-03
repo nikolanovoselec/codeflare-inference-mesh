@@ -3,6 +3,7 @@ import {
   JWKS_CACHE_TTL_MS,
   JWKS_REFRESH_MIN_AGE_MS,
   extractAccessJwt,
+  fetchIdentityGroups,
   resetJwksCache,
   verifyAccessRequest,
   type AccessConfig
@@ -171,5 +172,47 @@ describe('access JWT verification contracts', () => {
     const later = await signJwt(key, validPayload({ exp: Math.floor((NOW + JWKS_CACHE_TTL_MS) / 1000) + 3600 }))
     await verifyAccessRequest(headerRequest(later), CONFIG, NOW + JWKS_CACHE_TTL_MS + 1000, fetcher)
     expect(calls).toHaveLength(2)
+  })
+})
+
+// AccessIdentityGroupsTestAnchor
+describe('Access identity group resolution', () => {
+  function identityFetcher(response: unknown, calls: { url: string; cookie: string | null }[] = [], ok = true): typeof fetch {
+    return (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init)
+      calls.push({ url: request.url, cookie: request.headers.get('cookie') })
+      return Response.json(response, { status: ok ? 200 : 500 })
+    }) as typeof fetch
+  }
+
+  it('REQ-SEC-010 returns the caller Access groups from get-identity using the request JWT', async () => {
+    const calls: { url: string; cookie: string | null }[] = []
+    const fetcher = identityFetcher({ groups: ['platform-admins', { name: 'platform-viewers', id: 'g2' }, { id: 'g3' }] }, calls)
+    const groups = await fetchIdentityGroups(headerRequest('jwt-token'), TEAM_DOMAIN, fetcher)
+    expect(groups).toEqual(['platform-admins', 'platform-viewers', 'g3'])
+    expect(calls[0]?.url).toBe(`https://${TEAM_DOMAIN}/cdn-cgi/access/get-identity`)
+    expect(calls[0]?.cookie).toContain('jwt-token')
+  })
+
+  it('REQ-SEC-010 returns no groups when the request carries no Access JWT', async () => {
+    const calls: { url: string; cookie: string | null }[] = []
+    const fetcher = identityFetcher({ groups: ['platform-admins'] }, calls)
+    const groups = await fetchIdentityGroups(new Request('https://mesh.example.com/admin'), TEAM_DOMAIN, fetcher)
+    expect(groups).toEqual([])
+    expect(calls).toHaveLength(0)
+  })
+
+  it('REQ-SEC-010 refuses to call a team domain outside cloudflareaccess.com', async () => {
+    const calls: { url: string; cookie: string | null }[] = []
+    const fetcher = identityFetcher({ groups: ['x'] }, calls)
+    const groups = await fetchIdentityGroups(headerRequest('jwt-token'), 'evil.example.com', fetcher)
+    expect(groups).toEqual([])
+    expect(calls).toHaveLength(0)
+  })
+
+  it('REQ-SEC-010 returns no groups when get-identity fails', async () => {
+    const fetcher = identityFetcher({ groups: ['x'] }, [], false)
+    const groups = await fetchIdentityGroups(headerRequest('jwt-token'), TEAM_DOMAIN, fetcher)
+    expect(groups).toEqual([])
   })
 })

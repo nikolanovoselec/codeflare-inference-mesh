@@ -200,8 +200,8 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 1. While setup is open, the Worker origin renders the setup wizard as the entry view with a visible step indicator. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
 2. The wizard sequences connectivity check, custom-domain provisioning, and Access provisioning before handoff, then Gateway connection, first-node enrollment, and review on the custom domain, in that order. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
 3. Completing the connectivity step claims the deployment, reveals the one-time bootstrap access token to save, and establishes the admin session for the remaining steps. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 reveals only the one-time bootstrap token at claim) -->
-4. The Access step requires at least one admin email before provisioning and accepts additional emails. <!-- @impl: packages/router-worker/src/router.ts::handleSetupAccess --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-012 provisions Access from captured emails and stores the config) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 access step collects email chips and provisioning reveals the handoff link) -->
-5. After Access provisioning succeeds, the wizard presents the custom-domain console link as the continuation point. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 access step collects email chips and provisioning reveals the handoff link) -->
+4. The Access step requires at least one admin email or admin group before provisioning and accepts optional user emails and user groups. <!-- @impl: packages/router-worker/src/router.ts::handleSetupAccess --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-012 REQ-SEC-010 provisions Access from captured admin and user identities and stores the role config) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 REQ-SEC-010 access step collects admin and user identities and reveals the handoff link) -->
+5. After Access provisioning succeeds, the wizard presents the custom-domain console link as the continuation point. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 REQ-SEC-010 access step collects admin and user identities and reveals the handoff link) -->
 6. Generated machine credentials render only from creation responses as one-time reveal cards with copy affordances and an explicit shown-once warning. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard) -->
 7. The Gateway connection and node enrollment steps are individually skippable, and every wizard capability remains available from the dashboard afterward. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_WIZARD --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
 
@@ -302,17 +302,43 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Access step provisions an Access application for the custom domain with an allow policy containing exactly the captured admin emails. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 creates the admin app with an allow policy containing exactly the captured emails) -->
-2. Provisioning creates bypass coverage for the provider, node, health, and installer paths so machine traffic needs no Access session. <!-- @impl: packages/router-worker/src/access-provisioning.ts::MACHINE_BYPASS_SUFFIXES --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 creates bypass coverage for machine paths with an everyone bypass policy) -->
+1. The Access step provisions an Access application for the custom domain with an allow policy gating on the admin and user identities captured during setup. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-SEC-010 gates the console app on the admin and user Access groups when a user set exists) -->
+2. Provisioning creates bypass coverage for the provider, node, health, and installer paths so machine traffic needs no Access session. <!-- @impl: packages/router-worker/src/access-provisioning.ts::MACHINE_BYPASS_SUFFIXES --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 creates the admin app and bypass coverage for machine paths with an everyone bypass policy) -->
 3. When the bypass policy cannot be created, provisioning removes the bypass application rather than leaving machine paths blocked. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 removes the bypass app when its bypass policy cannot be created) -->
-4. Provisioning durably stores the Access team domain, application audience, and application identifiers for verification and re-runs. <!-- @impl: packages/router-worker/src/router.ts::handleSetupAccess --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-012 provisions Access from captured emails and stores the config) --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 returns the team domain, audience, and application identifiers for durable storage) -->
+4. Provisioning durably stores the Access team domain, application audience, application identifiers, and captured role sets for verification and re-runs. <!-- @impl: packages/router-worker/src/router.ts::handleSetupAccess --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-012 REQ-SEC-010 provisions Access from captured admin and user identities and stores the role config) --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 returns the team domain, audience, identifiers, and captured role sets for durable storage) -->
 5. Re-running provisioning updates the existing managed applications instead of duplicating them. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 updates existing managed applications instead of duplicating them) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-ADM-005](#req-adm-005-custom-domain-handoff), [REQ-SEC-009](security.md#req-sec-009-cloudflare-access-admin-authentication)
+**Dependencies:** [REQ-ADM-005](#req-adm-005-custom-domain-handoff), [REQ-SEC-009](security.md#req-sec-009-cloudflare-access-admin-authentication), [REQ-SEC-010](security.md#req-sec-010-role-based-console-access)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-017: Role-based console surface
+
+**Intent:** The console must show admins the full control surface and show read-only users only what they may look at, so a user who passes Access can observe the mesh without ever reaching a configuration control.
+
+**Applies To:** Admin, User
+
+**Acceptance Criteria:**
+
+1. `GET /admin/status` reports the caller's resolved console role so the client can tailor the surface. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 resolves the read-only user role from a user group and refuses config writes) -->
+2. `GET /admin/whoami` returns the caller's role and actor identity. <!-- @impl: packages/router-worker/src/router.ts::handleWhoami --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 resolves the admin role from an admin group and lets admins write config) -->
+3. Under the user role the console hides every configuration section and exposes only the overview and playground. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-017 hides every configuration section and keeps only overview and playground for the user role) -->
+4. Configuration-mutating admin endpoints refuse the user role at the server regardless of the client surface. <!-- @impl: packages/router-worker/src/router.ts::requireAdmin --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-010 resolves the read-only user role from a user group and refuses config writes) -->
+5. Under the admin role every console section and capability remains available. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-017 leaves every section visible for the admin role) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-ADM-012](#req-adm-012-domain-and-access-provisioning), [REQ-SEC-010](security.md#req-sec-010-role-based-console-access)
 
 **Verification:** Automated test
 

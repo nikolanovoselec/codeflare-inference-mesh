@@ -1,4 +1,4 @@
-import { verifyAccessRequest } from './access'
+import { fetchIdentityGroups, verifyAccessRequest } from './access'
 import { CloudflareAccessClient, type AccessProvisionRequest, type AccessProvisionResult } from './access-provisioning'
 import { adminUiHtml, type AdminUiState } from './admin-ui'
 import { consoleMovedHtml } from './admin-ui-views'
@@ -35,6 +35,7 @@ export interface RouterDeps {
   readonly jwksFetcher?: typeof fetch
   readonly releasesFetcher?: typeof fetch
   readonly playgroundFetcher?: typeof fetch
+  readonly identityFetcher?: typeof fetch
 }
 
 export function createRouter(deps: RouterDeps): (request: Request) => Promise<Response> {
@@ -87,6 +88,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
       if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
       if (url.pathname === '/admin/playground/chat' && request.method === 'POST') return await handlePlaygroundChat(request, deps, id, now())
+      if (url.pathname === '/admin/whoami' && request.method === 'GET') return await handleWhoami(request, deps, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
@@ -291,8 +293,8 @@ async function handleAdminLogin(request: Request, deps: RouterDeps, requestId: s
 }
 
 async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const viewer = await requireUser(request, deps, now)
+  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
   const setup = await deps.store.getConfig('setup_state')
@@ -304,6 +306,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   // fields (never values), which the key-name redactor would otherwise blank out.
   return json({
     ...redacted,
+    viewerRole: viewer.role,
     meshHealth: await meshHealth(deps.store, deps.env, profiles, nodes, now),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
   }, 200, requestId)
@@ -500,9 +503,16 @@ async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps,
  * the response back behind fresh headers so no upstream gateway header reaches
  * the browser.
  */
+/** REQ-ADM-017: lets the console render the admin vs read-only user surface. */
+async function handleWhoami(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const viewer = await requireUser(request, deps, now)
+  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
+  return json({ role: viewer.role, actor: viewer.actor }, 200, requestId)
+}
+
 async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const viewer = await requireUser(request, deps, now)
+  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readOptionalObject<{ model?: unknown; messages?: unknown }>(request)
   const messages = Array.isArray(body?.messages) ? body!.messages : []
   const gateway = await deps.store.getConfig<GatewaySyncResult>('cloudflare_gateway')
@@ -567,6 +577,18 @@ function isEmailLike(value: string): boolean {
   return dot > 0 && dot < domain.length - 1
 }
 
+function normalizeEmailList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === 'string').map((item) => item.trim().toLowerCase()).filter(isEmailLike))]
+    : []
+}
+
+function normalizeGroupList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter((item) => item.length > 0))]
+    : []
+}
+
 function publicWorkerOrigin(configuredUrl: string | undefined, requestUrl: string): string {
   return usableWorkerBaseUrl(configuredUrl) ?? new URL(requestUrl).origin
 }
@@ -592,22 +614,25 @@ async function getOrCreateUpstreamToken(deps: RouterDeps): Promise<string> {
 async function handleSetupAccess(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ emails?: unknown }>(request)
-  const emails = Array.isArray(body?.emails)
-    ? [...new Set(body.emails.filter((email): email is string => typeof email === 'string').map((email) => email.trim().toLowerCase()).filter(isEmailLike))]
-    : []
-  if (emails.length === 0) return json({ error: 'invalid_emails', requestId }, 400, requestId)
+  const body = await readJson<{ adminEmails?: unknown; adminGroups?: unknown; userEmails?: unknown; userGroups?: unknown; emails?: unknown }>(request)
+  const adminEmails = normalizeEmailList(body?.adminEmails ?? body?.emails)
+  const adminGroups = normalizeGroupList(body?.adminGroups)
+  const userEmails = normalizeEmailList(body?.userEmails)
+  const userGroups = normalizeGroupList(body?.userGroups)
+  if (adminEmails.length === 0 && adminGroups.length === 0) return json({ error: 'admin_required', requestId }, 400, requestId)
   const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
   if (domain?.status !== 'provisioned') return json({ error: 'custom_domain_required', requestId }, 409, requestId)
   const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
+  const workerName = deps.env.WORKER_NAME ?? 'codeflare-inference-mesh-router'
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!accountId || (!token && !deps.accessClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.accessClient ?? new CloudflareAccessClient(token!)
-  const result = await client.provisionAccess({ accountId, hostname: domain.hostname, adminEmails: emails })
+  const result = await client.provisionAccess({ accountId, hostname: domain.hostname, workerName, adminEmails, adminGroups, userEmails, userGroups })
   await deps.store.putConfig(ACCESS_CONFIG_KEY, result)
-  await advancePhase(deps.store, 'access_ready')
-  await deps.store.appendAudit({ id: requestId, type: 'access_provisioned', at: now, actor, target: domain.hostname, detail: { adminEmails: emails, appId: result.appId, bypassAppId: result.bypassAppId } })
-  return json({ ok: true, teamDomain: result.teamDomain, hostname: domain.hostname, consoleUrl: `https://${domain.hostname}/admin` }, 200, requestId)
+  // Advancing only pre-completion keeps day-two role edits from resetting the phase.
+  if ((await setupPhase(deps.store)) !== 'complete') await advancePhase(deps.store, 'access_ready')
+  await deps.store.appendAudit({ id: requestId, type: 'access_provisioned', at: now, actor, target: domain.hostname, detail: { adminEmails, adminGroups, userEmails, userGroups, usersOpen: result.usersOpen, appId: result.appId, bypassAppId: result.bypassAppId } })
+  return json({ ok: true, teamDomain: result.teamDomain, hostname: domain.hostname, consoleUrl: `https://${domain.hostname}/admin`, usersOpen: result.usersOpen }, 200, requestId)
 }
 
 async function handleSetupComplete(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -676,19 +701,53 @@ async function recordBreakGlassEntry(deps: RouterDeps, requestId: string, now: n
   await deps.store.appendAudit({ id: requestId, type: 'break_glass_entered', at: now, actor: 'recovery', detail: {} })
 }
 
+type ConsoleRole = 'admin' | 'user'
+
+interface RoleVerdict {
+  readonly role: ConsoleRole
+  readonly actor: string
+}
+
 /**
- * REQ-SEC-009: once Access config exists, admin identity comes from the
- * Access JWT; bearer credentials remain for bootstrap and break-glass only.
+ * REQ-SEC-009 / REQ-SEC-010: resolve the caller's console role. During bootstrap
+ * (no Access config) or break-glass the bearer bootstrap token is admin. Once
+ * Access is configured, identity comes from the verified Access JWT plus a live
+ * group lookup: an admin group/email match is admin (admin wins over user);
+ * otherwise a user group/email match — or any verified identity when no user set
+ * is configured — is a read-only user; anyone else is refused.
  */
-async function requireAdmin(request: Request, deps: RouterDeps, now: number): Promise<string | undefined> {
+async function resolveRole(request: Request, deps: RouterDeps, now: number): Promise<RoleVerdict | undefined> {
   const access = await accessConfig(deps.store)
-  if (!access) return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? 'admin' : undefined
-  const verdict = await verifyAccessRequest(request, { teamDomain: access.teamDomain, audience: access.audience }, now, deps.jwksFetcher ?? fetch)
-  if (verdict.outcome === 'verified') return verdict.email
-  if (verdict.outcome === 'absent' && await breakGlassActive(deps.store, deps.env)) {
-    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? 'admin' : undefined
+  if (!access) {
+    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? { role: 'admin', actor: 'bootstrap' } : undefined
   }
+  const verdict = await verifyAccessRequest(request, { teamDomain: access.teamDomain, audience: access.audience }, now, deps.jwksFetcher ?? fetch)
+  if (verdict.outcome === 'absent' && await breakGlassActive(deps.store, deps.env)) {
+    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? { role: 'admin', actor: 'bootstrap' } : undefined
+  }
+  if (verdict.outcome !== 'verified') return undefined
+  const email = verdict.email
+  const adminEmails = access.adminEmails ?? []
+  const adminGroups = access.adminGroups ?? []
+  const userEmails = access.userEmails ?? []
+  const userGroups = access.userGroups ?? []
+  const groups = await fetchIdentityGroups(request, access.teamDomain, deps.identityFetcher ?? deps.jwksFetcher ?? fetch)
+  const inAny = (names: readonly string[]) => names.length > 0 && names.some((name) => groups.includes(name))
+  if (adminEmails.includes(email) || inAny(adminGroups)) return { role: 'admin', actor: email }
+  const usersOpen = userEmails.length === 0 && userGroups.length === 0
+  if (usersOpen || userEmails.includes(email) || inAny(userGroups)) return { role: 'user', actor: email }
   return undefined
+}
+
+/** Admin-only gate: config writes require the admin role. */
+async function requireAdmin(request: Request, deps: RouterDeps, now: number): Promise<string | undefined> {
+  const verdict = await resolveRole(request, deps, now)
+  return verdict?.role === 'admin' ? verdict.actor : undefined
+}
+
+/** Reader gate: any verified console role (admin or user) may read status + use the playground. */
+async function requireUser(request: Request, deps: RouterDeps, now: number): Promise<RoleVerdict | undefined> {
+  return await resolveRole(request, deps, now)
 }
 
 async function authenticateKind(request: Request, deps: RouterDeps, kind: CredentialKind, now: number, envSecret?: string): Promise<boolean> {
@@ -831,8 +890,10 @@ export const ROUTER_ANCHORS = {
   REQ_ADM_013: 'REQ-ADM-013',
   REQ_ADM_014: 'REQ-ADM-014',
   REQ_ADM_016: 'REQ-ADM-016',
+  REQ_ADM_017: 'REQ-ADM-017',
   REQ_GWY_005: 'REQ-GWY-005',
   REQ_SEC_002: 'REQ-SEC-002',
   REQ_SEC_006: 'REQ-SEC-006',
-  REQ_SEC_009: 'REQ-SEC-009'
+  REQ_SEC_009: 'REQ-SEC-009',
+  REQ_SEC_010: 'REQ-SEC-010'
 } as const

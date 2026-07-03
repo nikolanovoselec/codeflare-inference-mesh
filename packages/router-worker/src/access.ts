@@ -56,6 +56,33 @@ export async function verifyAccessRequest(
   return email ? { outcome: 'verified', email } : { outcome: 'invalid' }
 }
 
+/**
+ * REQ-SEC-010: resolve the caller's Cloudflare Access group memberships via a
+ * live get-identity call, so group removal revokes a role on the next request.
+ * Ported from codeflare's resolveUserAccessGroup, including the SSRF guard that
+ * the team domain is a *.cloudflareaccess.com host before it is interpolated
+ * into the outbound URL. Returns [] on any failure (fail-closed).
+ */
+export async function fetchIdentityGroups(request: Request, teamDomain: string, fetcher: typeof fetch = fetch): Promise<readonly string[]> {
+  const token = extractAccessJwt(request)
+  if (!token) return []
+  if (!/^[a-z0-9-]+\.cloudflareaccess\.com$/i.test(teamDomain)) return []
+  try {
+    const response = await fetcher(`https://${teamDomain}/cdn-cgi/access/get-identity`, {
+      method: 'GET',
+      headers: { cookie: `${ACCESS_COOKIE}=${token}` }
+    })
+    if (!response.ok) return []
+    const identity = await response.json() as { groups?: unknown }
+    const groups = Array.isArray(identity.groups) ? identity.groups : []
+    return groups
+      .map((group) => typeof group === 'string' ? group : group && typeof group === 'object' ? String((group as { name?: unknown; id?: unknown }).name ?? (group as { id?: unknown }).id ?? '') : '')
+      .filter((name) => name.length > 0)
+  } catch {
+    return []
+  }
+}
+
 async function verifyAccessJwt(jwt: string, config: AccessConfig, now: number, fetcher: typeof fetch): Promise<string | null> {
   const segments = jwt.split('.')
   if (segments.length !== 3) return null
