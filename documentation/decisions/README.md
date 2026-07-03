@@ -24,7 +24,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Status:** Accepted
 
-**Context:** AD-002 chose bearer-token classes over Cloudflare Access for the MVP so Gateway and node traffic needed no Zero Trust wiring. That left humans managing a long-lived admin token on a public `workers.dev` URL. Cloudflare Access provides email One-time PIN login with zero identity-provider setup, and the sibling codeflare product already runs wizard-provisioned Access applications with machine-path bypass policies in production.
+**Context:** AD-002 chose bearer-token classes over Cloudflare Access for the MVP so Gateway and node traffic needed no Zero Trust wiring. That left humans managing a long-lived admin token on a public `workers.dev` URL. Cloudflare Access provides email One-time PIN login with zero identity-provider setup, and the sibling codeflare product already runs wizard-provisioned Access applications with machine-path bypass policies in production. <!-- @impl: packages/router-worker/src/access.ts::verifyAccessRequest -->
 
 **Decision:** The setup wizard provisions the custom domain, an Access application with an admin-email allow policy, and bypass coverage for machine paths. After handoff the Worker verifies the Access JWT for every human admin request, the bootstrap origin serves only a moved page, and machine traffic rides the custom domain through the bypass. Bearer admin credentials survive only for bootstrap and wrangler-secret break-glass recovery; provider, node, setup, and upstream token classes are unchanged.
 

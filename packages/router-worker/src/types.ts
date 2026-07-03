@@ -218,6 +218,7 @@ export interface RouterEnv {
   readonly AI_GATEWAY_PROVIDER_NAME?: string
   readonly WORKER_NAME?: string
   readonly ADMIN_RECOVERY_TOKEN?: string
+  readonly SETUP_REOPEN?: string
   readonly MESH_STATE_KEY?: string
   readonly WORKER_BASE_URL?: string
   readonly GITHUB_REPOSITORY?: string

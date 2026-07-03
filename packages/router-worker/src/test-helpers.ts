@@ -134,6 +134,42 @@ function retiredDefaultProfiles(existing: readonly ModelProfile[], defaults: rea
     .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
 }
 
+export interface AccessTestKey {
+  readonly privateKey: CryptoKey
+  readonly jwk: JsonWebKey & { readonly kid: string }
+}
+
+/** Real RS256 keypair for Access-JWT behavioral tests. */
+export async function accessTestKey(kid: string): Promise<AccessTestKey> {
+  const pair = await crypto.subtle.generateKey(
+    { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+    true,
+    ['sign', 'verify']
+  ) as CryptoKeyPair
+  const exported = await crypto.subtle.exportKey('jwk', pair.publicKey) as JsonWebKey
+  return { privateKey: pair.privateKey, jwk: { ...exported, kid } }
+}
+
+export async function signAccessJwt(key: AccessTestKey, payload: Record<string, unknown>): Promise<string> {
+  const encode = (value: unknown): string => accessBase64Url(new TextEncoder().encode(JSON.stringify(value)))
+  const signingInput = `${encode({ alg: 'RS256', kid: key.jwk.kid })}.${encode(payload)}`
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key.privateKey, new TextEncoder().encode(signingInput))
+  return `${signingInput}.${accessBase64Url(new Uint8Array(signature))}`
+}
+
+export function accessJwksFetcher(keys: readonly JsonWebKey[], calls: string[] = []): typeof fetch {
+  return (async (input: RequestInfo | URL) => {
+    calls.push(new Request(input).url)
+    return Response.json({ keys })
+  }) as typeof fetch
+}
+
+function accessBase64Url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
 export function nodeFixture(overrides: Partial<NodeRecord> = {}): NodeRecord {
   return {
     id: 'node-a',

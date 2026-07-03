@@ -39,8 +39,8 @@ export interface MeshHealthEntry {
   lastError?: string
 }
 
-export async function handleMeshRotate(request: Request, store: Store, env: MeshStateEnv, now: number): Promise<Response> {
-  if (!(await adminAuthorized(request, store, env, now))) return meshJson({ error: 'unauthorized' }, 401)
+export async function handleMeshRotate(request: Request, store: Store, env: MeshStateEnv, now: number, preauthorizedActor?: string): Promise<Response> {
+  if (!preauthorizedActor && !(await adminAuthorized(request, store, env, now))) return meshJson({ error: 'unauthorized' }, 401)
   const profileId = await rotateProfileId(request)
   if (!profileId) return meshJson({ error: 'invalid_rotate' }, 400)
   const key = await meshKeyFor(env)
@@ -50,7 +50,7 @@ export async function handleMeshRotate(request: Request, store: Store, env: Mesh
   const stored = (await loadMeshState(store, key, profileId)) ?? emptyMeshState(0)
   const next = emptyMeshState(stored.rotation + 1)
   await saveMeshState(store, key, profileId, next)
-  await appendMeshAudit(store, 'mesh_token_rotated', 'admin', profileId, now, {
+  await appendMeshAudit(store, 'mesh_token_rotated', preauthorizedActor ?? 'admin', profileId, now, {
     profileId,
     rotation: next.rotation,
     ...(stored.meshId !== null ? { meshId: stored.meshId } : {})

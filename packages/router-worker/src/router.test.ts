@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_ACTIONS, ADMIN_UI_CONFIRM, ADMIN_UI_NAV, ADMIN_UI_RESPONSIVE, ADMIN_UI_SETUP_LOCKED_FEEDBACK, ADMIN_UI_VIEWS, ADMIN_UI_WIZARD } from './admin-ui'
 import { ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
 import { adminUiHarness, elementStub } from './admin-ui-harness'
+import { resetJwksCache } from './access'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan } from './installers'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { createRouter } from './router'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
-import { MemoryStore, nodeFixture } from './test-helpers'
+import { accessJwksFetcher, accessTestKey, MemoryStore, nodeFixture, signAccessJwt } from './test-helpers'
 import type { ModelProfile, NodeRecord } from './types'
 
 function makeMesh(capture: { request?: Request } = {}): Fetcher {
@@ -45,7 +46,9 @@ function routerFixture(overrides: Partial<Parameters<typeof createRouter>[0]> = 
         ...overrides.env
       },
       ...(overrides.cloudflareClient !== undefined ? { cloudflareClient: overrides.cloudflareClient } : {}),
-      ...(overrides.releasesFetcher !== undefined ? { releasesFetcher: overrides.releasesFetcher } : {})
+      ...(overrides.releasesFetcher !== undefined ? { releasesFetcher: overrides.releasesFetcher } : {}),
+      ...(overrides.accessClient !== undefined ? { accessClient: overrides.accessClient } : {}),
+      ...(overrides.jwksFetcher !== undefined ? { jwksFetcher: overrides.jwksFetcher } : {})
     })
   }
 }
@@ -1721,5 +1724,257 @@ describe('router worker behavioral contracts', () => {
     expect(afterEntry?.rotation).toBe(1)
     expect(afterEntry?.tokenCount).toBe(0)
     expect(afterEntry?.secretAgeMs).toBeUndefined()
+  })
+})
+
+describe('Access-first setup and host gating contracts', () => {
+  const NOW = 1_700_000_000_000
+  const TEAM = 'example-team.cloudflareaccess.com'
+  const AUD = 'aud-mesh-admin'
+  const HOST = 'mesh.example.com'
+
+  function accessConfig(): Record<string, unknown> {
+    return { teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2', adminEmails: ['operator@example.com'] }
+  }
+
+  function provisionedDomain(): Record<string, unknown> {
+    return { hostname: HOST, zoneId: 'zone-1', zoneName: 'example.com', dnsRecordId: 'dns-1', dnsRecordType: 'CNAME', routeId: 'route-1', routePattern: `${HOST}/*`, workerName: 'router', status: 'provisioned' }
+  }
+
+  function accessPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      aud: [AUD],
+      iss: `https://${TEAM}`,
+      email: 'operator@example.com',
+      iat: Math.floor(NOW / 1000) - 60,
+      exp: Math.floor(NOW / 1000) + 3600,
+      ...overrides
+    }
+  }
+
+  it('REQ-SEC-009 requires a valid Access JWT on admin routes once access config is stored', async () => {
+    resetJwksCache()
+    const key = await accessTestKey('key-1')
+    const store = new MemoryStore()
+    await store.putConfig('access_config', accessConfig())
+    const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]) })
+
+    const bearerOnly = await router(new Request(`https://${HOST}/admin/status`, { headers: bearer('admin-secret') }))
+    expect(bearerOnly.status).toBe(401)
+
+    const jwt = await signAccessJwt(key, accessPayload())
+    const withJwt = await router(new Request(`https://${HOST}/admin/status`, { headers: { 'cf-access-jwt-assertion': jwt } }))
+    expect(withJwt.status).toBe(200)
+
+    const garbled = await router(new Request(`https://${HOST}/admin/status`, { headers: { 'cf-access-jwt-assertion': 'not-a-jwt', ...bearer('admin-secret') } }))
+    expect(garbled.status).toBe(401)
+  })
+
+  it('REQ-SEC-009 records the Access email as the audit actor for admin actions', async () => {
+    resetJwksCache()
+    const key = await accessTestKey('key-1')
+    const store = new MemoryStore()
+    await store.putConfig('access_config', accessConfig())
+    const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]) })
+    const jwt = await signAccessJwt(key, accessPayload())
+    const response = await router(new Request(`https://${HOST}/admin/setup-tokens`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt } }))
+    expect(response.status).toBe(201)
+    const audit = await store.listAudit(5)
+    const created = audit.find((event) => event.type === 'setup_token_created')
+    expect(created?.actor).toBe('operator@example.com')
+  })
+
+  it('REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('setup_state', { phase: 'claimed', claimedAt: NOW })
+    const provisionCalls: unknown[] = []
+    const { router } = routerFixture({
+      store,
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1' },
+      cloudflareClient: {
+        syncCustomProvider: async () => { throw new Error('unused') },
+        provisionCustomDomain: async (input: unknown) => {
+          provisionCalls.push(input)
+          return { hostname: HOST, zoneId: 'zone-1', zoneName: 'example.com', dnsRecordId: 'dns-1', dnsRecordType: 'CNAME' as const, routeId: 'route-1', routePattern: `${HOST}/*`, workerName: 'router', status: 'provisioned' as const }
+        }
+      }
+    })
+    const response = await router(new Request('https://router.example.workers.dev/admin/setup/domain', {
+      method: 'POST',
+      headers: bearer('admin-secret'),
+      body: JSON.stringify({ hostname: HOST })
+    }))
+    expect(response.status).toBe(200)
+    expect(provisionCalls).toHaveLength(1)
+    expect(await store.getConfig('custom_domain')).toMatchObject({ hostname: HOST, status: 'provisioned' })
+    expect(await store.getConfig('setup_state')).toMatchObject({ phase: 'domain_ready' })
+  })
+
+  it('REQ-ADM-005 lists account zones for the domain step', async () => {
+    const { router } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1' },
+      cloudflareClient: {
+        syncCustomProvider: async () => { throw new Error('unused') },
+        provisionCustomDomain: async () => { throw new Error('unused') },
+        listZones: async () => [{ id: 'zone-1', name: 'example.com' }, { id: 'zone-2', name: 'example.org' }]
+      }
+    })
+    const unauthorized = await router(new Request('https://router.example.workers.dev/admin/cloudflare/zones'))
+    expect(unauthorized.status).toBe(401)
+    const response = await router(new Request('https://router.example.workers.dev/admin/cloudflare/zones', { headers: bearer('admin-secret') }))
+    expect(response.status).toBe(200)
+    const body = await response.json() as { zones: readonly { id: string; name: string }[] }
+    expect(body.zones.map((zone) => zone.id)).toEqual(['zone-1', 'zone-2'])
+  })
+
+  it('REQ-ADM-012 provisions Access from captured emails and stores the config', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('custom_domain', provisionedDomain())
+    await store.putConfig('setup_state', { phase: 'domain_ready' })
+    const provisionCalls: { accountId: string; hostname: string; adminEmails: readonly string[] }[] = []
+    const { router } = routerFixture({
+      store,
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1' },
+      accessClient: {
+        provisionAccess: async (input: { accountId: string; hostname: string; adminEmails: readonly string[] }) => {
+          provisionCalls.push(input)
+          return { teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2', adminEmails: input.adminEmails }
+        }
+      }
+    })
+    const invalid = await router(new Request('https://router.example.workers.dev/admin/setup/access', {
+      method: 'POST', headers: bearer('admin-secret'), body: JSON.stringify({ emails: [] })
+    }))
+    expect(invalid.status).toBe(400)
+
+    const response = await router(new Request('https://router.example.workers.dev/admin/setup/access', {
+      method: 'POST', headers: bearer('admin-secret'), body: JSON.stringify({ emails: ['operator@example.com', 'sre@example.com'] })
+    }))
+    expect(response.status).toBe(200)
+    expect(provisionCalls[0]).toEqual({ accountId: 'acct-1', hostname: HOST, adminEmails: ['operator@example.com', 'sre@example.com'] })
+    expect(await store.getConfig('access_config')).toMatchObject({ teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2' })
+    expect(await store.getConfig('setup_state')).toMatchObject({ phase: 'access_ready' })
+    const body = await response.json() as { consoleUrl: string }
+    expect(body.consoleUrl).toBe(`https://${HOST}/admin`)
+  })
+
+  it('REQ-ADM-012 refuses Access provisioning before the custom domain is provisioned', async () => {
+    const { router } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1' },
+      accessClient: { provisionAccess: async () => { throw new Error('unused') } }
+    })
+    const response = await router(new Request('https://router.example.workers.dev/admin/setup/access', {
+      method: 'POST', headers: bearer('admin-secret'), body: JSON.stringify({ emails: ['operator@example.com'] })
+    }))
+    expect(response.status).toBe(409)
+  })
+
+  it('REQ-ADM-014 locks non-custom-domain hosts after setup completes', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('custom_domain', provisionedDomain())
+    await store.putConfig('setup_state', { phase: 'complete', completedAt: NOW })
+    const { router } = routerFixture({ store })
+
+    const movedPage = await router(new Request('https://router.example.workers.dev/'))
+    expect(movedPage.status).toBe(200)
+    const movedHtml = await movedPage.text()
+    expect(movedHtml).toContain(`https://${HOST}/admin`)
+    expect(movedHtml).not.toContain('admin-ui-config')
+
+    const chat = await router(new Request('https://router.example.workers.dev/v1/chat/completions', { method: 'POST', headers: bearer('provider-secret'), body: '{}' }))
+    expect(chat.status).toBe(410)
+    const heartbeat = await router(new Request('https://router.example.workers.dev/node/heartbeat', { method: 'POST', body: '{}' }))
+    expect(heartbeat.status).toBe(410)
+    const adminApi = await router(new Request('https://router.example.workers.dev/admin/status', { headers: bearer('admin-secret') }))
+    expect(adminApi.status).toBe(410)
+
+    const customDomainShell = await router(new Request(`https://${HOST}/admin`))
+    expect(customDomainShell.status).toBe(200)
+    expect(await customDomainShell.text()).toContain('admin-ui-config')
+    const customDomainStatus = await router(new Request(`https://${HOST}/admin/status`, { headers: bearer('admin-secret') }))
+    expect(customDomainStatus.status).toBe(200)
+  })
+
+  it('REQ-ADM-013 reopens the bootstrap origin while the reopen secret is unconsumed and audits entry once', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('custom_domain', provisionedDomain())
+    await store.putConfig('setup_state', { phase: 'complete', completedAt: NOW })
+    const { router } = routerFixture({ store, env: { SETUP_REOPEN: 'reopen-1' } })
+
+    const recovery = await router(new Request('https://router.example.workers.dev/'))
+    expect(recovery.status).toBe(200)
+    expect(await recovery.text()).toContain('admin-ui-config')
+    await router(new Request('https://router.example.workers.dev/'))
+    const audit = await store.listAudit(10)
+    expect(audit.filter((event) => event.type === 'break_glass_entered')).toHaveLength(1)
+
+    const adminApi = await router(new Request('https://router.example.workers.dev/admin/status', { headers: bearer('admin-secret') }))
+    expect(adminApi.status).toBe(200)
+    const machine = await router(new Request('https://router.example.workers.dev/node/heartbeat', { method: 'POST', body: '{}' }))
+    expect(machine.status).toBe(410)
+  })
+
+  it('REQ-ADM-013 consuming the reopen secret closes the recovery surface', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('custom_domain', provisionedDomain())
+    await store.putConfig('setup_state', { phase: 'access_ready' })
+    const { router } = routerFixture({ store, env: { SETUP_REOPEN: 'reopen-1' } })
+
+    const complete = await router(new Request('https://router.example.workers.dev/admin/setup/complete', { method: 'POST', headers: bearer('admin-secret') }))
+    expect(complete.status).toBe(200)
+    expect(await store.getConfig('setup_state')).toMatchObject({ phase: 'complete' })
+    expect(await store.getConfig('setup_reopen_consumed')).toBe(await hashToken('reopen-1'))
+    const audit = await store.listAudit(10)
+    expect(audit.some((event) => event.type === 'break_glass_completed')).toBe(true)
+    expect(audit.some((event) => event.type === 'setup_completed')).toBe(true)
+
+    const locked = await router(new Request('https://router.example.workers.dev/'))
+    expect(await locked.text()).not.toContain('admin-ui-config')
+  })
+
+  it('REQ-ADM-013 completing setup requires the access-ready phase', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('setup_state', { phase: 'claimed' })
+    const { router } = routerFixture({ store })
+    const premature = await router(new Request('https://router.example.workers.dev/admin/setup/complete', { method: 'POST', headers: bearer('admin-secret') }))
+    expect(premature.status).toBe(409)
+  })
+
+  it('REQ-GWY-005 lists gateways, routes, and defaults for the gateway step', async () => {
+    const routeCalls: string[] = []
+    const { router } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
+      cloudflareClient: {
+        syncCustomProvider: async () => { throw new Error('unused') },
+        provisionCustomDomain: async () => { throw new Error('unused') },
+        listGateways: async () => [{ id: 'inference-mesh' }, { id: 'other-gw' }],
+        listRoutes: async (_accountId: string, gatewayId: string) => {
+          routeCalls.push(gatewayId)
+          return [{ id: 'route-1', name: 'mesh-default', enabled: true }]
+        }
+      }
+    })
+    const response = await router(new Request('https://router.example.workers.dev/admin/cloudflare/gateway/options', { headers: bearer('admin-secret') }))
+    expect(response.status).toBe(200)
+    const body = await response.json() as { gateways: readonly { id: string }[]; routes: readonly { name?: string }[]; defaults: { gatewayId: string; routeName: string; publicModel: string } }
+    expect(body.gateways.map((gateway) => gateway.id)).toEqual(['inference-mesh', 'other-gw'])
+    expect(body.routes.map((route) => route.name)).toEqual(['mesh-default'])
+    expect(body.defaults).toMatchObject({ gatewayId: 'inference-mesh', routeName: 'mesh-default' })
+    expect(routeCalls).toEqual(['inference-mesh'])
+
+    const selected = await router(new Request('https://router.example.workers.dev/admin/cloudflare/gateway/options?gateway=other-gw', { headers: bearer('admin-secret') }))
+    expect(selected.status).toBe(200)
+    expect(routeCalls).toEqual(['inference-mesh', 'other-gw'])
+  })
+
+  it('REQ-ADM-004 installer commands use the custom domain once recorded', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('custom_domain', provisionedDomain())
+    const { router } = routerFixture({ store })
+    const response = await router(new Request(`https://${HOST}/admin/installers/linux`, { headers: bearer('admin-secret') }))
+    expect(response.status).toBe(200)
+    const command = await response.text()
+    expect(command).toContain(`https://${HOST}`)
+    expect(command).not.toContain('router.example.workers.dev')
   })
 })

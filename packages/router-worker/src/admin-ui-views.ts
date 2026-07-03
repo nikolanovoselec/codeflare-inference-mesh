@@ -226,3 +226,29 @@ export function dashboardView(): string {
 <div class="more-sheet" id="more-sheet" data-more-sections="${escapeHtml(ADMIN_UI_NAV.moreSections.join(' '))}" hidden>${moreItems}</div>
 </div>`
 }
+
+/**
+ * Standalone page served on non-custom-domain hostnames after setup
+ * completes (REQ-ADM-014). Deliberately free of the admin-ui-config
+ * script: the bootstrap origin stops being a console entirely.
+ */
+export function consoleMovedHtml(hostname: string): string {
+  const consoleUrl = `https://${escapeHtml(hostname)}/admin`
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>codeflare / inference-mesh</title>
+<style>body{margin:0;display:grid;place-items:center;min-height:100vh;background:#09090b;color:#e4e4e7;font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:34rem;padding:2rem;text-align:center}h1{font-size:1.125rem;font-weight:600;margin:0 0 .75rem}p{font-size:.875rem;line-height:1.6;color:#a1a1aa;margin:0 0 1rem}a{color:#ff5c3c;text-decoration:none;word-break:break-all}a:hover{text-decoration:underline}</style>
+</head>
+<body>
+<main data-view="moved">
+<h1>Console has moved</h1>
+<p>This origin is bootstrap-only. The operator console and all mesh traffic live on the custom domain.</p>
+<p><a href="${consoleUrl}">${consoleUrl}</a></p>
+</main>
+</body>
+</html>`
+}

@@ -1,11 +1,15 @@
+import { verifyAccessRequest } from './access'
+import { CloudflareAccessClient, type AccessProvisionRequest, type AccessProvisionResult } from './access-provisioning'
 import { adminUiHtml } from './admin-ui'
+import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
-import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewaySyncRequest, type GatewaySyncResult } from './cloudflare-api'
+import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
 import { installerCommand, installScript, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { meshUrl } from './scheduler'
+import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { aliasExclusiveActivation } from './store'
 import type { ClaimRequest, CredentialKind, HeartbeatRequest, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store, TokenRecord } from './types'
 
@@ -20,7 +24,15 @@ export interface RouterDeps {
   readonly env: Partial<RouterEnv>
   readonly now?: () => number
   readonly requestId?: () => string
-  readonly cloudflareClient?: { syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult>; provisionCustomDomain(input: CustomDomainProvisionRequest): Promise<CustomDomainProvisionResult> }
+  readonly cloudflareClient?: {
+    syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult>
+    provisionCustomDomain(input: CustomDomainProvisionRequest): Promise<CustomDomainProvisionResult>
+    listZones?(accountId: string): Promise<readonly ZoneRecord[]>
+    listGateways?(accountId: string): Promise<readonly GatewayRecord[]>
+    listRoutes?(accountId: string, gatewayId: string): Promise<readonly RouteRecord[]>
+  }
+  readonly accessClient?: { provisionAccess(input: AccessProvisionRequest): Promise<AccessProvisionResult> }
+  readonly jwksFetcher?: typeof fetch
   readonly releasesFetcher?: typeof fetch
 }
 
@@ -32,6 +44,19 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
     const url = new URL(request.url)
     try {
       await deps.store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+      const gate = await resolveHostGate(deps, url)
+      if (gate.locked) {
+        const uiPath = (request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/' || url.pathname === '/admin')
+        if (uiPath) {
+          if (!gate.recovery) return html(consoleMovedHtml(gate.hostname), id)
+          await recordBreakGlassEntry(deps, id, now())
+          return html(adminUiHtml(url.origin, { setupOpen: true }), id)
+        }
+        const machinePath = url.pathname.startsWith('/v1/') || url.pathname.startsWith('/node/')
+        if (machinePath || (!gate.recovery && url.pathname.startsWith('/admin'))) {
+          return json({ error: 'console_moved', customDomain: gate.hostname, requestId: id }, 410, id)
+        }
+      }
       if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/' || url.pathname === '/admin')) return html(adminUiHtml(url.origin, { setupOpen: await setupOpen(deps) }), id)
       if (request.method === 'GET' && url.pathname === '/health') return json({ ok: true, service: 'inference-mesh-router' }, 200, id)
       if (request.method === 'GET' && url.pathname === '/v1/models') return await handleModels(request, deps, id, now())
@@ -48,7 +73,12 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/setup-tokens' && request.method === 'POST') return await handleSetupToken(request, deps, id, now())
       if (url.pathname.startsWith('/admin/installers/') && request.method === 'GET') return await handleInstaller(request, deps, url, id, now())
       if (url.pathname === '/admin/cloudflare/gateway/sync' && request.method === 'POST') return await handleGatewaySync(request, deps, id, now())
-      if (url.pathname === '/admin/custom-domain/validate' && request.method === 'POST') return await handleCustomDomain(request, deps, id, now())
+      if (url.pathname === '/admin/custom-domain/validate' && request.method === 'POST') return await handleCustomDomain(request, deps, id, now(), false)
+      if (url.pathname === '/admin/setup/domain' && request.method === 'POST') return await handleCustomDomain(request, deps, id, now(), true)
+      if (url.pathname === '/admin/setup/access' && request.method === 'POST') return await handleSetupAccess(request, deps, id, now())
+      if (url.pathname === '/admin/setup/complete' && request.method === 'POST') return await handleSetupComplete(request, deps, id, now())
+      if (url.pathname === '/admin/cloudflare/zones' && request.method === 'GET') return await handleZones(request, deps, id, now())
+      if (url.pathname === '/admin/cloudflare/gateway/options' && request.method === 'GET') return await handleGatewayOptions(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/revoke$/) && request.method === 'POST') return await handleNodeRevoke(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
@@ -224,7 +254,7 @@ async function setupOpen(deps: RouterDeps): Promise<boolean> {
 
 async function handleFirstSetup(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const existingAdmins = await deps.store.listTokens('admin')
-  if (existingAdmins.some((token) => token.active) && !(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  if (existingAdmins.some((token) => token.active) && !(await requireAdmin(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
   const adminToken = generateBearerToken('admin')
   const providerToken = generateBearerToken('provider')
   const setupToken = generateBearerToken('setup')
@@ -233,7 +263,7 @@ async function handleFirstSetup(request: Request, deps: RouterDeps, requestId: s
   await deps.store.putToken(await createTokenRecord('provider', providerToken, now))
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
   await deps.store.putToken(await createTokenRecord('upstream', upstreamToken, now))
-  await deps.store.putConfig('setup_state', { completedAt: now })
+  await deps.store.putConfig('setup_state', { phase: 'claimed', claimedAt: now })
   await deps.store.appendAudit({ id: requestId, type: 'first_setup', at: now, actor: 'setup', detail: { provider: true, setup: true } })
   return json({ adminToken, providerToken, setupToken, upstreamToken, byokInstruction: 'Paste providerToken as the AI Gateway custom provider API key.' }, 201, requestId)
 }
@@ -250,12 +280,14 @@ async function handleAdminRecovery(request: Request, deps: RouterDeps, requestId
 }
 
 async function handleAdminLogin(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   return json({ ok: true, session: 'bearer-token' }, 200, requestId)
 }
 
 async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
   const setup = await deps.store.getConfig('setup_state')
@@ -293,20 +325,24 @@ function nodeReadyForProfile(node: NodeRecord, profile: ModelProfile): boolean {
 }
 
 async function handleSetupToken(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const setupToken = generateBearerToken('setup')
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
-  await deps.store.appendAudit({ id: requestId, type: 'setup_token_created', at: now, actor: 'admin', detail: {} })
+  await deps.store.appendAudit({ id: requestId, type: 'setup_token_created', at: now, actor, detail: {} })
   return json({ setupToken, expiresAt: now + SETUP_TOKEN_TTL_MS }, 201, requestId)
 }
 
 async function handleInstaller(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const platform = url.pathname.split('/').at(-1) as InstallerPlatform
   if (!['linux', 'macos', 'windows'].includes(platform)) return json({ error: 'unknown_platform' }, 404, requestId)
   const setupToken = generateBearerToken('setup')
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
-  const command = installerCommand({ platform, workerUrl: publicWorkerOrigin(deps.env.WORKER_BASE_URL, request.url), setupToken, repository: deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh' })
+  const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
+  const workerUrl = domain?.status === 'provisioned' ? `https://${domain.hostname}` : publicWorkerOrigin(deps.env.WORKER_BASE_URL, request.url)
+  const command = installerCommand({ platform, workerUrl, setupToken, repository: deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh' })
   return new Response(command, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'x-inference-mesh-request-id': requestId } })
 }
 
@@ -318,7 +354,8 @@ function handleInstallScript(deps: RouterDeps, platform: InstallerPlatform): Res
 }
 
 async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readOptionalObject<Partial<GatewaySettings>>(request)
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
   const customDomain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
@@ -356,12 +393,13 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
     ...(workerUrlOverride ? { workerUrl: workerUrlOverride } : {})
   })
   await deps.store.putConfig('cloudflare_gateway', result)
-  await deps.store.appendAudit({ id: requestId, type: 'gateway_sync', at: now, actor: 'admin', detail: { ...result } })
+  await deps.store.appendAudit({ id: requestId, type: 'gateway_sync', at: now, actor, detail: { ...result } })
   return json(result, 200, requestId)
 }
 
-async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number, advance: boolean): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<{ hostname: string; zoneId?: string }>(request)
   const hostname = typeof body?.hostname === 'string' ? body.hostname.trim().toLowerCase() : ''
   const zoneId = typeof body?.zoneId === 'string' ? body.zoneId.trim() : ''
@@ -380,23 +418,26 @@ async function handleCustomDomain(request: Request, deps: RouterDeps, requestId:
   })
   if (!provisioned) return json({ error: 'dns_record_conflict', hostname }, 409, requestId)
   await deps.store.putConfig('custom_domain', provisioned)
-  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_provisioned', at: now, actor: 'admin', target: hostname, detail: { ...provisioned } })
+  if (advance) await advancePhase(deps.store, 'domain_ready')
+  await deps.store.appendAudit({ id: requestId, type: 'custom_domain_provisioned', at: now, actor, target: hostname, detail: { ...provisioned } })
   return json({ valid: true, ...provisioned }, 200, requestId)
 }
 
 async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const nodeId = decodeURIComponent(url.pathname.split('/')[3] ?? '')
   await deps.store.revokeNode(nodeId, now)
   const nodeTokens = await deps.store.listTokens('node')
   await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))
   await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
-  await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor: 'admin', target: nodeId, detail: {} })
+  await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor, target: nodeId, detail: {} })
   return json({ ok: true }, 200, requestId)
 }
 
 async function handleProfileRollout(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<{ profileId: string; rolloutPercent: number }>(request)
   if (!body || typeof body.profileId !== 'string' || typeof body.rolloutPercent !== 'number') return json({ error: 'invalid_rollout' }, 400, requestId)
   if (body.rolloutPercent > 0) {
@@ -405,12 +446,13 @@ async function handleProfileRollout(request: Request, deps: RouterDeps, requestI
     for (const profile of activation?.deactivated ?? []) await deps.store.setProfile(profile)
   }
   await deps.store.setActiveProfile(body.profileId, body.rolloutPercent)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_rollout', at: now, actor: 'admin', target: body.profileId, detail: { rolloutPercent: body.rolloutPercent } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_rollout', at: now, actor, target: body.profileId, detail: { rolloutPercent: body.rolloutPercent } })
   return json({ ok: true }, 200, requestId)
 }
 
 async function handleProfileActivate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<{ profileId?: string }>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_activation', requestId }, 400, requestId)
   const activation = aliasExclusiveActivation(await deps.store.listProfiles(), body.profileId)
@@ -418,23 +460,26 @@ async function handleProfileActivate(request: Request, deps: RouterDeps, request
   for (const profile of activation.deactivated) await deps.store.setProfile(profile)
   await deps.store.setProfile(activation.activated)
   const deactivatedIds = activation.deactivated.map((profile) => profile.id)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_activated', at: now, actor: 'admin', target: body.profileId, detail: { deactivated: deactivatedIds } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_activated', at: now, actor, target: body.profileId, detail: { deactivated: deactivatedIds } })
   return json({ ok: true, activated: activation.activated.id, deactivated: deactivatedIds }, 200, requestId)
 }
 
 async function handleAdminMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleMeshRotate(request, deps.store, deps.env, now)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleMeshRotate(request, deps.store, deps.env, now, actor)
 }
 
 async function handleAdminAgentVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   return await handleAgentVersionsList(request, deps.store, deps.env, deps.releasesFetcher)
 }
 
 async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher)
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, actor)
 }
 
 interface GatewaySettings {
@@ -486,6 +531,108 @@ async function getOrCreateUpstreamToken(deps: RouterDeps): Promise<string> {
   const token = generateBearerToken('upstream')
   await deps.store.putConfig('node_upstream_token', token)
   return token
+}
+
+async function handleSetupAccess(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ emails?: unknown }>(request)
+  const emails = Array.isArray(body?.emails)
+    ? [...new Set(body.emails.filter((email): email is string => typeof email === 'string').map((email) => email.trim().toLowerCase()).filter((email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))]
+    : []
+  if (emails.length === 0) return json({ error: 'invalid_emails', requestId }, 400, requestId)
+  const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
+  if (domain?.status !== 'provisioned') return json({ error: 'custom_domain_required', requestId }, 409, requestId)
+  const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
+  const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
+  if (!accountId || (!token && !deps.accessClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  const client = deps.accessClient ?? new CloudflareAccessClient(token!)
+  const result = await client.provisionAccess({ accountId, hostname: domain.hostname, adminEmails: emails })
+  await deps.store.putConfig(ACCESS_CONFIG_KEY, result)
+  await advancePhase(deps.store, 'access_ready')
+  await deps.store.appendAudit({ id: requestId, type: 'access_provisioned', at: now, actor, target: domain.hostname, detail: { adminEmails: emails, appId: result.appId, bypassAppId: result.bypassAppId } })
+  return json({ ok: true, teamDomain: result.teamDomain, hostname: domain.hostname, consoleUrl: `https://${domain.hostname}/admin` }, 200, requestId)
+}
+
+async function handleSetupComplete(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const phase = await setupPhase(deps.store)
+  if (phase !== 'access_ready' && phase !== 'complete') return json({ error: 'setup_incomplete', phase, requestId }, 409, requestId)
+  await advancePhase(deps.store, 'complete', { completedAt: now })
+  if (deps.env.SETUP_REOPEN && await breakGlassActive(deps.store, deps.env)) {
+    await deps.store.putConfig(SETUP_REOPEN_CONSUMED_KEY, await hashToken(deps.env.SETUP_REOPEN))
+    await deps.store.appendAudit({ id: requestId, type: 'break_glass_completed', at: now, actor, detail: {} })
+  }
+  await deps.store.appendAudit({ id: requestId, type: 'setup_completed', at: now, actor, detail: {} })
+  const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
+  return json({ ok: true, ...(domain?.hostname ? { customDomain: domain.hostname } : {}) }, 200, requestId)
+}
+
+async function handleZones(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
+  const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
+  if (!accountId || (!token && !deps.cloudflareClient?.listZones)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
+  if (!client.listZones) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  return json({ zones: await client.listZones(accountId) }, 200, requestId)
+}
+
+async function handleGatewayOptions(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
+  const defaults = gatewaySettings({ env: deps.env, ...(storedSettings ? { stored: storedSettings } : {}) })
+  const accountId = defaults.accountId
+  const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
+  if (!accountId || (!token && !deps.cloudflareClient?.listGateways)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
+  if (!client.listGateways || !client.listRoutes) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  const gateways = await client.listGateways(accountId)
+  const selectedGateway = cleanString(url.searchParams.get('gateway')) ?? defaults.gatewayId
+  const routes = gateways.some((gateway) => gateway.id === selectedGateway) ? await client.listRoutes(accountId, selectedGateway) : []
+  return json({ gateways, routes, defaults }, 200, requestId)
+}
+
+interface HostGate {
+  readonly locked: boolean
+  readonly hostname: string
+  readonly recovery: boolean
+}
+
+/** REQ-ADM-014: after completion, only the custom domain serves the console and machine routes. */
+async function resolveHostGate(deps: RouterDeps, url: URL): Promise<HostGate> {
+  const phase = await setupPhase(deps.store)
+  if (phase !== 'complete') return { locked: false, hostname: '', recovery: false }
+  const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
+  if (domain?.status !== 'provisioned' || url.hostname === domain.hostname) return { locked: false, hostname: '', recovery: false }
+  return { locked: true, hostname: domain.hostname, recovery: await breakGlassActive(deps.store, deps.env) }
+}
+
+/** REQ-ADM-013: audit recovery entry once per reopen-secret value. */
+async function recordBreakGlassEntry(deps: RouterDeps, requestId: string, now: number): Promise<void> {
+  if (!deps.env.SETUP_REOPEN) return
+  const digest = await hashToken(deps.env.SETUP_REOPEN)
+  if ((await deps.store.getConfig<string>(SETUP_REOPEN_SEEN_KEY)) === digest) return
+  await deps.store.putConfig(SETUP_REOPEN_SEEN_KEY, digest)
+  await deps.store.appendAudit({ id: requestId, type: 'break_glass_entered', at: now, actor: 'recovery', detail: {} })
+}
+
+/**
+ * REQ-SEC-009: once Access config exists, admin identity comes from the
+ * Access JWT; bearer credentials remain for bootstrap and break-glass only.
+ */
+async function requireAdmin(request: Request, deps: RouterDeps, now: number): Promise<string | undefined> {
+  const access = await accessConfig(deps.store)
+  if (!access) return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? 'admin' : undefined
+  const verdict = await verifyAccessRequest(request, { teamDomain: access.teamDomain, audience: access.audience }, now, deps.jwksFetcher ?? fetch)
+  if (verdict.outcome === 'verified') return verdict.email
+  if (verdict.outcome === 'absent' && await breakGlassActive(deps.store, deps.env)) {
+    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? 'admin' : undefined
+  }
+  return undefined
 }
 
 async function authenticateKind(request: Request, deps: RouterDeps, kind: CredentialKind, now: number, envSecret?: string): Promise<boolean> {
@@ -624,6 +771,11 @@ export const ROUTER_ANCHORS = {
   REQ_ADM_003: 'REQ-ADM-003',
   REQ_ADM_006: 'REQ-ADM-006',
   REQ_ADM_008: 'REQ-ADM-008',
+  REQ_ADM_012: 'REQ-ADM-012',
+  REQ_ADM_013: 'REQ-ADM-013',
+  REQ_ADM_014: 'REQ-ADM-014',
+  REQ_GWY_005: 'REQ-GWY-005',
   REQ_SEC_002: 'REQ-SEC-002',
-  REQ_SEC_006: 'REQ-SEC-006'
+  REQ_SEC_006: 'REQ-SEC-006',
+  REQ_SEC_009: 'REQ-SEC-009'
 } as const

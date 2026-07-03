@@ -25,7 +25,7 @@ export async function handleAgentVersionsList(request: Request, store: Store, en
   return json({ tags: served.tags, fetchedAt: served.fetchedAt, stale: !fresh, desired }, 200)
 }
 
-export async function handleAgentVersionSelect(request: Request, store: Store, env: AgentVersionsEnv, fetcher: typeof fetch = globalThis.fetch): Promise<Response> {
+export async function handleAgentVersionSelect(request: Request, store: Store, env: AgentVersionsEnv, fetcher: typeof fetch = globalThis.fetch, actor = 'admin'): Promise<Response> {
   const body = await request.json() as { version?: unknown } | null
   const version = typeof body?.version === 'string' ? body.version : ''
   if (!version) return json({ error: 'invalid_version' }, 400)
@@ -34,7 +34,7 @@ export async function handleAgentVersionSelect(request: Request, store: Store, e
   const current = isCacheFresh(cached, now) ? cached : (await refreshCache(store, env, fetcher, now)) ?? cached
   if (!current || !current.tags.includes(version)) return json({ error: 'unknown_version', version }, 400)
   await store.putConfig(DESIRED_AGENT_VERSION_KEY, version)
-  await store.appendAudit({ id: crypto.randomUUID(), type: 'agent_version_selected', at: now, actor: 'admin', target: version, detail: { version } })
+  await store.appendAudit({ id: crypto.randomUUID(), type: 'agent_version_selected', at: now, actor, target: version, detail: { version } })
   return json({ ok: true, desired: version }, 200)
 }
 
