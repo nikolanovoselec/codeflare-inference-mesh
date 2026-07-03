@@ -22,7 +22,13 @@ Provider responses include request ID, session ID when present, and selected nod
 | Profiles | Public aliases, upstream model, source mode, version, rollout percent, active flag, and ready/downloading/failed node counts. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md), [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
 | Mesh health | One entry per MeshLLM profile: coordinator, peers, ready models, failed nodes, rotation counter, and secret presence/age (see [Mesh health](#mesh-health)). | [REQ-OBS-007](../../sdd/spec/observability.md) |
 | Audit | Recent setup, claim, unregister, revoke, admin recovery reset, route provisioning, profile switch, profile activation, agent version selection, and mesh lifecycle events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-006](../../sdd/spec/observability.md) |
-| Metadata | Status generation timestamp. | [REQ-OBS-002](../../sdd/spec/observability.md) |
+| Metadata | Status generation timestamp and the caller's resolved console role (`viewerRole`). | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md) |
+
+## Live dashboard surface
+
+The console renders `GET /admin/status` as a live operations surface: a stats strip (serving/stale node counts, active models, aggregate mesh VRAM, total throughput, agent-version spread), a hub-and-spoke mesh topology with node and model detail drawers, and a sortable nodes table. It re-fetches on a five-second poll that pauses when the tab is hidden and resumes on focus, and a LIVE badge reflects poll freshness. Tokens-per-second are drawn as a rolling-window trace: each poll appends the aggregate throughput as a bar and the client linearly smooths between successive samples, capping the series at the configured window. All values derive from the status contract — nothing is fabricated between polls. ([REQ-OBS-010](../../sdd/spec/observability.md)) ([REQ-ADM-015](../../sdd/spec/setup-admin.md))
+
+Under the read-only user role the surface narrows to the overview and the playground; configuration sections are hidden client-side and refused server-side. ([REQ-ADM-017](../../sdd/spec/setup-admin.md))
 
 ## Node metrics
 

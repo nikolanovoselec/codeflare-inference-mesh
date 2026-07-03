@@ -8,7 +8,7 @@
 
 ## Conventions
 
-Admin routes accept the bootstrap admin bearer token until Cloudflare Access is provisioned; once Access configuration is stored, every human admin request must carry a valid Access JWT, and bearer credentials work only during break-glass recovery. "Admin authentication" below means this guard. Admin routes never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity, and do not implement a dedicated Origin-header gate. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-009](../../sdd/spec/security.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+Admin routes accept the bootstrap admin bearer token until Cloudflare Access is provisioned; once Access configuration is stored, every human admin request must carry a valid Access JWT, and bearer credentials work only during break-glass recovery. "Admin authentication" below means this guard. Once Access is configured, each verified caller resolves to a console **role** — `admin` (full control) or read-only `user` — by matching the caller's Access groups and email against the configured admin and user sets; "any console role" below means the reader guard that both roles pass, while "admin authentication" additionally requires the `admin` role (see [security.md](security.md#role-based-console-access)). Admin routes never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity, and do not implement a dedicated Origin-header gate. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-009](../../sdd/spec/security.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
 ## Endpoints
 
@@ -133,7 +133,7 @@ Returns the admin dashboard status contract with secrets redacted.
 GET /admin/status
 ```
 
-**Authentication:** admin bearer token
+**Authentication:** any console role (admin or read-only user)
 
 **Origin check:** n/a
 
@@ -143,12 +143,59 @@ GET /admin/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Router state is returned with credentials redacted. | Nodes (each with its reported `agentVersion`), profiles, profile readiness counts, `meshHealth` entries, setup/gateway/domain state, recent audit entries, optional `desiredAgentVersion`, and generated timestamp. |
-| `401` | Admin credential is missing or invalid. | Error object. |
+| `200` | Router state is returned with credentials redacted. | Nodes (each with its reported `agentVersion`), profiles, profile readiness counts, `meshHealth` entries, setup/gateway/domain state, recent audit entries, the caller's `viewerRole` (`"admin"` or `"user"`), optional `desiredAgentVersion`, and generated timestamp. |
+| `401` | No valid console role resolved for the caller. | Error object. |
 
-**Implements:** [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-007](../../sdd/spec/observability.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-007](../../sdd/spec/observability.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
-**Notes:** `meshHealth` carries one entry per MeshLLM profile: `{ profileId, meshId?, rotation, seedNodeId?, coordinatorNodeId?, peerNodeIds, tokenCount, secretAgeMs?, lastError?, readyModels, failedNodeIds }`. Mesh secrets appear only as presence, age, and count (`tokenCount`, `secretAgeMs`); invite-token values are never included in any admin response. When the `MESH_STATE_KEY` Worker secret is not configured, each entry reports `lastError: "mesh_state_key_missing"`. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-007](../../sdd/spec/security.md))
+**Notes:** `viewerRole` lets the console tailor its surface — the read-only user role sees only the overview and playground, and configuration-mutating endpoints reject it server-side regardless of the surface ([REQ-ADM-017](../../sdd/spec/setup-admin.md)). `meshHealth` carries one entry per MeshLLM profile: `{ profileId, meshId?, rotation, seedNodeId?, coordinatorNodeId?, peerNodeIds, tokenCount, secretAgeMs?, lastError?, readyModels, failedNodeIds }`. Mesh secrets appear only as presence, age, and count (`tokenCount`, `secretAgeMs`); invite-token values are never included in any admin response. When the `MESH_STATE_KEY` Worker secret is not configured, each entry reports `lastError: "mesh_state_key_missing"`. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-007](../../sdd/spec/security.md))
+
+### GET /admin/whoami
+
+Returns the caller's resolved console role and actor identity.
+
+```http
+GET /admin/whoami
+```
+
+**Authentication:** any console role (admin or read-only user)
+
+**Origin check:** n/a
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Role resolved. | `{ "role": "admin" \| "user", "actor": string }` |
+| `401` | No valid console role resolved for the caller. | Error object. |
+
+**Implements:** [REQ-ADM-017](../../sdd/spec/setup-admin.md), [REQ-SEC-010](../../sdd/spec/security.md)
+
+### POST /admin/playground/chat
+
+Proxies a chat completion through the live AI Gateway dynamic route so operators can verify inference end to end. The request never carries a provider key: the Worker attaches the stored gateway credential server-side and streams the upstream response back.
+
+```http
+POST /admin/playground/chat
+```
+
+**Authentication:** any console role (admin or read-only user)
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `model` (public alias) and `messages` (chat message array).
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Upstream response streamed back to the caller. | Event-stream / JSON pass-through from the AI Gateway route. |
+| `401` | No valid console role resolved for the caller. | Error object. |
+| `503` | The AI Gateway route is not configured yet. | Error object. |
+
+**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/setup-tokens
 
@@ -299,7 +346,7 @@ POST /admin/setup/domain
 
 ### POST /admin/setup/access
 
-Provisions the Access application and admin-email allow policy for the provisioned custom domain, plus machine-path bypass coverage, and advances the setup phase to `access_ready`.
+Provisions the Access application and role allow policy for the provisioned custom domain, plus machine-path bypass coverage, and advances the setup phase to `access_ready`. The captured admin and user sets become the console's admin and read-only user roles (see [security.md](security.md#role-based-console-access)).
 
 ```http
 POST /admin/setup/access
@@ -309,19 +356,19 @@ POST /admin/setup/access
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `emails` (array of strings; trimmed, lowercased, deduplicated, validated as email addresses).
+**Request body:** JSON body with `adminEmails`, `adminGroups`, `userEmails`, and `userGroups` (arrays of strings; emails are trimmed, lowercased, deduplicated, and validated; group names are trimmed and deduplicated). A legacy `emails` field is accepted as an alias for `adminEmails`. At least one admin email or admin group is required. When both user fields are empty the allow policy opens to everyone and any Access-authenticated caller becomes a read-only user (`usersOpen: true`).
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Access application, allow policy, and machine-path bypass provisioned; config stored; phase advances to `access_ready`. | `{ "ok": true, "teamDomain": string, "hostname": string, "consoleUrl": string }` |
-| `400` | No valid email supplied. | `{ "error": "invalid_emails", "requestId": string }` |
+| `200` | Access application, role allow policy, and machine-path bypass provisioned; config stored; phase advances to `access_ready`. | `{ "ok": true, "teamDomain": string, "hostname": string, "consoleUrl": string, "usersOpen": boolean }` |
+| `400` | No admin email or admin group supplied. | `{ "error": "admin_required", "requestId": string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `409` | Custom domain step has not completed yet. | `{ "error": "custom_domain_required", "requestId": string }` |
 | `503` | Runtime Cloudflare account or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
-**Implements:** [REQ-ADM-012](../../sdd/spec/setup-admin.md), [REQ-ADM-011](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-012](../../sdd/spec/setup-admin.md), [REQ-ADM-011](../../sdd/spec/setup-admin.md), [REQ-SEC-010](../../sdd/spec/security.md)
 
 ### POST /admin/setup/complete
 

@@ -146,13 +146,23 @@
 
 **Implements:** [REQ-SEC-009](../../sdd/spec/security.md)
 
+## Role-based console access
+
+**Threat:** A single admin-only entrance forces every viewer to hold full control-plane privileges, and a client-only role check can be bypassed by calling the endpoints directly.
+
+**Mitigation:** Once Access is configured, the Worker maps each verified caller to a console role. Admin and user identity sets are captured at setup — as Access group names and emails — and stored durably. On each request `resolveRole` compares the caller's email and their live Access groups (fetched from `get-identity`, restricted to the team's `cloudflareaccess.com` domain to prevent SSRF) against those sets: an admin match wins over a user match, a user-only match is a read-only role, any verified identity is a read-only user when no user set is configured, and an identity matching neither set is refused when a user set exists. The role is enforced at the server — `requireAdmin` gates every configuration write regardless of what the client renders — so hiding controls in the UI is a convenience, not the control. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @impl: packages/router-worker/src/access.ts::fetchIdentityGroups -->
+
+**Verification:** Router tests assert admin/user/deny resolution, admin-wins-on-overlap, the open-to-everyone default, and that the user role is refused on a config write; access tests assert the get-identity group lookup and its domain guard. <!-- @impl: packages/router-worker/src/router.test.ts::HostGatingTestAnchor --> <!-- @impl: packages/router-worker/src/access.test.ts::AccessIdentityGroupsTestAnchor -->
+
+**Implements:** [REQ-SEC-010](../../sdd/spec/security.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+
 ## Domain and Access provisioning
 
 **Threat:** Hand-assembled Zero Trust policies can leave the console exposed or machine paths blocked.
 
-**Mitigation:** The setup wizard provisions the Access application with an allow policy containing exactly the captured admin emails, plus a separate bypass application covering the provider, node, health, and installer paths so machine traffic needs no Access session. If the bypass policy cannot be created, the bypass application is removed rather than left policy-less (deny-all). Re-runs update the managed applications instead of duplicating them. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess -->
+**Mitigation:** The setup wizard provisions the Access application with an allow policy gating on the captured roles: admin and user emails become managed Access groups (`<worker>-admins` / `<worker>-users`) and the policy includes those plus any operator-named admin/user groups; when no user set is configured the policy opens to everyone so the mesh's own role check grants read-only access. A separate bypass application covers the provider, node, health, and installer paths so machine traffic needs no Access session. If the bypass policy cannot be created, the bypass application is removed rather than left policy-less (deny-all). Re-runs update the managed applications and groups instead of duplicating them. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess -->
 
-**Verification:** Provisioning tests assert the exact application and policy payloads, the bypass destinations, rollback on policy failure, and idempotent re-runs. <!-- @impl: packages/router-worker/src/access-provisioning.test.ts::AccessProvisioningTestAnchor -->
+**Verification:** Provisioning tests assert the managed-group creation, the group-gated and everyone-open policy payloads, the bypass destinations, rollback on policy failure, and idempotent re-runs. <!-- @impl: packages/router-worker/src/access-provisioning.test.ts::AccessProvisioningTestAnchor -->
 
 **Implements:** [REQ-ADM-012](../../sdd/spec/setup-admin.md)
 
@@ -173,6 +183,7 @@
 | Credential classes | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/auth.ts::AUTH_ANCHORS` <!-- @impl: packages/router-worker/src/auth.ts::AUTH_ANCHORS --> |
 | Access JWT verification | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/access.ts::ACCESS_ANCHORS` <!-- @impl: packages/router-worker/src/access.ts::ACCESS_ANCHORS --> |
 | Access provisioning | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/access-provisioning.ts::ACCESS_PROVISIONING_ANCHORS` <!-- @impl: packages/router-worker/src/access-provisioning.ts::ACCESS_PROVISIONING_ANCHORS --> |
+| Console role resolution | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/router.ts::resolveRole` <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> |
 | Setup phases and break-glass | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/setup-state.ts::SETUP_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/setup-state.ts::SETUP_STATE_ANCHORS --> |
 | Header filtering | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/proxy.go::ProxyAnchors` <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> |
 | Runtime exposure | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/config.go::ConfigAnchors` <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> |
