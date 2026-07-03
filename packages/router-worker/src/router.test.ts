@@ -1197,6 +1197,18 @@ describe('router worker behavioral contracts', () => {
     expect(result).toMatchObject({ providerId: 'provider-a', providerSlug: 'codeflare-inference-mesh-router-example-workers-dev', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: 'gateway-a', routeName: 'mesh-default', publicModel: 'mesh-default', workerUrl: 'https://router.example.workers.dev', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
   })
 
+  it('CloudflareGatewayClient invokes the fetcher as a free function so the global fetch keeps its native receiver (no Workers illegal invocation)', async () => {
+    let receiver: unknown = 'unset'
+    const fetcher = function (this: unknown, _input: RequestInfo | URL, _init?: RequestInit) {
+      receiver = this
+      return Promise.resolve(Response.json({ success: true, result: [] }))
+    } as unknown as typeof fetch
+    const client = new CloudflareGatewayClient('runtime-token', fetcher)
+    await client.listGateways('account-a')
+    expect(receiver).not.toBe(client)
+    expect(receiver).toBeUndefined()
+  })
+
   it('REQ-ADM-005 upserts DNS and Worker route for custom-domain provisioning', async () => {
     const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
     const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -208,7 +208,10 @@ export class CloudflareGatewayClient {
   }
 
   private async apiRequest<T>(url: string, method: string, body?: unknown): Promise<T> {
-    const response = await this.fetcher(url, {
+    // Free-call the fetcher: invoking the global fetch as a method (this.fetcher(...)) throws
+    // "illegal invocation" on Workers because fetch must keep its native receiver.
+    const fetcher = this.fetcher
+    const response = await fetcher(url, {
       method,
       headers: {
         authorization: `Bearer ${this.token}`,

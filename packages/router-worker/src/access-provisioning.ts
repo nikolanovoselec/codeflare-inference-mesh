@@ -194,7 +194,10 @@ export class CloudflareAccessClient {
   }
 
   private async accountRequest<T>(accountId: string, path: string, method: string, body?: unknown): Promise<T> {
-    const response = await this.fetcher(`https://api.cloudflare.com/client/v4/accounts/${accountId}${path}`, {
+    // Free-call the fetcher: invoking the global fetch as a method (this.fetcher(...)) throws
+    // "illegal invocation" on Workers because fetch must keep its native receiver.
+    const fetcher = this.fetcher
+    const response = await fetcher(`https://api.cloudflare.com/client/v4/accounts/${accountId}${path}`, {
       method,
       headers: {
         authorization: `Bearer ${this.token}`,

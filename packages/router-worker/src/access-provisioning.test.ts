@@ -102,6 +102,20 @@ describe('access provisioning contracts', () => {
     expect((userGroup?.body as { include: unknown }).include).toEqual([{ email: { email: 'viewer@example.com' } }])
   })
 
+  it('invokes the fetcher as a free function so the global fetch keeps its native receiver (no Workers illegal invocation)', async () => {
+    const calls: RecordedCall[] = []
+    const real = fakeAccessApi(calls)
+    let receiver: unknown = 'unset'
+    const fetcher = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
+      receiver = this
+      return real(input, init)
+    } as unknown as typeof fetch
+    const client = new CloudflareAccessClient('token', fetcher)
+    await client.provisionAccess(baseRequest())
+    expect(receiver).not.toBe(client)
+    expect(receiver).toBeUndefined()
+  })
+
   it('REQ-SEC-010 gates the console app on the admin and user Access groups when a user set exists', async () => {
     const calls: RecordedCall[] = []
     await provision(calls, { adminEmails: ['owner@example.com'], userEmails: ['viewer@example.com'] })
