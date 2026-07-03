@@ -263,17 +263,14 @@ async function adminUiState(deps: RouterDeps, recovery: boolean): Promise<AdminU
 async function handleFirstSetup(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const existingAdmins = await deps.store.listTokens('admin')
   if (existingAdmins.some((token) => token.active) && !(await requireAdmin(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  // Claim mints ONLY the bootstrap token. The machine credentials surface where
+  // they are used: the provider token in the gateway-sync result, the setup token
+  // inside the install command, and the upstream token lazily at node claim.
   const adminToken = generateBearerToken('admin')
-  const providerToken = generateBearerToken('provider')
-  const setupToken = generateBearerToken('setup')
-  const upstreamToken = await getOrCreateUpstreamToken(deps)
   await deps.store.putToken(await createTokenRecord('admin', adminToken, now))
-  await deps.store.putToken(await createTokenRecord('provider', providerToken, now))
-  await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
-  await deps.store.putToken(await createTokenRecord('upstream', upstreamToken, now))
   await deps.store.putConfig('setup_state', { phase: 'claimed', claimedAt: now })
-  await deps.store.appendAudit({ id: requestId, type: 'first_setup', at: now, actor: 'setup', detail: { provider: true, setup: true } })
-  return json({ adminToken, providerToken, setupToken, upstreamToken, byokInstruction: 'Paste providerToken as the AI Gateway custom provider API key.' }, 201, requestId)
+  await deps.store.appendAudit({ id: requestId, type: 'first_setup', at: now, actor: 'setup', detail: {} })
+  return json({ adminToken }, 201, requestId)
 }
 
 async function handleAdminRecovery(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -401,8 +398,15 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
     ...(workerUrlOverride ? { workerUrl: workerUrlOverride } : {})
   })
   await deps.store.putConfig('cloudflare_gateway', result)
+  // The provider key surfaces here, where the operator uses it: it authenticates
+  // the AI Gateway custom provider (BYOK). Minting rotates it — a re-sync issues a
+  // fresh key and retires prior ones so only the latest key is live.
+  const providerToken = generateBearerToken('provider')
+  const priorProviders = await deps.store.listTokens('provider')
+  await Promise.all(priorProviders.filter((token) => token.active).map((token) => deps.store.revokeToken('provider', token.id, now)))
+  await deps.store.putToken(await createTokenRecord('provider', providerToken, now))
   await deps.store.appendAudit({ id: requestId, type: 'gateway_sync', at: now, actor, detail: { ...result } })
-  return json(result, 200, requestId)
+  return json({ ...result, providerToken, byokInstruction: `Paste this key into the AI Gateway provider "${result.providerSlug}".` }, 200, requestId)
 }
 
 async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number, advance: boolean): Promise<Response> {

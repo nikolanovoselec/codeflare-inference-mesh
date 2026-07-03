@@ -214,6 +214,37 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       el.appendChild(copyAll);
     }
   }
+  function revealKey(targetId, label, token, note) {
+    const el = byId(targetId);
+    if (!el) return;
+    el.classList.remove('is-error');
+    el.textContent = '';
+    if (note) {
+      const warning = document.createElement('p');
+      warning.className = 'token-warning';
+      warning.setAttribute('data-token-warning', 'true');
+      warning.textContent = note;
+      el.appendChild(warning);
+    }
+    const card = document.createElement('div');
+    card.className = 'token-card';
+    card.setAttribute('data-token-card', label);
+    const labelEl = document.createElement('strong');
+    labelEl.textContent = label;
+    const code = document.createElement('code');
+    code.textContent = token;
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn';
+    copy.textContent = 'Copy';
+    copy.dataset.copy = token;
+    card.append(labelEl, code, copy);
+    el.appendChild(card);
+  }
+  const revealGatewayKey = (out, body) => {
+    if (body && body.providerToken) revealKey(out, 'AI Gateway provider key', body.providerToken, body.byokInstruction || 'Paste this key into your AI Gateway custom provider.');
+    else setOutput(out, body);
+  };
 
   // --- renderers fed by /admin/status ----------------------------------------
   const fmtAge = (ms) => {
@@ -916,7 +947,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const body = await request('/admin/setup', { method: 'POST' });
       liveToken = body.adminToken || '';
       storeToken(liveToken, false);
-      renderTokens(out, body);
+      revealKey(out, 'Setup access token', liveToken, 'Save this — it is how you sign back into setup on this page until Access is live. Stored hashed and shown only once.');
       const next = byId('wizard-continue-connect');
       if (next) next.hidden = false;
       toast('Deployment claimed');
@@ -953,7 +984,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         setOutput(out, 'Setup complete. This bootstrap origin is now locked; continue at https://' + body.customDomain + '/admin');
       }
     } else if (action === 'gateway-provision-default') {
-      setOutput(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
+      revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
       await loadGatewayOptions('').catch(() => undefined);
     } else if (action === 'nodes-sort') {
       const key = button.dataset.sort || 'id';
@@ -975,7 +1006,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'installer-generate') {
       await loadInstaller(prefix, true);
     } else if (action === 'gateway-sync') {
-      setOutput(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify(gatewayPayload(prefix)) }));
+      revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify(gatewayPayload(prefix)) }));
     } else if (action === 'custom-domain-validate') {
       setOutput(out, await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('custom-domain'), zoneId: readInput('custom-domain-zone') }) }));
     } else if (action === 'node-revoke') {

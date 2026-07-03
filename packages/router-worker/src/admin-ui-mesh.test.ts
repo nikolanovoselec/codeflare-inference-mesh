@@ -288,7 +288,7 @@ describe('admin UI mesh operations contracts', () => {
   it('REQ-ADM-011 reveals created credentials once with copy affordances and advances the wizard', async () => {
     const html = adminUiHtml('https://router.test', { view: 'setup', phase: 'unclaimed', recovery: false })
     const harness = adminUiHarness(html, async (path) => {
-      if (path === '/admin/setup') return Response.json({ adminToken: 'admin-a', providerToken: 'provider-a', setupToken: 'setup-a', upstreamToken: 'upstream-a', byokInstruction: 'Paste providerToken as the AI Gateway custom provider API key.' }, { status: 201 })
+      if (path === '/admin/setup') return Response.json({ adminToken: 'admin-a' }, { status: 201 })
       return Response.json({})
     })
     harness.run()
@@ -298,11 +298,8 @@ describe('admin UI mesh operations contracts', () => {
     const output = harness.byId('setup-output')
     expect(output.children[0]!.dataset.tokenWarning).toBe('true')
     const cards = output.children.filter((child) => child.dataset.tokenCard)
-    expect(cards.map((card) => card.dataset.tokenCard)).toEqual(['providerToken', 'setupToken', 'upstreamToken'])
-    cards.forEach((card) => {
-      const copy = card.children.find((child) => child.dataset.copy)
-      expect(copy, `token card ${card.dataset.tokenCard} has no copy control`).toBeDefined()
-    })
+    expect(cards.map((card) => card.dataset.tokenCard)).toEqual(['Setup access token'])
+    expect(cards[0]!.children.find((child) => child.dataset.copy)!.dataset.copy).toBe('admin-a')
     expect(harness.events.some((event) => event.kind === 'setItem' && event.detail === 'session:codeflareInferenceMeshAdminToken=admin-a')).toBe(true)
     expect(harness.byId('wizard-continue-connect').hidden).toBe(false)
 

@@ -58,7 +58,7 @@ export function setupWizardView(active: boolean): string {
   const connect = wizardStep({
     step: 'connect',
     title: 'Claim this deployment',
-    description: 'Verifies the deploy secrets and claims the router for you. Machine credentials are created now; your admin session starts automatically.',
+    description: 'Claims this router and issues one setup access token — save it to return to setup until Access is live. Gateway and node credentials appear later, at the steps that use them.',
     active: true,
     body: `<div class="wizard-actions">${button({ action: 'first-run-setup', label: 'Claim deployment', variant: 'primary', out: 'setup-output' })}</div>
 ${output({ id: 'setup-output', kind: 'setup-tokens', extraClass: 'token-grid' })}

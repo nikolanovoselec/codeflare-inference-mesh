@@ -359,6 +359,35 @@ describe('router worker behavioral contracts', () => {
     expect(JSON.parse(harness.byId('gateway-output').textContent) as { deploymentId: string }).toEqual({ deploymentId: 'deployment-a' })
   })
 
+  it('REQ-GWY-003 gateway sync mints and reveals a fresh provider key, rotating prior ones', async () => {
+    // ProviderKeyAtGatewayTestAnchor
+    const gatewayResult = { providerId: 'prov', providerSlug: 'custom-inference-mesh-router-test', routeId: 'route', routeVersionId: 'ver', deploymentId: 'dep', gatewayId: 'inference-mesh', routeName: 'mesh-default', publicModel: 'mesh-default', workerUrl: 'https://mesh.example.com', manualProviderKeyRequired: true as const, providerTokenInstructions: 'x' }
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
+      cloudflareClient: {
+        syncCustomProvider: async () => gatewayResult,
+        provisionCustomDomain: async () => { throw new Error('unused') }
+      }
+    })
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+
+    const first = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    const firstBody = await first.json() as { providerToken: string; byokInstruction: string }
+    expect(first.status).toBe(200)
+    expect(firstBody.providerToken).toMatch(/^provider_/)
+    expect(firstBody.byokInstruction).toContain('custom-inference-mesh-router-test')
+    const afterFirst = store.tokens.filter((token) => token.kind === 'provider' && token.active)
+    expect(afterFirst).toHaveLength(1)
+    expect(afterFirst[0]!.verifier).not.toBe(firstBody.providerToken)
+
+    const second = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    const secondBody = await second.json() as { providerToken: string }
+    expect(secondBody.providerToken).not.toBe(firstBody.providerToken)
+    const afterSecond = store.tokens.filter((token) => token.kind === 'provider' && token.active)
+    expect(afterSecond).toHaveLength(1)
+    expect(afterSecond[0]!.verifier).not.toBe(afterFirst[0]!.verifier)
+  })
+
   it('REQ-SEC-002 asks for confirmation before revoking a node from the Admin UI', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
@@ -382,23 +411,23 @@ describe('router worker behavioral contracts', () => {
     expect(JSON.parse(harness.byId('node-output').textContent) as { revoked: boolean }).toEqual({ revoked: true })
   })
 
-  it('REQ-ADM-006 copies all generated setup tokens from rendered token controls', async () => {
+  it('REQ-ADM-006 reveals only the one-time bootstrap token at claim', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/'))).text()
-    const setupTokens = { adminToken: 'admin-a', providerToken: 'provider-a', setupToken: 'setup-a', upstreamToken: 'upstream-a', byokInstruction: 'Paste providerToken as the AI Gateway custom provider API key.' }
-    const harness = adminUiHarness(html, async () => Response.json(setupTokens, { status: 201 }))
+    const harness = adminUiHarness(html, async () => Response.json({ adminToken: 'admin-a' }, { status: 201 }))
     harness.run()
 
     await harness.clickAction('first-run-setup', { out: 'setup-output' })
     const output = harness.byId('setup-output')
     const cards = output.children.filter((child) => child.dataset.tokenCard)
-    const copyAll = output.children.find((child) => child.dataset.copyAll === 'true')
 
     expect(output.children[0]!.dataset.tokenWarning).toBe('true')
-    expect(cards.map((card) => card.dataset.tokenCard)).toEqual(['providerToken', 'setupToken', 'upstreamToken'])
-    expect(copyAll).toBeDefined()
-    await harness.click(copyAll!)
-    expect(harness.copied.at(-1)!.split('\n')).toEqual(['providerToken: provider-a', 'setupToken: setup-a', 'upstreamToken: upstream-a'])
+    // Exactly one credential is shown — the bootstrap token — and no machine tokens.
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.dataset.tokenCard).toBe('Setup access token')
+    expect(cards[0]!.children.find((child) => child.tagName === 'code')!.textContent).toBe('admin-a')
+    expect(cards[0]!.children.find((child) => child.dataset.copy)!.dataset.copy).toBe('admin-a')
+    expect(output.children.find((child) => child.dataset.copyAll === 'true')).toBeUndefined()
     expect(harness.events.some((event) => event.kind === 'setItem' && event.detail === 'session:codeflareInferenceMeshAdminToken=admin-a')).toBe(true)
     expect(harness.byId('wizard-continue-connect').hidden).toBe(false)
   })
@@ -455,19 +484,22 @@ describe('router worker behavioral contracts', () => {
     const body = await response.json() as Record<string, string>
 
     expect(response.status).toBe(201)
-    expect(new Set([body.adminToken, body.providerToken, body.setupToken, body.upstreamToken]).size).toBe(4)
+    // Claim reveals only the bootstrap token; machine tokens surface at their own steps.
+    expect(Object.keys(body)).toEqual(['adminToken'])
     expect(store.tokens.every((token) => token.verifier.startsWith('sha256:'))).toBe(true)
     expect(timingSafeEqualText('sha256:same', 'sha256:same')).toBe(true)
     expect(timingSafeEqualText('sha256:same', 'sha256:different')).toBe(false)
-    const returnedValues = new Set(Object.values(body))
-    expect(store.tokens.some((token) => returnedValues.has(token.verifier))).toBe(false)
+    expect(store.tokens.some((token) => token.verifier === body.adminToken)).toBe(false)
 
-    const staged = await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(String(body.adminToken)) }))
-    const stagedBody = await staged.json() as { setupToken: string }
+    const first = await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(body.adminToken) }))
+    const firstBody = await first.json() as { setupToken: string }
+    const second = await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(body.adminToken) }))
+    const secondBody = await second.json() as { setupToken: string }
     const activeSetupTokens = store.tokens.filter((token) => token.kind === 'setup' && token.active)
 
-    expect(staged.status).toBe(201)
-    expect(stagedBody.setupToken).not.toBe(body.setupToken)
+    expect(first.status).toBe(201)
+    expect(second.status).toBe(201)
+    expect(new Set([body.adminToken, firstBody.setupToken, secondBody.setupToken]).size).toBe(3)
     expect(activeSetupTokens).toHaveLength(2)
     expect(new Set(activeSetupTokens.map((token) => token.verifier)).size).toBe(2)
     expect(store.audit.some((event) => event.type === 'setup_token_created' && event.actor === 'admin')).toBe(true)
@@ -492,7 +524,8 @@ describe('router worker behavioral contracts', () => {
     // CredentialBoundaryTestAnchor
     const { router } = routerFixture()
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
-    const setup = await setupResponse.json() as { setupToken: string }
+    const claimAdmin = (await setupResponse.json() as { adminToken: string }).adminToken
+    const setup = await (await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(claimAdmin) }))).json() as { setupToken: string }
 
     expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: bearer('provider-secret'), body: JSON.stringify({ nodeId: 'node-a' }) }))).status).toBe(404)
     expect((await router(new Request('https://router.test/v1/models', { headers: bearer('admin-secret') }))).status).toBe(401)
@@ -642,13 +675,15 @@ describe('router worker behavioral contracts', () => {
       env: { ROUTER_PROVIDER_TOKEN: 'provider-secret', WORKER_BASE_URL: 'https://router.example.workers.dev', MAX_REQUEST_BYTES: '4096' }
     })
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
-    const setup = await setupResponse.json() as { setupToken: string; upstreamToken: string }
+    const { adminToken } = await setupResponse.json() as { adminToken: string }
+    const tokenResponse = await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(adminToken) }))
+    const { setupToken } = await tokenResponse.json() as { setupToken: string }
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
-      headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
+      headers: { ...bearer(setupToken), 'content-type': 'application/json' },
       body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1 })
     }))
-    const claimed = await claim.json() as { nodeId: string; nodeToken: string }
+    const claimed = await claim.json() as { nodeId: string; nodeToken: string; upstreamToken: string }
     await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer(claimed.nodeToken), 'content-type': 'application/json' },
@@ -662,7 +697,7 @@ describe('router worker behavioral contracts', () => {
     }))
 
     expect(response.status).toBe(200)
-    expect(capture.request!.headers.get('authorization')).toBe(`Bearer ${setup.upstreamToken}`)
+    expect(capture.request!.headers.get('authorization')).toBe(`Bearer ${claimed.upstreamToken}`)
   })
 
   it('REQ-RTR-002 releases a reservation when Mesh fetch throws', async () => {
@@ -901,7 +936,8 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ displayName: 'Expired Node', meshIp: '100.64.1.9', inferencePort: 8080, publicModels: ['mesh-default'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1 })
     }))
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
-    const setup = await setupResponse.json() as { setupToken: string }
+    const claimAdmin = (await setupResponse.json() as { adminToken: string }).adminToken
+    const setup = await (await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(claimAdmin) }))).json() as { setupToken: string }
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
@@ -996,7 +1032,8 @@ describe('router worker behavioral contracts', () => {
     })
 
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
-    const setup = await setupResponse.json() as { setupToken: string }
+    const claimAdmin = (await setupResponse.json() as { adminToken: string }).adminToken
+    const setup = await (await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(claimAdmin) }))).json() as { setupToken: string }
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
@@ -1518,7 +1555,8 @@ describe('router worker behavioral contracts', () => {
       env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 },
       releasesFetcher: githubReleasesFetcher(['v0.2.0', 'v0.1.0'])
     })
-    const setup = await (await router(new Request('https://router.test/admin/setup', { method: 'POST' }))).json() as { setupToken: string }
+    const claimAdmin = (await (await router(new Request('https://router.test/admin/setup', { method: 'POST' }))).json() as { adminToken: string }).adminToken
+    const setup = await (await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(claimAdmin) }))).json() as { setupToken: string }
     expect((await router(new Request('https://router.test/admin/agent-versions', { headers: bearer('admin-secret') }))).status).toBe(200)
     const select = await router(new Request('https://router.test/admin/agent-version', {
       method: 'POST',
