@@ -43,10 +43,11 @@ export interface CustomDomainProvisionResult {
 }
 
 interface ProviderRecord { readonly id: string; readonly slug?: string; readonly name?: string; readonly base_url?: string }
-interface RouteRecord { readonly id: string; readonly name?: string; readonly enabled?: boolean }
+export interface GatewayRecord { readonly id: string }
+export interface RouteRecord { readonly id: string; readonly name?: string; readonly enabled?: boolean }
 interface VersionRecord { readonly id?: string; readonly version_id?: string; readonly data?: unknown; readonly elements?: unknown }
 interface DeploymentRecord { readonly id?: string; readonly deployment_id?: string; readonly version_id?: string }
-interface ZoneRecord { readonly id: string; readonly name: string }
+export interface ZoneRecord { readonly id: string; readonly name: string }
 interface DnsRecord { readonly id: string; readonly type: string; readonly name: string; readonly content: string; readonly proxied?: boolean }
 interface WorkerRouteRecord { readonly id: string; readonly pattern: string; readonly script?: string }
 
@@ -71,7 +72,36 @@ export class CloudflareGatewayClient {
     }
   }
 
+  /** Gateways that exist on the account; drives selection in the admin UI. */
+  async listGateways(accountId: string): Promise<readonly GatewayRecord[]> {
+    return listFrom(await this.accountRequest<unknown>(accountId, '/ai-gateway/gateways', 'GET'), 'gateways')
+  }
+
+  /** Dynamic routes of one gateway; drives selection in the admin UI. */
+  async listRoutes(accountId: string, gatewayId: string): Promise<readonly RouteRecord[]> {
+    return listFrom(await this.accountRequest<unknown>(accountId, `/ai-gateway/gateways/${gatewayId}/routes`, 'GET'), 'routes')
+  }
+
+  /** Zones of the account; drives the domain-step selection in the admin UI. */
+  async listZones(accountId: string): Promise<readonly ZoneRecord[]> {
+    return listFrom(await this.globalRequest<unknown>(`/zones?account.id=${encodeURIComponent(accountId)}&per_page=50`, 'GET'), 'zones')
+  }
+
+  private async ensureGateway(accountId: string, gatewayId: string): Promise<void> {
+    const gateways = await this.listGateways(accountId)
+    if (gateways.some((gateway) => gateway.id === gatewayId)) return
+    await this.accountRequest(accountId, '/ai-gateway/gateways', 'POST', {
+      id: gatewayId,
+      cache_invalidate_on_update: false,
+      cache_ttl: 0,
+      collect_logs: true,
+      rate_limiting_interval: 0,
+      rate_limiting_limit: 0
+    })
+  }
+
   async syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult> {
+    await this.ensureGateway(input.accountId, input.gatewayId)
     const providerSlug = slugify(`${input.providerName}-${new URL(originOnly(input.workerUrl)).hostname}`)
     const providerBody = {
       name: input.providerName,
