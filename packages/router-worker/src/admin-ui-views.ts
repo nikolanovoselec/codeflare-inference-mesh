@@ -234,7 +234,7 @@ ${output({ id: 'agent-version-output', kind: 'agent-version', pre: true })}
   })
 }
 
-export function dashboardView(): string {
+export function dashboardView(active: boolean): string {
   const navItems = [
     navItem({ section: 'overview', label: 'Overview', hint: 'Health + activity', current: true }),
     navItem({ section: 'nodes', label: 'Nodes', hint: 'Machines + enroll' }),
@@ -254,7 +254,7 @@ export function dashboardView(): string {
     navItem({ section: 'routing', label: 'Routing', hint: 'Gateway + domain' }),
     navItem({ section: 'settings', label: 'Settings', hint: 'Versions + audit' })
   ].join('')
-  return `<div class="view dash" id="view-dashboard" hidden>
+  return `<div class="view dash" id="view-dashboard"${active ? '' : ' hidden'}>
 <nav class="side-nav" aria-label="Console sections" data-nav-sections="${escapeHtml(ADMIN_UI_NAV.sections.join(' '))}">${navItems}</nav>
 <div class="sections">${overviewSection()}${nodesSection()}${modelsSection()}${routingSection()}${meshSection()}${settingsSection()}</div>
 <nav class="tab-bar" aria-label="Console sections" data-mobile-tabs="${escapeHtml(ADMIN_UI_NAV.mobileTabs.join(' '))}">${tabs}</nav>

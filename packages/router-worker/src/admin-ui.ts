@@ -84,7 +84,7 @@ export function adminUiHtml(workerOrigin: string, state: AdminUiState): string {
   <noscript><p class="noscript-banner">This console needs JavaScript to talk to the router API.</p></noscript>
   <main>
     ${setupWizardView(state.view === 'setup')}
-    ${dashboardView()}
+    ${dashboardView(state.view === 'dashboard')}
   </main>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script type="application/json" id="admin-ui-config">${config}</script>

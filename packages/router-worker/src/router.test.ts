@@ -1120,6 +1120,8 @@ describe('router worker behavioral contracts', () => {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
       calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
+      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [] })
+      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'POST') return Response.json({ success: true, result: { id: 'gateway-a' } })
       if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [] })
       if (url.pathname.endsWith('/custom-providers') && method === 'POST') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev' } })
       if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [] } } })
@@ -1136,6 +1138,8 @@ describe('router worker behavioral contracts', () => {
     const modelNode = versionBody.elements.find((element) => element.type === 'model')!
 
     expect(calls.map((call) => `${call.method} ${call.path}`)).toEqual([
+      'GET /client/v4/accounts/account-a/ai-gateway/gateways',
+      'POST /client/v4/accounts/account-a/ai-gateway/gateways',
       'GET /client/v4/accounts/account-a/ai-gateway/custom-providers',
       'POST /client/v4/accounts/account-a/ai-gateway/custom-providers',
       'GET /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes',
@@ -1145,7 +1149,8 @@ describe('router worker behavioral contracts', () => {
       'GET /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes/route-a/deployments',
       'POST /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes/route-a/deployments'
     ])
-    expect(calls[1]!.body).toEqual({ name: 'Codeflare Inference Mesh', slug: 'codeflare-inference-mesh-router-example-workers-dev', base_url: 'https://router.example.workers.dev', description: 'Codeflare Inference Mesh OpenAI-compatible router', enable: true })
+    expect(calls[1]!.body).toEqual({ id: 'gateway-a', cache_invalidate_on_update: false, cache_ttl: 0, collect_logs: true, rate_limiting_interval: 0, rate_limiting_limit: 0 })
+    expect(calls[3]!.body).toEqual({ name: 'Codeflare Inference Mesh', slug: 'codeflare-inference-mesh-router-example-workers-dev', base_url: 'https://router.example.workers.dev', description: 'Codeflare Inference Mesh OpenAI-compatible router', enable: true })
     expect(modelNode.properties).toEqual({ provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'mesh-default', retries: 1, timeout: 120000 })
     expect(result).toMatchObject({ providerId: 'provider-a', providerSlug: 'codeflare-inference-mesh-router-example-workers-dev', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: 'gateway-a', routeName: 'mesh-default', publicModel: 'mesh-default', workerUrl: 'https://router.example.workers.dev', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
   })
@@ -1326,6 +1331,7 @@ describe('router worker behavioral contracts', () => {
       const url = new URL(String(input))
       const method = init?.method ?? 'GET'
       calls.push(`${method} ${url.pathname}`)
+      if (url.pathname.endsWith('/ai-gateway/gateways')) return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
       if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
       if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'mesh-default', enabled: true }] } } })
       if (url.pathname.endsWith('/versions')) return Response.json({ success: true, result: { data: { versions: [{ id: 'version-a', elements }] } } })

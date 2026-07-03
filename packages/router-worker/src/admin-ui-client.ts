@@ -491,7 +491,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
 
   // --- wizard data loaders ----------------------------------------------------
   let accessEmails = [];
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const emailPattern = /^[^ @]+@[^ @]+[.][^ @]+$/;
   function renderEmailChips() {
     const list = byId('wizard-access-emails');
     if (!list) return;
