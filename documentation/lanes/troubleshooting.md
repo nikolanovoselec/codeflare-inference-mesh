@@ -127,7 +127,7 @@
 
 **Symptom:** A public endpoint returns `429` with body `{ "error": "rate_limited", "requestId": string }` and a `Retry-After` header.
 
-**Cause:** The request exceeded its rate-limit bucket for the current Cloudflare location. Buckets are per route class: credentialed `/v1` inference (the AI Gateway, keyed by provider token) has a high ceiling, while token-less `/v1` and other public routes are keyed by client IP with low limits, and node heartbeat, enrollment, and admin authentication have their own limits. This is distinct from the `429` `no-node` response, which means no node is available rather than a rate limit.
+**Cause:** The request exceeded its rate-limit bucket for the current Cloudflare location. Buckets are per route class: credentialed `/v1` inference (the AI Gateway, keyed by provider token) has a high ceiling, while token-less `/v1` and other public routes are keyed by client IP with low limits, and node heartbeat, enrollment, and admin authentication have their own limits. This is distinct from the `429` `no-node` response, which means no node is available rather than a rate limit. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
 **Fix:** Wait the `Retry-After` interval and retry. If legitimate traffic is being limited, raise the affected bucket's `limit` in `wrangler.toml` (values are per Cloudflare location per 60s) and redeploy. Confirm production inference flows through the AI Gateway so it uses the high provider-token bucket rather than the low anonymous one. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited -->
 
