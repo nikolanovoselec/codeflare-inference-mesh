@@ -325,13 +325,40 @@ The `/api/v1` surface lets fleet managers and MDM systems orchestrate the mesh p
 
 An admin mints automation keys with `POST /api/v1/keys` (which itself requires the admin credential). The secret is returned once at creation — store it securely, because it is never retrievable again. List active keys with `GET /api/v1/keys` and revoke one with `DELETE /api/v1/keys/{id}`; a revoked key stops authenticating immediately.
 
-```bash
-# Mint an automation key (admin credential required); capture the one-time secret.
-KEY=$(curl -s -X POST https://mesh.example.com/api/v1/keys \
-  -H "authorization: Bearer $ADMIN_TOKEN" | jq -r .token)
+The full fleet lifecycle is drivable from these endpoints alone:
 
-# Use the key to read a fleet snapshot.
-curl -s https://mesh.example.com/api/v1/status -H "authorization: Bearer $KEY"
+```bash
+BASE=https://mesh.example.com
+
+# 1. Mint an automation key (admin credential required); capture the one-time secret.
+KEY=$(curl -s -X POST "$BASE/api/v1/keys" \
+  -H "authorization: Bearer $ADMIN_TOKEN" | jq -r .token)
+AUTH="authorization: Bearer $KEY"
+
+# 2. Read a fleet snapshot.
+curl -s "$BASE/api/v1/status" -H "$AUTH"
+
+# 3. Mint an enrollment token and run the installer on each machine (see the installer routes).
+SETUP=$(curl -s -X POST "$BASE/api/v1/enrollment-tokens" -H "$AUTH" | jq -r .setupToken)
+
+# 4. List nodes, filtering and paginating a large fleet.
+curl -s "$BASE/api/v1/nodes?status=online&limit=100" -H "$AUTH"
+
+# 5. Configure a model, switch it on, and pin the fleet's node-agent version.
+curl -s -X POST "$BASE/api/v1/models/mesh-default-qwen36-35b" \
+  -H "$AUTH" -H "content-type: application/json" -d '{"contextWindow":8192}'
+curl -s -X POST "$BASE/api/v1/models/mesh-default-qwen36-35b/enable" -H "$AUTH"
+curl -s -X PUT "$BASE/api/v1/agent-version" \
+  -H "$AUTH" -H "content-type: application/json" -d '{"version":"v1.2.0"}'
+
+# 6. Poll operational events for monitoring; advance with the returned cursor.
+curl -s "$BASE/api/v1/events?since=0&limit=100" -H "$AUTH"
+
+# 7. Decommission a node so it must re-enroll.
+curl -s -X DELETE "$BASE/api/v1/nodes/{nodeId}" -H "$AUTH"
+
+# 8. Revoke the automation key when the automation is retired.
+curl -s -X DELETE "$BASE/api/v1/keys/{keyId}" -H "authorization: Bearer $ADMIN_TOKEN"
 ```
 
 ### POST /api/v1/keys
