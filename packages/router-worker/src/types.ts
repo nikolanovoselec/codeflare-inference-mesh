@@ -16,6 +16,7 @@ export type ModelSourceMode = 'meshllm-ref'
 
 export interface ModelProfile {
   readonly id: string
+  readonly displayName: string
   readonly publicAliases: readonly string[]
   readonly upstreamModel: string
   readonly sourceMode: ModelSourceMode

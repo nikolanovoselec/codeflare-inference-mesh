@@ -3,6 +3,7 @@ import type { ModelProfile } from './types'
 export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
   {
     id: 'mesh-default-qwen36-35b',
+    displayName: 'Qwen3.6 35B',
     publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
     upstreamModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
     sourceMode: 'meshllm-ref',
@@ -19,6 +20,7 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
   },
   {
     id: 'mesh-split-qwen36-35b',
+    displayName: 'Qwen3.6 35B (multi-machine)',
     publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
     upstreamModel: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd',
     sourceMode: 'meshllm-ref',
@@ -35,6 +37,7 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
   },
   {
     id: 'mesh-smoke-qwen25-1.5b',
+    displayName: 'Qwen2.5 Coder 1.5B',
     publicAliases: ['mesh-smoke', 'smoke-test'],
     upstreamModel: 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M',
     sourceMode: 'meshllm-ref',

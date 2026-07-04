@@ -654,6 +654,7 @@ describe('router worker behavioral contracts', () => {
       'mesh-smoke-qwen25-1.5b'
     ])
     expect(single).toMatchObject({
+      displayName: 'Qwen3.6 35B',
       publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
       meshllm: { modelRef: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', split: false, bindPort: 4300 },
       contextWindow: 262144,
@@ -661,6 +662,7 @@ describe('router worker behavioral contracts', () => {
       active: true
     })
     expect(split).toMatchObject({
+      displayName: 'Qwen3.6 35B (multi-machine)',
       publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
       meshllm: { modelRef: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd', split: true, bindPort: 4310 },
       contextWindow: 262144,
@@ -668,12 +670,19 @@ describe('router worker behavioral contracts', () => {
       active: false
     })
     expect(smoke).toMatchObject({
+      displayName: 'Qwen2.5 Coder 1.5B',
       publicAliases: ['mesh-smoke', 'smoke-test'],
       meshllm: { modelRef: 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M', split: false, bindPort: 4320 },
       contextWindow: 32768,
       rolloutPercent: 100,
       active: true
     })
+    // Canonical identity: every profile carries a human display name distinct from its wiring id.
+    for (const profile of DEFAULT_MODEL_PROFILES) {
+      expect(typeof profile.displayName).toBe('string')
+      expect(profile.displayName.length).toBeGreaterThan(0)
+      expect(profile.displayName).not.toBe(profile.id)
+    }
   })
 
   it('REQ-RUN-002 exposes profile source modes and meshllm contract values', () => {
@@ -684,6 +693,8 @@ describe('router worker behavioral contracts', () => {
       expect(profile.version).toBe(1)
       expect(Number.isInteger(profile.meshllm.bindPort)).toBe(true)
       expect(profile.meshllm.bindPort).toBeGreaterThan(0)
+      expect(profile.displayName.trim()).toBe(profile.displayName)
+      expect(profile.displayName.length).toBeGreaterThan(0)
     }
   })
 
