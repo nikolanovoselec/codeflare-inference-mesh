@@ -504,6 +504,29 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-020: Node status clarity and filtering
+
+**Intent:** An operator scanning the Nodes section must understand each machine's state at a glance in plain words, never a frozen internal substate, and must be able to narrow a large fleet by state or by name.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Each machine's status renders in plain words — `Ready` when it is serving a model, `Active` (with what it is doing, e.g. downloading or loading) when it is online but not yet serving, `Failed` on a runtime error, and `Offline` (with a last-seen age when known) when it has stopped checking in — and an offline machine never shows the stale runtime substate frozen from its last heartbeat; a metric that is not yet real renders as an em dash rather than a misleading `0`. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline) -->
+2. The Nodes section filters the table by a status chip (all, ready, active, offline) and by a search box that applies once at least three characters are typed, matching a machine's id or name. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 filters the nodes table by status chip and by search) -->
+
+**Constraints:** None.
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-015](#req-adm-015-mesh-visualization)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)

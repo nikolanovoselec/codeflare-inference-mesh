@@ -14,6 +14,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const onCustomDomain = Boolean(state.customDomain) && location.hostname === state.customDomain;
   let lastStatus;
   let nodeSort = { key: '', dir: 1 };
+  let nodeFilter = 'all';
+  let nodeSearch = '';
   let pollTimer;
   let toksSamples = [];
   const byId = (id) => document.getElementById(id);
@@ -322,6 +324,33 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (node.status === 'online' && (runtime === 'running' || runtime === 'ready')) return 'ok';
     return 'warn';
   };
+  const nodeReady = (node) => Boolean(node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.length > 0);
+  function nodeRelAge(node) {
+    if (!node.lastSeenAt) return '';
+    const secs = Math.max(0, Math.round((Date.now() - node.lastSeenAt) / 1000));
+    if (secs < 60) return secs + 's ago';
+    if (secs < 3600) return Math.round(secs / 60) + 'm ago';
+    if (secs < 86400) return Math.round(secs / 3600) + 'h ago';
+    return Math.round(secs / 86400) + 'd ago';
+  }
+  // Plain lifecycle category: ready (serving a model), active (online but still
+  // loading — includes failed, which is online-but-not-serving), offline (no heartbeat).
+  function nodeCategory(node) {
+    if (node.status === 'offline' || node.status === 'revoked') return 'offline';
+    if (nodeReady(node)) return 'ready';
+    return 'active';
+  }
+  function nodeStatusText(node) {
+    if (node.status === 'offline') { const age = nodeRelAge(node); return 'Offline' + (age ? ' · last seen ' + age : ''); }
+    if (node.status === 'revoked') return 'Removed';
+    if (node.status === 'draining') return 'Draining';
+    const rt = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : '';
+    if (rt === 'failed') return 'Failed';
+    if (nodeReady(node)) return 'Ready';
+    if (rt === 'downloading') return 'Starting · downloading model';
+    if (rt === 'loading' || rt === 'starting') return 'Starting · loading model';
+    return 'Starting';
+  }
   const revokeButton = (nodeId) => {
     const revoke = document.createElement('button');
     revoke.type = 'button';
@@ -365,7 +394,23 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(row);
       return;
     }
-    const ordered = nodes.slice();
+    let visible = nodes.slice();
+    if (nodeFilter !== 'all') visible = visible.filter((node) => nodeCategory(node) === nodeFilter);
+    if (nodeSearch.length >= 3) {
+      const query = nodeSearch.toLowerCase();
+      visible = visible.filter((node) => (node.id || '').toLowerCase().indexOf(query) >= 0 || (node.displayName || '').toLowerCase().indexOf(query) >= 0);
+    }
+    if (!visible.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.className = 'empty-note';
+      cell.setAttribute('colspan', String(config.nodesTable.columns.length));
+      cell.textContent = 'No machines match this filter.';
+      row.appendChild(cell);
+      bodyEl.appendChild(row);
+      return;
+    }
+    const ordered = visible;
     if (nodeSort.key) {
       ordered.sort((left, right) => {
         const a = nodeSortValue(left, nodeSort.key);
@@ -392,10 +437,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       idButton.dataset.nodeId = node.id;
       idButton.textContent = node.id;
       idCell.appendChild(idButton);
-      const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
-      cell('status', undefined, undefined).appendChild(statusDot(nodeTone(node), (node.status || 'unknown') + ' \u00b7 ' + runtime));
-      cell('toks', String(nodeToks(node)), round1(nodeToks(node)));
-      cell('vram', String(nodeVramTotal(node)), Math.round(nodeVramTotal(node) / 1024) + ' GB');
+      cell('status', nodeCategory(node), undefined).appendChild(statusDot(nodeTone(node), nodeStatusText(node)));
+      cell('toks', String(nodeToks(node)), nodeReady(node) ? round1(nodeToks(node)) : '\u2014');
+      cell('vram', String(nodeVramTotal(node)), nodeReady(node) && nodeVramTotal(node) ? Math.round(nodeVramTotal(node) / 1024) + ' GB' : '\u2014');
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
       versionCell.appendChild(versionCode(node, desiredVersion));
@@ -515,10 +559,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const bodyEl = openDrawer(node.id);
     if (!bodyEl) return;
     const metrics = node.metrics || {};
-    const runtime = metrics.runtimeState || 'unknown';
-    bodyEl.appendChild(drawerField('status', 'Status', (node.status || 'unknown') + ' \u00b7 ' + runtime));
-    bodyEl.appendChild(drawerField('toks', 'Tokens/s', round1(nodeToks(node)), String(nodeToks(node))));
-    bodyEl.appendChild(drawerField('vram', 'VRAM MiB', (metrics.gpuMemoryUsedMiB || 0) + ' / ' + (metrics.gpuMemoryTotalMiB || 0), (metrics.gpuMemoryUsedMiB || 0) + '/' + (metrics.gpuMemoryTotalMiB || 0)));
+    bodyEl.appendChild(drawerField('status', 'Status', nodeStatusText(node)));
+    bodyEl.appendChild(drawerField('toks', 'Tokens/s', nodeReady(node) ? round1(nodeToks(node)) : '\u2014', String(nodeToks(node))));
+    bodyEl.appendChild(drawerField('vram', 'VRAM MiB', nodeReady(node) ? ((metrics.gpuMemoryUsedMiB || 0) + ' / ' + (metrics.gpuMemoryTotalMiB || 0)) : '\u2014', (metrics.gpuMemoryUsedMiB || 0) + '/' + (metrics.gpuMemoryTotalMiB || 0)));
     if (metrics.gpuName) bodyEl.appendChild(drawerField('gpu', 'GPU', metrics.gpuName));
     const desired = lastStatus ? lastStatus.desiredAgentVersion : undefined;
     const reported = node.agentVersion || 'unreported';
@@ -1109,6 +1152,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const key = button.dataset.sort || 'id';
       nodeSort = { key: key, dir: nodeSort.key === key ? -nodeSort.dir : -1 };
       if (lastStatus) renderNodesTable(Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [], lastStatus.desiredAgentVersion);
+    } else if (action === 'nodes-filter') {
+      nodeFilter = button.dataset.filter || 'all';
+      document.querySelectorAll('[data-action="nodes-filter"]').forEach((chip) => { if (chip.dataset.filter === nodeFilter) chip.setAttribute('aria-current', 'page'); else chip.removeAttribute('aria-current'); });
+      if (lastStatus) renderNodesTable(Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [], lastStatus.desiredAgentVersion);
     } else if (action === 'node-detail') {
       openNodeDrawer(button.dataset.nodeId || '');
     } else if (action === 'model-detail') {
@@ -1251,7 +1298,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       setOutput('login-output', friendlyError('admin-login', error), true);
     }
   });
+  const applyNodeSearch = (value) => {
+    nodeSearch = value || '';
+    if (lastStatus) renderNodesTable(Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [], lastStatus.desiredAgentVersion);
+  };
+  document.addEventListener('input', (event) => {
+    const search = event.target.closest('[data-node-search]');
+    if (search) applyNodeSearch(search.value);
+  });
   document.addEventListener('change', (event) => {
+    const search = event.target.closest('[data-node-search]');
+    if (search) { applyNodeSearch(search.value); return; }
     const installer = event.target.closest('[data-installer-platform]');
     if (installer) {
       const prefix = installer.dataset.prefix || '';

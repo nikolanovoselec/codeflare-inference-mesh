@@ -144,6 +144,51 @@ describe('dashboard overview contracts', () => {
     expect(cells.find((cell) => cell.dataset.cell === 'models')!.dataset.value).toBe('2')
   })
 
+  it('REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline', async () => {
+    const nodes = [
+      { id: 'ready-node', status: 'online', metrics: { runtimeState: 'ready', readyModels: ['m'], tokensPerSecond: 10, gpuMemoryTotalMiB: 8192, gpuMemoryUsedMiB: 4096 } },
+      { id: 'loading-node', status: 'online', metrics: { runtimeState: 'downloading', readyModels: [], tokensPerSecond: 0, gpuMemoryTotalMiB: 0 } },
+      { id: 'gone-node', status: 'offline', metrics: { runtimeState: 'starting', readyModels: [] } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    const statusOf = (id: string) => {
+      const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === id)!
+      const cell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
+      return { category: cell.dataset.value, text: descendants(cell).map((node) => node.textContent).filter(Boolean).join(' ') }
+    }
+    expect(statusOf('ready-node').category).toBe('ready')
+    expect(statusOf('ready-node').text).toContain('Ready')
+    expect(statusOf('loading-node').category).toBe('active')
+    expect(statusOf('loading-node').text).toContain('downloading')
+    // A metric that is not yet real reads as an em dash, never a misleading 0.
+    const loadingToks = descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'loading-node')!).find((cell) => cell.dataset.cell === 'toks')!
+    expect(loadingToks.textContent).toBe('—')
+    // The offline node drops the frozen "starting" substate entirely.
+    const gone = statusOf('gone-node')
+    expect(gone.category).toBe('offline')
+    expect(gone.text).toContain('Offline')
+    expect(gone.text).not.toContain('starting')
+  })
+
+  it('REQ-ADM-015 filters the nodes table by status chip and by search', async () => {
+    const harness = await dashboardHarness()
+    // Default fixture: node-big + node-small are serving (ready), node-down is offline.
+    await harness.clickAction('nodes-filter', { filter: 'offline' })
+    expect(rowOrder(harness)).toEqual(['node-down'])
+    await harness.clickAction('nodes-filter', { filter: 'ready' })
+    expect(rowOrder(harness).slice().sort()).toEqual(['node-big', 'node-small'])
+    await harness.clickAction('nodes-filter', { filter: 'all' })
+    expect(rowOrder(harness).length).toBe(3)
+    // Search filters only once at least three characters are typed.
+    const search = harness.byId('node-search')
+    search.value = 'sm'
+    await harness.change(search)
+    expect(rowOrder(harness).length).toBe(3)
+    search.value = 'small'
+    await harness.change(search)
+    expect(rowOrder(harness)).toEqual(['node-small'])
+  })
+
   it('REQ-ADM-015 opens a node drawer with metrics, version drift, and an armed revoke control', async () => {
     const harness = await dashboardHarness()
     const drawer = harness.byId(ADMIN_UI_DRAWER.containerId)
