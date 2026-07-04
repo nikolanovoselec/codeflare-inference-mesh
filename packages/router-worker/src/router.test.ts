@@ -1172,6 +1172,9 @@ describe('router worker behavioral contracts', () => {
     expect(fallbackScript).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/releases/latest/download')
     expect(windowsScript).toContain('Register-ScheduledTask')
     expect(windowsScript).not.toContain('New-Service')
+    // Windows install and its scheduled task resolve an explicit config path under ProgramData.
+    expect(windowsScript).toContain('--config $ConfigPath --data-dir $StateDir')
+    expect(windowsScript).toContain('-Argument "run --config $ConfigPath"')
     expect(linuxPlan).toEqual({ assetName: 'inference-mesh-agent-linux-amd64.tar.gz', extractedBinary: 'inference-mesh-agent-linux-amd64', installedBinary: 'inference-mesh-agent', checksumFile: 'checksums.txt' })
     expect(windowsPlan).toEqual({ assetName: 'inference-mesh-agent-windows-amd64.zip', extractedBinary: 'inference-mesh-agent-windows-amd64.exe', installedBinary: 'inference-mesh-agent.exe', checksumFile: 'checksums.txt' })
     // Fetching a command never mints: no orphan setup token is created on view.

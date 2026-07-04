@@ -156,7 +156,7 @@ try {
   $env:INFERENCE_MESH_CONFIG = $ConfigPath
   & (Join-Path $InstallDir 'inference-mesh-agent.exe') install --router $env:ROUTER_URL --setup-token $env:SETUP_TOKEN --config $ConfigPath --data-dir $StateDir
   $TaskName = 'inference-mesh-agent'
-  $Action = New-ScheduledTaskAction -Execute (Join-Path $InstallDir 'inference-mesh-agent.exe') -Argument "run --config `"$ConfigPath`""
+  $Action = New-ScheduledTaskAction -Execute (Join-Path $InstallDir 'inference-mesh-agent.exe') -Argument "run --config $ConfigPath"
   $Trigger = New-ScheduledTaskTrigger -AtStartup
   $Principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
   $Settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
