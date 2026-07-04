@@ -68,7 +68,7 @@ jobs:
         with:
           go-version: '1.26.4'
       - name: Build staged binary
-        run: mkdir -p dist && GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=ci" -o dist/inference-mesh-agent-linux-amd64 ./cmd/inference-mesh-agent
+        run: mkdir -p dist && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=ci" -o dist/inference-mesh-agent-linux-amd64 ./cmd/inference-mesh-agent
       - name: Create archive and checksums
         run: |
           tar -C dist -czf dist/inference-mesh-agent-linux-amd64.tar.gz inference-mesh-agent-linux-amd64

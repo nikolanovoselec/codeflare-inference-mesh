@@ -67,6 +67,10 @@ export function validateCustomDomain(hostname: string): boolean {
 function unixInstallScript(platform: 'linux' | 'macos', repository: string, releaseTag?: string): string {
   const archExpression = platform === 'macos' ? '$(uname -m | sed s/x86_64/amd64/ | sed s/arm64/arm64/)' : '$(uname -m | sed s/x86_64/amd64/ | sed s/aarch64/arm64/)'
   const platformLiteral = platform === 'macos' ? 'macos' : 'linux'
+  // Daemon-owned state dir the service reads and rewrites at runtime, so the
+  // config path never depends on the invoking user's home directory.
+  const stateDir = platform === 'macos' ? '/usr/local/var/inference-mesh' : '/var/lib/inference-mesh'
+  const configPath = `${stateDir}/config.json`
   return `#!/bin/sh
 set -eu
 : "\${ROUTER_URL:?ROUTER_URL is required}"
@@ -91,7 +95,8 @@ else
 fi
 tar -xzf "$ASSET"
 install -m 0755 "$BIN" /usr/local/bin/inference-mesh-agent
-/usr/local/bin/inference-mesh-agent install --router "$ROUTER_URL" --setup-token "$SETUP_TOKEN"
+mkdir -p ${stateDir}
+INFERENCE_MESH_CONFIG=${configPath} /usr/local/bin/inference-mesh-agent install --router "$ROUTER_URL" --setup-token "$SETUP_TOKEN" --config ${configPath} --data-dir ${stateDir}
 if command -v systemctl >/dev/null 2>&1; then
   cat >/etc/systemd/system/inference-mesh-agent.service <<'UNIT'
 [Unit]
@@ -100,7 +105,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/inference-mesh-agent run
+Environment=INFERENCE_MESH_CONFIG=${configPath}
+WorkingDirectory=${stateDir}
+ExecStart=/usr/local/bin/inference-mesh-agent run --config ${configPath}
 Restart=always
 RestartSec=5
 
@@ -113,9 +120,12 @@ elif command -v launchctl >/dev/null 2>&1; then
   cat >/Library/LaunchDaemons/com.codeflare.inference-mesh-agent.plist <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>Label</key><string>com.codeflare.inference-mesh-agent</string><key>ProgramArguments</key><array><string>/usr/local/bin/inference-mesh-agent</string><string>run</string></array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>
+<plist version="1.0"><dict><key>Label</key><string>com.codeflare.inference-mesh-agent</string><key>ProgramArguments</key><array><string>/usr/local/bin/inference-mesh-agent</string><string>run</string><string>--config</string><string>${configPath}</string></array><key>EnvironmentVariables</key><dict><key>INFERENCE_MESH_CONFIG</key><string>${configPath}</string></dict><key>WorkingDirectory</key><string>${stateDir}</string><key>RunAtLoad</key><true/><key>KeepAlive</key><true/></dict></plist>
 PLIST
   launchctl bootstrap system /Library/LaunchDaemons/com.codeflare.inference-mesh-agent.plist || launchctl load /Library/LaunchDaemons/com.codeflare.inference-mesh-agent.plist
+else
+  echo "inference-mesh-agent: no supported service manager (systemd or launchd) found" >&2
+  exit 1
 fi
 `
 }
@@ -140,9 +150,13 @@ try {
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
   Expand-Archive (Join-Path $Tmp $Asset) -DestinationPath $InstallDir -Force
   Copy-Item (Join-Path $InstallDir $Bin) (Join-Path $InstallDir 'inference-mesh-agent.exe') -Force
-  & (Join-Path $InstallDir 'inference-mesh-agent.exe') install --router $env:ROUTER_URL --setup-token $env:SETUP_TOKEN
+  $StateDir = Join-Path $env:ProgramData 'InferenceMesh'
+  $ConfigPath = Join-Path $StateDir 'config.json'
+  New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+  $env:INFERENCE_MESH_CONFIG = $ConfigPath
+  & (Join-Path $InstallDir 'inference-mesh-agent.exe') install --router $env:ROUTER_URL --setup-token $env:SETUP_TOKEN --config $ConfigPath --data-dir $StateDir
   $TaskName = 'inference-mesh-agent'
-  $Action = New-ScheduledTaskAction -Execute (Join-Path $InstallDir 'inference-mesh-agent.exe') -Argument 'run'
+  $Action = New-ScheduledTaskAction -Execute (Join-Path $InstallDir 'inference-mesh-agent.exe') -Argument "run --config `"$ConfigPath`""
   $Trigger = New-ScheduledTaskTrigger -AtStartup
   $Principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
   $Settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)

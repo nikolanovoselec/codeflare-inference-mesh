@@ -274,6 +274,8 @@ describe('workflow contract values', () => {
     expect(stepNames).toEqual(expect.arrayContaining(['Build release artifacts and manifest', 'Sign checksums when signing is configured', 'Publish GitHub Release', 'Deploy Worker', 'actions/upload-artifact@v7.0.1']))
     const buildStep = stepByName(deployJob, 'Build release artifacts and manifest')!
     expect(buildStep).toMatchObject({ 'working-directory': 'packages/node-agent' })
+    // Linux binaries build with CGO disabled so they link statically and run across glibc distributions (Arch, Debian, Ubuntu, RHEL).
+    expect(buildStep.run).toContain('CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build')
     const buildExecution = runShellBlockWithFiles(
       buildStep.run!
         .replaceAll('${{ steps.settings.outputs.version_tag }}', 'v0.1.0-dev.7')

@@ -237,7 +237,7 @@ jobs:
             EXT=""
             [ "$GOOS" = "windows" ] && EXT=".exe"
             OUT="dist/inference-mesh-agent-${GOOS}-${GOARCH}${EXT}"
-            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-X main.version=${{ steps.settings.outputs.version_tag }}" -o "$OUT" ./cmd/inference-mesh-agent
+            CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-X main.version=${{ steps.settings.outputs.version_tag }}" -o "$OUT" ./cmd/inference-mesh-agent
             if [ "$GOOS" = "windows" ]; then
               (cd dist && zip "inference-mesh-agent-${GOOS}-${GOARCH}.zip" "inference-mesh-agent-${GOOS}-${GOARCH}${EXT}")
             else

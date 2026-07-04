@@ -3,6 +3,7 @@
 ## Contents
 
 - [Trust boundaries](#trust-boundaries)
+- [Authenticated AI Gateway](#authenticated-ai-gateway)
 - [Route authorization](#route-authorization)
 - [Rate limiting](#rate-limiting)
 - [Token storage](#token-storage)
@@ -31,7 +32,7 @@
 
 | Boundary | Credential | Purpose | REQs |
 | --- | --- | --- | --- |
-| Client to AI Gateway | Gateway auth token | Lets clients call the selected Gateway. | [REQ-SEC-001](../../sdd/spec/security.md) |
+| Client to AI Gateway | AI Gateway Run token (`cf-aig-authorization`) | Authenticated Gateway rejects requests without a valid AI Gateway token, so the open gateway cannot forward the stored provider key on a stranger's behalf. | [REQ-SEC-012](../../sdd/spec/security.md), [REQ-SEC-001](../../sdd/spec/security.md) |
 | AI Gateway to Worker | Provider token | Lets Gateway call router `/v1/*` routes. | [REQ-GWY-002](../../sdd/spec/gateway.md), [REQ-SEC-001](../../sdd/spec/security.md) |
 | Admin to Worker | Admin token/session | Protects setup and admin routes after first-run setup completes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | Recovery to Worker | Admin recovery token | Replaces a lost admin token only on `POST /admin/recovery/reset`; not accepted for normal admin, provider, node, or setup routes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
@@ -42,6 +43,16 @@
 | Node to private mesh | Mesh invite token | Admits a node's MeshLLM process to a profile's private mesh; held at rest only as an AES-GCM envelope in D1 under the `MESH_STATE_KEY` Worker secret. | [REQ-SEC-006](../../sdd/spec/security.md) |
 | Workflow to Cloudflare | Deploy token | Deploys Worker and migrates D1. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Worker to Cloudflare API | Runtime token | Creates Gateway and optional domain resources. | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md) |
+
+## Authenticated AI Gateway
+
+**Threat:** The mesh AI Gateway forwards inference to the router using the stored BYOK provider key. If the gateway were open, any caller who learned the gateway URL would reach the router with a valid provider credential already attached, bypassing the router's own bearer check.
+
+**Mitigation:** The Worker provisions the gateway as an Authenticated Gateway (`authentication: true`) and reconciles any gateway created before this to authenticated on the next sync. Provider-native requests to `gateway.ai.cloudflare.com` must then carry a valid AI Gateway token in the `cf-aig-authorization` header; the operator playground sends the Worker's runtime token, and external clients of the route supply their own token created with the `AI Gateway Run` permission. AI Gateway tokens are account-scoped, so isolate tenants with separate Cloudflare accounts rather than per-gateway token scope.
+
+**Verification:** The gateway-provisioning test asserts creation with authentication and reconciliation of an existing open gateway; the playground test asserts the `cf-aig-authorization` header. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat -->
+
+**Implements:** [REQ-SEC-012](../../sdd/spec/security.md)
 
 ## Route authorization
 

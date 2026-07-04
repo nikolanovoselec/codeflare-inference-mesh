@@ -43,7 +43,7 @@ export interface CustomDomainProvisionResult {
 }
 
 interface ProviderRecord { readonly id: string; readonly slug?: string; readonly name?: string; readonly base_url?: string }
-export interface GatewayRecord { readonly id: string }
+export interface GatewayRecord { readonly id: string; readonly authentication?: boolean }
 export interface RouteRecord {
   readonly id: string
   readonly name?: string
@@ -93,16 +93,28 @@ export class CloudflareGatewayClient {
   }
 
   private async ensureGateway(accountId: string, gatewayId: string): Promise<void> {
-    const gateways = await this.listGateways(accountId)
-    if (gateways.some((gateway) => gateway.id === gatewayId)) return
-    await this.accountRequest(accountId, '/ai-gateway/gateways', 'POST', {
-      id: gatewayId,
+    // authentication: true makes this an Authenticated Gateway. Without it the
+    // gateway is open, and because it forwards using the stored BYOK provider key
+    // any caller who knows the gateway URL reaches the router with valid
+    // credentials attached. The gateway must therefore always be authenticated.
+    const settings = {
       cache_invalidate_on_update: false,
       cache_ttl: 0,
       collect_logs: true,
       rate_limiting_interval: 0,
-      rate_limiting_limit: 0
-    })
+      rate_limiting_limit: 0,
+      authentication: true
+    }
+    const existing = (await this.listGateways(accountId)).find((gateway) => gateway.id === gatewayId)
+    if (!existing) {
+      await this.accountRequest(accountId, '/ai-gateway/gateways', 'POST', { id: gatewayId, ...settings })
+      return
+    }
+    // Reconcile a gateway created before authentication was enforced so it never
+    // stays open; PUT requires the full settings body.
+    if (existing.authentication !== true) {
+      await this.accountRequest(accountId, `/ai-gateway/gateways/${gatewayId}`, 'PUT', settings)
+    }
   }
 
   async syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult> {

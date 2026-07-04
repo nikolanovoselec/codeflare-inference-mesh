@@ -145,6 +145,75 @@ func TestREQNODE008AppliesDetectedMeshIPBeforeClaim(t *testing.T) {
 	})
 }
 
+func TestREQNODE008DetectsWARPAdapterAndIP(t *testing.T) {
+	t.Run("REQ-NODE-008", func(t *testing.T) {
+		warpAddr := &net.IPNet{IP: net.ParseIP("100.96.0.26"), Mask: net.CIDRMask(32, 32)}
+		lanAddr := &net.IPNet{IP: net.ParseIP("192.168.1.108"), Mask: net.CIDRMask(32, 32)}
+
+		// A named WARP adapter is authoritative even alongside a LAN interface.
+		named := []NamedInterface{
+			{Name: "CloudflareWARP", Addrs: []net.Addr{warpAddr}},
+			{Name: "eth0", Addrs: []net.Addr{lanAddr}},
+		}
+		if ip, ok := DetectWARPMeshIP(named); !ok || ip != "100.96.0.26" {
+			t.Fatalf("named WARP adapter must win, got %q ok=%v", ip, ok)
+		}
+
+		// macOS presents an unnamed utun; the WARP CGNAT range still detects it.
+		utun := []NamedInterface{
+			{Name: "utun4", Addrs: []net.Addr{warpAddr}},
+			{Name: "en0", Addrs: []net.Addr{lanAddr}},
+		}
+		if ip, ok := DetectWARPMeshIP(utun); !ok || ip != "100.96.0.26" {
+			t.Fatalf("WARP CGNAT range must be detected on unnamed adapters, got %q ok=%v", ip, ok)
+		}
+
+		// No WARP interface present yields no WARP IP.
+		if ip, ok := DetectWARPMeshIP([]NamedInterface{{Name: "en0", Addrs: []net.Addr{lanAddr}}}); ok || ip != "" {
+			t.Fatalf("absent WARP adapter must yield no WARP IP, got %q ok=%v", ip, ok)
+		}
+
+		// Address-only fallback prefers the WARP-range address over LAN.
+		if ip, ok := DetectMeshIP([]net.Addr{lanAddr, warpAddr}); !ok || ip != "100.96.0.26" {
+			t.Fatalf("WARP-range address must win over LAN, got %q ok=%v", ip, ok)
+		}
+		// A LAN-only host without WARP uses its single private address.
+		if ip, ok := DetectMeshIP([]net.Addr{lanAddr}); !ok || ip != "192.168.1.108" {
+			t.Fatalf("LAN-only host should use its single private IP, got %q ok=%v", ip, ok)
+		}
+		// Two WARP-range addresses are ambiguous and fail closed.
+		warpTwo := &net.IPNet{IP: net.ParseIP("100.96.0.27"), Mask: net.CIDRMask(32, 32)}
+		if ip, ok := DetectMeshIP([]net.Addr{warpAddr, warpTwo}); ok || ip != "" {
+			t.Fatalf("ambiguous WARP addresses must fail closed, got %q ok=%v", ip, ok)
+		}
+	})
+}
+
+func TestConfigPathHonorsExplicitConfigEnv(t *testing.T) {
+	t.Run("REQ-NODE-001", func(t *testing.T) {
+		explicit := filepath.Join(t.TempDir(), "explicit-config.json")
+		t.Setenv("INFERENCE_MESH_CONFIG", explicit)
+		if got := ConfigPath(); got != explicit {
+			t.Fatalf("explicit config override ignored: got %q want %q", got, explicit)
+		}
+		t.Setenv("INFERENCE_MESH_CONFIG", "")
+		if got := ConfigPath(); got == explicit || got == "" {
+			t.Fatalf("cleared override should fall back to the default path, got %q", got)
+		}
+	})
+}
+
+func TestRequireMeshIPFailsClosedWhenUnresolved(t *testing.T) {
+	t.Run("REQ-NODE-008", func(t *testing.T) {
+		if err := RequireMeshIP(Config{MeshIP: ""}); err == nil {
+			t.Fatal("empty mesh IP must fail before claim")
+		}
+		if err := RequireMeshIP(Config{MeshIP: "100.96.0.26"}); err != nil {
+			t.Fatalf("resolved mesh IP must pass, got %v", err)
+		}
+	})
+}
+
 func TestREQNODE007HeartbeatResendsMeshIdentityEveryTick(t *testing.T) {
 	t.Run("REQ-NODE-007 REQ-RUN-006", func(t *testing.T) {
 		cfg := DefaultConfig(t.TempDir())

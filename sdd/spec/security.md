@@ -292,6 +292,30 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 ---
 
+### REQ-SEC-012: Authenticated AI Gateway
+
+**Intent:** The mesh AI Gateway forwards requests to the router using the stored BYOK provider key, so an unauthenticated gateway would let any caller who knows the gateway URL reach the router with valid credentials attached; the gateway must therefore require a valid AI Gateway token on every request.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The mesh provisions its AI Gateway with authentication enabled, so provider-native requests require a valid AI Gateway token. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 provisions an Authenticated Gateway and reconciles an existing open gateway) -->
+2. A gateway created before authentication was enforced is reconciled to authenticated on the next sync, and an already-authenticated gateway is left unchanged. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 provisions an Authenticated Gateway and reconciles an existing open gateway) -->
+3. The operator playground authenticates to the gateway with an AI Gateway Run token in the `cf-aig-authorization` header. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 playground authenticates to the gateway with cf-aig-authorization) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/security.md](../../documentation/lanes/security.md)

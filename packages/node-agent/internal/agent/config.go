@@ -107,7 +107,17 @@ func SaveConfig(path string, cfg Config) error {
 	return nil
 }
 
+// NamedInterface pairs a network interface name with its addresses so WARP
+// detection can key on both the platform adapter name and the WARP CGNAT range.
+type NamedInterface struct {
+	Name  string
+	Addrs []net.Addr
+}
+
 func DetectHostMeshIP() (string, bool) {
+	if ip, ok := detectWARPInterfaceIP(); ok {
+		return ip, true
+	}
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return "", false
@@ -115,21 +125,94 @@ func DetectHostMeshIP() (string, bool) {
 	return DetectMeshIP(addrs)
 }
 
+// detectWARPInterfaceIP enumerates the up interfaces so WARP detection can match
+// the Cloudflare WARP adapter by name, not only by address range.
+func detectWARPInterfaceIP() (string, bool) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", false
+	}
+	named := make([]NamedInterface, 0, len(ifaces))
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		named = append(named, NamedInterface{Name: iface.Name, Addrs: addrs})
+	}
+	return DetectWARPMeshIP(named)
+}
+
+// DetectWARPMeshIP finds the node's WARP overlay IPv4 across platforms: an IPv4
+// carried on the named WARP adapter (Linux, Windows) or any IPv4 in the WARP
+// CGNAT range (covers macOS's unnamed utun). It returns false when no WARP
+// address exists or when the WARP addresses are ambiguous.
+func DetectWARPMeshIP(ifaces []NamedInterface) (string, bool) {
+	seen := map[string]struct{}{}
+	warp := []string{}
+	for _, iface := range ifaces {
+		named := warpInterfaceHint(iface.Name)
+		for _, addr := range iface.Addrs {
+			ip, ok := ipFromAddr(addr)
+			if !ok || ip.IsLoopback() || ip.To4() == nil {
+				continue
+			}
+			if !isWARPRange(ip) && !(named && isPrivateOrCGNAT(ip)) {
+				continue
+			}
+			text := ip.String()
+			if _, dup := seen[text]; dup {
+				continue
+			}
+			seen[text] = struct{}{}
+			warp = append(warp, text)
+		}
+	}
+	if len(warp) == 1 {
+		return warp[0], true
+	}
+	return "", false
+}
+
+// DetectMeshIP resolves the Mesh IP from bare addresses when interface names are
+// unavailable: a lone WARP-range address wins even when LAN addresses coexist,
+// otherwise a single private/CGNAT address is used. Ambiguity within the chosen
+// tier fails closed.
 func DetectMeshIP(addrs []net.Addr) (string, bool) {
-	candidates := []string{}
+	warp := []string{}
+	private := []string{}
 	for _, addr := range addrs {
 		ip, ok := ipFromAddr(addr)
 		if !ok || ip.IsLoopback() || ip.To4() == nil {
 			continue
 		}
-		if isPrivateOrCGNAT(ip) {
-			candidates = append(candidates, ip.String())
+		switch {
+		case isWARPRange(ip):
+			warp = append(warp, ip.String())
+		case isPrivateOrCGNAT(ip):
+			private = append(private, ip.String())
 		}
 	}
-	if len(candidates) != 1 {
-		return "", false
+	if len(warp) == 1 {
+		return warp[0], true
 	}
-	return candidates[0], true
+	if len(warp) == 0 && len(private) == 1 {
+		return private[0], true
+	}
+	return "", false
+}
+
+// RequireMeshIP fails when the Mesh IP is unresolved, before the agent attempts
+// a claim the router would reject, pointing the operator at WARP and the config
+// override.
+func RequireMeshIP(cfg Config) error {
+	if cfg.MeshIP == "" {
+		return fmt.Errorf("mesh IP is unset and could not be auto-detected: ensure the Cloudflare WARP adapter is connected, or set \"meshIp\" in the agent config to the node's WARP address")
+	}
+	return nil
 }
 
 func ListenerAddress(meshIP string, port int, allowAllInterfaces bool) string {
@@ -143,6 +226,9 @@ func ListenerAddress(meshIP string, port int, allowAllInterfaces bool) string {
 }
 
 func ConfigPath() string {
+	if override := os.Getenv("INFERENCE_MESH_CONFIG"); override != "" {
+		return override
+	}
 	if runtime.GOOS == "windows" {
 		return filepath.Join(os.Getenv("ProgramData"), "InferenceMesh", "config.json")
 	}
@@ -210,6 +296,20 @@ func isPrivateOrCGNAT(ip net.IP) bool {
 		return false
 	}
 	return v4[0] == 10 || (v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31) || (v4[0] == 192 && v4[1] == 168) || (v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127)
+}
+
+// isWARPRange reports whether an IPv4 is in Cloudflare WARP's 100.96.0.0/12
+// device range, the address WARP assigns to the local machine.
+func isWARPRange(ip net.IP) bool {
+	v4 := ip.To4()
+	return v4 != nil && v4[0] == 100 && v4[1] >= 96 && v4[1] <= 111
+}
+
+// warpInterfaceHint reports whether an interface name looks like the Cloudflare
+// WARP virtual adapter. Linux and Windows expose a named "CloudflareWARP"
+// tunnel; macOS presents an unnamed utun, handled by the WARP CGNAT range.
+func warpInterfaceHint(name string) bool {
+	return strings.Contains(strings.ToLower(name), "warp")
 }
 
 func hostname() string {

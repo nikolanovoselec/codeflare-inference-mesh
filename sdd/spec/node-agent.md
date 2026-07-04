@@ -17,6 +17,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 3. The local UI binds to `127.0.0.1` on the configured UI port. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE001ServiceSkeletonAndListenerPolicy) -->
 4. The Mesh-facing inference listener prefers the detected Mesh IP and falls back to `0.0.0.0` only with strict upstream-token enforcement. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE001ServiceSkeletonAndListenerPolicy) -->
 5. The service marks itself draining before intentional shutdown or update restart. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE001ServiceSkeletonAndListenerPolicy) -->
+6. The agent resolves its config path from the `INFERENCE_MESH_CONFIG` override when set, so the installed service and the install step agree on one config path independent of the invoking user's home directory. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigPath --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestConfigPathHonorsExplicitConfigEnv) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -82,14 +83,17 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ### REQ-NODE-008: Mesh IP detection
 
-**Intent:** Mesh transport and invite tokens embed the node's private address, so the agent must detect the Mesh IP only when it is unambiguous and persist it before first claim.
+**Intent:** Mesh transport and invite tokens embed the node's WARP overlay address, so the agent must reliably detect the Cloudflare WARP adapter and its IP across platforms, persist it before first claim, and refuse to claim when it cannot.
 
 **Applies To:** Node Agent
 
 **Acceptance Criteria:**
 
-1. Mesh IP detection succeeds only when exactly one private IPv4 candidate is present. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008AppliesDetectedMeshIPBeforeClaim) -->
-2. Before first claim, the agent persists an unambiguous detected Mesh IP into config. <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008AppliesDetectedMeshIPBeforeClaim) -->
+1. The agent detects the WARP overlay IPv4 by matching the Cloudflare WARP adapter by name and by the WARP CGNAT range `100.96.0.0/12`, so detection works on Linux, Windows, and macOS `utun` adapters. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectWARPMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsWARPAdapterAndIP) -->
+2. A WARP-range address is preferred over coexisting LAN addresses; a host without WARP falls back to a single unambiguous private IPv4. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsWARPAdapterAndIP) -->
+3. Detection fails closed when the chosen candidate tier is ambiguous. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsUnambiguousMeshIP) -->
+4. Before first claim, the agent persists an unambiguous detected Mesh IP into config. <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008AppliesDetectedMeshIPBeforeClaim) -->
+5. The agent fails with a clear, actionable error before claim when the Mesh IP is unresolved. <!-- @impl: packages/node-agent/internal/agent/config.go::RequireMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestRequireMeshIPFailsClosedWhenUnresolved) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 

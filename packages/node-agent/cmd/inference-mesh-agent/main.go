@@ -32,7 +32,7 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "run" {
-		if err := runService(); err != nil {
+		if err := runService(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -42,6 +42,9 @@ func main() {
 }
 
 func runInstall(args []string) {
+	if configPath := configPathFromArgs(args); configPath != "" {
+		_ = os.Setenv("INFERENCE_MESH_CONFIG", configPath)
+	}
 	cfg := agent.DefaultConfig(defaultDataDir())
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -74,7 +77,10 @@ func runInstall(args []string) {
 	_ = json.NewEncoder(os.Stdout).Encode(plan)
 }
 
-func runService() error {
+func runService(args []string) error {
+	if configPath := configPathFromArgs(args); configPath != "" {
+		_ = os.Setenv("INFERENCE_MESH_CONFIG", configPath)
+	}
 	cfg, err := agent.LoadConfig(agent.ConfigPath())
 	if err != nil {
 		return err
@@ -86,6 +92,9 @@ func runService() error {
 		return err
 	} else {
 		cfg = next
+	}
+	if err := agent.RequireMeshIP(cfg); err != nil {
+		return err
 	}
 	var claimBootstrap *agent.MeshBootstrap
 	if cfg.SetupToken != "" && cfg.NodeToken == "" {
@@ -624,6 +633,18 @@ func defaultDataDir() string {
 		return dir
 	}
 	return ".inference-mesh"
+}
+
+// configPathFromArgs returns the value of a --config flag when present. install
+// and run both accept it so the installed service resolves the exact config path
+// the install step wrote, independent of the invoking user's home directory.
+func configPathFromArgs(args []string) string {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--config" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }
 
 const MainAnchors = "REQ-NODE-001 REQ-NODE-002 REQ-NODE-003 REQ-NODE-004 REQ-NODE-005"

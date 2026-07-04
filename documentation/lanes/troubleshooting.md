@@ -4,6 +4,8 @@
 
 - [AI Gateway returns authentication errors](#ai-gateway-returns-authentication-errors)
 - [Worker cannot reach node](#worker-cannot-reach-node)
+- [Node service crash-loops after install](#node-service-crash-loops-after-install)
+- [Node cannot determine its Mesh IP](#node-cannot-determine-its-mesh-ip)
 - [Requests return no-node](#requests-return-no-node)
 - [Session latency suddenly increases](#session-latency-suddenly-increases)
 - [Installer cannot verify artifact](#installer-cannot-verify-artifact)
@@ -34,6 +36,22 @@
 **Cause:** Mesh IP, allowed CIDR, listener binding, firewall, WARP enrollment, or Workers VPC binding is wrong.
 
 **Fix:** Verify WARP/Mesh enrollment, validate the Mesh IP in admin status, confirm the listener port, and check `env.MESH.fetch` against the node health endpoint. ([REQ-RTR-004](../../sdd/spec/router-worker.md)) ([REQ-NODE-002](../../sdd/spec/node-agent.md))
+
+## Node service crash-loops after install
+
+**Symptom:** The install command finishes but `inference-mesh-agent.service` restarts every few seconds and never enrolls; `journalctl -u inference-mesh-agent` shows a `read config: open ... no such file or directory` error and the setup token stays unconsumed.
+
+**Cause:** The service resolved a config path that differs from where the install step wrote it — typically because the unit ran without an explicit config path and fell back to a home-relative or working-directory-relative location.
+
+**Fix:** Use an installer that runs the agent with `--config` and sets `INFERENCE_MESH_CONFIG` to the system state path (`/var/lib/inference-mesh/config.json`) with a matching `WorkingDirectory`; confirm the file exists and re-run the install command to regenerate the unit. ([REQ-NODE-001](../../sdd/spec/node-agent.md)) ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
+
+## Node cannot determine its Mesh IP
+
+**Symptom:** The agent exits before claim with a message that the Mesh IP is unset and could not be auto-detected, or the claim is rejected for a missing `meshIp`.
+
+**Cause:** No Cloudflare WARP adapter is connected, or more than one candidate address exists in the chosen tier so detection fails closed.
+
+**Fix:** Connect WARP (desktop client or headless WARP Connector) so the node has a `100.96.0.0/12` address on the `CloudflareWARP` adapter, or set `meshIp` explicitly in the agent config to the node's WARP address. ([REQ-NODE-008](../../sdd/spec/node-agent.md))
 
 ## Requests return no-node
 

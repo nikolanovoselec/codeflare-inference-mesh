@@ -1178,6 +1178,21 @@ describe('router worker behavioral contracts', () => {
     expect(store.tokens.filter((token) => token.kind === 'setup').length).toBe(0)
   })
 
+  it('REQ-ADM-004 unix install wrapper runs the agent from an explicit config path and system state dir', async () => {
+    const { router } = routerFixture({ env: { AGENT_RELEASE_TAG: 'v0.1.0-dev.test' } })
+    const script = await (await router(new Request('https://router.test/install.sh?platform=linux'))).text()
+
+    // The service resolves the same config the install step wrote, independent of $HOME.
+    expect(script).toContain('mkdir -p /var/lib/inference-mesh')
+    expect(script).toContain('INFERENCE_MESH_CONFIG=/var/lib/inference-mesh/config.json /usr/local/bin/inference-mesh-agent install')
+    expect(script).toContain('--config /var/lib/inference-mesh/config.json --data-dir /var/lib/inference-mesh')
+    expect(script).toContain('Environment=INFERENCE_MESH_CONFIG=/var/lib/inference-mesh/config.json')
+    expect(script).toContain('WorkingDirectory=/var/lib/inference-mesh')
+    expect(script).toContain('ExecStart=/usr/local/bin/inference-mesh-agent run --config /var/lib/inference-mesh/config.json')
+    // Distro-agnostic: enrollment uses a static binary + systemd only, no distribution package manager.
+    expect(script).not.toMatch(/\b(apt-get|apt|yum|dnf|pacman|zypper)\b/)
+  })
+
   it('REQ-ADM-003 does not mint a setup token when an install command is fetched', async () => {
     const { router, store } = routerFixture()
     const first = await router(new Request('https://router.test/admin/installers/linux', { headers: bearer('admin-secret') }))
@@ -1244,7 +1259,7 @@ describe('router worker behavioral contracts', () => {
       'GET /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes',
       'POST /client/v4/accounts/account-a/ai-gateway/gateways/gateway-a/routes'
     ])
-    expect(calls[1]!.body).toEqual({ id: 'gateway-a', cache_invalidate_on_update: false, cache_ttl: 0, collect_logs: true, rate_limiting_interval: 0, rate_limiting_limit: 0 })
+    expect(calls[1]!.body).toEqual({ id: 'gateway-a', cache_invalidate_on_update: false, cache_ttl: 0, collect_logs: true, rate_limiting_interval: 0, rate_limiting_limit: 0, authentication: true })
     expect(calls[3]!.body).toEqual({ name: 'Codeflare Inference Mesh', slug: 'codeflare-inference-mesh-router-example-workers-dev', base_url: 'https://router.example.workers.dev', description: 'Codeflare Inference Mesh OpenAI-compatible router', enable: true })
     expect(routeBody.name).toBe('codeflare-mesh')
     expect(routeBody.enabled).toBe(true)
@@ -1260,7 +1275,7 @@ describe('router worker behavioral contracts', () => {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
       calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
-      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
+      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [{ id: 'gateway-a', authentication: true }] })
       if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
       // Listing routes uses the `data` envelope; the existing route must be found here so sync stays idempotent.
       if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, data: { routes: [{ id: 'route-a', name: 'codeflare-mesh', elements: [{ stale: true }] }] } })
@@ -1281,6 +1296,42 @@ describe('router worker behavioral contracts', () => {
     ])
     expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/routes'))).toBe(false)
     expect(result).toMatchObject({ routeId: 'route-a', routeVersionId: 'version-b', deploymentId: 'deployment-b' })
+  })
+
+  it('REQ-SEC-012 provisions an Authenticated Gateway and reconciles an existing open gateway', async () => {
+    const makeFetcher = (gatewaysList: readonly unknown[]) => {
+      const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
+      const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input))
+        const method = init?.method ?? 'GET'
+        const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
+        calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
+        if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: gatewaysList })
+        if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'POST') return Response.json({ success: true, result: { id: 'gateway-a' } })
+        if (url.pathname.endsWith('/ai-gateway/gateways/gateway-a') && method === 'PUT') return Response.json({ success: true, result: { id: 'gateway-a', authentication: true } })
+        if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [] })
+        if (url.pathname.endsWith('/custom-providers') && method === 'POST') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev' } })
+        if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, data: { routes: [] } })
+        return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
+      }) as typeof fetch
+      return { calls, fetcher }
+    }
+    const syncInput = { accountId: 'account-a', gatewayId: 'gateway-a', workerUrl: 'https://router.example.workers.dev/v1/chat/completions', providerName: 'Codeflare Inference Mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', providerTokenInstructions: 'manual' }
+
+    // A new gateway is created authenticated.
+    const created = makeFetcher([])
+    await new CloudflareGatewayClient('runtime-token', created.fetcher).syncCustomProvider(syncInput)
+    expect(created.calls.find((call) => call.method === 'POST' && call.path.endsWith('/ai-gateway/gateways'))!.body).toMatchObject({ authentication: true })
+
+    // An existing open gateway is reconciled to authenticated via PUT.
+    const reconciled = makeFetcher([{ id: 'gateway-a', authentication: false }])
+    await new CloudflareGatewayClient('runtime-token', reconciled.fetcher).syncCustomProvider(syncInput)
+    expect(reconciled.calls.find((call) => call.method === 'PUT' && call.path.endsWith('/ai-gateway/gateways/gateway-a'))?.body).toMatchObject({ authentication: true })
+
+    // An already-authenticated gateway triggers no reconcile write.
+    const skipped = makeFetcher([{ id: 'gateway-a', authentication: true }])
+    await new CloudflareGatewayClient('runtime-token', skipped.fetcher).syncCustomProvider(syncInput)
+    expect(skipped.calls.some((call) => call.method === 'PUT')).toBe(false)
   })
 
   it('CloudflareGatewayClient invokes the fetcher as a free function so the global fetch keeps its native receiver (no Workers illegal invocation)', async () => {
@@ -1456,7 +1507,7 @@ describe('router worker behavioral contracts', () => {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
       calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
-      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
+      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [{ id: 'gateway-a', authentication: true }] })
       if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://old.example.com' }] })
       if (url.pathname.endsWith('/custom-providers/provider-a') && method === 'PATCH') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: body!.name, base_url: body!.base_url } })
       if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'codeflare-mesh' }] } } })
@@ -1478,7 +1529,7 @@ describe('router worker behavioral contracts', () => {
       const url = new URL(String(input))
       const method = init?.method ?? 'GET'
       calls.push(`${method} ${url.pathname}`)
-      if (url.pathname.endsWith('/ai-gateway/gateways')) return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
+      if (url.pathname.endsWith('/ai-gateway/gateways')) return Response.json({ success: true, result: [{ id: 'gateway-a', authentication: true }] })
       if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
       if (url.pathname.endsWith('/routes')) return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'codeflare-mesh' }] } } })
       if (url.pathname.endsWith('/routes/route-a')) return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', elements, version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
@@ -1499,7 +1550,7 @@ describe('router worker behavioral contracts', () => {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
       calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
-      if (url.pathname.endsWith('/ai-gateway/gateways')) return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
+      if (url.pathname.endsWith('/ai-gateway/gateways')) return Response.json({ success: true, result: [{ id: 'gateway-a', authentication: true }] })
       if (url.pathname.endsWith('/custom-providers')) return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
       if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [{ id: 'route-a', name: 'codeflare-mesh' }] } } })
       if (url.pathname.endsWith('/routes/route-a') && method === 'GET') return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', elements, enabled: false } })
@@ -2529,6 +2580,21 @@ describe('operator playground contracts', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('content-type')).toContain('text/event-stream')
     expect(await response.text()).toContain('"content":"Hi"')
+  })
+
+  it('REQ-SEC-012 playground authenticates to the gateway with cf-aig-authorization', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('cloudflare_gateway', connectedGateway)
+    await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1', gatewayId: 'inference-mesh' })
+    const capture: { url?: string; init?: RequestInit | undefined } = {}
+    const { router } = routerFixture({ store, env: { CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-run-token' }, playgroundFetcher: sseFetcher(capture) })
+
+    await router(new Request('https://router.test/admin/playground/chat', {
+      method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
+    }))
+
+    expect(new Headers(capture.init?.headers as HeadersInit).get('cf-aig-authorization')).toBe('Bearer aig-run-token')
   })
 
   it('REQ-ADM-016 addresses non-route aliases through the custom provider slug', async () => {

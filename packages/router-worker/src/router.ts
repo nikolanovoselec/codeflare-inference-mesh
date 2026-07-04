@@ -546,9 +546,15 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
   if (!gateway?.gatewayId || !gateway.routeName || !accountId) return json({ error: 'gateway_not_configured', requestId }, 409, requestId)
   const selected = cleanString(body?.model) ?? gateway.publicModel
   const wireModel = selected === gateway.publicModel ? `dynamic/${gateway.routeName}` : `${gateway.providerSlug}/${selected}`
+  // The mesh gateway is an Authenticated Gateway, so provider-native requests must
+  // carry an AI Gateway Run token in cf-aig-authorization or the gateway rejects them.
+  const gatewayToken = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   const upstream = await (deps.playgroundFetcher ?? fetch)(`https://gateway.ai.cloudflare.com/v1/${accountId}/${gateway.gatewayId}/compat/chat/completions`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(gatewayToken ? { 'cf-aig-authorization': `Bearer ${gatewayToken}` } : {})
+    },
     body: JSON.stringify({ model: wireModel, stream: true, messages })
   })
   const headers = new Headers({

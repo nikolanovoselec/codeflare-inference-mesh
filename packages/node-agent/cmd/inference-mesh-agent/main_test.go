@@ -568,3 +568,23 @@ func TestREQNODE005HeartbeatDesiredVersionDrivesSelfUpdate(t *testing.T) {
 		})
 	})
 }
+
+func TestConfigFlagResolvesExplicitConfigPath(t *testing.T) {
+	t.Run("REQ-NODE-001", func(t *testing.T) {
+		if got := configPathFromArgs([]string{"--router", "https://r", "--config", "/var/lib/inference-mesh/config.json"}); got != "/var/lib/inference-mesh/config.json" {
+			t.Fatalf("--config value not parsed, got %q", got)
+		}
+		if got := configPathFromArgs([]string{"--router", "https://r"}); got != "" {
+			t.Fatalf("absent --config should yield empty, got %q", got)
+		}
+		// The parsed --config drives ConfigPath, so install and run agree on one path.
+		explicit := filepath.Join(t.TempDir(), "explicit.json")
+		t.Setenv("INFERENCE_MESH_CONFIG", "")
+		if p := configPathFromArgs([]string{"--config", explicit}); p != "" {
+			t.Setenv("INFERENCE_MESH_CONFIG", p)
+		}
+		if got := agent.ConfigPath(); got != explicit {
+			t.Fatalf("run must resolve the explicit --config path, got %q want %q", got, explicit)
+		}
+	})
+}
