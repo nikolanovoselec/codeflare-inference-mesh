@@ -639,6 +639,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     });
     renderActivationSelect(profiles);
     fillProfileSelect(byId('rollout-profile-select'), profiles, undefined);
+    const configSelect = byId('profile-config-select');
+    if (configSelect) {
+      const applyConfigFields = () => {
+        const selected = profiles.find((profile) => profile.id === configSelect.value);
+        const ctx = byId('profile-config-context');
+        const model = byId('profile-config-model');
+        if (selected && ctx) ctx.value = selected.contextWindow;
+        if (selected && model) model.value = (selected.meshllm && selected.meshllm.modelRef) || '';
+      };
+      fillProfileSelect(configSelect, profiles, configSelect.value || undefined);
+      if (!configSelect.dataset.bound) { configSelect.addEventListener('change', applyConfigFields); configSelect.dataset.bound = 'true'; }
+      applyConfigFields();
+    }
     const rotateSlot = byId('mesh-rotate-slot');
     if (rotateSlot) {
       rotateSlot.textContent = '';
@@ -997,6 +1010,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'node-revoke': 'node-output',
     'profile-rollout': 'profile-output',
     'profile-activate': 'profile-activate-output',
+    'profile-config': 'profile-config-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
     'mesh-rotate': 'mesh-rotate-output',
@@ -1090,6 +1104,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'profile-activate') {
       const select = byId(config.profileActivation.selectId);
       setOutput(out, await request('/admin/profiles/activate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: select ? select.value : '' }) }));
+      await refreshStatus().catch(() => undefined);
+    } else if (action === 'profile-config') {
+      const select = byId('profile-config-select');
+      const ctxRaw = readInput('profile-config-context');
+      const modelRaw = readInput('profile-config-model');
+      const payload = { profileId: select ? select.value : '' };
+      if (ctxRaw !== '') payload.contextWindow = Number(ctxRaw);
+      if (modelRaw !== '') payload.modelRef = modelRaw;
+      setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       await refreshStatus().catch(() => undefined);
     } else if (action === 'agent-versions-refresh') {
       await loadVersions();

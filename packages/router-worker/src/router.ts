@@ -89,6 +89,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/revoke$/) && request.method === 'POST') return await handleNodeRevoke(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
+      if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
       if (url.pathname === '/admin/mesh/rotate' && request.method === 'POST') return await handleAdminMeshRotate(request, deps, id, now())
       if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
       if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
@@ -502,6 +503,36 @@ async function handleProfileActivate(request: Request, deps: RouterDeps, request
   const deactivatedIds = activation.deactivated.map((profile) => profile.id)
   await deps.store.appendAudit({ id: requestId, type: 'profile_activated', at: now, actor, target: body.profileId, detail: { deactivated: deactivatedIds } })
   return json({ ok: true, activated: activation.activated.id, deactivated: deactivatedIds }, 200, requestId)
+}
+
+// handleProfileConfig persists a profile's mandatory serving settings — the
+// context window and the model ref — through the validated store path so the
+// active column and the profile_json blob stay consistent. contextWindow must
+// be a positive integer; a supplied modelRef is trimmed, must be non-empty, and
+// updates both the mesh runtime ref and the gateway upstream model together.
+async function handleProfileConfig(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ profileId?: string; contextWindow?: number; modelRef?: string }>(request)
+  if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
+  const existing = (await deps.store.listProfiles()).find((profile) => profile.id === body.profileId)
+  if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const contextWindow = body.contextWindow ?? existing.contextWindow
+  if (!Number.isInteger(contextWindow) || contextWindow <= 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
+  let meshllm = existing.meshllm
+  let upstreamModel = existing.upstreamModel
+  if (body.modelRef !== undefined) {
+    const modelRef = typeof body.modelRef === 'string' ? body.modelRef.trim() : ''
+    if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
+    meshllm = { ...existing.meshllm, modelRef }
+    upstreamModel = modelRef
+  }
+  // Bump the version so a later deploy's default re-seed (shouldRefreshDefaultProfile
+  // refreshes only when stored version <= shipped version) does not overwrite this edit.
+  const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, version: existing.version + 1 }
+  await deps.store.setProfile(updated)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef } })
+  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef }, 200, requestId)
 }
 
 async function handleAdminMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {

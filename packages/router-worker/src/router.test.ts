@@ -168,6 +168,7 @@ describe('router worker behavioral contracts', () => {
       'node-revoke',
       'profile-rollout',
       'profile-activate',
+      'profile-config',
       'agent-versions-refresh',
       'agent-version-set',
       'mesh-rotate',
@@ -190,6 +191,7 @@ describe('router worker behavioral contracts', () => {
       '/admin/nodes/{nodeId}/revoke',
       '/admin/profiles/rollout',
       '/admin/profiles/activate',
+      '/admin/profiles/config',
       '/admin/agent-versions',
       '/admin/agent-version',
       '/admin/mesh/rotate',
@@ -206,7 +208,7 @@ describe('router worker behavioral contracts', () => {
     expect(config.confirm).toEqual({ attribute: 'data-confirm', disarmMs: 5000 })
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
-    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'playground-send', 'sign-out']
+    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'profile-config', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'playground-send', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
@@ -1680,6 +1682,39 @@ describe('router worker behavioral contracts', () => {
     expect(activeOwners.map((profile) => profile.id)).toEqual(['mesh-split-qwen36-35b'])
     expect(afterRollout.find((profile) => profile.id === 'mesh-split-qwen36-35b')).toMatchObject({ active: true, rolloutPercent: 40 })
     expect(afterRollout.find((profile) => profile.id === 'mesh-default-qwen36-35b')).toMatchObject({ active: false, rolloutPercent: 0 })
+  })
+
+  it('REQ-ADM-006 configures a profile context window and model ref through the validated store path', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    }))
+
+    const ok = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 8192, modelRef: 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M' })
+    const smoke = (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
+
+    expect(ok.status).toBe(200)
+    expect(smoke.contextWindow).toBe(8192)
+    expect(smoke.meshllm.modelRef).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
+    expect(smoke.upstreamModel).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
+
+    // A context-only update must leave the model ref untouched.
+    const ctxOnly = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 4096 })
+    const afterCtx = (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
+    expect(ctxOnly.status).toBe(200)
+    expect(afterCtx.contextWindow).toBe(4096)
+    expect(afterCtx.meshllm.modelRef).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
+
+    // Boundary validation: non-positive context, blank model, unknown profile, and missing admin auth are all rejected.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 0 })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 2.5 })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', modelRef: '   ' })).status).toBe(400)
+    expect((await configure({ profileId: 'no-such-profile', contextWindow: 1024 })).status).toBe(404)
+    const noAuth = await router(new Request('https://router.test/admin/profiles/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 1024 }) }))
+    expect(noAuth.status).toBe(401)
   })
 
   it('REQ-ADM-009 activates profiles alias-exclusively and records the audit event', async () => {

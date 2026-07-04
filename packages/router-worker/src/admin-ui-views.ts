@@ -194,7 +194,13 @@ ${field({ id: 'rollout-profile-select', label: 'Profile', control: '<span class=
 ${field({ id: 'rollout-percent', label: 'Rollout percent', control: textInput({ id: 'rollout-percent', name: 'rolloutPercent', type: 'number', value: '100', min: 0, max: 100 }), hint: 'How much traffic can use this profile, from 0 to 100 percent.' })}
 </div>
 <div class="form-actions">${button({ action: 'profile-rollout', label: 'Update rollout', out: 'profile-output' })}</div>
-${output({ id: 'profile-output', kind: 'profile-rollout', pre: true })}</div>`
+${output({ id: 'profile-output', kind: 'profile-rollout', pre: true })}</div>
+<div class="subpanel"><h3>Profile settings</h3>
+${field({ id: 'profile-config-select', label: 'Profile', control: '<span class="slot"><select id="profile-config-select" name="profileId" data-profile-config-select="true" disabled></select></span>' })}
+${field({ id: 'profile-config-context', label: 'Context window', control: textInput({ id: 'profile-config-context', name: 'contextWindow', type: 'number', min: 1 }), hint: 'Maximum sequence length the profile serves, in tokens. Written to the mesh-llm model_fit.ctx_size.' })}
+${field({ id: 'profile-config-model', label: 'Model ref', control: textInput({ id: 'profile-config-model', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M' }), hint: 'The model the node loads and the gateway upstream model.' })}
+<div class="form-actions">${button({ action: 'profile-config', label: 'Save settings', out: 'profile-config-output' })}</div>
+${output({ id: 'profile-config-output', kind: 'profile-config', pre: true })}</div>`
   })
 }
 
