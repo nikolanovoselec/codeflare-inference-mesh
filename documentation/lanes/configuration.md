@@ -51,8 +51,11 @@
 | `DB` | D1 database for durable router state. | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
 | `REGISTRY` | Durable Object namespace for scheduling and reservations. | [REQ-SCH-002](../../sdd/spec/state-scheduling.md) |
 | `MESH` | Workers VPC Network binding using `network_id = "cf1:network"` and `remote = true` for the Worker-to-private-node `fetch()` path. | [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-004](../../sdd/spec/router-worker.md) |
+| `RL_INFERENCE`, `RL_HEARTBEAT`, `RL_ENROLL`, `RL_AUTH`, `RL_PUBLIC` | Cloudflare rate-limiting bindings, one per public-endpoint class. | [REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting) |
 
 The `MESH` binding ships commented out in the committed `wrangler.toml` so CI dry-runs and forks without Workers VPC entitlement still pass. `.github/workflows/deploy.yml` uncomments and verifies it immediately before `wrangler deploy`. A local `wrangler dev` or manual deploy outside CI does not have this binding until the block is uncommented by hand.
+
+Each `RL_*` binding caps requests per Cloudflare location per 60s: inference 600, heartbeat 120, enrollment 60, admin authentication 30, and other public routes 600. The effective global limit is higher across locations. Retune by editing the `limit` values in `wrangler.toml`; no code change is needed. Integration uses distinct rate-limit namespaces so its counters never mix with production. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
 ## Wrangler environments
 

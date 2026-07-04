@@ -266,6 +266,31 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 ---
 
+### REQ-SEC-011: Public endpoint rate limiting
+
+**Intent:** Publicly reachable router endpoints must resist floods and credential brute-force so a single caller cannot exhaust inference capacity, spam heartbeats, or grind setup tokens and admin credentials.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. A request that exceeds its endpoint's rate limit receives a 429 response with a Retry-After header before its route handler runs. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited --> <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-011 rate-limits a public endpoint before reaching its handler) -->
+2. Public endpoints are grouped into rate-limit buckets by route class: inference, heartbeat, enrollment, admin authentication, and a catch-all for other public routes. <!-- @impl: packages/router-worker/src/rate-limit.ts::classifyRoute --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 maps each public endpoint to its bucket, defaulting unlisted routes to public) -->
+3. Authenticated buckets limit per caller bearer credential and unauthenticated buckets limit per client IP. <!-- @impl: packages/router-worker/src/rate-limit.ts::rateKey --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 keys authenticated buckets by token and unauthenticated buckets by IP) -->
+4. Rate limiting fails open when its binding is unavailable or the limiter faults, so it cannot take the router offline. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 allows under the limit and fails open on a limiter fault) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-SEC-004](#req-sec-004-runtime-api-exposure)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/security.md](../../documentation/lanes/security.md)

@@ -10,6 +10,8 @@
 
 All API responses that represent errors use an OpenAI-style `error` object when they are visible to AI Gateway or OpenAI-compatible clients. Provider routes require the provider token; node routes require setup or node credentials; installer routes contain no permanent secrets. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
+Public endpoints are rate-limited per route class. A request over its bucket's limit receives `429` with body `{ "error": "rate_limited", "requestId": string }` and a `Retry-After` header, returned before the route handler runs. This is distinct from the `429` `no-node` response on `POST /v1/chat/completions`, which means no node is available rather than a rate limit. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
+
 ## Endpoints
 
 ### GET /health

@@ -202,10 +202,23 @@ export interface Scheduler {
   recordFailure(reservationId: string, now: number): Promise<void>
 }
 
+/**
+ * Cloudflare Workers rate-limiting binding surface. Structurally matches the runtime
+ * `RateLimit` binding so production wiring needs no adapter and tests can inject a fake.
+ */
+export interface RateLimiter {
+  limit(input: { readonly key: string }): Promise<{ readonly success: boolean }>
+}
+
 export interface RouterEnv {
   readonly DB: D1Database
   readonly REGISTRY: DurableObjectNamespace
   readonly MESH: Fetcher
+  readonly RL_INFERENCE?: RateLimiter
+  readonly RL_HEARTBEAT?: RateLimiter
+  readonly RL_ENROLL?: RateLimiter
+  readonly RL_AUTH?: RateLimiter
+  readonly RL_PUBLIC?: RateLimiter
   readonly ROUTER_PROVIDER_TOKEN?: string
   readonly ADMIN_TOKEN?: string
   readonly NODE_UPSTREAM_TOKEN?: string

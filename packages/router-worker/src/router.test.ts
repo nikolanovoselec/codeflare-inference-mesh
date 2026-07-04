@@ -415,6 +415,25 @@ describe('router worker behavioral contracts', () => {
     expect((failure!.detail as { reason?: string }).reason).toContain('403')
   })
 
+  it('REQ-SEC-011 rate-limits a public endpoint before reaching its handler', async () => {
+    const over = { limit: async () => ({ success: false }) }
+    const { router } = routerFixture({ env: { RL_INFERENCE: over } })
+    // A bad token would normally 401; the 429 proves the limiter short-circuits before auth + body read.
+    const res = await router(new Request('https://router.test/v1/chat/completions', { method: 'POST', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: '{}' }))
+    const body = await res.json() as { error: string }
+    expect(res.status).toBe(429)
+    expect(body.error).toBe('rate_limited')
+    expect(res.headers.get('retry-after')).toBe('60')
+  })
+
+  it('REQ-SEC-011 lets a request through to its handler when under the limit', async () => {
+    const under = { limit: async () => ({ success: true }) }
+    const { router } = routerFixture({ env: { RL_INFERENCE: under } })
+    // Under the limit the request reaches handleModels and fails auth (401), not 429.
+    const res = await router(new Request('https://router.test/v1/models', { headers: bearer('bad-token') }))
+    expect(res.status).toBe(401)
+  })
+
   it('REQ-SEC-002 asks for confirmation before revoking a node from the Admin UI', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()

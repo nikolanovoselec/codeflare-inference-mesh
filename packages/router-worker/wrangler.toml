@@ -37,6 +37,44 @@ class_name = "RegistryDO"
 tag = "v1"
 new_sqlite_classes = ["RegistryDO"]
 
+# Rate limiting on public endpoints. Limits are per Cloudflare location per 60s (period must be
+# 10 or 60); the effective global limit is higher across locations. Relaxed for normal operation,
+# tuned to cap floods. Adjust the `limit` values here to retune without code changes.
+[[ratelimits]]
+name = "RL_INFERENCE"
+namespace_id = "2001"
+  [ratelimits.simple]
+  limit = 600
+  period = 60
+
+[[ratelimits]]
+name = "RL_HEARTBEAT"
+namespace_id = "2002"
+  [ratelimits.simple]
+  limit = 120
+  period = 60
+
+[[ratelimits]]
+name = "RL_ENROLL"
+namespace_id = "2003"
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+[[ratelimits]]
+name = "RL_AUTH"
+namespace_id = "2004"
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+[[ratelimits]]
+name = "RL_PUBLIC"
+namespace_id = "2005"
+  [ratelimits.simple]
+  limit = 600
+  period = 60
+
 [env.integration]
 name = "codeflare-inference-mesh-router-integration"
 workers_dev = true
@@ -73,3 +111,40 @@ class_name = "RegistryDO"
 [[env.integration.migrations]]
 tag = "v1"
 new_sqlite_classes = ["RegistryDO"]
+
+# Integration rate limits: same shape as production, distinct namespaces so the two
+# environments never share counters.
+[[env.integration.ratelimits]]
+name = "RL_INFERENCE"
+namespace_id = "2101"
+  [env.integration.ratelimits.simple]
+  limit = 600
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_HEARTBEAT"
+namespace_id = "2102"
+  [env.integration.ratelimits.simple]
+  limit = 120
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_ENROLL"
+namespace_id = "2103"
+  [env.integration.ratelimits.simple]
+  limit = 60
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_AUTH"
+namespace_id = "2104"
+  [env.integration.ratelimits.simple]
+  limit = 30
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_PUBLIC"
+namespace_id = "2105"
+  [env.integration.ratelimits.simple]
+  limit = 600
+  period = 60

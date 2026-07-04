@@ -8,6 +8,7 @@ import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type Custom
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
+import { isRateLimited } from './rate-limit'
 import { meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { aliasExclusiveActivation } from './store'
@@ -45,6 +46,9 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
     const id = requestId()
     const url = new URL(request.url)
     try {
+      // Rate-limit before any store or Cloudflare work so a flood cannot drive DB load or
+      // large body reads. Keyed per bucket (token for authenticated paths, IP otherwise).
+      if (await isRateLimited(request, url.pathname, deps.env)) return rateLimited(id)
       await deps.store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
       const gate = await resolveHostGate(deps, url)
       if (gate.locked) {
@@ -799,6 +803,10 @@ async function authenticateTokenByNode(request: Request, store: Store, kind: Cre
 
 function json(body: unknown, status: number, requestId: string): Response {
   return Response.json(body, { status, headers: { ...JSON_HEADERS, 'x-inference-mesh-request-id': requestId } })
+}
+
+function rateLimited(requestId: string): Response {
+  return Response.json({ error: 'rate_limited', requestId }, { status: 429, headers: { ...JSON_HEADERS, 'x-inference-mesh-request-id': requestId, 'retry-after': '60' } })
 }
 
 function html(body: string, requestId: string): Response {

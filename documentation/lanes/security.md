@@ -4,6 +4,7 @@
 
 - [Trust boundaries](#trust-boundaries)
 - [Route authorization](#route-authorization)
+- [Rate limiting](#rate-limiting)
 - [Token storage](#token-storage)
 - [Header filtering](#header-filtering)
 - [Runtime safety](#runtime-safety)
@@ -51,6 +52,16 @@
 **Verification:** The route-family router test covers public/provider/admin separation, the credential-boundary router test covers REQ-SEC-001 cross-family rejection, and the node-unregister router test covers node authorization. <!-- @impl: packages/router-worker/src/router.test.ts::RouteFamilySeparationTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::NodeUnregisterAuthorizationTestAnchor -->
 
 **Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-SEC-001](../../sdd/spec/security.md)
+
+## Rate limiting
+
+**Threat:** A single caller could flood a public endpoint — exhausting inference capacity, spamming heartbeats, or grinding setup tokens and admin credentials — before any handler-level authorization runs.
+
+**Mitigation:** Every public route is classified into a rate-limit bucket (inference, heartbeat, enrollment, admin authentication, or a catch-all for other public routes), each backed by its own Cloudflare rate-limiting binding. A request over its bucket's limit is rejected with `429` and a `Retry-After` header before its handler runs. Authenticated buckets key by caller bearer credential; unauthenticated buckets key by client IP. Limiting fails open when a binding is unavailable so it cannot itself cause an outage.
+
+**Verification:** The rate-limit unit tests cover bucket classification, per-credential and per-IP keying, and fail-open enforcement; the router integration test confirms a `429` short-circuits before the handler. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited --> <!-- @impl: packages/router-worker/src/router.ts::createRouter -->
+
+**Implements:** [REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting)
 
 ## Token storage
 

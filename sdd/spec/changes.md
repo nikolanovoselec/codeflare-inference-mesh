@@ -11,6 +11,7 @@
 - The Models section now lists active profiles before standby ones so the serving set is visible without scrolling. ([REQ-ADM-018](setup-admin.md#req-adm-018-models-section-ordering))
 - A failed AI Gateway sync now returns an actionable next step instead of a generic server error, so the operator can correct the cause and re-sync; the underlying cause is recorded to the audit log. ([REQ-ADM-019](setup-admin.md#req-adm-019-console-error-affordances))
 - Viewing a node install command no longer mints a setup token; the operator creates one token with the Create setup token action and it fills into the command, so a single token backs each enrollment instead of every page view leaving an orphan token. ([REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle))
+- Added rate limiting on all public router endpoints (inference, heartbeat, node enrollment, admin authentication, and other public routes), each in its own bucket with relaxed per-location limits; over-limit requests get a 429 with Retry-After before the handler runs, keyed by caller credential where authenticated and by client IP otherwise, and failing open if the limiter is unavailable. ([REQ-SEC-011](security.md#req-sec-011-public-endpoint-rate-limiting))
 
 ## 2026-07-03
 
