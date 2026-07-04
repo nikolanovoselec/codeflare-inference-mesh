@@ -608,10 +608,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const list = byId('profile-list');
     if (!list) return;
     list.textContent = '';
-    // Active-first ordering (stable): live profiles surface above standby so the serving
-    // set is visible without scrolling. Selects below keep the source order.
-    const ordered = [...profiles].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
-    ordered.forEach((profile) => {
+    profiles.forEach((profile) => {
       const row = document.createElement('div');
       row.className = 'row-item';
       row.setAttribute('data-profile-row', profile.id);

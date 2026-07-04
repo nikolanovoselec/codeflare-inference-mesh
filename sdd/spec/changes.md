@@ -3,9 +3,10 @@
 ## 2026-07-04
 
 - Renamed the default public model alias and default gateway route from `mesh-default` to `codeflare-mesh` so the shipped default matches the documentation; internal profile IDs and derived mesh-network names are unchanged, and existing deployments switch on the next Gateway re-sync. ([REQ-RUN-001](runtime-profiles.md#req-run-001-public-model-aliases), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation))
-- Fixed AI Gateway route re-sync, which was failing after the first sync: the client now reads the dynamic-routing API's `data` (list) and `route` (update) response envelopes, not only `result`, so an existing route is found and reused instead of re-created and rejected. ([REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation))
+- Fixed AI Gateway route re-sync so a route created by an earlier sync is found and reused instead of being rejected as a duplicate. ([REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation))
 - Failed playground requests now show a status-specific next step (provider key, Gateway connection, missing node or profile, or re-sync) instead of a bare status code. ([REQ-ADM-016](setup-admin.md#req-adm-016-operator-playground))
-- The Models section lists active profiles before standby profiles so the serving set is visible without scrolling, and the Routing view shows the currently provisioned custom domain and its status. ([REQ-ADM-007](setup-admin.md#req-adm-007-operator-dashboard), [REQ-ADM-005](setup-admin.md#req-adm-005-custom-domain-handoff))
+- The Routing view now shows the currently provisioned custom domain and its status. ([REQ-ADM-005](setup-admin.md#req-adm-005-custom-domain-handoff))
+- The empty-state mesh topology no longer overlaps the router hub with the no-nodes caption at narrow viewport widths. ([REQ-ADM-015](setup-admin.md#req-adm-015-mesh-visualization))
 
 ## 2026-07-03
 

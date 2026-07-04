@@ -337,25 +337,13 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(out401).not.toBe(out409)
   })
 
-  it('REQ-ADM-007 orders profile rows active-first regardless of source order', async () => {
-    const status = statusFixture({ profiles: [
-      { id: 'standby-a', publicAliases: ['a'], active: false, rolloutPercent: 0, meshllm: { split: false } },
-      { id: 'active-b', publicAliases: ['b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
-      { id: 'standby-c', publicAliases: ['c'], active: false, rolloutPercent: 0, meshllm: { split: false } },
-      { id: 'active-d', publicAliases: ['d'], active: true, rolloutPercent: 100, meshllm: { split: false } }
-    ] })
-    const harness = await dashboardHarness({ status })
-    const rows = descendants(harness.byId('profile-list')).filter((el) => el.dataset.profileRow !== undefined).map((el) => el.dataset.profileRow)
-    // Active profiles first, source order preserved within each group (stable sort).
-    expect(rows).toEqual(['active-b', 'active-d', 'standby-a', 'standby-c'])
-  })
-
   it('REQ-ADM-005 surfaces the currently provisioned custom domain in Routing', async () => {
     const harness = await dashboardHarness()
     const text = harness.byId('custom-domain-current').textContent
-    // Contract values (provisioned host + status), not copy — the panel must reflect live domain state.
+    // Contract values, not copy: the live readout renders the provisioned host then its status.
+    // Gutting the readout falls back to a no-domain note that matches neither the host nor this ordering.
     expect(text).toContain('router.test')
-    expect(text).toContain('provisioned')
+    expect(text).toMatch(/router\.test.*provisioned/)
   })
 })
 
