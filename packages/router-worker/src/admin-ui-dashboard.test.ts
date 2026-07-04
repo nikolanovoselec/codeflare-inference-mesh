@@ -337,7 +337,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(out401).not.toBe(out409)
   })
 
-  it('REQ-ADM-006 orders profile rows active-first regardless of source order', async () => {
+  it('REQ-ADM-007 orders profile rows active-first regardless of source order', async () => {
     const status = statusFixture({ profiles: [
       { id: 'standby-a', publicAliases: ['a'], active: false, rolloutPercent: 0, meshllm: { split: false } },
       { id: 'active-b', publicAliases: ['b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
@@ -348,6 +348,14 @@ describe('dashboard throughput trace and playground contracts', () => {
     const rows = descendants(harness.byId('profile-list')).filter((el) => el.dataset.profileRow !== undefined).map((el) => el.dataset.profileRow)
     // Active profiles first, source order preserved within each group (stable sort).
     expect(rows).toEqual(['active-b', 'active-d', 'standby-a', 'standby-c'])
+  })
+
+  it('REQ-ADM-005 surfaces the currently provisioned custom domain in Routing', async () => {
+    const harness = await dashboardHarness()
+    const text = harness.byId('custom-domain-current').textContent
+    // Contract values (provisioned host + status), not copy — the panel must reflect live domain state.
+    expect(text).toContain('router.test')
+    expect(text).toContain('provisioned')
   })
 })
 

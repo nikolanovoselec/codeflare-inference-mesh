@@ -209,6 +209,7 @@ function routingSection(): string {
 <div class="form-actions">${button({ action: 'gateway-sync', label: 'Connect AI Gateway', variant: 'primary', out: 'gateway-output' })}</div>
 ${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}
 <div class="subpanel"><h3>Custom domain</h3>
+<p class="empty-note" id="custom-domain-current">No custom domain provisioned yet.</p>
 <div class="form-grid">
 ${field({ id: 'custom-domain', label: 'Hostname', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. ai.example.com' }) })}
 ${field({ id: 'custom-domain-zone', label: 'Zone ID (optional)', control: textInput({ id: 'custom-domain-zone', name: 'zoneId' }), hint: 'Provide a zone ID when multiple zones could match the hostname.' })}

@@ -753,6 +753,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const gateway = status.gateway || {};
       gatewayCurrent.textContent = gateway.gatewayId ? 'Current target: ' + [gateway.gatewayId, gateway.routeName, gateway.publicModel].filter(Boolean).join(' / ') : 'No Gateway connected yet.';
     }
+    const domainCurrent = byId('custom-domain-current');
+    if (domainCurrent) {
+      const domain = status.customDomain || {};
+      domainCurrent.textContent = domain.hostname ? 'Provisioned: ' + [domain.hostname, domain.status].filter(Boolean).join(' · ') : 'No custom domain provisioned yet.';
+    }
     lastStatus = status;
     renderNodesTable(nodes, status.desiredAgentVersion);
     renderProfiles(profiles, readiness);

@@ -236,6 +236,8 @@ GET /admin/installers/{platform}
 
 **Path parameters:** `platform` must be `linux`, `macos`, or `windows`.
 
+**Request body:** None.
+
 **Response**
 
 | Status | Outcome | Body |
@@ -259,6 +261,8 @@ POST /admin/nodes/{nodeId}/revoke
 **Origin check:** n/a
 
 **Path parameters:** `nodeId` is the URL-encoded node identifier to revoke.
+
+**Request body:** None.
 
 **Response**
 
