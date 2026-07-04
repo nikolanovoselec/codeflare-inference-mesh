@@ -104,6 +104,12 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/nodes' && request.method === 'GET') return await handleApiNodeList(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'GET') return await handleApiNodeGet(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'DELETE') return await handleApiNodeDecommission(request, deps, url, id, now())
+      if (url.pathname === '/api/v1/models' && request.method === 'GET') return await handleApiModelList(request, deps, id, now())
+      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/enable$/) && request.method === 'POST') return await handleApiModelEnable(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/disable$/) && request.method === 'POST') return await handleApiModelDisable(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'POST') return await handleApiModelConfigure(request, deps, url, id, now())
+      if (url.pathname === '/api/v1/agent-versions' && request.method === 'GET') return await handleApiAgentVersions(request, deps, id, now())
+      if (url.pathname === '/api/v1/agent-version' && request.method === 'PUT') return await handleApiAgentVersionSet(request, deps, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
@@ -990,6 +996,84 @@ async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url
   return json({ ok: true, id: nodeId }, 200, requestId)
 }
 
+/** Machine-facing model projection: identity, the names callers use, and rollout state. */
+function toApiModel(profile: ModelProfile) {
+  return {
+    id: profile.id,
+    displayName: profile.displayName,
+    callableNames: profile.publicAliases,
+    active: profile.active,
+    rolloutPercent: profile.rolloutPercent,
+    contextWindow: profile.contextWindow,
+    modelRef: profile.meshllm.modelRef
+  }
+}
+
+async function handleApiModelList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  const profiles = await deps.store.listProfiles()
+  return json({ models: profiles.map(toApiModel) }, 200, requestId)
+}
+
+async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
+  const body = await readJson<{ contextWindow?: number; modelRef?: string }>(request)
+  if (!body) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  const existing = (await deps.store.listProfiles()).find((profile) => profile.id === profileId)
+  if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const contextWindow = body.contextWindow ?? existing.contextWindow
+  if (!Number.isInteger(contextWindow) || contextWindow <= 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
+  let meshllm = existing.meshllm
+  let upstreamModel = existing.upstreamModel
+  if (body.modelRef !== undefined) {
+    const modelRef = typeof body.modelRef === 'string' ? body.modelRef.trim() : ''
+    if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
+    meshllm = { ...existing.meshllm, modelRef }
+    upstreamModel = modelRef
+  }
+  const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, version: existing.version + 1 }
+  await deps.store.setProfile(updated)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef } })
+  return json({ ok: true, model: toApiModel(updated) }, 200, requestId)
+}
+
+async function handleApiModelEnable(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
+  const activation = aliasExclusiveActivation(await deps.store.listProfiles(), profileId)
+  if (!activation) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  for (const profile of activation.deactivated) await deps.store.setProfile(profile)
+  await deps.store.setProfile(activation.activated)
+  const deactivatedIds = activation.deactivated.map((profile) => profile.id)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_activated', at: now, actor: `automation:${automation.id}`, target: profileId, detail: { deactivated: deactivatedIds } })
+  return json({ ok: true, activated: activation.activated.id, deactivated: deactivatedIds }, 200, requestId)
+}
+
+async function handleApiModelDisable(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
+  const existing = (await deps.store.listProfiles()).find((profile) => profile.id === profileId)
+  if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  await deps.store.setActiveProfile(profileId, 0)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_rollout', at: now, actor: `automation:${automation.id}`, target: profileId, detail: { rolloutPercent: 0 } })
+  return json({ ok: true, id: profileId }, 200, requestId)
+}
+
+async function handleApiAgentVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleAgentVersionsList(request, deps.store, deps.env, deps.releasesFetcher)
+}
+
+async function handleApiAgentVersionSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, `automation:${automation.id}`)
+}
+
 async function authenticateKind(request: Request, deps: RouterDeps, kind: CredentialKind, now: number, envSecret?: string): Promise<boolean> {
   const presented = bearerToken(request)
   if (await verifyPlainOrHashed(envSecret, presented)) return true
@@ -1144,5 +1228,6 @@ export const ROUTER_ANCHORS = {
   REQ_API_001: 'REQ-API-001',
   REQ_API_002: 'REQ-API-002',
   REQ_API_003: 'REQ-API-003',
-  REQ_API_004: 'REQ-API-004'
+  REQ_API_004: 'REQ-API-004',
+  REQ_API_005: 'REQ-API-005'
 } as const

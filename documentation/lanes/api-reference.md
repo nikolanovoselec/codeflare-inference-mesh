@@ -507,6 +507,137 @@ DELETE /api/v1/nodes/{id}
 
 **Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management)
 
+### GET /api/v1/models
+
+Lists the models as machine-facing projections.
+
+```http
+GET /api/v1/models
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The models. | `{ "models": [{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string }] }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+
+### POST /api/v1/models/{id}
+
+Updates a model's context window and/or model reference.
+
+```http
+POST /api/v1/models/{id}
+```
+
+**Authentication:** automation key
+
+**Request body:** `{ "contextWindow"?: number, "modelRef"?: string }` — context window must be a positive integer; model reference must be non-empty.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The updated model projection. | `{ "ok": true, "model": ModelProjection }`. |
+| `400` | The context window or model reference was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_model_config` error body. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No model with that id exists. | `unknown_profile` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+
+### POST /api/v1/models/{id}/enable
+
+Switches a model on, switching off any other model that answers to the same callable name.
+
+```http
+POST /api/v1/models/{id}/enable
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The model was switched on. | `{ "ok": true, "activated": string, "deactivated": string[] }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No model with that id exists. | `unknown_profile` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+
+### POST /api/v1/models/{id}/disable
+
+Drops a model's traffic to zero.
+
+```http
+POST /api/v1/models/{id}/disable
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The model's traffic was dropped to zero. | `{ "ok": true, "id": string }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No model with that id exists. | `unknown_profile` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+
+### GET /api/v1/agent-versions
+
+Lists the available node-agent versions.
+
+```http
+GET /api/v1/agent-versions
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The available versions. | `{ "tags": string[], "stale": boolean, "desired"?: string }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+
+### PUT /api/v1/agent-version
+
+Sets the fleet-wide desired node-agent version; nodes converge on it through heartbeats.
+
+```http
+PUT /api/v1/agent-version
+```
+
+**Authentication:** automation key
+
+**Request body:** `{ "version": string }` — must be one of the available versions.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The desired fleet version was set. | `{ "ok": true, "desired": string }`. |
+| `400` | The version was missing or absent from the available list. | `invalid_version` / `unknown_version` error body. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |

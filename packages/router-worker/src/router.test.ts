@@ -2899,4 +2899,78 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request('https://router.test/api/v1/nodes/node-a', { headers: bearer('nope') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/api/v1/nodes/node-a', { method: 'DELETE', headers: bearer('nope') }))).status).toBe(401)
   })
+
+  it('REQ-API-005 lists models as projections with callable names', async () => {
+    const { router } = routerFixture()
+    const key = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/models', { headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { models: Array<{ id: string; callableNames: string[]; displayName: string }> }
+    const model = body.models.find((entry) => entry.id === 'mesh-default-qwen36-35b')
+    expect(model?.displayName).toBe('Qwen3.6 35B')
+    expect(model?.callableNames).toContain('codeflare-mesh')
+  })
+
+  it('REQ-API-005 configures a model context window and rejects invalid input', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const headers = { ...bearer(key.token), 'content-type': 'application/json' }
+    const ok = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 8192 }) }))
+    expect(ok.status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-default-qwen36-35b')?.contextWindow).toBe(8192)
+    const bad = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 0 }) }))
+    expect(bad.status).toBe(400)
+    const missing = await router(new Request('https://router.test/api/v1/models/ghost', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 8192 }) }))
+    expect(missing.status).toBe(404)
+  })
+
+  it('REQ-API-005 enables a model and switches off another with the same callable name', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/models/mesh-split-qwen36-35b/enable', { method: 'POST', headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { activated: string; deactivated: string[] }
+    expect(body.activated).toBe('mesh-split-qwen36-35b')
+    expect(body.deactivated).toContain('mesh-default-qwen36-35b')
+    const profiles = await store.listProfiles()
+    expect(profiles.find((profile) => profile.id === 'mesh-split-qwen36-35b')?.active).toBe(true)
+    expect(profiles.find((profile) => profile.id === 'mesh-default-qwen36-35b')?.active).toBe(false)
+  })
+
+  it('REQ-API-005 disables a model by dropping its traffic to zero', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b/disable', { method: 'POST', headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    const profile = (await store.listProfiles()).find((entry) => entry.id === 'mesh-default-qwen36-35b')
+    expect(profile?.rolloutPercent).toBe(0)
+    expect(profile?.active).toBe(false)
+  })
+
+  it('REQ-API-005 lists available agent versions to an automation caller', async () => {
+    const { router } = routerFixture({ releasesFetcher: githubReleasesFetcher(['v1.2.0', 'v1.1.0']) })
+    const key = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/agent-versions', { headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    expect((await res.json() as { tags: string[] }).tags).toContain('v1.2.0')
+  })
+
+  it('REQ-API-005 sets the fleet agent version and rejects an unknown version', async () => {
+    const { router, store } = routerFixture({ releasesFetcher: githubReleasesFetcher(['v1.2.0', 'v1.1.0']) })
+    const key = await mintKey(router)
+    const headers = { ...bearer(key.token), 'content-type': 'application/json' }
+    const ok = await router(new Request('https://router.test/api/v1/agent-version', { method: 'PUT', headers, body: JSON.stringify({ version: 'v1.2.0' }) }))
+    expect(ok.status).toBe(200)
+    expect(await store.getConfig('desired_agent_version')).toBe('v1.2.0')
+    const bad = await router(new Request('https://router.test/api/v1/agent-version', { method: 'PUT', headers, body: JSON.stringify({ version: 'v9.9.9' }) }))
+    expect(bad.status).toBe(400)
+  })
+
+  it('REQ-API-005 refuses model and version endpoints without an automation key', async () => {
+    const { router } = routerFixture()
+    expect((await router(new Request('https://router.test/api/v1/models', { headers: bearer('nope') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/models/x/enable', { method: 'POST', headers: bearer('nope') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/agent-versions', { headers: bearer('nope') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/agent-version', { method: 'PUT', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: '{}' }))).status).toBe(401)
+  })
 })

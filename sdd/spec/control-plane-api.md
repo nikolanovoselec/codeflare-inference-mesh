@@ -108,6 +108,34 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ---
 
+### REQ-API-005: Programmatic model and version management
+
+**Intent:** Fleet managers must configure models, switch them on and off, and set the fleet's node-agent version programmatically, wrapping the same validated levers the console uses so automation and the console never diverge.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `GET /api/v1/models` returns each model as a projection with its id, display name, callable names, active flag, rollout percent, context window, and model reference. <!-- @impl: packages/router-worker/src/router.ts::toApiModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists models as projections with callable names) -->
+2. `POST /api/v1/models/{id}` updates a model's context window and/or model reference, rejecting a non-positive-integer context window or an empty model reference, and returns `404` for an unknown model. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelConfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 configures a model context window and rejects invalid input) -->
+3. `POST /api/v1/models/{id}/enable` switches a model on and switches off any other model that answers to the same callable name. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelEnable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 enables a model and switches off another with the same callable name) -->
+4. `POST /api/v1/models/{id}/disable` drops a model's traffic to zero. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDisable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 disables a model by dropping its traffic to zero) -->
+5. `GET /api/v1/agent-versions` lists the available node-agent versions to an automation caller. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists available agent versions to an automation caller) -->
+6. `PUT /api/v1/agent-version` sets the fleet-wide desired node-agent version and rejects a version absent from the available list. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersionSet --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 sets the fleet agent version and rejects an unknown version) -->
+7. The model and version endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 refuses model and version endpoints without an automation key) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-ADM-008](setup-admin.md#req-adm-008-agent-version-management)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference.md](../../documentation/lanes/api-reference.md)
