@@ -70,7 +70,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 3. A setup token can be claimed at most once. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
 4. Expired, claimed, or invalid setup tokens are rejected. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
 5. Successful claim returns permanent node credentials and the initial desired profile state. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
-6. Fetching an install command does not create a setup token; the command carries a placeholder until one is minted. <!-- @impl: packages/router-worker/src/router.ts::handleInstaller --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-003 does not mint a setup token when an install command is fetched) -->
+6. Fetching an install command returns a token placeholder in place of a setup token instead of minting one. <!-- @impl: packages/router-worker/src/router.ts::handleInstaller --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-003 does not mint a setup token when an install command is fetched) -->
 7. Creating a setup token fills it into the displayed install command so one token backs each enrollment. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-003 fills the minted setup token into the install command) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
@@ -466,7 +466,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 1. The Models section lists active profiles before standby profiles, preserving source order within each group. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 orders profile rows active-first regardless of source order) -->
 
-**Constraints:** None
+**Constraints:** None.
 
 **Priority:** P3
 

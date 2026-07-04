@@ -14,6 +14,7 @@
 - [Admin status shows mesh_state_key_missing](#admin-status-shows-mesh_state_key_missing)
 - [Dashboard shows "The router hit a temporary error"](#dashboard-shows-the-router-hit-a-temporary-error)
 - [Setup step fails after a Cloudflare permission or API error](#setup-step-fails-after-a-cloudflare-permission-or-api-error)
+- [AI Gateway sync fails with an actionable message](#ai-gateway-sync-fails-with-an-actionable-message)
 - [Update staging checksum mismatch](#update-staging-checksum-mismatch)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
@@ -101,17 +102,25 @@
 
 **Symptom:** An admin or read-only user action in the console shows a toast and result reading "The router hit a temporary error. Give it a moment and try again. (request <id>)" instead of completing.
 
-**Cause:** The action's admin route threw an uncaught exception and hit the Worker's top-level catch-all, which appends a `router_error` audit event and returns `{ "error": "internal_error", "requestId": string }` at `500`. This is commonly a transient D1 cold-start or a read race during setup, but it can also mask a real defect. ([REQ-ADM-007](../../sdd/spec/setup-admin.md#req-adm-007-operator-dashboard))
+**Cause:** The action's admin route threw an uncaught exception and hit the Worker's top-level catch-all, which appends a `router_error` audit event and returns `{ "error": "internal_error", "requestId": string }` at `500`. This is commonly a transient D1 cold-start or a read race during setup, but it can also mask a real defect. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
 **Fix:** Retry the action after a few seconds. If it persists, look up the `router_error` audit entry by the `requestId` shown in the toast (or in the Worker runtime logs) to find the underlying exception, and check D1 availability if the action touches profile or mesh state. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.ts::createRouter -->
 
 ## Setup step fails after a Cloudflare permission or API error
 
-**Symptom:** A setup or Routing action (Enable Access, Connect AI Gateway, Provision domain) shows "The router hit a temporary error", and the `router_error` audit entry reads `Cloudflare Access API failed: 403` or `Cloudflare API failed: 400`.
+**Symptom:** A setup or Routing action (Enable Access, Provision domain) shows "The router hit a temporary error", and the `router_error` audit entry reads `Cloudflare Access API failed: 403` or `Cloudflare API failed: 400`.
 
-**Cause:** The Worker's `CLOUDFLARE_API_TOKEN_RUNTIME` reached Cloudflare but the call was rejected. A `403` means the token lacks a permission the step needs: Access provisioning needs `Access: Apps and Policies Edit` and `Access: Organizations, Identity Providers, and Groups Edit`; Gateway sync needs `AI Gateway: Edit`; custom-domain provisioning needs `Workers Routes: Edit` and target-zone DNS edit (the README "Deploy secrets and token scopes" section lists the full set). A `400` means Cloudflare rejected the request payload. ([REQ-GWY-006](../../sdd/spec/gateway.md#req-gwy-006-cloudflare-api-error-surfacing)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md#req-adm-012-domain-and-access-provisioning))
+**Cause:** The Worker's `CLOUDFLARE_API_TOKEN_RUNTIME` reached Cloudflare but the call was rejected. A `403` means the token lacks a permission the step needs: Access provisioning needs `Access: Apps and Policies Edit` and `Access: Organizations, Identity Providers, and Groups Edit`; custom-domain provisioning needs `Workers Routes: Edit` and target-zone DNS edit (the README "Deploy secrets and token scopes" section lists the full set). A `400` means Cloudflare rejected the request payload. ([REQ-GWY-006](../../sdd/spec/gateway.md#req-gwy-006-cloudflare-api-error-surfacing)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md#req-adm-012-domain-and-access-provisioning))
 
 **Fix:** For a `403`, add the missing permission to the runtime token in the Cloudflare dashboard (editing a token's permissions keeps its value, so no redeploy is needed), then retry. For a `400`, read the Cloudflare error code and message that the `router_error` audit entry now includes to find the rejected field. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::formatCloudflareApiErrors --> <!-- @impl: packages/router-worker/src/router.ts::createRouter -->
+
+## AI Gateway sync fails with an actionable message
+
+**Symptom:** The Routing view's "Connect AI Gateway" / re-sync action shows "The AI Gateway sync could not be completed. Confirm the gateway exists and the router Cloudflare token has AI Gateway access, then re-sync." at `424` instead of a generic temporary-error toast.
+
+**Cause:** Gateway sync catches Cloudflare rejections from `syncCustomProvider` (needs `AI Gateway: Edit`, a missing gateway, or a route conflict) locally rather than letting them fall through to the Worker's top-level catch-all; it records a `gateway_sync_failed` audit event with the raw cause and returns `424` with the actionable copy above instead of the generic `internal_error`/`500`. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
+
+**Fix:** Confirm the AI Gateway named in Routing settings still exists, and add `AI Gateway: Edit` to the runtime Cloudflare token if missing, then re-sync. For the exact Cloudflare rejection, look up the `gateway_sync_failed` audit entry's `reason` field by request ID. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync -->
 
 ## Update staging checksum mismatch
 

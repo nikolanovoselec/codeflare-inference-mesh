@@ -10,7 +10,7 @@
 
 Admin routes accept the bootstrap admin bearer token until Cloudflare Access is provisioned; once Access configuration is stored, every human admin request must carry a valid Access JWT, and bearer credentials work only during break-glass recovery. "Admin authentication" below means this guard. Once Access is configured, each verified caller resolves to a console **role** — `admin` or read-only `user` — from their Access groups and email ([security.md](security.md#role-based-console-access)); "any console role" below means the reader guard both roles pass, while "admin authentication" requires the `admin` role. Admin routes never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity, and do not implement a dedicated Origin-header gate. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-009](../../sdd/spec/security.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
-Any admin route can also return `500` with body `{ "error": "internal_error", "requestId": string }` when the Worker's top-level handler catches an uncaught exception (commonly a transient D1 cold-start); the per-route Response tables below list only route-specific statuses and omit this shared catch-all. ([REQ-ADM-007](../../sdd/spec/setup-admin.md#req-adm-007-operator-dashboard))
+Any admin route can also return `500` with body `{ "error": "internal_error", "requestId": string }` when the Worker's top-level handler catches an uncaught exception (commonly a transient D1 cold-start); the per-route Response tables below list only route-specific statuses and omit this shared catch-all. `POST /admin/cloudflare/gateway/sync` is the one admin route that no longer relies on this shared catch-all for Cloudflare-rejection failures — see its own Response table. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
 ## Endpoints
 
@@ -78,6 +78,8 @@ POST /admin/setup
 | --- | --- | --- |
 | `201` | Credentials are generated once; durable storage keeps verifiers/config only. | Generated admin, provider, setup, and upstream credentials. |
 | `401` | Setup has completed and admin auth is missing or invalid. | Error object. |
+
+**Notes:** After setup completes, the console renders the `401` as inline recovery guidance (setup already complete, sign in with the existing admin token) rather than raw JSON. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md)
 
@@ -246,7 +248,7 @@ GET /admin/installers/{platform}
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | Unsupported platform. | `{ "error": "unknown_platform" }` |
 
-**Implements:** [REQ-ADM-004](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md#req-adm-003-setup-token-lifecycle), [REQ-ADM-004](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/nodes/:nodeId/revoke
 
@@ -294,9 +296,10 @@ POST /admin/cloudflare/gateway/sync
 | `200` | Cloudflare AI Gateway metadata and selected sync settings are stored in D1. | Provider, route, route version, deployment identifiers, and selected settings. |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `409` | No provisioned custom domain exists for Gateway sync, or the stored custom domain is not provisioned and no `workerUrl` override was supplied. | `{ "error": "custom_domain_required" }` or `{ "error": "custom_domain_not_provisioned", "hostname": string }` |
+| `424` | Cloudflare rejected the sync call itself (bad token, missing gateway, route conflict). The raw cause is recorded to the audit log as a `gateway_sync_failed` event and never returned to the caller. | `{ "error": "The AI Gateway sync could not be completed. Confirm the gateway exists and the router Cloudflare token has AI Gateway access, then re-sync." }` |
 | `503` | Required runtime Cloudflare configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
-**Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md), [REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances)
 
 ### POST /admin/custom-domain/validate
 
