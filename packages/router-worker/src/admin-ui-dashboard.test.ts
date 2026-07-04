@@ -487,11 +487,13 @@ describe('dashboard throughput trace and playground contracts', () => {
     })
     const chip = harness.byId('overview-mesh').children[0]
     expect(chip, 'overview should render a mesh chip').toBeDefined()
+    // The stub does not aggregate textContent from children; the label lives on a child span.
+    const label = descendants(chip!).map((node) => node.textContent).join('')
     // Named by the model, not the wiring id or a raw rotation counter.
-    expect(chip!.textContent).toContain('Qwen3.6 35B')
-    expect(chip!.textContent).not.toContain('mesh-default-qwen36-35b')
+    expect(label).toContain('Qwen3.6 35B')
+    expect(label).not.toContain('mesh-default-qwen36-35b')
     // A single-node model reads "not shared yet" in a neutral tone, never an alarming amber "forming".
-    expect(chip!.textContent).not.toContain('forming')
+    expect(label).not.toContain('forming')
     expect(chip!.dataset.tone).not.toBe('warn')
     expect(chip!.dataset.tone).not.toBe('danger')
   })
