@@ -1,7 +1,7 @@
 # Codeflare Inference Mesh
 
 <p align="center">
-  <img src="assets/og.png" alt="Codeflare Inference Mesh: private LLM inference on hardware you own." width="100%">
+  <img src="assets/og.png" alt="Codeflare Inference Mesh: private LLM inference on hardware you already own." width="100%">
 </p>
 
 [![CI](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/nikolanovoselec/codeflare-inference-mesh/actions/workflows/ci.yml)
