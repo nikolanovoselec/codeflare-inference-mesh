@@ -196,6 +196,7 @@ export interface Store {
   getConfig<T>(key: string): Promise<T | undefined>
   appendAudit(event: AuditEvent): Promise<void>
   listAudit(limit: number): Promise<readonly AuditEvent[]>
+  listEventsSince(sinceMs: number, types: readonly string[] | undefined, limit: number): Promise<readonly AuditEvent[]>
 }
 
 export interface Scheduler {

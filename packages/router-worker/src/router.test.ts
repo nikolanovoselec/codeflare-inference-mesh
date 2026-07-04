@@ -2973,4 +2973,60 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request('https://router.test/api/v1/agent-versions', { headers: bearer('nope') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/api/v1/agent-version', { method: 'PUT', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: '{}' }))).status).toBe(401)
   })
+
+  // Events tests seed the automation key directly (no mint) so no automation_key_created event pollutes the log.
+  async function seedAutomationKey(store: MemoryStore): Promise<string> {
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    return 'auto-secret'
+  }
+
+  it('REQ-API-006 lists operational events oldest-first and hides internal bookkeeping', async () => {
+    const { router, store } = routerFixture()
+    const token = await seedAutomationKey(store)
+    await store.appendAudit({ id: 'e1', type: 'node_claimed', at: 100, actor: 'setup', target: 'node-a', detail: {} })
+    await store.appendAudit({ id: 'e2', type: 'mesh_state_stored', at: 150, actor: 'system', detail: {} })
+    await store.appendAudit({ id: 'e3', type: 'profile_activated', at: 200, actor: 'admin', target: 'm', detail: {} })
+    const res = await router(new Request('https://router.test/api/v1/events', { headers: bearer(token) }))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { events: Array<{ id: string; type: string }>; nextCursor: number | null }
+    expect(body.events.map((event) => event.id)).toEqual(['e1', 'e3'])
+    expect(body.events.map((event) => event.type)).not.toContain('mesh_state_stored')
+  })
+
+  it('REQ-API-006 returns only events after the since timestamp', async () => {
+    const { router, store } = routerFixture()
+    const token = await seedAutomationKey(store)
+    await store.appendAudit({ id: 'old', type: 'node_claimed', at: 100, actor: 'setup', target: 'n', detail: {} })
+    await store.appendAudit({ id: 'new', type: 'node_claimed', at: 500, actor: 'setup', target: 'n', detail: {} })
+    const body = await (await router(new Request('https://router.test/api/v1/events?since=200', { headers: bearer(token) }))).json() as { events: Array<{ id: string }> }
+    expect(body.events.map((event) => event.id)).toEqual(['new'])
+  })
+
+  it('REQ-API-006 filters events by type', async () => {
+    const { router, store } = routerFixture()
+    const token = await seedAutomationKey(store)
+    await store.appendAudit({ id: 'a', type: 'node_claimed', at: 100, actor: 'setup', target: 'n', detail: {} })
+    await store.appendAudit({ id: 'b', type: 'profile_activated', at: 200, actor: 'admin', target: 'm', detail: {} })
+    const body = await (await router(new Request('https://router.test/api/v1/events?type=profile_activated', { headers: bearer(token) }))).json() as { events: Array<{ id: string }> }
+    expect(body.events.map((event) => event.id)).toEqual(['b'])
+  })
+
+  it('REQ-API-006 paginates events by cursor', async () => {
+    const { router, store } = routerFixture()
+    const token = await seedAutomationKey(store)
+    for (const [id, at] of [['x1', 10], ['x2', 20], ['x3', 30]] as const) {
+      await store.appendAudit({ id, type: 'node_claimed', at, actor: 'setup', target: 'n', detail: {} })
+    }
+    const first = await (await router(new Request('https://router.test/api/v1/events?limit=2', { headers: bearer(token) }))).json() as { events: Array<{ id: string }>; nextCursor: number | null }
+    expect(first.events.map((event) => event.id)).toEqual(['x1', 'x2'])
+    expect(first.nextCursor).toBe(20)
+    const second = await (await router(new Request('https://router.test/api/v1/events?limit=2&since=20', { headers: bearer(token) }))).json() as { events: Array<{ id: string }>; nextCursor: number | null }
+    expect(second.events.map((event) => event.id)).toEqual(['x3'])
+    expect(second.nextCursor).toBeNull()
+  })
+
+  it('REQ-API-006 refuses events access without an automation key', async () => {
+    const { router } = routerFixture()
+    expect((await router(new Request('https://router.test/api/v1/events', { headers: bearer('nope') }))).status).toBe(401)
+  })
 })

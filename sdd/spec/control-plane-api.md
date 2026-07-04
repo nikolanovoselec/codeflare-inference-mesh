@@ -136,6 +136,32 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ---
 
+### REQ-API-006: Operational events polling
+
+**Intent:** Fleet managers must poll the mesh's operational events programmatically to feed monitoring and alerting, advancing through the log by cursor and narrowing by type, without the internal per-heartbeat bookkeeping that would drown the signal.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `GET /api/v1/events` returns operational audit events oldest-first and excludes internal per-heartbeat bookkeeping (mesh state stored/cleared, mesh token rotated/removed). <!-- @impl: packages/router-worker/src/store.ts::OPERATIONAL_EVENT_CHURN_TYPES --> <!-- @impl: packages/router-worker/src/router.ts::handleApiEvents --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-006 lists operational events oldest-first and hides internal bookkeeping) -->
+2. `GET /api/v1/events?since={ms}` returns only events recorded strictly after the given timestamp. <!-- @impl: packages/router-worker/src/router.ts::handleApiEvents --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-006 returns only events after the since timestamp) -->
+3. `GET /api/v1/events?type={t}` returns only events of the requested comma-separated type(s). <!-- @impl: packages/router-worker/src/router.ts::handleApiEvents --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-006 filters events by type) -->
+4. `GET /api/v1/events?limit={n}` caps the page and returns a `nextCursor` (the last event's timestamp) when the page is full, or `null` when the log is drained. <!-- @impl: packages/router-worker/src/router.ts::handleApiEvents --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-006 paginates events by cursor) -->
+5. The events endpoint refuses a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiEvents --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-006 refuses events access without an automation key) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-OBS-006](observability.md#req-obs-006-audit-history)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference.md](../../documentation/lanes/api-reference.md)

@@ -638,6 +638,29 @@ PUT /api/v1/agent-version
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
 
+### GET /api/v1/events
+
+Polls operational events oldest-first for monitoring and alerting. Internal per-heartbeat bookkeeping (mesh state stored/cleared, mesh token rotated/removed) is excluded.
+
+```http
+GET /api/v1/events?since={ms}&type={t1,t2}&limit={n}
+```
+
+**Authentication:** automation key
+
+**Query parameters:** `since` (return events recorded strictly after this millisecond timestamp; default `0`), `type` (comma-separated event types to include), `limit` (page size, default 100, max 1000).
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | A page of events oldest-first. | `{ "events": AuditEvent[], "nextCursor": number \| null }` — poll again with `since=nextCursor` while it is non-null. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-006](../../sdd/spec/control-plane-api.md#req-api-006-operational-events-polling)
+
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |

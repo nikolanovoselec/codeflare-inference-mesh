@@ -7,6 +7,13 @@ const GATE_CONFIG_KEYS = new Set(['setup_state', 'custom_domain'])
 const GATE_CONFIG_TTL_MS = 5000
 const gateConfigCache = new WeakMap<D1Database, Map<string, { at: number; value: unknown }>>()
 
+/**
+ * Internal per-heartbeat bookkeeping audit types excluded from the operational
+ * events feed (the console suppresses the same set). The API events endpoint is
+ * for operational events, not internal mesh-state churn.
+ */
+export const OPERATIONAL_EVENT_CHURN_TYPES = ['mesh_state_stored', 'mesh_state_cleared', 'mesh_token_rotated', 'mesh_token_removed'] as const
+
 export class D1Store implements Store {
   constructor(private readonly db: D1Database, private readonly now: () => number = Date.now) {}
 
@@ -168,6 +175,21 @@ export class D1Store implements Store {
 
   async listAudit(limit: number): Promise<readonly AuditEvent[]> {
     const rows = await this.db.prepare('SELECT event_json FROM audit_events ORDER BY at DESC LIMIT ?').bind(limit).all<{ event_json: string }>()
+    return (rows.results ?? []).map((row) => parseJson<AuditEvent>(row.event_json))
+  }
+
+  async listEventsSince(sinceMs: number, types: readonly string[] | undefined, limit: number): Promise<readonly AuditEvent[]> {
+    const clauses = ['at > ?', `type NOT IN (${OPERATIONAL_EVENT_CHURN_TYPES.map(() => '?').join(', ')})`]
+    const binds: unknown[] = [sinceMs, ...OPERATIONAL_EVENT_CHURN_TYPES]
+    if (types && types.length > 0) {
+      clauses.push(`type IN (${types.map(() => '?').join(', ')})`)
+      binds.push(...types)
+    }
+    binds.push(limit)
+    const rows = await this.db
+      .prepare(`SELECT event_json FROM audit_events WHERE ${clauses.join(' AND ')} ORDER BY at ASC LIMIT ?`)
+      .bind(...binds)
+      .all<{ event_json: string }>()
     return (rows.results ?? []).map((row) => parseJson<AuditEvent>(row.event_json))
   }
 }

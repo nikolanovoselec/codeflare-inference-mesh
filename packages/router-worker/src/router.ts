@@ -110,6 +110,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'POST') return await handleApiModelConfigure(request, deps, url, id, now())
       if (url.pathname === '/api/v1/agent-versions' && request.method === 'GET') return await handleApiAgentVersions(request, deps, id, now())
       if (url.pathname === '/api/v1/agent-version' && request.method === 'PUT') return await handleApiAgentVersionSet(request, deps, id, now())
+      if (url.pathname === '/api/v1/events' && request.method === 'GET') return await handleApiEvents(request, deps, url, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
@@ -1074,6 +1075,20 @@ async function handleApiAgentVersionSet(request: Request, deps: RouterDeps, requ
   return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, `automation:${automation.id}`)
 }
 
+/** Poll operational events oldest-first, filtered by since/type, paginated by an `at` cursor. */
+async function handleApiEvents(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  const sinceParam = Number(url.searchParams.get('since') ?? '0')
+  const sinceMs = Number.isFinite(sinceParam) && sinceParam >= 0 ? sinceParam : 0
+  const typeParam = url.searchParams.get('type')
+  const types = typeParam ? typeParam.split(',').map((entry) => entry.trim()).filter(Boolean) : undefined
+  const limitParam = Number(url.searchParams.get('limit') ?? '100')
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 1000) : 100
+  const events = await deps.store.listEventsSince(sinceMs, types, limit)
+  const nextCursor = events.length === limit && events.length > 0 ? events[events.length - 1]!.at : null
+  return json({ events, nextCursor }, 200, requestId)
+}
+
 async function authenticateKind(request: Request, deps: RouterDeps, kind: CredentialKind, now: number, envSecret?: string): Promise<boolean> {
   const presented = bearerToken(request)
   if (await verifyPlainOrHashed(envSecret, presented)) return true
@@ -1229,5 +1244,6 @@ export const ROUTER_ANCHORS = {
   REQ_API_002: 'REQ-API-002',
   REQ_API_003: 'REQ-API-003',
   REQ_API_004: 'REQ-API-004',
-  REQ_API_005: 'REQ-API-005'
+  REQ_API_005: 'REQ-API-005',
+  REQ_API_006: 'REQ-API-006'
 } as const
