@@ -30,8 +30,8 @@ function enrollControls(prefix: string): string {
   return `<div class="form-actions">${button({ action: 'setup-token-create', label: 'Create setup token', out: `${prefix}setup-token-output` })}</div>
 ${output({ id: `${prefix}setup-token-output`, kind: 'setup-token', extraClass: 'token-grid' })}
 <div class="form-grid">${field({ id: `${prefix}installer-platform`, label: 'Platform', control: platformSelect(prefix) })}</div>
-<div class="form-actions">${button({ action: 'installer-generate', label: 'Copy install command', out: `${prefix}installer-output`, prefix })}</div>
-${output({ id: `${prefix}installer-output`, kind: 'installer-command', pre: true })}`
+<p class="field-hint">Create a token and your install command appears below. Click it to copy, then run it on the machine.</p>
+${output({ id: `${prefix}installer-output`, kind: 'installer-command', pre: true, extraClass: 'copyable' })}`
 }
 
 export function setupWizardView(active: boolean): string {

@@ -157,7 +157,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     setSection(config.nav.sections[0]);
     refreshStatus().catch(() => undefined);
     loadVersions().catch(() => undefined);
-    loadInstaller('', false).catch(() => undefined);
+    loadInstaller('').catch(() => undefined);
     closeDrawer();
     schedulePoll();
   };
@@ -894,7 +894,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     setOutput('agent-version-output', 'Loaded ' + ((view.tags || []).length) + ' release tags' + (view.stale ? ' (stale cache)' : ''));
     return view;
   }
-  async function loadInstaller(prefix, copyToClipboard) {
+  async function loadInstaller(prefix) {
     const select = byId(prefix + 'installer-platform');
     if (!select) return;
     const platform = select.value;
@@ -902,7 +902,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     // Fill the operator's minted token over the placeholder; unminted, the command shows the placeholder.
     const command = mintedSetupToken ? raw.split(config.installer.tokenPlaceholder).join(mintedSetupToken) : raw;
     if (select.value === platform) setOutput(prefix + 'installer-output', command);
-    if (copyToClipboard && select.value === platform) { await navigator.clipboard.writeText(command); toast('Install command copied'); }
   }
   const gatewayPayload = (prefix) => {
     if (prefix === 'wiz-') return discoveryGatewayPayload(gatewayScopeIds('wizard'), true);
@@ -1088,7 +1087,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'gateway-provision-default': 'wiz-gateway-output',
     'status-refresh': 'overview-tiles',
     'setup-token-create': 'setup-token-output',
-    'installer-generate': 'installer-output',
     'gateway-sync': 'gateway-output',
     'custom-domain-validate': 'domain-output',
     'node-revoke': 'node-output',
@@ -1179,9 +1177,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       mintedSetupToken = minted.setupToken;
       renderTokens(out, minted);
       // One token per enrollment: fill the just-minted token into the displayed install command.
-      await loadInstaller(prefix, false);
-    } else if (action === 'installer-generate') {
-      await loadInstaller(prefix, true);
+      await loadInstaller(prefix);
     } else if (action === 'gateway-sync') {
       revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify(gatewayPayload(prefix)) }));
     } else if (action === 'custom-domain-validate') {
@@ -1259,6 +1255,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   document.addEventListener('click', async (event) => {
     const copy = event.target.closest('[data-copy]');
     if (copy) { await navigator.clipboard.writeText(copy.dataset.copy || ''); toast('Copied'); return; }
+    const copyCommand = event.target.closest('[data-output="installer-command"]');
+    if (copyCommand && copyCommand.textContent) { await navigator.clipboard.writeText(copyCommand.textContent); toast('Command copied'); return; }
     const removeIdent = event.target.closest('[data-remove-ident]');
     if (removeIdent) { const kind = removeIdent.dataset.removeKind === 'user' ? 'user' : 'admin'; accessIdents[kind] = accessIdents[kind].filter((value) => value !== removeIdent.dataset.removeIdent); renderIdentChips(kind); return; }
     const wizardNext = event.target.closest('[data-wizard-next]');
@@ -1322,7 +1320,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const installer = event.target.closest('[data-installer-platform]');
     if (installer) {
       const prefix = installer.dataset.prefix || '';
-      if (liveToken || onCustomDomain) loadInstaller(prefix, false).catch((error) => setOutput(prefix + 'installer-output', friendlyError('installer-generate', error), true));
+      if (liveToken || onCustomDomain) loadInstaller(prefix).catch((error) => setOutput(prefix + 'installer-output', friendlyError('installer-generate', error), true));
       return;
     }
     const gatewaySelect = event.target.closest('[data-gateway-select]');

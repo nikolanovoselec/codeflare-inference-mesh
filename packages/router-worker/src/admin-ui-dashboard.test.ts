@@ -201,6 +201,15 @@ describe('dashboard overview contracts', () => {
     expect(JSON.parse(String(call!.init?.body))).toEqual({ offlinePruneSeconds: 3600 })
   })
 
+  it('REQ-ADM-004 copies the install command when the command block is clicked', async () => {
+    const harness = await dashboardHarness()
+    const block = harness.byId('installer-output')
+    block.dataset.output = 'installer-command'
+    block.textContent = 'curl -fsSL https://mesh.example.com/install.sh | sh'
+    await harness.click(block)
+    expect(harness.copied).toContain('curl -fsSL https://mesh.example.com/install.sh | sh')
+  })
+
   it('REQ-ADM-015 opens a node drawer with metrics, version drift, and an armed revoke control', async () => {
     const harness = await dashboardHarness()
     const drawer = harness.byId(ADMIN_UI_DRAWER.containerId)
