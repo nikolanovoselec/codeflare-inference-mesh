@@ -2,7 +2,10 @@ import { formatCloudflareApiErrors, type CloudflareApiError } from './cloudflare
 
 export const ADMIN_APP_NAME = 'inference-mesh-admin'
 export const BYPASS_APP_NAME = 'inference-mesh-machine-bypass'
-export const MACHINE_BYPASS_SUFFIXES = ['/v1/*', '/api/v1/*', '/node/*', '/health', '/install.sh', '/install.ps1'] as const
+// Cloudflare Access caps the destinations per app; keep this at or below 5. The two
+// installer paths (/install.sh, /install.ps1) collapse into one /install* wildcard so the
+// control-plane /api/v1/* bypass fits without exceeding the limit.
+export const MACHINE_BYPASS_SUFFIXES = ['/v1/*', '/api/v1/*', '/node/*', '/health', '/install*'] as const
 
 export interface AccessProvisionRequest {
   readonly accountId: string
