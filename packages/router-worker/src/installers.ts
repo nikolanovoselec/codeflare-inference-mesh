@@ -1,5 +1,12 @@
 export type InstallerPlatform = 'linux' | 'macos' | 'windows'
 
+/**
+ * Placeholder that a freshly fetched install command carries in place of a real setup token.
+ * Fetching a command must never mint a token; the client fills the operator's minted token
+ * over this sentinel once "Create setup token" runs.
+ */
+export const SETUP_TOKEN_PLACEHOLDER = 'PENDING_SETUP_TOKEN'
+
 type InstallerArch = 'amd64' | 'arm64'
 
 export interface InstallerInput {

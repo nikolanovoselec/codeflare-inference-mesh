@@ -19,6 +19,7 @@ import {
 import { ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
 import { adminUiCss } from './admin-ui-css'
 import { dashboardView, setupWizardView } from './admin-ui-views'
+import { SETUP_TOKEN_PLACEHOLDER } from './installers'
 import type { AdminUiStateView } from './admin-ui-contract'
 
 export {
@@ -70,7 +71,8 @@ export function adminUiHtml(workerOrigin: string, state: AdminUiState): string {
     polling: ADMIN_UI_POLLING,
     nodesTable: ADMIN_UI_NODES_TABLE,
     playground: ADMIN_UI_PLAYGROUND,
-    toksTrace: ADMIN_UI_TOKS_TRACE
+    toksTrace: ADMIN_UI_TOKS_TRACE,
+    installer: { tokenPlaceholder: SETUP_TOKEN_PLACEHOLDER }
   })
   const entryView = state.view
   return `<!doctype html>

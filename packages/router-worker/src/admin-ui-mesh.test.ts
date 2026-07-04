@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, ADMIN_UI_PROFILE_ACTIVATION, adminUiHtml } from './admin-ui'
 import type { MeshHealthEntry, MeshUiStatusNode } from './admin-ui'
 import { adminUiHarness, descendants, elementStub, type AdminUiHarness, type StubElement } from './admin-ui-harness'
+import { SETUP_TOKEN_PLACEHOLDER } from './installers'
 
 const meshNodes: readonly MeshUiStatusNode[] = [
   { id: 'node-coord', status: 'online', agentVersion: 'v1.3.0', metrics: { runtimeState: 'running', readyModels: ['qwen3.6:35b-a3b', 'codeflare-mesh'] } },
@@ -243,7 +244,7 @@ describe('admin UI mesh operations contracts', () => {
     expect(failHarness.byId('login-output').classList.contains('is-error')).toBe(true)
   })
 
-  it('renders a humane retry message for a 5xx failure without leaking the raw server error token', async () => {
+  it('REQ-ADM-019 renders a humane retry message for a 5xx failure without leaking the raw server error token', async () => {
     const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
     const harness = adminUiHarness(html, async (path) => {
       if (path === '/admin/status') return Response.json(statusFixture())
@@ -263,6 +264,31 @@ describe('admin UI mesh operations contracts', () => {
     expect(output.classList.contains('is-error')).toBe(true)
     expect(output.textContent).not.toContain('internal_error')
     expect(output.textContent).toContain('req-xyz')
+  })
+
+  it('REQ-ADM-003 fills the minted setup token into the install command', async () => {
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const command = "curl -fsSL https://router.test/install.sh?platform=linux | ROUTER_URL='https://router.test' SETUP_TOKEN='" + SETUP_TOKEN_PLACEHOLDER + "' sh"
+    const harness = adminUiHarness(html, async (path) => {
+      if (path === '/admin/status') return Response.json(statusFixture())
+      if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
+      if (path === '/admin/setup-tokens') return Response.json({ setupToken: 'setup_minted123', expiresAt: 1_700_000_100_000 })
+      if (path.indexOf('/admin/installers/') === 0) return new Response(command, { status: 200, headers: { 'content-type': 'text/plain' } })
+      return new Response('command', { status: 200, headers: { 'content-type': 'text/plain' } })
+    }, { sessionToken: 'admin-secret' })
+    harness.run()
+    await harness.flush(10)
+
+    // Before minting the command carries the placeholder, never a live token.
+    expect(harness.byId('installer-output').textContent).toContain(SETUP_TOKEN_PLACEHOLDER)
+
+    await harness.clickAction('setup-token-create', { out: 'setup-token-output' })
+    await harness.flush(4)
+
+    // The single minted token replaces the placeholder in the displayed command.
+    const filled = harness.byId('installer-output').textContent
+    expect(filled).toContain('setup_minted123')
+    expect(filled).not.toContain(SETUP_TOKEN_PLACEHOLDER)
   })
 
   it('REQ-ADM-007 arms destructive controls and auto-disarms before submitting', async () => {

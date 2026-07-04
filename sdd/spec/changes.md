@@ -8,6 +8,9 @@
 - The Routing view now shows the currently provisioned custom domain and its status. ([REQ-ADM-005](setup-admin.md#req-adm-005-custom-domain-handoff))
 - The empty-state mesh topology no longer overlaps the router hub with the no-nodes caption at narrow viewport widths. ([REQ-ADM-015](setup-admin.md#req-adm-015-mesh-visualization))
 - Polished the console: the Routing view labels its gateway target as gateway, route, and model, and the Overview stats use a two-column compact layout on mobile. ([REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui), [REQ-OBS-010](observability.md#req-obs-010-live-throughput-surface))
+- The Models section now lists active profiles before standby ones so the serving set is visible without scrolling. ([REQ-ADM-018](setup-admin.md#req-adm-018-models-section-ordering))
+- A failed AI Gateway sync now returns an actionable next step instead of a generic server error, so the operator can correct the cause and re-sync; the underlying cause is recorded to the audit log. ([REQ-ADM-019](setup-admin.md#req-adm-019-console-error-affordances))
+- Viewing a node install command no longer mints a setup token; the operator creates one token with the Create setup token action and it fills into the command, so a single token backs each enrollment instead of every page view leaving an orphan token. ([REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle))
 
 ## 2026-07-03
 

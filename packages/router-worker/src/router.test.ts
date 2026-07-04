@@ -5,7 +5,7 @@ import { adminUiHarness, elementStub } from './admin-ui-harness'
 import { resetJwksCache } from './access'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
-import { installerPlan } from './installers'
+import { installerPlan, SETUP_TOKEN_PLACEHOLDER } from './installers'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { createRouter } from './router'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
@@ -314,7 +314,7 @@ describe('router worker behavioral contracts', () => {
     expect(reviewStep).toContain('data-action="setup-complete"')
   })
 
-  it('REQ-ADM-007 renders setup-locked recovery affordances instead of raw JSON', async () => {
+  it('REQ-ADM-019 renders setup-locked recovery affordances instead of raw JSON', async () => {
     // AdminSetupLockedFeedbackTestAnchor
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
@@ -387,6 +387,32 @@ describe('router worker behavioral contracts', () => {
     const afterSecond = store.tokens.filter((token) => token.kind === 'provider' && token.active)
     expect(afterSecond).toHaveLength(1)
     expect(afterSecond[0]!.verifier).not.toBe(afterFirst[0]!.verifier)
+  })
+
+  it('REQ-ADM-019 surfaces an actionable message when Gateway sync fails', async () => {
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
+      cloudflareClient: {
+        syncCustomProvider: async () => { throw new Error('Cloudflare API failed: 403 10000 Authentication error') },
+        provisionCustomDomain: async () => { throw new Error('unused') }
+      }
+    })
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+
+    const res = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    const body = await res.json() as { error?: string; providerToken?: string }
+
+    // A 4xx keeps the client from collapsing the failure to the generic 5xx "temporary error" copy.
+    expect(res.status).toBe(424)
+    expect(body.error).toBeTruthy()
+    expect(body.error).not.toBe('internal_error')
+    // No provider key is minted when the sync never completed.
+    expect(body.providerToken).toBeUndefined()
+    expect(store.tokens.some((token) => token.kind === 'provider' && token.active)).toBe(false)
+    // The raw cause is retained for support without being shown to the operator.
+    const failure = store.audit.find((event) => event.type === 'gateway_sync_failed')
+    expect(failure).toBeDefined()
+    expect((failure!.detail as { reason?: string }).reason).toContain('403')
   })
 
   it('REQ-SEC-002 asks for confirmation before revoking a node from the Admin UI', async () => {
@@ -1129,7 +1155,22 @@ describe('router worker behavioral contracts', () => {
     expect(windowsScript).not.toContain('New-Service')
     expect(linuxPlan).toEqual({ assetName: 'inference-mesh-agent-linux-amd64.tar.gz', extractedBinary: 'inference-mesh-agent-linux-amd64', installedBinary: 'inference-mesh-agent', checksumFile: 'checksums.txt' })
     expect(windowsPlan).toEqual({ assetName: 'inference-mesh-agent-windows-amd64.zip', extractedBinary: 'inference-mesh-agent-windows-amd64.exe', installedBinary: 'inference-mesh-agent.exe', checksumFile: 'checksums.txt' })
-    expect(store.tokens.filter((token) => token.kind === 'setup' && token.active).length).toBe(1)
+    // Fetching a command never mints: no orphan setup token is created on view.
+    expect(store.tokens.filter((token) => token.kind === 'setup').length).toBe(0)
+  })
+
+  it('REQ-ADM-003 does not mint a setup token when an install command is fetched', async () => {
+    const { router, store } = routerFixture()
+    const first = await router(new Request('https://router.test/admin/installers/linux', { headers: bearer('admin-secret') }))
+    const command = await first.text()
+    // Repeat views must not accumulate tokens either.
+    await router(new Request('https://router.test/admin/installers/windows', { headers: bearer('admin-secret') }))
+
+    expect(first.status).toBe(200)
+    // The command carries the placeholder, not a live setup_ token.
+    expect(command).toContain(SETUP_TOKEN_PLACEHOLDER)
+    expect(command).not.toMatch(/setup_[A-Za-z0-9]/)
+    expect(store.tokens.filter((token) => token.kind === 'setup').length).toBe(0)
   })
 
   it('REQ-GWY-003 automates provider, route, version, and deployment creation while leaving BYOK manual', async () => {

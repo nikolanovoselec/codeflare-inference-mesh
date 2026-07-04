@@ -24,6 +24,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (value) (remember ? localStorage : sessionStorage).setItem(tokenKey, value);
   };
   let liveToken = savedToken();
+  // The setup token the operator minted this session; filled into every install command shown,
+  // so one token backs each enrollment and viewing a command never mints its own.
+  let mintedSetupToken;
   const headers = (json) => {
     const base = liveToken ? { authorization: 'Bearer ' + liveToken } : {};
     if (json) base['content-type'] = 'application/json';
@@ -609,7 +612,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const list = byId('profile-list');
     if (!list) return;
     list.textContent = '';
-    profiles.forEach((profile) => {
+    // Active-first (stable): the serving set surfaces above standby without scrolling.
+    const ordered = [...profiles].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
+    ordered.forEach((profile) => {
       const row = document.createElement('div');
       row.className = 'row-item';
       row.setAttribute('data-profile-row', profile.id);
@@ -805,7 +810,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const select = byId(prefix + 'installer-platform');
     if (!select) return;
     const platform = select.value;
-    const command = await request('/admin/installers/' + platform, { headers: headers(false) });
+    const raw = await request('/admin/installers/' + platform, { headers: headers(false) });
+    // Fill the operator's minted token over the placeholder; unminted, the command shows the placeholder.
+    const command = mintedSetupToken ? raw.split(config.installer.tokenPlaceholder).join(mintedSetupToken) : raw;
     if (select.value === platform) setOutput(prefix + 'installer-output', command);
     if (copyToClipboard && select.value === platform) { await navigator.clipboard.writeText(command); toast('Install command copied'); }
   }
@@ -1062,7 +1069,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       await refreshStatus();
       toast('Status refreshed');
     } else if (action === 'setup-token-create') {
-      renderTokens(out, await request('/admin/setup-tokens', { method: 'POST', headers: headers(false) }));
+      const minted = await request('/admin/setup-tokens', { method: 'POST', headers: headers(false) });
+      mintedSetupToken = minted.setupToken;
+      renderTokens(out, minted);
+      // One token per enrollment: fill the just-minted token into the displayed install command.
+      await loadInstaller(prefix, false);
     } else if (action === 'installer-generate') {
       await loadInstaller(prefix, true);
     } else if (action === 'gateway-sync') {

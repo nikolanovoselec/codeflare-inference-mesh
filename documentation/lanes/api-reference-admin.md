@@ -224,7 +224,7 @@ POST /admin/setup-tokens
 
 ### GET /admin/installers/:platform
 
-Returns a one-line installer command for a supported node-agent platform.
+Returns a one-line installer command for a supported node-agent platform. Fetching does not mint a setup token; the command carries a placeholder that the console fills with a token created via `POST /admin/setup-tokens`, so one token backs each enrollment.
 
 ```http
 GET /admin/installers/{platform}
@@ -242,7 +242,7 @@ GET /admin/installers/{platform}
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Installer command fetches the platform installer and passes only router URL plus setup token. | One-line install command. |
+| `200` | Installer command fetches the platform installer and passes only the router URL and a setup-token placeholder; no token is minted on fetch. | One-line install command. |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | Unsupported platform. | `{ "error": "unknown_platform" }` |
 

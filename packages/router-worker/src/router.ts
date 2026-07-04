@@ -5,7 +5,7 @@ import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
-import { installerCommand, installScript, validateCustomDomain, type InstallerPlatform } from './installers'
+import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { meshUrl } from './scheduler'
@@ -356,11 +356,11 @@ async function handleInstaller(request: Request, deps: RouterDeps, url: URL, req
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const platform = url.pathname.split('/').at(-1) as InstallerPlatform
   if (!['linux', 'macos', 'windows'].includes(platform)) return json({ error: 'unknown_platform' }, 404, requestId)
-  const setupToken = generateBearerToken('setup')
-  await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
   const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
   const workerUrl = domain?.status === 'provisioned' ? `https://${domain.hostname}` : publicWorkerOrigin(deps.env.WORKER_BASE_URL, request.url)
-  const command = installerCommand({ platform, workerUrl, setupToken, repository: deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh' })
+  // Do not mint on GET: viewing the command must not create an orphan setup token. The command
+  // carries a placeholder; the operator mints once via "Create setup token" and the client fills it.
+  const command = installerCommand({ platform, workerUrl, setupToken: SETUP_TOKEN_PLACEHOLDER, repository: deps.env.GITHUB_REPOSITORY ?? 'nikolanovoselec/codeflare-inference-mesh' })
   return new Response(command, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8', 'x-inference-mesh-request-id': requestId } })
 }
 
@@ -393,15 +393,25 @@ async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: 
   if (!workerUrl) return json({ error: 'custom_domain_required' }, 409, requestId)
   if (!settings.accountId || !settings.gatewayId || (!token && !deps.cloudflareClient)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
-  const result = await client.syncCustomProvider({
-    accountId: settings.accountId,
-    gatewayId: settings.gatewayId,
-    workerUrl,
-    providerName: settings.providerName,
-    routeName: settings.routeName,
-    publicModel: settings.publicModel,
-    providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.'
-  })
+  let result: GatewaySyncResult
+  try {
+    result = await client.syncCustomProvider({
+      accountId: settings.accountId,
+      gatewayId: settings.gatewayId,
+      workerUrl,
+      providerName: settings.providerName,
+      routeName: settings.routeName,
+      publicModel: settings.publicModel,
+      providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.'
+    })
+  } catch (error) {
+    // Cloudflare rejected the sync (bad token, missing gateway, route conflict). The raw
+    // cause goes to the audit for support; the operator gets an actionable, sanitized message.
+    // A 4xx keeps the client from collapsing it to the generic 5xx "temporary error, retry".
+    const reason = error instanceof Error ? error.message : String(error)
+    await deps.store.appendAudit({ id: requestId, type: 'gateway_sync_failed', at: now, actor, detail: { reason } })
+    return json({ error: 'The AI Gateway sync could not be completed. Confirm the gateway exists and the router Cloudflare token has AI Gateway access, then re-sync.' }, 424, requestId)
+  }
   await deps.store.putConfig('cloudflare_gateway_settings', {
     accountId: settings.accountId,
     gatewayId: settings.gatewayId,

@@ -70,6 +70,8 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 3. A setup token can be claimed at most once. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
 4. Expired, claimed, or invalid setup tokens are rejected. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
 5. Successful claim returns permanent node credentials and the initial desired profile state. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim) -->
+6. Fetching an install command does not create a setup token; the command carries a placeholder until one is minted. <!-- @impl: packages/router-worker/src/router.ts::handleInstaller --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-003 does not mint a setup token when an install command is fetched) -->
+7. Creating a setup token fills it into the displayed install command so one token backs each enrollment. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-003 fills the minted setup token into the install command) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -176,8 +178,6 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 3. Each navigation entry resolves to a rendered dashboard section, and mobile viewports reach every section through a bottom tab bar. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
 4. Every text, number, and select control carries a visible label, with inline hints and per-action feedback in predictable placement. <!-- @impl: packages/router-worker/src/admin-ui-components.ts::ADMIN_UI_FIELD_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 labels every dashboard control visibly) -->
 5. Destructive actions arm into an explicit same-control confirm step that auto-disarms before submitting. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-007 arms destructive controls and auto-disarms before submitting) -->
-6. Locked setup errors show inline guidance instead of raw JSON. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 renders setup-locked recovery affordances instead of raw JSON) -->
-7. On a server error (5xx) response, the client renders a humane retry message that omits the raw error token but preserves any request id for support. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (renders a humane retry message for a 5xx failure without leaking the raw server error token) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -449,6 +449,52 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Priority:** P2
 
 **Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-ADM-017](#req-adm-017-role-based-console-surface)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-018: Models section ordering
+
+**Intent:** Operators scanning the Models section need the serving set surfaced first, so the profiles actually answering traffic are visible without scrolling past standby ones.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The Models section lists active profiles before standby profiles, preserving source order within each group. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 orders profile rows active-first regardless of source order) -->
+
+**Constraints:** None
+
+**Priority:** P3
+
+**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-019: Console error affordances
+
+**Intent:** When an operator action fails, the console must return an actionable next step instead of raw internals or an opaque generic error, so the operator can recover without reading logs.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Locked setup errors show inline guidance instead of raw JSON. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-019 renders setup-locked recovery affordances instead of raw JSON) -->
+2. On a server error (5xx) response, the client renders a humane retry message that omits the raw error token but preserves any request id for support. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-019 renders a humane retry message for a 5xx failure without leaking the raw server error token) -->
+3. A failed Gateway sync returns an actionable next step in the response body instead of a generic server error, so the operator can correct the cause and re-sync. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-019 surfaces an actionable message when Gateway sync fails) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation)
 
 **Verification:** Automated test
 

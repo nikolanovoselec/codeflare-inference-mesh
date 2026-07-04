@@ -348,6 +348,18 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(text).toContain('router.test')
     expect(text).toMatch(/router\.test.*provisioned/)
   })
+
+  it('REQ-ADM-018 orders profile rows active-first regardless of source order', async () => {
+    const profiles = [
+      { id: 'standby-a', publicAliases: ['standby-a'], active: false, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'serving-b', publicAliases: ['serving-b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'standby-c', publicAliases: ['standby-c'], active: false, rolloutPercent: 100, meshllm: { split: false } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
+    const rows = harness.byId('profile-list').children.filter((row) => row.dataset.profileRow)
+    // Active surfaces first; stable sort preserves source order within each group.
+    expect(rows.map((row) => row.dataset.profileRow)).toEqual(['serving-b', 'standby-a', 'standby-c'])
+  })
 })
 
 describe('read-only user console contracts', () => {
