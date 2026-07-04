@@ -230,6 +230,15 @@ main{padding-bottom:calc(var(--tab-h) + 2rem)}
 .topo-list{display:grid}
 .drawer{width:100vw;border-left:0}
 .form-actions .btn,.wizard-actions .btn{width:100%}
+.node-filters .btn{width:auto}
+.node-search{flex:1 1 100%}
+.stepper li span{display:none}
+.nodes-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.nodes-table tr{display:block;border-bottom:1px solid var(--line-strong);padding:.35rem 0}
+.nodes-table td{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:.4rem 1rem;border:0;padding:.35rem .65rem}
+.nodes-table td::before{content:attr(data-label);color:var(--muted);font-weight:600}
+.nodes-table td.empty-note::before{content:none}
+.nodes-table td .btn{margin-left:0}
 }
 @media (max-width:480px){
 .btn,input,select{min-height:48px}

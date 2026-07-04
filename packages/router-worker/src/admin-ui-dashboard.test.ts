@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_DRAWER, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
 // DashboardUiTestAnchor
@@ -468,6 +468,40 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(toggle('mesh-default-qwen36-35b').textContent).toBe('Turn off')
     expect(toggle('mesh-split-qwen36-35b').dataset.on).toBe('false')
     expect(toggle('mesh-split-qwen36-35b').textContent).toBe('Turn on')
+  })
+
+  it('REQ-ADM-018 labels the shared-model select by model name, never the internal id', async () => {
+    const harness = await dashboardHarness()
+    const select = harness.byId(ADMIN_UI_MESH_HEALTH.rotateSelectId)
+    // The reset-sharing-key dropdown shows the human model name; the wiring id never leaks to the label.
+    const option = select.children.find((opt) => opt.textContent === 'Qwen3.6 35B')
+    expect(option, 'shared-model option should be labeled by display name').toBeDefined()
+    expect(select.children.some((opt) => (opt.textContent || '').includes('mesh-default-qwen36-35b'))).toBe(false)
+  })
+
+  it('REQ-OBS-007 labels overview mesh chips by model name and stays neutral when a model is not shared', async () => {
+    const harness = await dashboardHarness({
+      status: statusFixture({
+        meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, peerNodeIds: [], readyModels: [], failedNodeIds: [], tokenCount: 0 }]
+      })
+    })
+    const chip = harness.byId('overview-mesh').children[0]
+    expect(chip, 'overview should render a mesh chip').toBeDefined()
+    // Named by the model, not the wiring id or a raw rotation counter.
+    expect(chip!.textContent).toContain('Qwen3.6 35B')
+    expect(chip!.textContent).not.toContain('mesh-default-qwen36-35b')
+    // A single-node model reads "not shared yet" in a neutral tone, never an alarming amber "forming".
+    expect(chip!.textContent).not.toContain('forming')
+    expect(chip!.dataset.tone).not.toBe('warn')
+    expect(chip!.dataset.tone).not.toBe('danger')
+  })
+
+  it('REQ-ADM-015 tags each node cell with its column label for the stacked mobile layout', async () => {
+    const harness = await dashboardHarness()
+    const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((child) => child.dataset.nodeRow)
+    expect(row, 'a node row should render').toBeDefined()
+    // Every cell carries a data-label so the mobile card layout prints "Label: value" without side-scroll.
+    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'tok/s', 'VRAM', 'Models', 'Version'])
   })
 })
 

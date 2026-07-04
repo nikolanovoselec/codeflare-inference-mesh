@@ -321,6 +321,9 @@ describe('router worker behavioral contracts', () => {
     expect(html).toMatch(/id="wizard-handoff" hidden/)
     expect(html).toMatch(/id="wizard-gateway-empty" hidden/)
     expect(reviewStep).toContain('data-action="setup-complete"')
+    // The wizard enroll step tags its create-token button with the wizard prefix, so the minted
+    // token fills the wizard's own install-command output rather than the Nodes panel's.
+    expect(nodeStep).toMatch(/data-action="setup-token-create"[^>]*data-prefix="wiz-"/)
   })
 
   it('REQ-ADM-019 renders setup-locked recovery affordances instead of raw JSON', async () => {
@@ -2515,6 +2518,10 @@ describe('Access-first setup and host gating contracts', () => {
     expect(JSON.parse(String(accessCall?.init?.body))).toEqual({ adminEmails: ['operator@example.com'], adminGroups: [], userEmails: ['viewer@example.com'], userGroups: [] })
     expect(harness.byId('wizard-handoff').hidden).toBe(false)
     expect(harness.byId('wizard-handoff-link').attributes.href).toBe('https://mesh.example.com/admin')
+    // The confirmation is the clean handoff card, never a raw JSON dump, and the link names the
+    // destination host so it reads as a "log in here" button.
+    expect(harness.byId('wizard-access-output').textContent).toBe('')
+    expect(harness.byId('wizard-handoff-link').textContent).toContain('mesh.example.com')
   })
 
   it('REQ-GWY-005 gateway step renders selects from live options and syncs the selection', async () => {

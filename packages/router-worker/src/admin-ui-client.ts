@@ -380,6 +380,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (key === 'version') return node.agentVersion || '';
     return node.id;
   };
+  const nodeCellLabel = { id: 'Machine', status: 'Status', toks: 'tok/s', vram: 'VRAM', models: 'Models', version: 'Version' };
   function renderNodesTable(nodes, desiredVersion) {
     const bodyEl = byId(config.nodesTable.bodyId);
     if (!bodyEl) return;
@@ -424,6 +425,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const cell = (name, value, text) => {
         const td = document.createElement('td');
         td.setAttribute('data-cell', name);
+        // Column label per cell so the stacked mobile layout prints "Label: value" (no side-scroll).
+        td.setAttribute('data-label', nodeCellLabel[name] || name);
         if (value !== undefined) td.setAttribute('data-value', value);
         if (text !== undefined) td.textContent = text;
         row.appendChild(td);
@@ -643,7 +646,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     option.setAttribute('data-profile-option', profile.id);
     option.setAttribute('data-split', profile.meshllm && profile.meshllm.split ? 'true' : 'false');
     if (profile.id === selectedId) option.selected = true;
-    option.textContent = profile.id + (profile.meshllm && profile.meshllm.split ? ' (split)' : ' (single-node)');
+    // Show the human model name (never the internal id); only flag models that span machines.
+    option.textContent = modelName(profile) + (profile.meshllm && profile.meshllm.split ? ' (multi-machine)' : '');
     return option;
   };
   function fillProfileSelect(select, profiles, selectedId) {
@@ -885,8 +889,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (rollup) {
       rollup.textContent = '';
       meshEntries.forEach((entry) => {
-        const healthy = !entry.lastError && entry.tokenCount > 0;
-        rollup.appendChild(statusDot(entry.lastError ? 'danger' : healthy ? 'ok' : 'warn', entry.profileId + ' · r' + entry.rotation + (entry.lastError ? ' · attention' : healthy ? ' · healthy' : ' · forming')));
+        const profile = profiles.find((candidate) => candidate.id === entry.profileId);
+        const name = profile ? modelName(profile) : entry.profileId;
+        const peers = (entry.peerNodeIds || []).length;
+        const shared = peers > 0;
+        // Plain summary, same vocabulary as the Model-sharing section; a single-node
+        // model reads "not shared yet" in neutral grey, never an alarming "forming".
+        const label = shared
+          ? name + ' · ' + peers + ' machine' + (peers === 1 ? '' : 's') + ' sharing' + (entry.lastError ? ' · needs attention' : entry.tokenCount > 0 ? ' · ready' : ' · forming')
+          : name + ' · not shared yet';
+        const tone = entry.lastError ? 'danger' : shared && entry.tokenCount > 0 ? 'ok' : 'idle';
+        rollup.appendChild(statusDot(tone, label));
       });
     }
     const gatewayCurrent = byId('gateway-current');
@@ -1180,9 +1193,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const admins = split(accessIdents.admin);
       const users = split(accessIdents.user);
       const body = await request('/admin/setup/access', { method: 'POST', headers: headers(true), body: JSON.stringify({ adminEmails: admins.emails, adminGroups: admins.groups, userEmails: users.emails, userGroups: users.groups }) });
-      setOutput(out, body);
+      // Show a clean confirmation card (the handoff panel), never the raw JSON response.
+      setOutput(out, '');
       const link = byId('wizard-handoff-link');
-      if (link && body.consoleUrl) link.setAttribute('href', body.consoleUrl);
+      if (link && body.consoleUrl) {
+        link.setAttribute('href', body.consoleUrl);
+        // Name the destination so it reads as a login button, not a generic link.
+        try { link.textContent = 'Open the console on ' + new URL(body.consoleUrl).host; } catch (error) { void error; }
+      }
       const handoff = byId('wizard-handoff');
       if (handoff) handoff.hidden = false;
       if (onCustomDomain) setWizardStep('gateway');

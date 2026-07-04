@@ -27,7 +27,7 @@ function emptySlotSelect(slotId: string, selectId: string, name: string, marker:
 }
 
 function enrollControls(prefix: string): string {
-  return `<div class="form-actions">${button({ action: 'setup-token-create', label: 'Create setup token', out: `${prefix}setup-token-output` })}</div>
+  return `<div class="form-actions">${button({ action: 'setup-token-create', label: 'Create setup token', out: `${prefix}setup-token-output`, prefix })}</div>
 ${output({ id: `${prefix}setup-token-output`, kind: 'setup-token', extraClass: 'token-grid' })}
 <div class="form-grid">${field({ id: `${prefix}installer-platform`, label: 'Platform', control: platformSelect(prefix) })}</div>
 <p class="field-hint">Create a token and your install command appears below. Click it to copy, then run it on the machine.</p>
@@ -188,7 +188,7 @@ function routingSection(): string {
   return sectionPanel({
     id: 'routing',
     title: 'Routing',
-    description: 'The address people use to reach your models, and how requests find this router. Everything here is discovered from your connected Cloudflare account — you never type an ID by hand.',
+    description: 'The address people use to reach your models, and how requests find this router. Everything here is discovered from your connected Cloudflare account, so you never type an ID by hand.',
     body: `<h3>AI Gateway</h3>
 <p class="empty-note" id="gateway-current">No gateway connected yet.</p>
 <p class="field-hint">Pick one of your existing gateways, or create a new one.</p>
