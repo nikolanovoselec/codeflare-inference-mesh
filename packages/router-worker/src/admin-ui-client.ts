@@ -72,6 +72,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
   const readInput = (id) => { const el = byId(id); return el && el.value ? el.value.trim() : ''; };
   const setHealth = (state, label) => { const pill = byId('health-pill'); if (!pill) return; pill.dataset.health = state; pill.textContent = label; };
+  // Map a failed playground status to an actionable next step. The raw status alone
+  // ('failed (401)') tells an operator nothing about what to fix.
+  const playgroundHint = (status) => {
+    if (status === 401 || status === 403) return ' Paste the router provider token into the AI Gateway custom provider key.';
+    if (status === 409) return ' Connect an AI Gateway in Routing first.';
+    if (status === 404 || status === 429) return ' No serving profile or ready node yet — enroll a node and activate a profile.';
+    if (status === 503) return ' Re-sync the Gateway in Routing.';
+    return '';
+  };
 
   // --- view + section state -------------------------------------------------
   const setView = (mode) => {
@@ -599,7 +608,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const list = byId('profile-list');
     if (!list) return;
     list.textContent = '';
-    profiles.forEach((profile) => {
+    // Active-first ordering (stable): live profiles surface above standby so the serving
+    // set is visible without scrolling. Selects below keep the source order.
+    const ordered = [...profiles].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
+    ordered.forEach((profile) => {
       const row = document.createElement('div');
       row.className = 'row-item';
       row.setAttribute('data-profile-row', profile.id);
@@ -1077,7 +1089,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const prompt = readInput(config.playground.promptId);
       if (!prompt) { setOutput(out, 'Enter a prompt to send.', true); return; }
       const response = await fetch('/admin/playground/chat', { method: 'POST', headers: headers(true), body: JSON.stringify({ model: select ? select.value : '', messages: [{ role: 'user', content: prompt }] }) });
-      if (!response.ok || !response.body) { setOutput(out, 'Playground request failed (' + response.status + ').', true); return; }
+      if (!response.ok || !response.body) { setOutput(out, 'Playground request failed (' + response.status + ').' + playgroundHint(response.status), true); return; }
       setOutput(out, '');
       const outputEl = byId(out);
       const reader = response.body.getReader();

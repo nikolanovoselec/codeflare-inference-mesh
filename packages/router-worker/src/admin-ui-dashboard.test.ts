@@ -315,6 +315,40 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(call?.init?.method).toBe('POST')
     expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hello mesh' }] })
   })
+
+  it('REQ-ADM-016 appends a status-specific actionable hint when a playground request fails', async () => {
+    const bareLen = (status: number) => ('Playground request failed (' + status + ').').length
+    const outputFor = async (status: number): Promise<string> => {
+      const harness = await dashboardHarness({ respond: (path) => path === '/admin/playground/chat' ? new Response('{"error":"x"}', { status }) : undefined })
+      harness.byId(ADMIN_UI_PLAYGROUND.promptId).value = 'hi'
+      const send = harness.clickAction(ADMIN_UI_PLAYGROUND.sendAction, { out: ADMIN_UI_PLAYGROUND.outputId })
+      await harness.flush(10)
+      await send
+      return harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent
+    }
+    const out401 = await outputFor(401)
+    const out409 = await outputFor(409)
+    // Behavioral contract (survives without pinning copy): each failure carries the status code plus a
+    // hint beyond the bare line, and distinct statuses map to distinct hints. Gut playgroundHint -> both
+    // collapse to the bare line and the length + inequality assertions fail.
+    expect(out401).toContain('(401)')
+    expect(out401.length).toBeGreaterThan(bareLen(401))
+    expect(out409.length).toBeGreaterThan(bareLen(409))
+    expect(out401).not.toBe(out409)
+  })
+
+  it('REQ-ADM-006 orders profile rows active-first regardless of source order', async () => {
+    const status = statusFixture({ profiles: [
+      { id: 'standby-a', publicAliases: ['a'], active: false, rolloutPercent: 0, meshllm: { split: false } },
+      { id: 'active-b', publicAliases: ['b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'standby-c', publicAliases: ['c'], active: false, rolloutPercent: 0, meshllm: { split: false } },
+      { id: 'active-d', publicAliases: ['d'], active: true, rolloutPercent: 100, meshllm: { split: false } }
+    ] })
+    const harness = await dashboardHarness({ status })
+    const rows = descendants(harness.byId('profile-list')).filter((el) => el.dataset.profileRow !== undefined).map((el) => el.dataset.profileRow)
+    // Active profiles first, source order preserved within each group (stable sort).
+    expect(rows).toEqual(['active-b', 'active-d', 'standby-a', 'standby-c'])
+  })
 })
 
 describe('read-only user console contracts', () => {
