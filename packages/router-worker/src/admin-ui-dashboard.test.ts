@@ -181,6 +181,7 @@ describe('dashboard overview contracts', () => {
     expect(rowOrder(harness).length).toBe(3)
     // Search filters only once at least three characters are typed.
     const search = harness.byId('node-search')
+    search.dataset.nodeSearch = 'true'
     search.value = 'sm'
     await harness.change(search)
     expect(rowOrder(harness).length).toBe(3)
