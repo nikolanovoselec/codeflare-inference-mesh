@@ -232,7 +232,7 @@ describe('dashboard overview contracts', () => {
     // Two identical events collapse into one line carrying a repeat count.
     const tokenItems = items.filter((item) => typeOf(item) === 'setup_token_created')
     expect(tokenItems.length).toBe(1)
-    expect(textOf(tokenItems[0])).toContain('2')
+    expect(textOf(tokenItems[0]!)).toContain('2')
   })
 
   it('REQ-ADM-015 opens a node drawer with metrics, version drift, and an armed revoke control', async () => {
