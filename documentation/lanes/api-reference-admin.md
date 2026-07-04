@@ -79,9 +79,9 @@ POST /admin/setup
 | `201` | Credentials are generated once; durable storage keeps verifiers/config only. | Generated admin, provider, setup, and upstream credentials. |
 | `401` | Setup has completed and admin auth is missing or invalid. | Error object. |
 
-**Notes:** After setup completes, the console renders the `401` as inline recovery guidance (setup already complete, sign in with the existing admin token) rather than raw JSON. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
-
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md)
+
+**Notes:** After setup completes, the console renders the `401` as inline recovery guidance (setup already complete, sign in with the existing admin token) rather than raw JSON. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
 ### POST /admin/login
 

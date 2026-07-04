@@ -15,6 +15,7 @@
 - [Dashboard shows "The router hit a temporary error"](#dashboard-shows-the-router-hit-a-temporary-error)
 - [Setup step fails after a Cloudflare permission or API error](#setup-step-fails-after-a-cloudflare-permission-or-api-error)
 - [AI Gateway sync fails with an actionable message](#ai-gateway-sync-fails-with-an-actionable-message)
+- [Requests return 429 rate_limited](#requests-return-429-rate_limited)
 - [Update staging checksum mismatch](#update-staging-checksum-mismatch)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
@@ -121,6 +122,14 @@
 **Cause:** Gateway sync catches Cloudflare rejections from `syncCustomProvider` (needs `AI Gateway: Edit`, a missing gateway, or a route conflict) locally rather than letting them fall through to the Worker's top-level catch-all; it records a `gateway_sync_failed` audit event with the raw cause and returns `424` with the actionable copy above instead of the generic `internal_error`/`500`. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
 **Fix:** Confirm the AI Gateway named in Routing settings still exists, and add `AI Gateway: Edit` to the runtime Cloudflare token if missing, then re-sync. For the exact Cloudflare rejection, look up the `gateway_sync_failed` audit entry's `reason` field by request ID. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync -->
+
+## Requests return 429 rate_limited
+
+**Symptom:** A public endpoint returns `429` with body `{ "error": "rate_limited", "requestId": string }` and a `Retry-After` header.
+
+**Cause:** The request exceeded its rate-limit bucket for the current Cloudflare location. Buckets are per route class: credentialed `/v1` inference (the AI Gateway, keyed by provider token) has a high ceiling, while token-less `/v1` and other public routes are keyed by client IP with low limits, and node heartbeat, enrollment, and admin authentication have their own limits. This is distinct from the `429` `no-node` response, which means no node is available rather than a rate limit.
+
+**Fix:** Wait the `Retry-After` interval and retry. If legitimate traffic is being limited, raise the affected bucket's `limit` in `wrangler.toml` (values are per Cloudflare location per 60s) and redeploy. Confirm production inference flows through the AI Gateway so it uses the high provider-token bucket rather than the low anonymous one. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited -->
 
 ## Update staging checksum mismatch
 

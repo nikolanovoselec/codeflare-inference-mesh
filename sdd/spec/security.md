@@ -1,6 +1,6 @@
 # Security
 
-This domain covers credential separation, route-level auth, header filtering, token storage, mesh token lifecycle, and runtime secret boundaries.
+This domain covers credential separation, route-level auth, header filtering, token storage, mesh token lifecycle, runtime secret boundaries, and abuse/rate-limiting controls.
 
 ---
 
@@ -268,22 +268,23 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 ### REQ-SEC-011: Public endpoint rate limiting
 
-**Intent:** Publicly reachable router endpoints must resist floods and credential brute-force so a single caller cannot exhaust inference capacity, spam heartbeats, or grind setup tokens and admin credentials.
+**Intent:** Publicly reachable router endpoints must resist floods and credential brute-force so a single caller cannot exhaust inference capacity, spam heartbeats, or grind setup tokens and admin credentials, while the credentialed AI Gateway inference path stays generously provisioned for production traffic.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
 1. A request that exceeds its endpoint's rate limit receives a 429 response with a Retry-After header before its route handler runs. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited --> <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-011 rate-limits a public endpoint before reaching its handler) -->
-2. Public endpoints are grouped into rate-limit buckets by route class: inference, heartbeat, enrollment, admin authentication, and a catch-all for other public routes. <!-- @impl: packages/router-worker/src/rate-limit.ts::classifyRoute --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 maps each public endpoint to its bucket, defaulting unlisted routes to public) -->
-3. Authenticated buckets limit per caller bearer credential and unauthenticated buckets limit per client IP. <!-- @impl: packages/router-worker/src/rate-limit.ts::rateKey --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 keys authenticated buckets by token and unauthenticated buckets by IP) -->
-4. Rate limiting fails open when its binding is unavailable or the limiter faults, so it cannot take the router offline. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 allows under the limit and fails open on a limiter fault) -->
+2. Requests are grouped into rate-limit buckets by route: inference for credentialed `/v1` traffic, heartbeat, enrollment, admin authentication, and a public bucket for token-less `/v1` and all other public routes. <!-- @impl: packages/router-worker/src/rate-limit.ts::classifyRoute --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 maps each public endpoint to its bucket, defaulting unlisted routes to public) --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 sends the AI Gateway to the high inference bucket and anonymous inference to the low public bucket) -->
+3. Token-keyed buckets key their rate limit to a hash of the caller's bearer credential. <!-- @impl: packages/router-worker/src/rate-limit.ts::rateKey --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 keys authenticated buckets by a hashed token and unauthenticated buckets by IP) -->
+4. Unauthenticated buckets key their rate limit to the client IP. <!-- @impl: packages/router-worker/src/rate-limit.ts::rateKey --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 keys authenticated buckets by a hashed token and unauthenticated buckets by IP) -->
+5. Rate limiting fails open when its binding is unavailable or the limiter faults, so it cannot take the router offline. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 allows under the limit and fails open on a limiter fault) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-SEC-004](#req-sec-004-runtime-api-exposure)
+**Dependencies:** None.
 
 **Verification:** Automated test
 

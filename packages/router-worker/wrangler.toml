@@ -43,8 +43,10 @@ new_sqlite_classes = ["RegistryDO"]
 [[ratelimits]]
 name = "RL_INFERENCE"
 namespace_id = "2001"
+  # High ceiling for the AI Gateway path (token-carrying /v1 traffic), sized for enterprise
+  # throughput; token-less /v1 hits use RL_PUBLIC instead.
   [ratelimits.simple]
-  limit = 600
+  limit = 100000
   period = 60
 
 [[ratelimits]]
@@ -118,7 +120,7 @@ new_sqlite_classes = ["RegistryDO"]
 name = "RL_INFERENCE"
 namespace_id = "2101"
   [env.integration.ratelimits.simple]
-  limit = 600
+  limit = 100000
   period = 60
 
 [[env.integration.ratelimits]]

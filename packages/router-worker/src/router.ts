@@ -46,8 +46,9 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
     const id = requestId()
     const url = new URL(request.url)
     try {
-      // Rate-limit before any store or Cloudflare work so a flood cannot drive DB load or
-      // large body reads. Keyed per bucket (token for authenticated paths, IP otherwise).
+      // Rate-limit before any store or Cloudflare work so a flood cannot drive per-caller DB
+      // load or large body reads. The AI Gateway (provider token) gets its own high-limit bucket;
+      // token-less inference and other public hits fall to low IP-keyed buckets.
       if (await isRateLimited(request, url.pathname, deps.env)) return rateLimited(id)
       await deps.store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
       const gate = await resolveHostGate(deps, url)
