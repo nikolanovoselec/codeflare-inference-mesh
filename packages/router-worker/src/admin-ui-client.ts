@@ -109,6 +109,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     });
     const sheet = byId('more-sheet');
     if (sheet) sheet.hidden = true;
+    // Opening Routing discovers the operator's gateways from the runtime token.
+    if (name === 'routing') loadGatewayOptions('', 'routing').catch(() => undefined);
   };
   let appliedRole;
   const userAllowedSections = ['overview', 'playground'];
@@ -858,10 +860,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (copyToClipboard && select.value === platform) { await navigator.clipboard.writeText(command); toast('Install command copied'); }
   }
   const gatewayPayload = (prefix) => {
-    if (prefix === 'wiz-') return wizardGatewayPayload();
-    const value = (suffix) => readInput(prefix + 'gateway-' + suffix);
-    const raw = { accountId: value('account-id'), gatewayId: value('id'), routeName: value('route-name'), publicModel: value('public-model'), providerName: value('provider-name'), workerUrl: value('worker-url') };
-    return Object.fromEntries(Object.entries(raw).filter((pair) => pair[1]));
+    if (prefix === 'wiz-') return discoveryGatewayPayload(gatewayScopeIds('wizard'), true);
+    return discoveryGatewayPayload(gatewayScopeIds('routing'), false);
   };
 
   // --- wizard data loaders ----------------------------------------------------
@@ -946,9 +946,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     slot.appendChild(select);
   }
   const toggleNewField = (wrapId, show) => { const wrap = byId(wrapId); if (wrap) wrap.hidden = !show; };
-  async function loadGatewayOptions(gatewayId) {
-    const emptyPanel = byId('wizard-gateway-empty');
-    const selects = byId('wizard-gateway-selects');
+  // The wizard and the Routing section share one gateway-discovery flow; the scope
+  // selects which set of element ids to populate so the two never collide.
+  function gatewayScopeIds(scope) {
+    if (scope === 'routing') return { empty: 'rt-gateway-empty', selects: 'rt-gateway-selects', gwSlot: 'rt-gateway-slot', gwSelect: 'rt-gateway-select', gwNew: 'rt-gateway-new-wrap', rtSlot: 'rt-route-slot', rtSelect: 'rt-route-select', rtNew: 'rt-route-new-wrap' };
+    return { empty: 'wizard-gateway-empty', selects: 'wizard-gateway-selects', gwSlot: 'wiz-gateway-slot', gwSelect: 'wiz-gateway-select', gwNew: 'wiz-gateway-new-wrap', rtSlot: 'wiz-route-slot', rtSelect: 'wiz-route-select', rtNew: 'wiz-route-new-wrap' };
+  }
+  async function loadGatewayOptions(gatewayId, scope) {
+    const ids = gatewayScopeIds(scope);
+    const emptyPanel = byId(ids.empty);
+    const selects = byId(ids.selects);
     if (!emptyPanel || !selects) return;
     const body = await request('/admin/cloudflare/gateway/options' + (gatewayId ? '?gateway=' + encodeURIComponent(gatewayId) : ''), { headers: headers(false) });
     const gateways = (body.gateways || []).map((gateway) => gateway.id);
@@ -959,18 +966,22 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!gateways.length) return;
     const wantedGateway = gatewayId || defaults.gatewayId;
     const gatewayValue = gateways.indexOf(wantedGateway) >= 0 ? wantedGateway : '__new__';
-    fillChoiceSelect('wiz-gateway-slot', 'wiz-gateway-select', 'gatewayId', 'data-gateway-select', gateways, gatewayValue, 'Create new gateway\u2026');
-    toggleNewField('wiz-gateway-new-wrap', gatewayValue === '__new__');
+    fillChoiceSelect(ids.gwSlot, ids.gwSelect, 'gatewayId', 'data-gateway-select', gateways, gatewayValue, 'Create new gateway\u2026');
+    toggleNewField(ids.gwNew, gatewayValue === '__new__');
     const routeValue = routes.indexOf(defaults.routeName) >= 0 ? defaults.routeName : '__new__';
-    fillChoiceSelect('wiz-route-slot', 'wiz-route-select', 'routeName', 'data-route-select', routes, routeValue, 'Create new route\u2026');
-    toggleNewField('wiz-route-new-wrap', routeValue === '__new__');
+    fillChoiceSelect(ids.rtSlot, ids.rtSelect, 'routeName', 'data-route-select', routes, routeValue, 'Create new route\u2026');
+    toggleNewField(ids.rtNew, routeValue === '__new__');
   }
-  const wizardGatewayPayload = () => {
-    const gatewaySelect = byId('wiz-gateway-select');
-    const routeSelect = byId('wiz-route-select');
-    const gatewayId = gatewaySelect && gatewaySelect.value && gatewaySelect.value !== '__new__' ? gatewaySelect.value : readInput('wiz-gateway-new');
-    const routeName = routeSelect && routeSelect.value && routeSelect.value !== '__new__' ? routeSelect.value : readInput('wiz-route-new');
-    const raw = { gatewayId, routeName, providerName: readInput('wiz-gateway-provider-name'), publicModel: readInput('wiz-gateway-public-model'), workerUrl: readInput('wiz-gateway-worker-url') };
+  // Read the chosen (or newly named) gateway + route from a discovery scope's ids.
+  // The account id, worker url, provider, and public model are all resolved
+  // server-side from the runtime token and Worker env \u2014 never entered by hand.
+  const discoveryGatewayPayload = (ids, extras) => {
+    const gatewaySelect = byId(ids.gwSelect);
+    const routeSelect = byId(ids.rtSelect);
+    const gatewayId = gatewaySelect && gatewaySelect.value && gatewaySelect.value !== '__new__' ? gatewaySelect.value : readInput(ids.gwNew.replace('-new-wrap', '-new'));
+    const routeName = routeSelect && routeSelect.value && routeSelect.value !== '__new__' ? routeSelect.value : readInput(ids.rtNew.replace('-new-wrap', '-new'));
+    const raw = { gatewayId, routeName };
+    if (extras) { raw.providerName = readInput('wiz-gateway-provider-name'); raw.publicModel = readInput('wiz-gateway-public-model'); raw.workerUrl = readInput('wiz-gateway-worker-url'); }
     return Object.fromEntries(Object.entries(raw).filter((pair) => pair[1]));
   };
 
@@ -1120,7 +1131,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'gateway-sync') {
       revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify(gatewayPayload(prefix)) }));
     } else if (action === 'custom-domain-validate') {
-      setOutput(out, await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('custom-domain'), zoneId: readInput('custom-domain-zone') }) }));
+      // Hostname only; the owning zone is matched server-side from the runtime token.
+      setOutput(out, await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('custom-domain') }) }));
     } else if (action === 'node-revoke') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
       setOutput(out, await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(false) }));
@@ -1248,12 +1260,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     }
     const gatewaySelect = event.target.closest('[data-gateway-select]');
     if (gatewaySelect) {
-      toggleNewField('wiz-gateway-new-wrap', gatewaySelect.value === '__new__');
-      if (gatewaySelect.value !== '__new__') loadGatewayOptions(gatewaySelect.value).catch(() => undefined);
+      const scope = gatewaySelect.id === 'rt-gateway-select' ? 'routing' : 'wizard';
+      const ids = gatewayScopeIds(scope);
+      toggleNewField(ids.gwNew, gatewaySelect.value === '__new__');
+      if (gatewaySelect.value !== '__new__') loadGatewayOptions(gatewaySelect.value, scope).catch(() => undefined);
       return;
     }
     const routeSelect = event.target.closest('[data-route-select]');
-    if (routeSelect) { toggleNewField('wiz-route-new-wrap', routeSelect.value === '__new__'); }
+    if (routeSelect) {
+      const scope = routeSelect.id === 'rt-route-select' ? 'routing' : 'wizard';
+      toggleNewField(gatewayScopeIds(scope).rtNew, routeSelect.value === '__new__');
+    }
   });
 
   // --- boot -------------------------------------------------------------------

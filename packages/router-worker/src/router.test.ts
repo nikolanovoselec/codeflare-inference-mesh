@@ -212,8 +212,13 @@ describe('router worker behavioral contracts', () => {
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
-    expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(2)
-    expect([...html.matchAll(/id="(?:wiz-)?gateway-(?:account-id|id|route-name|public-model|provider-name|worker-url)"/g)]).toHaveLength(9)
+    // Only the wizard keeps a zone picker; Routing matches the zone from the hostname server-side.
+    expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(1)
+    // Routing discovers gateways/routes from the runtime token — no hand-typed Cloudflare ids or worker URL.
+    expect(html).toContain('id="rt-gateway-select"')
+    expect(html).toContain('id="rt-route-select"')
+    expect(html).not.toContain('id="gateway-account-id"')
+    expect(html).not.toContain('id="custom-domain-zone"')
     const liveOutputSurfaces = [...html.matchAll(/data-output="[^"]+"[^>]*role="log"[^>]*aria-live="polite"/g)]
     expect(liveOutputSurfaces.length).toBeGreaterThanOrEqual(12)
     expect(html).toMatch(/<meta name="viewport" content="width=device-width, initial-scale=1">/)
@@ -340,25 +345,23 @@ describe('router worker behavioral contracts', () => {
     expect(button.disabled).toBe(false)
   })
 
-  it('REQ-GWY-003 sends selected Gateway account from the Admin UI', async () => {
+  it('REQ-GWY-003 connects a gateway from Routing using discovered or new names only', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
     const harness = adminUiHarness(html, async () => Response.json({ deploymentId: 'deployment-a' }), { sessionToken: 'admin-secret' })
     harness.run()
-    harness.byId('gateway-account-id').value = ' account-admin '
-    harness.byId('gateway-id').value = 'gateway-admin'
-    harness.byId('gateway-route-name').value = 'mesh-admin'
-    harness.byId('gateway-public-model').value = 'mesh-smoke'
-    harness.byId('gateway-provider-name').value = 'provider-admin'
-    harness.byId('gateway-worker-url').value = 'https://router.example.workers.dev'
+    // No account id, provider, public model, or worker URL to type — only the gateway + route names.
+    harness.byId('rt-gateway-new').value = 'gateway-admin'
+    harness.byId('rt-route-new').value = 'mesh-admin'
 
-    await harness.clickAction('gateway-sync', { out: 'gateway-output' })
+    await harness.clickAction('gateway-sync', { out: 'gateway-output', prefix: 'rt-' })
 
     expect(harness.fetchCalls).toHaveLength(1)
     expect(harness.fetchCalls[0]!.path).toBe('/admin/cloudflare/gateway/sync')
     expect(harness.fetchCalls[0]!.init?.method).toBe('POST')
     expect(harness.fetchCalls[0]!.init?.headers).toMatchObject({ authorization: 'Bearer admin-secret', 'content-type': 'application/json' })
-    expect(JSON.parse(String(harness.fetchCalls[0]!.init?.body))).toEqual({ accountId: 'account-admin', gatewayId: 'gateway-admin', routeName: 'mesh-admin', publicModel: 'mesh-smoke', providerName: 'provider-admin', workerUrl: 'https://router.example.workers.dev' })
+    // Account id, worker url, provider, and public model are all resolved server-side from the token.
+    expect(JSON.parse(String(harness.fetchCalls[0]!.init?.body))).toEqual({ gatewayId: 'gateway-admin', routeName: 'mesh-admin' })
     expect(JSON.parse(harness.byId('gateway-output').textContent) as { deploymentId: string }).toEqual({ deploymentId: 'deployment-a' })
   })
 

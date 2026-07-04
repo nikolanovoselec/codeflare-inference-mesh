@@ -26,17 +26,6 @@ function emptySlotSelect(slotId: string, selectId: string, name: string, marker:
   return `<span class="slot" id="${slotId}"><select id="${selectId}" name="${name}" ${marker} disabled></select></span>`
 }
 
-function gatewayFields(prefix: string): string {
-  return [
-    field({ id: `${prefix}gateway-account-id`, label: 'Cloudflare account ID', control: textInput({ id: `${prefix}gateway-account-id`, name: 'accountId' }) }),
-    field({ id: `${prefix}gateway-id`, label: 'Gateway ID', control: textInput({ id: `${prefix}gateway-id`, name: 'gatewayId', placeholder: 'e.g. inference-mesh' }) }),
-    field({ id: `${prefix}gateway-route-name`, label: 'Route name', control: textInput({ id: `${prefix}gateway-route-name`, name: 'routeName', placeholder: 'e.g. codeflare-mesh' }) }),
-    field({ id: `${prefix}gateway-public-model`, label: 'Public model', control: textInput({ id: `${prefix}gateway-public-model`, name: 'publicModel', placeholder: 'e.g. codeflare-mesh' }) }),
-    field({ id: `${prefix}gateway-provider-name`, label: 'Provider name', control: textInput({ id: `${prefix}gateway-provider-name`, name: 'providerName', placeholder: 'e.g. codeflare-inference-mesh' }) }),
-    field({ id: `${prefix}gateway-worker-url`, label: 'Worker URL override', control: textInput({ id: `${prefix}gateway-worker-url`, name: 'workerUrl', inputmode: 'url', placeholder: 'e.g. https://router.example.workers.dev' }), hint: 'Blank fields reuse saved settings or Worker environment defaults.' })
-  ].join('')
-}
-
 function enrollControls(prefix: string): string {
   return `<div class="form-actions">${button({ action: 'setup-token-create', label: 'Create setup token', out: `${prefix}setup-token-output` })}</div>
 ${output({ id: `${prefix}setup-token-output`, kind: 'setup-token', extraClass: 'token-grid' })}
@@ -191,19 +180,25 @@ function routingSection(): string {
   return sectionPanel({
     id: 'routing',
     title: 'Routing',
-    description: 'How AI Gateway traffic reaches this router.',
+    description: 'The address people use to reach your models, and how requests find this router. Everything here is discovered from your connected Cloudflare account — you never type an ID by hand.',
     body: `<h3>AI Gateway</h3>
-<p class="empty-note" id="gateway-current">No Gateway connected yet.</p>
-<div class="form-grid">${gatewayFields('')}</div>
-<div class="form-actions">${button({ action: 'gateway-sync', label: 'Connect AI Gateway', variant: 'primary', out: 'gateway-output' })}</div>
+<p class="empty-note" id="gateway-current">No gateway connected yet.</p>
+<p class="field-hint">Pick one of your existing gateways, or create a new one.</p>
+<div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Create gateway + route', variant: 'primary', out: 'gateway-output' })}</div>
+<div class="form-grid" id="rt-gateway-selects">
+${field({ id: 'rt-gateway-select', label: 'Gateway', control: '<span class="slot" id="rt-gateway-slot"><select id="rt-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
+${field({ id: 'rt-route-select', label: 'Route', control: '<span class="slot" id="rt-route-slot"><select id="rt-route-select" name="routeName" data-route-select="true" disabled></select></span>' })}
+</div>
+<div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div>
+<div id="rt-route-new-wrap" hidden>${field({ id: 'rt-route-new', label: 'New route name', control: textInput({ id: 'rt-route-new', name: 'newRouteName', placeholder: 'e.g. codeflare-mesh' }) })}</div></div>
+<div class="form-actions">${button({ action: 'gateway-sync', label: 'Connect gateway', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
 ${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}
 <div class="subpanel"><h3>Custom domain</h3>
-<p class="empty-note" id="custom-domain-current">No custom domain provisioned yet.</p>
+<p class="empty-note" id="custom-domain-current">No custom domain yet.</p>
 <div class="form-grid">
-${field({ id: 'custom-domain', label: 'Hostname', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. ai.example.com' }) })}
-${field({ id: 'custom-domain-zone', label: 'Zone ID (optional)', control: textInput({ id: 'custom-domain-zone', name: 'zoneId' }), hint: 'Provide a zone ID when multiple zones could match the hostname.' })}
+${field({ id: 'custom-domain', label: 'Address people will use', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }), hint: 'Just the address. We match it to your Cloudflare domain automatically.' })}
 </div>
-<div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Provision custom domain', out: 'domain-output' })}</div>
+<div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Set up custom domain', out: 'domain-output' })}</div>
 ${output({ id: 'domain-output', kind: 'custom-domain', pre: true })}</div>`
   })
 }
