@@ -602,6 +602,32 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-024: Routing operational status
+
+**Intent:** The Routing screen shows the stable `codeflare-mesh` dynamic route as an operational status chip and makes the minted provider API key trivially copyable, so an operator knows the wiring is in place and completes the one manual BYOK paste step.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The Routing screen shows a status chip for the dynamic route `codeflare-mesh` that turns green with a flashing indicator when the custom provider and route are provisioned. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 renders the operational route chip when provisioned) -->
+2. The operational chip is driven only by provisioning state (custom provider and route present), not by node or serving health. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 drives the operational chip from provisioning state not node health) -->
+3. After Connect, the minted provider API key is revealed with a one-click copy control. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 reveals the minted provider key with a one-click copy control) -->
+4. A clear instruction tells the operator to paste the key into the AI Gateway provider's API Key field. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 instructs the operator to paste the key into the AI Gateway provider) -->
+5. The pulsing operational indicator styling is defined centrally in the stylesheet. <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 defines the pulsing operational indicator styling centrally) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning)
+
+**Verification:** Automated test
+
+**Status:** Planned
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)

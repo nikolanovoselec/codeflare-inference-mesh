@@ -49,7 +49,7 @@ This domain covers the public Worker that receives provider calls, protects rout
 
 **Priority:** P0
 
-**Dependencies:** [REQ-RTR-001](#req-rtr-001-route-family-separation), [REQ-SCH-002](state-scheduling.md#req-sch-002-node-reservations), [REQ-RUN-001](runtime-profiles.md#req-run-001-public-model-aliases)
+**Dependencies:** [REQ-RTR-001](#req-rtr-001-route-family-separation), [REQ-SCH-002](state-scheduling.md#req-sch-002-node-reservations), [REQ-RUN-001](runtime-profiles.md#req-run-001-stable-public-model)
 
 **Verification:** Automated test
 

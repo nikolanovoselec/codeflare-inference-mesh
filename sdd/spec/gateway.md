@@ -62,13 +62,13 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Acceptance Criteria:**
 
-1. The Admin picks a Gateway and route from lists discovered through the runtime token, or names a new gateway/route to create; the account ID, Worker URL, provider name, and public model are resolved server-side and never entered by hand. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 connects a gateway from Routing using discovered or new names only) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 automates provider, route, version, and deployment creation while leaving BYOK manual) -->
+1. The Admin picks (or creates) only a Gateway; the route name and forwarded model are fixed to the stable public model `codeflare-mesh`, and the account ID, Worker URL, and provider slug are resolved server-side and never entered by hand. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 connects a gateway with the route name and model fixed to codeflare-mesh) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 automates provider, route, version, and deployment creation while leaving BYOK manual) -->
 2. The router stores selected Gateway sync settings for operator visibility and uses the provisioned custom domain for Gateway sync when no explicit override was supplied. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 uses the provisioned custom domain for Gateway sync instead of workers.dev bootstrap) -->
 3. The router creates the missing custom provider and the dynamic route with its routing elements set inline, which yields the route's version and deployment in one call. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 uses idempotent Cloudflare custom-provider and dynamic-route payload contracts) -->
 4. Re-running sync reuses the existing matching provider and route without creating a new route version or deployment. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 reuses existing Cloudflare Gateway resources on repeat sync) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 re-sync reuses the existing dynamic route (data + route envelopes) instead of re-creating it) -->
 5. A matching route left disabled out of band is re-enabled by sync, accepting a new route version and deployment, instead of remaining silently non-serving. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 re-enables a disabled route even when its routing elements already match) -->
 6. Re-running sync patches existing provider drift before route deployment. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 patches an existing Gateway provider when Worker URL drifts) -->
-7. The created route config uses the selected public alias for the model node and low retry settings for long-running local inference traffic. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 uses idempotent Cloudflare custom-provider and dynamic-route payload contracts) -->
+7. The created route config forwards the fixed stable public model `codeflare-mesh` to the custom provider with low retry settings for long-running local inference. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 uses idempotent Cloudflare custom-provider and dynamic-route payload contracts) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -78,7 +78,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Planned
 
 ---
 
@@ -116,10 +116,10 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 **Acceptance Criteria:**
 
 1. The gateway options endpoint lists the account's AI Gateways and the selected gateway's dynamic routes. <!-- @impl: packages/router-worker/src/router.ts::handleGatewayOptions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 lists gateways, routes, and defaults for the gateway step) -->
-2. The Gateway step renders gateway and route selections populated from the options endpoint, each with a create-new choice. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step renders selects from live options and syncs the selection) -->
+2. The Gateway step renders only a gateway selection populated from the options endpoint, with a create-new choice; no route selection is shown. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step renders only the gateway selection with no route select) -->
 3. When the account has no gateway, the step offers a single primary action that creates the default gateway and route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step offers one-click provisioning when the account has no gateway) -->
 4. Provisioning a selection stores it and runs the existing sync flow against it. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 gateway step renders selects from live options and syncs the selection) -->
-5. Provider name, public model alias, and Worker URL overrides are folded behind an explicit advanced disclosure. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::setupWizardView --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 renders the setup wizard with its step sequence while setup is open) -->
+5. The provider name is a first-class field defaulting to `Codeflare Inference Mesh`; the public model and Worker URL are resolved server-side and are not operator inputs. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::setupWizardView --> <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-005 defaults the provider name and resolves public model and worker url server-side) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -129,7 +129,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Planned
 
 ---
 

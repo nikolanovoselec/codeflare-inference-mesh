@@ -4,19 +4,20 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ---
 
-### REQ-RUN-001: Public model aliases
+### REQ-RUN-001: Stable public model
 
-**Intent:** Clients and AI Gateway should use stable names while the router changes concrete local models behind those names. This keeps client configuration stable during model rollout and rollback.
+**Intent:** AI Gateway and clients target one stable public model id while the router changes which concrete local model actually serves behind it. The stable id is a router-level constant, not a per-profile alias, so switching the active model never changes the Gateway route or the public model name clients call.
 
 **Applies To:** Client
 
 **Acceptance Criteria:**
 
-1. The router stores public model aliases with active profile and fallback profile lists. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-2. The provider model-listing surface returns public aliases rather than every node runtime model name. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-3. Chat requests using a public alias are rewritten to the selected profile's upstream model name before node forwarding. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-4. Changing an alias active profile does not require changing the AI Gateway dynamic route name. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-5. A missing public alias returns an OpenAI-style model-not-found error. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
+1. The router exposes exactly one stable public model id `codeflare-mesh` as a router constant rather than a per-profile alias. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL = codeflare-mesh --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 exposes exactly one stable public model constant not a profile alias) -->
+2. The provider model-listing surface returns the stable public model id `codeflare-mesh`. <!-- @impl: packages/router-worker/src/router.ts::handleModels --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 lists the stable public model id from /v1/models) -->
+3. A chat request for `codeflare-mesh` resolves to the currently active serving model, independent of that profile's own public aliases. <!-- @impl: packages/router-worker/src/store.ts::getProfileByPublicModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 resolves the stable public model to the active profile independent of its aliases) -->
+4. The resolved request is rewritten to the active model's upstream model name before node forwarding. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 rewrites a stable-public-model chat request to the active upstream model name) -->
+5. Switching which model is active never changes the Gateway dynamic route name or the stable public model id. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 keeps the gateway route and public model id fixed when the active model changes) -->
+6. A request for `codeflare-mesh` while no model is active returns an OpenAI-style model-not-found error. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 returns a model-not-found error for the stable public model when no model is active) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -26,21 +27,21 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Planned
 
 ---
 
 ### REQ-RUN-002: Default model profiles
 
-**Intent:** The first implementation needs resolved model defaults so implementation does not stall on model selection. The defaults are MeshLLM private-mesh profiles: an active single-node Qwen3.6 35B A3B profile, an inactive split layer-package variant sharing the same aliases (UD-Q4_K_XL quantization, the published layer package), and a small smoke-test profile that keeps install and Gateway validation practical.
+**Intent:** The first implementation needs resolved model defaults so implementation does not stall on model selection. The defaults are MeshLLM private-mesh profiles: an active single-node Qwen3.6 35B A3B profile, an inactive split layer-package variant sharing the same aliases (UD-Q4_K_XL quantization, the published layer package), and a small inactive smoke-test profile that keeps install and Gateway validation practical. The single-active invariant means only the 35B default ships active.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. `mesh-default-qwen36-35b` ships active with display name `Qwen3.6 35B`, rollout percent `100`, aliases `codeflare-mesh`, `qwen3.6:35b-a3b`, and `qwen3.6-coder`, model ref `unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S`, split disabled, and mesh bind port `4300`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
-2. `mesh-split-qwen36-35b` ships inactive with display name `Qwen3.6 35B (multi-machine)`, the same alias set, layer-package model ref `hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@<pinned-rev>`, split enabled, and mesh bind port `4310`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
-3. `mesh-smoke-qwen25-1.5b` ships active with display name `Qwen2.5 Coder 1.5B`, rollout percent `100`, aliases `mesh-smoke` and `smoke-test`, model ref `unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M`, split disabled, and mesh bind port `4320`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
+1. `mesh-default-qwen36-35b` ships active with display name `Qwen3.6 35B`, rollout percent `100`, aliases `qwen3.6:35b-a3b` and `qwen3.6-coder`, model ref `unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S`, split disabled, and mesh bind port `4300`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
+2. `mesh-split-qwen36-35b` ships inactive with display name `Qwen3.6 35B (multi-machine)`, aliases `qwen3.6:35b-a3b` and `qwen3.6-coder`, layer-package model ref `hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@<pinned-rev>`, split enabled, and mesh bind port `4310`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
+3. `mesh-smoke-qwen25-1.5b` ships inactive with display name `Qwen2.5 Coder 1.5B`, rollout percent `0`, aliases `mesh-smoke` and `smoke-test`, model ref `unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M`, split disabled, and mesh bind port `4320`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
 4. Profile definitions include a human display name distinct from the wiring id, public aliases, upstream model name, source mode `meshllm-ref`, context limit, runtime `meshllm`, MeshLLM settings (model ref, split flag, mandatory mesh bind port, optional max VRAM), profile version, rollout percent, and active flag. The display name is the single operator-facing model label used across the console. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and meshllm contract values) -->
 5. Each default profile's upstream model name is the verbatim `/v1/models` id MeshLLM reports for its model ref. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and meshllm contract values) -->
 
@@ -48,17 +49,17 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Priority:** P0
 
-**Dependencies:** [REQ-RUN-001](#req-run-001-public-model-aliases)
+**Dependencies:** [REQ-RUN-001](#req-run-001-stable-public-model)
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Planned
 
 ---
 
 ### REQ-RUN-009: Profile seeding and retirement
 
-**Intent:** Deployed profile rows must converge to the shipped default definitions on every deploy: changed defaults refresh in place, stale alias owners retire, non-MeshLLM rows deactivate, and activation is alias-exclusive so no public alias ever has two active owners.
+**Intent:** Deployed profile rows must converge to the shipped default definitions on every deploy: changed defaults refresh in place, stale alias owners retire, non-MeshLLM rows deactivate, and activation is single-active so at most one model is active at a time.
 
 **Applies To:** Admin
 
@@ -67,7 +68,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 1. Default seeding refreshes an existing managed default row when the shipped profile definition changes. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active) -->
 2. Default seeding retires stale active managed defaults that still own a public alias now owned by a shipped default profile. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active) -->
 3. Default seeding deactivates every profile row whose runtime is not `meshllm`, regardless of profile version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 deactivates non-meshllm profile rows regardless of version) -->
-4. `POST /admin/profiles/activate` activates the target profile and atomically deactivates any active profile sharing one of its public aliases, so no alias has two active owners. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 activation deactivates alias-overlapping active profiles) -->
+4. `POST /admin/profiles/activate` activates the target profile and atomically deactivates every other active profile, so at most one model is ever active (one mesh, one active model). <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 activation deactivates every other active profile so at most one model is active) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -77,7 +78,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Planned
 
 ---
 
@@ -120,6 +121,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 2. The runtime process inherits the agent service environment and always sets `MESH_LLM_NO_SELF_UPDATE=1`. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate) -->
 3. The agent stops the runtime with SIGTERM first and escalates to kill only after a grace period. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010StopSendsSIGTERMBeforeKill) -->
 4. The agent launches the `mesh-llm` binary provisioned per REQ-NODE-006; a missing or failed install surfaces as a dependency-missing error instead of a runtime start. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010MissingBinaryReportsDependencyMissing) -->
+5. When the selected profile changes, the agent preempts an in-flight download or start of a now-deselected profile and switches to the newly selected profile without requiring a manual restart. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (REQ-RUN-010 preempts a deselected in-flight download and switches profiles without restart) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
@@ -129,7 +131,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Implemented
+**Status:** Planned
 
 ---
 
@@ -180,7 +182,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Priority:** P1
 
-**Dependencies:** [REQ-RUN-001](#req-run-001-public-model-aliases), [REQ-RUN-003](#req-run-003-managed-meshllm-runtime), [REQ-RUN-005](#req-run-005-runtime-readiness-and-status-reporting)
+**Dependencies:** [REQ-RUN-001](#req-run-001-stable-public-model), [REQ-RUN-003](#req-run-003-managed-meshllm-runtime), [REQ-RUN-005](#req-run-005-runtime-readiness-and-status-reporting)
 
 **Verification:** Automated test
 

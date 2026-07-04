@@ -19,7 +19,8 @@
 | Console API | MeshLLM management endpoint, separate from the inference API, that reports node state, mesh id, peers, and the invite token; it binds to localhost and is never proxied or exposed. |
 | Rotation Counter | Router-owned counter in per-profile mesh state, baked into the rendered mesh name, that one-click rotation increments so all nodes reform onto a fresh mesh identity. |
 | Model Profile | Router-owned definition of a concrete model source, runtime arguments, context limit, and allowed hardware class. |
-| Public Model Alias | Stable external model name, such as `codeflare-mesh`, that the Worker rewrites to an internal profile. |
+| Stable Public Model | The single router-level, Gateway-facing model id (`codeflare-mesh`), defined as a router constant rather than a profile alias, that always resolves to the currently active serving model so switching models never changes the Gateway route or public model id. |
+| Public Model Alias | Per-profile external model name, such as `qwen3.6-coder`, that the Worker rewrites to that profile's upstream model; distinct from the Stable Public Model the Gateway targets. |
 | Reservation | Scheduler record that assigns one request to one node until the request completes or expires. |
 | Session Affinity | Routing preference that keeps one coding session on the same node to preserve context-cache reuse. |
 | Scheduler Miss | Router outcome when a requested alias has no profile or no eligible node can currently serve it. |
