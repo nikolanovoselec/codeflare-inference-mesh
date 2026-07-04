@@ -2796,4 +2796,107 @@ describe('control-plane API (/api/v1)', () => {
     // An admin session is not an automation key for the machine plane; the credential classes stay separate.
     expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer('admin-secret') }))).status).toBe(401)
   })
+
+  it('REQ-API-003 mints an enrollment token from an automation key', async () => {
+    const { router } = routerFixture()
+    const key = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/enrollment-tokens', { method: 'POST', headers: bearer(key.token) }))
+    expect(res.status).toBe(201)
+    const body = await res.json() as { setupToken: string; expiresAt: number }
+    expect(body.setupToken).toMatch(/^setup_/)
+    expect(body.expiresAt).toBe(1_700_000_000_000 + 24 * 60 * 60 * 1000)
+  })
+
+  it('REQ-API-003 also mints an enrollment token from an admin credential', async () => {
+    const { router } = routerFixture()
+    const res = await router(new Request('https://router.test/api/v1/enrollment-tokens', { method: 'POST', headers: bearer('admin-secret') }))
+    expect(res.status).toBe(201)
+    expect((await res.json() as { setupToken: string }).setupToken).toMatch(/^setup_/)
+  })
+
+  it('REQ-API-003 audits enrollment-token minting with the automation caller', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await router(new Request('https://router.test/api/v1/enrollment-tokens', { method: 'POST', headers: bearer(key.token) }))
+    const event = store.audit.find((entry) => entry.type === 'setup_token_created' && String(entry.actor).startsWith('automation:'))
+    expect(event?.actor).toBe(`automation:${key.id}`)
+  })
+
+  it('REQ-API-003 refuses enrollment-token minting without a credential', async () => {
+    const { router } = routerFixture()
+    expect((await router(new Request('https://router.test/api/v1/enrollment-tokens', { method: 'POST', headers: bearer('nope') }))).status).toBe(401)
+  })
+
+  it('REQ-API-004 lists nodes as projections without token verifiers', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({ id: 'node-x', nodeTokenVerifier: 'node-verifier-hash', upstreamTokenVerifier: 'up-verifier-hash' }))
+    const res = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { nodes: Array<{ id: string }>; nextCursor: string | null }
+    expect(body.nodes.map((node) => node.id)).toContain('node-x')
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain('node-verifier-hash')
+    expect(serialized).not.toContain('up-verifier-hash')
+    expect(serialized).not.toContain('inferencePort')
+  })
+
+  it('REQ-API-004 filters the node list by status and search', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({ id: 'node-fresh', displayName: 'Alpha', status: 'online' }))
+    await store.upsertNode(nodeFixture({ id: 'node-stale', displayName: 'Beta', status: 'offline' }))
+    const online = await (await router(new Request('https://router.test/api/v1/nodes?status=online', { headers: bearer(key.token) }))).json() as { nodes: Array<{ id: string }> }
+    expect(online.nodes.map((node) => node.id)).toEqual(['node-fresh'])
+    const offline = await (await router(new Request('https://router.test/api/v1/nodes?status=offline', { headers: bearer(key.token) }))).json() as { nodes: Array<{ id: string }> }
+    expect(offline.nodes.map((node) => node.id)).toEqual(['node-stale'])
+    const bySearch = await (await router(new Request('https://router.test/api/v1/nodes?q=alph', { headers: bearer(key.token) }))).json() as { nodes: Array<{ id: string }> }
+    expect(bySearch.nodes.map((node) => node.id)).toEqual(['node-fresh'])
+  })
+
+  it('REQ-API-004 paginates the node list by id cursor', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    for (const suffix of ['a', 'b', 'c']) await store.upsertNode(nodeFixture({ id: `node-${suffix}` }))
+    const first = await (await router(new Request('https://router.test/api/v1/nodes?limit=2', { headers: bearer(key.token) }))).json() as { nodes: Array<{ id: string }>; nextCursor: string | null }
+    expect(first.nodes.map((node) => node.id)).toEqual(['node-a', 'node-b'])
+    expect(first.nextCursor).toBe('node-b')
+    const second = await (await router(new Request('https://router.test/api/v1/nodes?limit=2&cursor=node-b', { headers: bearer(key.token) }))).json() as { nodes: Array<{ id: string }>; nextCursor: string | null }
+    expect(second.nodes.map((node) => node.id)).toEqual(['node-c'])
+    expect(second.nextCursor).toBeNull()
+  })
+
+  it('REQ-API-004 returns a single node and 404 for an unknown node', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({ id: 'node-solo' }))
+    const found = await router(new Request('https://router.test/api/v1/nodes/node-solo', { headers: bearer(key.token) }))
+    expect(found.status).toBe(200)
+    expect((await found.json() as { node: { id: string } }).node.id).toBe('node-solo')
+    const missing = await router(new Request('https://router.test/api/v1/nodes/node-ghost', { headers: bearer(key.token) }))
+    expect(missing.status).toBe(404)
+  })
+
+  it('REQ-API-004 decommissions a node and revokes its credentials', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({ id: 'node-doomed' }))
+    await store.putToken(await createTokenRecord('node', 'node-secret', 1_700_000_000_000, 'node-doomed'))
+    const res = await router(new Request('https://router.test/api/v1/nodes/node-doomed', { method: 'DELETE', headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    // The node's credential is revoked so it can no longer authenticate.
+    const nodeTokens = await store.listTokens('node')
+    expect(nodeTokens.filter((token) => token.nodeId === 'node-doomed' && token.active)).toHaveLength(0)
+    const event = store.audit.find((entry) => entry.type === 'node_revoked' && entry.target === 'node-doomed')
+    expect(event?.actor).toBe(`automation:${key.id}`)
+    // Decommissioning an unknown node is a 404.
+    expect((await router(new Request('https://router.test/api/v1/nodes/node-ghost', { method: 'DELETE', headers: bearer(key.token) }))).status).toBe(404)
+  })
+
+  it('REQ-API-004 refuses node access without an automation key', async () => {
+    const { router } = routerFixture()
+    expect((await router(new Request('https://router.test/api/v1/nodes', { headers: bearer('nope') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/nodes/node-a', { headers: bearer('nope') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/nodes/node-a', { method: 'DELETE', headers: bearer('nope') }))).status).toBe(401)
+  })
 })

@@ -419,6 +419,94 @@ GET /api/v1/status
 
 **Implements:** [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status)
 
+### POST /api/v1/enrollment-tokens
+
+Mints a node enrollment (setup) token for programmatic provisioning at scale. Accepts an automation key or an admin credential.
+
+```http
+POST /api/v1/enrollment-tokens
+```
+
+**Authentication:** automation key or admin
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `201` | A setup token was minted. | `{ "setupToken": string, "expiresAt": number }` — the token expires 24 hours after issue. |
+| `401` | Neither an automation key nor an admin credential was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-003](../../sdd/spec/control-plane-api.md#req-api-003-programmatic-enrollment)
+
+### GET /api/v1/nodes
+
+Lists the fleet as machine-facing node projections. Supports filtering, search, and id-cursor pagination. Token verifiers and internal ports are never returned.
+
+```http
+GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
+```
+
+**Authentication:** automation key
+
+**Query parameters:** `status` (exact node status: `online`, `offline`, `draining`, `revoked`), `q` (case-insensitive match on node id or display name), `limit` (page size, default 100, max 1000), `cursor` (return nodes with id greater than this value).
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | A page of node projections. | `{ "nodes": NodeProjection[], "nextCursor": string \| null }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management)
+
+### GET /api/v1/nodes/{id}
+
+Returns a single node projection.
+
+```http
+GET /api/v1/nodes/{id}
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The node projection. | `{ "node": NodeProjection }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No node with that id exists. | `not_found` error body. |
+
+**Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management)
+
+### DELETE /api/v1/nodes/{id}
+
+Decommissions a node: revokes it and its node and mesh tokens so it must re-enroll.
+
+```http
+DELETE /api/v1/nodes/{id}
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The node was decommissioned. | `{ "ok": true, "id": string }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No node with that id exists. | `not_found` error body. |
+
+**Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management)
+
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |

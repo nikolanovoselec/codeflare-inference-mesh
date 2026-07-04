@@ -100,6 +100,10 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/keys' && request.method === 'GET') return await handleApiKeyList(request, deps, id, now())
       if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+$/) && request.method === 'DELETE') return await handleApiKeyRevoke(request, deps, url, id, now())
       if (url.pathname === '/api/v1/status' && request.method === 'GET') return await handleApiStatus(request, deps, id, now())
+      if (url.pathname === '/api/v1/enrollment-tokens' && request.method === 'POST') return await handleApiEnrollmentToken(request, deps, id, now())
+      if (url.pathname === '/api/v1/nodes' && request.method === 'GET') return await handleApiNodeList(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'GET') return await handleApiNodeGet(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'DELETE') return await handleApiNodeDecommission(request, deps, url, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
@@ -916,6 +920,76 @@ async function handleApiStatus(request: Request, deps: RouterDeps, requestId: st
   }, 200, requestId)
 }
 
+/** Mint a setup (enrollment) token programmatically. Accepts an automation key or an admin credential. */
+async function handleApiEnrollmentToken(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  const adminActor = automation ? undefined : await requireAdmin(request, deps, now)
+  if (!automation && !adminActor) return json({ error: 'unauthorized' }, 401, requestId)
+  const actor = automation ? `automation:${automation.id}` : adminActor!
+  const setupToken = generateBearerToken('setup')
+  await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
+  await deps.store.appendAudit({ id: requestId, type: 'setup_token_created', at: now, actor, detail: {} })
+  return json({ setupToken, expiresAt: now + SETUP_TOKEN_TTL_MS }, 201, requestId)
+}
+
+/** Machine-facing node projection: identity, state, and metrics — never token verifiers or internal ports. */
+function toApiNode(node: NodeRecord) {
+  return {
+    id: node.id,
+    displayName: node.displayName,
+    status: node.status,
+    meshIp: node.meshIp,
+    publicModels: node.publicModels,
+    activeProfileIds: node.activeProfileIds,
+    capacity: node.capacity,
+    inFlight: node.inFlight,
+    lastSeenAt: node.lastSeenAt,
+    runtime: node.runtime,
+    ...(node.runtimeModel !== undefined ? { runtimeModel: node.runtimeModel } : {}),
+    ...(node.agentVersion !== undefined ? { agentVersion: node.agentVersion } : {}),
+    ...(node.metrics !== undefined ? { metrics: node.metrics } : {})
+  }
+}
+
+async function handleApiNodeList(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  const statusFilter = url.searchParams.get('status') ?? undefined
+  const query = (url.searchParams.get('q') ?? '').trim().toLowerCase()
+  const limitParam = Number(url.searchParams.get('limit') ?? '100')
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 1000) : 100
+  const cursor = url.searchParams.get('cursor') ?? ''
+  let nodes = [...await deps.store.listNodes(now)].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  if (statusFilter) nodes = nodes.filter((node) => node.status === statusFilter)
+  if (query.length > 0) nodes = nodes.filter((node) => node.id.toLowerCase().includes(query) || node.displayName.toLowerCase().includes(query))
+  if (cursor) nodes = nodes.filter((node) => node.id > cursor)
+  const page = nodes.slice(0, limit)
+  const nextCursor = nodes.length > limit ? page[page.length - 1]!.id : null
+  return json({ nodes: page.map(toApiNode), nextCursor }, 200, requestId)
+}
+
+async function handleApiNodeGet(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  const nodeId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
+  const node = (await deps.store.listNodes(now)).find((candidate) => candidate.id === nodeId)
+  if (!node) return json({ error: 'not_found', requestId }, 404, requestId)
+  return json({ node: toApiNode(node) }, 200, requestId)
+}
+
+/** Decommission a node: revoke it and its node/mesh tokens so it must re-enroll. */
+async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  const nodeId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
+  const node = (await deps.store.listNodes(now)).find((candidate) => candidate.id === nodeId)
+  if (!node) return json({ error: 'not_found', requestId }, 404, requestId)
+  await deps.store.revokeNode(nodeId, now)
+  const nodeTokens = await deps.store.listTokens('node')
+  await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))
+  await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
+  await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
+  return json({ ok: true, id: nodeId }, 200, requestId)
+}
+
 async function authenticateKind(request: Request, deps: RouterDeps, kind: CredentialKind, now: number, envSecret?: string): Promise<boolean> {
   const presented = bearerToken(request)
   if (await verifyPlainOrHashed(envSecret, presented)) return true
@@ -1068,5 +1142,7 @@ export const ROUTER_ANCHORS = {
   REQ_SEC_009: 'REQ-SEC-009',
   REQ_SEC_010: 'REQ-SEC-010',
   REQ_API_001: 'REQ-API-001',
-  REQ_API_002: 'REQ-API-002'
+  REQ_API_002: 'REQ-API-002',
+  REQ_API_003: 'REQ-API-003',
+  REQ_API_004: 'REQ-API-004'
 } as const

@@ -56,6 +56,58 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ---
 
+### REQ-API-003: Programmatic enrollment
+
+**Intent:** Fleet managers and MDM systems must mint node enrollment (setup) tokens programmatically and at scale, from anywhere, without a human console session, so thousands of machines can be provisioned automatically.
+
+**Applies To:** Automation, Admin
+
+**Acceptance Criteria:**
+
+1. `POST /api/v1/enrollment-tokens` authenticated by an automation key mints a setup token with the standard 24-hour expiry and returns it once with its expiry. <!-- @impl: packages/router-worker/src/router.ts::handleApiEnrollmentToken --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-003 mints an enrollment token from an automation key) -->
+2. `POST /api/v1/enrollment-tokens` also accepts an admin credential, so operators can mint from either surface. <!-- @impl: packages/router-worker/src/router.ts::handleApiEnrollmentToken --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-003 also mints an enrollment token from an admin credential) -->
+3. Minting an enrollment token records a `setup_token_created` audit event naming the caller. <!-- @impl: packages/router-worker/src/router.ts::handleApiEnrollmentToken --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-003 audits enrollment-token minting with the automation caller) -->
+4. `POST /api/v1/enrollment-tokens` refuses a request that carries neither an automation key nor an admin credential. <!-- @impl: packages/router-worker/src/router.ts::handleApiEnrollmentToken --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-003 refuses enrollment-token minting without a credential) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-ADM-003](setup-admin.md#req-adm-003-setup-token-lifecycle)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-API-004: Programmatic node management
+
+**Intent:** Fleet managers must enumerate, inspect, and decommission nodes programmatically — filtering and paginating a large fleet — without ever exposing node token verifiers or internal topology.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `GET /api/v1/nodes` returns the fleet as machine-facing node projections that never include token verifiers or internal ports. <!-- @impl: packages/router-worker/src/router.ts::toApiNode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 lists nodes as projections without token verifiers) -->
+2. `GET /api/v1/nodes` filters by a `status` query parameter and by a case-insensitive `q` search over node id and display name. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 filters the node list by status and search) -->
+3. `GET /api/v1/nodes` paginates by an id cursor, returning at most `limit` nodes ordered by id and a `nextCursor` when more remain. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 paginates the node list by id cursor) -->
+4. `GET /api/v1/nodes/{id}` returns one node projection, or `404` when the node is unknown. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeGet --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 returns a single node and 404 for an unknown node) -->
+5. `DELETE /api/v1/nodes/{id}` decommissions a node — revoking it and its node and mesh tokens so it must re-enroll — records a `node_revoked` audit event, and returns `404` for an unknown node. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeDecommission --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 decommissions a node and revokes its credentials) -->
+6. The node endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 refuses node access without an automation key) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-SEC-002](security.md#req-sec-002-secret-storage-and-rotation-readiness)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference.md](../../documentation/lanes/api-reference.md)
