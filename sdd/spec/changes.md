@@ -7,6 +7,7 @@
 - Failed playground requests now show a status-specific next step (provider key, Gateway connection, missing node or profile, or re-sync) instead of a bare status code. ([REQ-ADM-016](setup-admin.md#req-adm-016-operator-playground))
 - The Routing view now shows the currently provisioned custom domain and its status. ([REQ-ADM-005](setup-admin.md#req-adm-005-custom-domain-handoff))
 - The empty-state mesh topology no longer overlaps the router hub with the no-nodes caption at narrow viewport widths. ([REQ-ADM-015](setup-admin.md#req-adm-015-mesh-visualization))
+- Polished the console: the Routing view labels its gateway target as gateway, route, and model, and the Overview stats use a two-column compact layout on mobile. ([REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui), [REQ-OBS-010](observability.md#req-obs-010-live-throughput-surface))
 
 ## 2026-07-03
 

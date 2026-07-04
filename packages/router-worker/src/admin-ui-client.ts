@@ -731,7 +731,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       tiles.appendChild(tile('Mesh VRAM GB', String(Math.round(vramMiB / 1024)), 'vram'));
       tiles.appendChild(tile('Tokens/s', round1(toks), 'toks'));
       tiles.appendChild(tile('Gateway', [gateway.gatewayId, gateway.routeName].filter(Boolean).join(' / ') || 'not connected', 'gateway'));
-      tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured'));
+      tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured', 'domain'));
       tiles.appendChild(tile('Fleet version', status.desiredAgentVersion || 'not pinned', 'version'));
     }
     renderTopology(nodes);
@@ -748,7 +748,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const gatewayCurrent = byId('gateway-current');
     if (gatewayCurrent) {
       const gateway = status.gateway || {};
-      gatewayCurrent.textContent = gateway.gatewayId ? 'Current target: ' + [gateway.gatewayId, gateway.routeName, gateway.publicModel].filter(Boolean).join(' / ') : 'No Gateway connected yet.';
+      const labelled = [['gateway', gateway.gatewayId], ['route', gateway.routeName], ['model', gateway.publicModel]].filter((pair) => pair[1]).map((pair) => pair[0] + ' ' + pair[1]).join(' · ');
+      gatewayCurrent.textContent = gateway.gatewayId ? 'Current target: ' + labelled : 'No Gateway connected yet.';
     }
     const domainCurrent = byId('custom-domain-current');
     if (domainCurrent) {
