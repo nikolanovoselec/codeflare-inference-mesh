@@ -214,11 +214,11 @@ ${output({ id: 'domain-output', kind: 'custom-domain', pre: true })}</div>`
 function meshSection(): string {
   return sectionPanel({
     id: 'mesh',
-    title: 'Mesh',
-    description: 'Per-profile mesh formation, rotation, and secret presence.',
+    title: 'Model sharing',
+    description: 'When a model is too big for one machine, several machines team up to run it together. This shows those groups; with a single machine it stays empty.',
     actions: button({ action: 'status-refresh', label: 'Refresh' }),
-    body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>Mesh secret key missing: set the <code>MESH_STATE_KEY</code> Worker secret so mesh bootstrap and rotation can run.</p>
-<div class="tile-grid" id="${ADMIN_UI_MESH_HEALTH.panelId}" data-output="mesh-health"><p class="empty-note">Mesh health loads with status after sign-in.</p></div>
+    body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a sharing group. Set it in the deployment and redeploy.</p>
+<div class="tile-grid" id="${ADMIN_UI_MESH_HEALTH.panelId}" data-output="mesh-health"><p class="empty-note">Model sharing appears here only when several machines run one model together.</p></div>
 <div class="subpanel"><h3>Rotate mesh secret</h3>
 ${field({ id: ADMIN_UI_MESH_HEALTH.rotateSelectId, label: 'Mesh profile', control: emptySlotSelect('mesh-rotate-slot', ADMIN_UI_MESH_HEALTH.rotateSelectId, 'meshProfileId', 'data-mesh-profile-select="true"'), hint: 'Rotation drains and rejoins mesh members within about two minutes.' })}
 <div class="form-actions">${button({ action: 'mesh-rotate', label: 'Rotate mesh secret', variant: 'danger', confirm: 'Confirm rotation?', out: 'mesh-rotate-output' })}</div>

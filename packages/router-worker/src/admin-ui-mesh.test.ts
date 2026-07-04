@@ -210,6 +210,18 @@ describe('admin UI mesh operations contracts', () => {
     expect(meshField(card, 'rotation').textContent).toBe('rotation: r3')
   })
 
+  it('REQ-OBS-007 shows a plain sharing summary while keeping the technical fields behind a disclosure', async () => {
+    const harness = await dashboardHarness()
+    await harness.clickAction('status-refresh')
+    const card = meshCard(harness, 'mesh-default-qwen36-35b')
+    const summary = descendants(card).find((node) => node.className === 'mesh-summary')!
+    expect(summary).toBeDefined()
+    expect(summary.textContent).toContain('2 machines sharing')
+    // The raw internals still exist (nested under Technical details), so power users keep them.
+    expect(meshField(card, 'coordinator').textContent).toBe('coordinator: node-coord')
+    expect(descendants(card).some((node) => node.tagName === 'details' || node.textContent === 'Technical details')).toBe(true)
+  })
+
   it('REQ-ADM-006 verifies the admin token before storing it', async () => {
     const html = adminUiHtml('https://router.test', { view: 'setup', phase: 'claimed', recovery: false })
     const okHarness = adminUiHarness(html, async (path) => {

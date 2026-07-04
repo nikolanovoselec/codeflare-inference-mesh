@@ -744,18 +744,32 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!entries.length) {
       const empty = document.createElement('p');
       empty.className = 'empty-note';
-      empty.textContent = 'No mesh formation yet. Health appears once a mesh profile has enrolled nodes.';
+      empty.textContent = 'Nothing shared across machines yet. This only matters when a model is too big for one machine and several team up to run it.';
       panel.appendChild(empty);
     }
+    const profilesById = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
     entries.forEach((entry) => {
       const card = document.createElement('div');
       card.className = 'tile';
       card.setAttribute('data-mesh-entry', entry.profileId);
       card.setAttribute('data-mesh-rotation', String(entry.rotation));
       card.setAttribute('data-secret-present', entry.tokenCount > 0 ? 'true' : 'false');
+      const profile = profilesById.find((candidate) => candidate.id === entry.profileId);
       const title = document.createElement('strong');
-      title.textContent = entry.profileId;
+      title.textContent = profile ? modelName(profile) : entry.profileId;
       card.appendChild(title);
+      // Plain-language summary first; the raw internals go behind a Technical details disclosure.
+      const peers = (entry.peerNodeIds || []).length;
+      const summary = document.createElement('span');
+      summary.className = 'mesh-summary';
+      summary.textContent = peers > 0
+        ? (peers + ' machine' + (peers === 1 ? '' : 's') + ' sharing this model' + (entry.lastError ? ' · needs attention' : entry.tokenCount > 0 ? ' · ready' : ' · forming'))
+        : 'Not shared across machines yet';
+      card.appendChild(summary);
+      const details = document.createElement('details');
+      const detailsSummary = document.createElement('summary');
+      detailsSummary.textContent = 'Technical details';
+      details.appendChild(detailsSummary);
       config.meshHealth.fields.forEach((fieldName) => {
         const line = document.createElement('code');
         line.setAttribute('data-mesh-field', fieldName);
@@ -768,37 +782,71 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         else if (fieldName === 'rotation') value = 'r' + entry.rotation;
         else if (fieldName === 'secret') value = entry.tokenCount > 0 ? 'present' + (entry.secretAgeMs != null ? ' · ' + fmtAge(entry.secretAgeMs) : '') : 'absent';
         line.textContent = fieldName.replace(/-/g, ' ') + ': ' + value;
-        card.appendChild(line);
+        details.appendChild(line);
       });
+      card.appendChild(details);
       panel.appendChild(card);
     });
     const banner = byId(config.meshHealth.bannerId);
     if (banner) banner.hidden = !entries.some((entry) => entry.lastError === config.meshHealth.keyMissingError);
   }
+  // Internal per-heartbeat bookkeeping never belongs in a human activity log.
+  const AUDIT_HIDDEN = { mesh_state_stored: 1, mesh_state_cleared: 1, mesh_token_rotated: 1, mesh_token_removed: 1 };
+  function auditSentence(event) {
+    const target = event.target || '';
+    switch (event.type) {
+      case 'node_claimed': return 'Machine ' + target + ' joined';
+      case 'node_unregistered': return 'Machine ' + target + ' left';
+      case 'node_revoked': return 'Machine ' + target + ' removed';
+      case 'node_pruned': return 'Machine ' + target + ' removed after staying offline';
+      case 'setup_token_created': return 'Enrollment token created';
+      case 'profile_activated': return 'Model turned on';
+      case 'profile_rollout': return 'Model traffic changed';
+      case 'profile_configured': return 'Model settings changed';
+      case 'settings_updated': return 'Settings changed';
+      case 'agent_version_selected': return 'Fleet version set';
+      case 'gateway_sync': return 'AI Gateway connected';
+      case 'gateway_sync_failed': return 'AI Gateway connection failed';
+      case 'custom_domain_provisioned': return 'Custom domain set up' + (target ? ': ' + target : '');
+      case 'access_provisioned': return 'Sign-in access enabled';
+      case 'first_setup': return 'Deployment claimed';
+      case 'setup_completed': return 'Setup finished';
+      case 'admin_recovery_reset': return 'Admin access recovered';
+      case 'break_glass_entered': return 'Break-glass access opened';
+      case 'break_glass_completed': return 'Break-glass setup finished';
+      default: return (event.type || 'event').replace(/_/g, ' ');
+    }
+  }
   function renderAudit(events) {
+    const visible = (events || []).filter((event) => !AUDIT_HIDDEN[event.type]);
+    // Collapse a run of the same event into one line with a count so the feed reads like a log, not a firehose.
+    const collapsed = [];
+    visible.forEach((event) => {
+      const last = collapsed[collapsed.length - 1];
+      if (last && last.event.type === event.type && last.event.target === event.target) last.count += 1;
+      else collapsed.push({ event: event, count: 1 });
+    });
     const feeds = [byId('overview-audit'), byId('audit-log')];
     feeds.forEach((feed, index) => {
       if (!feed) return;
       feed.textContent = '';
-      const slice = index === 0 ? events.slice(0, 8) : events;
+      const slice = index === 0 ? collapsed.slice(0, 8) : collapsed;
       if (!slice.length) {
         const empty = document.createElement('p');
         empty.className = 'empty-note';
-        empty.textContent = 'No audit events yet.';
+        empty.textContent = 'Nothing has happened yet.';
         feed.appendChild(empty);
         return;
       }
-      slice.forEach((event) => {
+      slice.forEach((row) => {
         const item = document.createElement('div');
         item.className = 'feed-item';
-        item.setAttribute('data-audit-event', event.type || 'unknown');
-        const type = document.createElement('code');
-        type.textContent = event.type || 'unknown';
-        const detail = document.createElement('span');
-        detail.textContent = (event.actor || '') + (event.target ? ' \\u2192 ' + event.target : '');
+        item.setAttribute('data-audit-event', row.event.type || 'unknown');
+        const sentence = document.createElement('span');
+        sentence.textContent = auditSentence(row.event) + (row.count > 1 ? ' (\\u00d7' + row.count + ')' : '');
         const when = document.createElement('time');
-        when.textContent = event.at ? new Date(event.at).toISOString().slice(0, 16).replace('T', ' ') : '';
-        item.append(type, detail, when);
+        when.textContent = row.event.at ? new Date(row.event.at).toISOString().slice(0, 16).replace('T', ' ') : '';
+        item.append(sentence, when);
         feed.appendChild(item);
       });
     });

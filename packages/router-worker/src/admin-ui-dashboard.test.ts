@@ -210,6 +210,31 @@ describe('dashboard overview contracts', () => {
     expect(harness.copied).toContain('curl -fsSL https://mesh.example.com/install.sh | sh')
   })
 
+  it('REQ-OBS-006 renders the activity feed in plain language, hides internal churn, and collapses repeats', async () => {
+    const audit = [
+      { type: 'mesh_state_stored', at: 6, actor: 'system', target: 'x' },
+      { type: 'node_claimed', at: 5, actor: 'setup', target: 'battlestation' },
+      { type: 'mesh_state_cleared', at: 4, actor: 'system', target: 'x' },
+      { type: 'setup_token_created', at: 3, actor: 'admin' },
+      { type: 'setup_token_created', at: 2, actor: 'admin' }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ audit }) })
+    const items = descendants(harness.byId('audit-log')).filter((node) => node.className === 'feed-item')
+    const typeOf = (item: StubElement) => item.dataset.auditEvent
+    const textOf = (item: StubElement) => descendants(item).map((node) => node.textContent).join(' ')
+    // Internal per-heartbeat bookkeeping never surfaces as its own feed line.
+    expect(items.some((item) => typeOf(item) === 'mesh_state_stored' || typeOf(item) === 'mesh_state_cleared')).toBe(false)
+    // A node_claimed event renders as a plain line that names the machine and drops the raw snake_case type.
+    const joined = items.find((item) => typeOf(item) === 'node_claimed')
+    expect(joined).toBeDefined()
+    expect(textOf(joined!)).toContain('battlestation')
+    expect(textOf(joined!)).not.toContain('node_claimed')
+    // Two identical events collapse into one line carrying a repeat count.
+    const tokenItems = items.filter((item) => typeOf(item) === 'setup_token_created')
+    expect(tokenItems.length).toBe(1)
+    expect(textOf(tokenItems[0])).toContain('2')
+  })
+
   it('REQ-ADM-015 opens a node drawer with metrics, version drift, and an armed revoke control', async () => {
     const harness = await dashboardHarness()
     const drawer = harness.byId(ADMIN_UI_DRAWER.containerId)
