@@ -12,7 +12,7 @@
 
 **Turn the idle machines you already own into a private inference fabric for open LLMs.**
 
-Codeflare Inference Mesh is the self-hosted inference layer of the **Codeflare** family, the enterprise agentic coding engine. It pools the idle GPUs and CPUs already sitting in your fleet into one private fabric and serves open models on it, sharding a model too large for any single machine across several nodes and serving it as one. It is the inference engine behind your agentic coding and operations agents, autonomous execution agents, internal chatbots, and anything else in the organization that needs inference. Powered by [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) and [llama.cpp](https://github.com/ggml-org/llama.cpp).
+Codeflare Inference Mesh is the self-hosted inference layer of the **[Codeflare](https://codeflare.ch)** family, the enterprise agentic coding engine. It pools the idle GPUs and CPUs already sitting in your fleet into one private fabric and serves open models on it, sharding a model too large for any single machine across several nodes and serving it as one. It is the inference engine behind your agentic coding and operations agents, autonomous execution agents, internal chatbots, and anything else in the organization that needs inference. Powered by [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) and [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
 ---
 

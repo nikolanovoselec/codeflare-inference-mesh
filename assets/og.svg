@@ -47,7 +47,7 @@
   <text x="80" y="236" font-family="JetBrains Mono, monospace" font-size="20" font-weight="600" fill="#ff5c3c" letter-spacing="3">NO DEDICATED GPU RACKS</text>
   <text x="80" y="306" font-family="JetBrains Mono, monospace" font-size="52" font-weight="700" fill="#fafafa" letter-spacing="-0.5">Private LLM inference</text>
   <text x="80" y="370" font-family="JetBrains Mono, monospace" font-size="52" font-weight="700" fill="#fafafa" letter-spacing="-0.5">on hardware you own.</text>
-  <text x="80" y="424" font-family="JetBrains Mono, monospace" font-size="20" font-weight="400" fill="#a1a1aa" letter-spacing="0">One OpenAI-compatible endpoint over machines you already run.</text>
+  <text x="80" y="424" font-family="JetBrains Mono, monospace" font-size="20" font-weight="400" fill="#a1a1aa" letter-spacing="0">Pool the idle machines you already own into a private inference fabric.</text>
   <text x="80" y="454" font-family="JetBrains Mono, monospace" font-size="20" font-weight="400" fill="#a1a1aa" letter-spacing="0">Private nodes on your network. Failover to any provider.</text>
 
   <!-- Foot: separated by space, no rule. -->
