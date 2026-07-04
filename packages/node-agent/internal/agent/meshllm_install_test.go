@@ -116,8 +116,10 @@ var meshLLMShippedCombos = []struct {
 }{
 	{"linux", "amd64", "cpu", ".tar.gz"},
 	{"linux", "amd64", "cuda-12", ".tar.gz"},
+	{"linux", "amd64", "cuda-13", ".tar.gz"},
 	{"linux", "arm64", "cpu", ".tar.gz"},
 	{"linux", "arm64", "cuda-12", ".tar.gz"},
+	{"linux", "arm64", "cuda-13", ".tar.gz"},
 	{"windows", "amd64", "cpu", ".zip"},
 	{"windows", "amd64", "cuda-12", ".zip"},
 	{"darwin", "arm64", "metal", ".tar.gz"},
@@ -173,32 +175,38 @@ func TestREQNODE006FlavorDetectionAndConfigOverride(t *testing.T) {
 	cases := []struct {
 		goos, goarch string
 		hasNvidia    bool
+		cudaMajor    int
 		want         string
 	}{
-		{"linux", "amd64", true, "cuda-12"},
-		{"linux", "amd64", false, "cpu"},
-		{"linux", "arm64", true, "cuda-12"},
-		{"linux", "arm64", false, "cpu"},
-		{"windows", "amd64", true, "cuda-12"},
-		{"windows", "amd64", false, "cpu"},
-		{"darwin", "arm64", true, "metal"},
-		{"darwin", "arm64", false, "metal"},
+		{"linux", "amd64", true, 12, "cuda-12"},
+		{"linux", "amd64", true, 13, "cuda-13"},
+		{"linux", "amd64", true, 0, "cuda-12"}, // undeterminable CUDA major keeps cuda-12
+		{"linux", "amd64", false, 13, "cpu"},   // no NVIDIA GPU stays cpu regardless
+		{"linux", "arm64", true, 12, "cuda-12"},
+		{"linux", "arm64", true, 13, "cuda-13"},
+		{"linux", "arm64", false, 0, "cpu"},
+		{"windows", "amd64", true, 13, "cuda-12"}, // no windows cuda-13 build; stays cuda-12
+		{"windows", "amd64", false, 0, "cpu"},
+		{"darwin", "arm64", true, 13, "metal"},
+		{"darwin", "arm64", false, 0, "metal"},
 	}
 	for _, testCase := range cases {
 		hasNvidia := testCase.hasNvidia
-		got := DetectMeshLLMFlavor(testCase.goos, testCase.goarch, func() bool { return hasNvidia })
+		cudaMajor := testCase.cudaMajor
+		got := DetectMeshLLMFlavor(testCase.goos, testCase.goarch, func() bool { return hasNvidia }, func() int { return cudaMajor })
 		if got != testCase.want {
-			t.Errorf("DetectMeshLLMFlavor(%s, %s, nvidia=%v) = %q, want %q", testCase.goos, testCase.goarch, testCase.hasNvidia, got, testCase.want)
+			t.Errorf("DetectMeshLLMFlavor(%s, %s, nvidia=%v, cuda=%d) = %q, want %q", testCase.goos, testCase.goarch, testCase.hasNvidia, testCase.cudaMajor, got, testCase.want)
 		}
 	}
 
 	nvidiaOnPath := lookPathWith(map[string]string{"nvidia-smi": "/usr/bin/nvidia-smi"})
-	requestedAsset := func(t *testing.T, flavorOverride string) string {
+	requestedAsset := func(t *testing.T, flavorOverride string, cudaMajor int) string {
 		t.Helper()
 		var requested []string
 		_, err := EnsureMeshLLM(t.TempDir(), flavorOverride, false,
 			WithMeshLLMPlatform("linux", "amd64"),
 			WithMeshLLMLookPath(nvidiaOnPath),
+			WithMeshLLMCUDAMajor(cudaMajor),
 			WithMeshLLMDownload(func(assetURL string) ([]byte, error) {
 				requested = append(requested, assetURL)
 				return nil, errors.New("halt after url capture")
@@ -212,20 +220,28 @@ func TestREQNODE006FlavorDetectionAndConfigOverride(t *testing.T) {
 		return requested[0]
 	}
 
-	cudaAsset, err := MeshLLMAssetFor("linux", "amd64", "cuda-12")
+	cuda12Asset, err := MeshLLMAssetFor("linux", "amd64", "cuda-12")
 	if err != nil {
-		t.Fatalf("resolve cuda asset: %v", err)
+		t.Fatalf("resolve cuda-12 asset: %v", err)
+	}
+	cuda13Asset, err := MeshLLMAssetFor("linux", "amd64", "cuda-13")
+	if err != nil {
+		t.Fatalf("resolve cuda-13 asset: %v", err)
 	}
 	cpuAsset, err := MeshLLMAssetFor("linux", "amd64", "cpu")
 	if err != nil {
 		t.Fatalf("resolve cpu asset: %v", err)
 	}
 
-	detected := requestedAsset(t, "")
-	if !strings.HasSuffix(detected, "/"+cudaAsset.AssetName) {
-		t.Errorf("nvidia-smi present: requested %q, want cuda asset %q", detected, cudaAsset.AssetName)
+	detected12 := requestedAsset(t, "", 12)
+	if !strings.HasSuffix(detected12, "/"+cuda12Asset.AssetName) {
+		t.Errorf("nvidia-smi present, CUDA 12: requested %q, want cuda-12 asset %q", detected12, cuda12Asset.AssetName)
 	}
-	overridden := requestedAsset(t, "cpu")
+	detected13 := requestedAsset(t, "", 13)
+	if !strings.HasSuffix(detected13, "/"+cuda13Asset.AssetName) {
+		t.Errorf("nvidia-smi present, CUDA 13: requested %q, want cuda-13 asset %q", detected13, cuda13Asset.AssetName)
+	}
+	overridden := requestedAsset(t, "cpu", 13)
 	if !strings.HasSuffix(overridden, "/"+cpuAsset.AssetName) {
 		t.Errorf("flavor override cpu: requested %q, want cpu asset %q", overridden, cpuAsset.AssetName)
 	}

@@ -85,6 +85,14 @@
 
 **Fix:** Check the agent log for the `runtime dependency missing` cause, confirm the flavor configuration matches the node hardware, allow GitHub egress from the node, then restart the agent service. ([REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update)) ([REQ-RUN-010](../../sdd/spec/runtime-profiles.md#req-run-010-meshllm-process-lifecycle)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
 
+## Runtime exits with `libcudart.so.<N>: cannot open shared object file`
+
+**Symptom:** A GPU node stays at runtime state `failed` with `runtime process exited before readiness`; the agent log or a manual `ldd` on `mesh-llm` shows a missing `libcudart.so.12` or `libcudart.so.13` (and companions `libcublas.so.<N>`, `libnccl.so.2`).
+
+**Cause:** The downloaded CUDA build's flavor does not match the host's installed CUDA runtime major — the binary dlopens `libcudart.so.<major>` at startup, so a `cuda-12` build on a CUDA-13-only host (or vice versa) fails at library load before readiness. The agent now auto-selects `cuda-13` versus `cuda-12` from the host's resolvable `libcudart.so.<major>`, but a host whose CUDA libraries sit outside the loader cache and the scanned toolkit directories can still resolve the wrong flavor.
+
+**Fix:** Confirm which runtime is installed (`ldconfig -p | grep libcudart`), then either add the CUDA library directory to the loader path (`ldconfig`) so detection can see it, or pin the matching build with the `meshllmFlavor` override (`cuda-12`, `cuda-13`, or `cpu`) in the node config and restart the agent service. ([REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update)) ([REQ-RUN-010](../../sdd/spec/runtime-profiles.md#req-run-010-meshllm-process-lifecycle))
+
 ## Peer count stays at one
 
 **Symptom:** The first node serves, but a second node never joins the mesh: `peerCount` stays `1` and the mesh health entry never lists the joiner in `peerNodeIds`.

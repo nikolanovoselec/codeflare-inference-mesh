@@ -227,17 +227,18 @@ func meshRenderInput(profile agent.ModelProfile, cfg agent.Config) agent.MeshLLM
 }
 
 // meshFlavorFlag resolves the rendered runtime flavor flag value: the
-// configured override when set, otherwise hardware detection. The cuda-12
-// install-asset flavor maps to upstream's plain cuda flag vocabulary.
+// configured override when set, otherwise hardware detection. Both cuda-12 and
+// cuda-13 install-asset flavors map to upstream's plain cuda flag vocabulary;
+// the CUDA major only selects which binary is downloaded, not the runtime flag.
 func meshFlavorFlag(cfg agent.Config) string {
 	flavor := cfg.MeshLLMFlavor
 	if flavor == "" {
 		flavor = agent.DetectMeshLLMFlavor(runtime.GOOS, runtime.GOARCH, func() bool {
 			_, err := exec.LookPath("nvidia-smi")
 			return err == nil
-		})
+		}, agent.DetectHostCUDAMajor)
 	}
-	if flavor == "cuda-12" {
+	if flavor == "cuda-12" || flavor == "cuda-13" {
 		return "cuda"
 	}
 	return flavor
