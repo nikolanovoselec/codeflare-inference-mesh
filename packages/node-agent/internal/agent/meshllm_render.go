@@ -69,15 +69,17 @@ func MeshLLMEnv(base []string) []string {
 	return append(env, "MESH_LLM_NO_SELF_UPDATE=1")
 }
 
-// MeshLLMConfigTOML renders the per-profile mesh-llm config file carrying
-// the profile context limit as a `[[models]]` entry with `ctx_size`. A
-// non-positive context window returns "" — the context limit is then
+// MeshLLMConfigTOML renders the per-profile mesh-llm config file: a `[[models]]`
+// entry naming the model in the required `model` field, with the profile context
+// limit under the `[models.model_fit]` subtable as `ctx_size` — the schema
+// MeshLLM v0.72.2 accepts (a bare `name` field is rejected with "missing field
+// model"). A non-positive context window returns "" — the context limit is then
 // client-facing metadata only and no config file is rendered.
 func MeshLLMConfigTOML(modelRef string, contextWindow int) string {
 	if contextWindow <= 0 {
 		return ""
 	}
-	return fmt.Sprintf("[[models]]\nname = %q\nctx_size = %d\n", modelRef, contextWindow)
+	return fmt.Sprintf("[[models]]\nmodel = %q\n\n[models.model_fit]\nctx_size = %d\n", modelRef, contextWindow)
 }
 
 const MeshLLMRenderAnchors = "REQ-RUN-003 REQ-RUN-006 REQ-RUN-007 REQ-SEC-004"

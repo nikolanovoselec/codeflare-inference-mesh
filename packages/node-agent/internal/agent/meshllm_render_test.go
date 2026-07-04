@@ -260,10 +260,10 @@ func TestREQRUN003ContextLimitConfigRendering(t *testing.T) {
 		want          string
 	}{
 		{
-			name:          "positive context renders a models entry with name and ctx_size",
+			name:          "positive context renders a models entry with model field and model_fit ctx_size",
 			modelRef:      "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
 			contextWindow: 262144,
-			want:          "[[models]]\nname = \"unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S\"\nctx_size = 262144\n",
+			want:          "[[models]]\nmodel = \"unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S\"\n\n[models.model_fit]\nctx_size = 262144\n",
 		},
 		{
 			name:          "zero context renders nothing",
