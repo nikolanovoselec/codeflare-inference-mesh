@@ -344,9 +344,9 @@ SETUP=$(curl -s -X POST "$BASE/api/v1/enrollment-tokens" -H "$AUTH" | jq -r .set
 # 4. List nodes, filtering and paginating a large fleet.
 curl -s "$BASE/api/v1/nodes?status=online&limit=100" -H "$AUTH"
 
-# 5. Configure a model, switch it on, and pin the fleet's node-agent version.
+# 5. Configure a model (context window + VRAM budget), switch it on, and pin the fleet's node-agent version.
 curl -s -X POST "$BASE/api/v1/models/mesh-default-qwen36-35b" \
-  -H "$AUTH" -H "content-type: application/json" -d '{"contextWindow":8192}'
+  -H "$AUTH" -H "content-type: application/json" -d '{"contextWindow":8192,"maxVramGb":20}'
 curl -s -X POST "$BASE/api/v1/models/mesh-default-qwen36-35b/enable" -H "$AUTH"
 curl -s -X PUT "$BASE/api/v1/agent-version" \
   -H "$AUTH" -H "content-type: application/json" -d '{"version":"v1.2.0"}'
@@ -550,14 +550,14 @@ GET /api/v1/models
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The models. | `{ "models": [{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string }] }`. |
+| `200` | The models. | `{ "models": [{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "maxVramGb": number }] }`. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
 
 ### POST /api/v1/models/{id}
 
-Updates a model's context window and/or model reference.
+Updates a model's context window, model reference, and/or VRAM budget.
 
 ```http
 POST /api/v1/models/{id}
@@ -565,7 +565,7 @@ POST /api/v1/models/{id}
 
 **Authentication:** automation key
 
-**Request body:** `{ "contextWindow"?: number, "modelRef"?: string }` — context window must be a positive integer; model reference must be non-empty.
+**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number }` — context window must be a positive integer; model reference must be non-empty; VRAM budget must be a number `≥ 0` (`0` = no cap). Each field is optional; an omitted field is left unchanged.
 
 **Response**
 

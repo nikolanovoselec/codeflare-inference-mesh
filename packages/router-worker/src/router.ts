@@ -562,34 +562,48 @@ async function handleProfileActivate(request: Request, deps: RouterDeps, request
   return json({ ok: true, activated: activation.activated.id, deactivated: deactivatedIds }, 200, requestId)
 }
 
-// handleProfileConfig persists a profile's mandatory serving settings — the
-// context window and the model ref — through the validated store path so the
-// active column and the profile_json blob stay consistent. contextWindow must
-// be a positive integer; a supplied modelRef is trimmed, must be non-empty, and
-// updates both the mesh runtime ref and the gateway upstream model together.
+// A per-model VRAM budget in GB (0 = no cap; the node agent renders --max-vram
+// only for a positive value). Returns undefined when the caller omits the field
+// (leave the current setting), or INVALID_MAX_VRAM when it is present but not a
+// finite number >= 0. Shared by the admin and automation model-config endpoints.
+const INVALID_MAX_VRAM = Symbol('invalid_max_vram')
+function resolveMaxVram(value: number | undefined): number | undefined | typeof INVALID_MAX_VRAM {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return INVALID_MAX_VRAM
+  return value
+}
+
+// handleProfileConfig persists a profile's serving settings — the context window,
+// the model ref, and the per-model VRAM budget — through the validated store path
+// so the active column and the profile_json blob stay consistent. contextWindow
+// must be a positive integer; a supplied modelRef is trimmed, must be non-empty,
+// and updates both the mesh runtime ref and the gateway upstream model together.
 async function handleProfileConfig(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ profileId?: string; contextWindow?: number; modelRef?: string }>(request)
+  const body = await readJson<{ profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number }>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
   const existing = (await deps.store.listProfiles()).find((profile) => profile.id === body.profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   const contextWindow = body.contextWindow ?? existing.contextWindow
   if (!Number.isInteger(contextWindow) || contextWindow <= 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
+  const maxVram = resolveMaxVram(body.maxVramGb)
+  if (maxVram === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
   let meshllm = existing.meshllm
   let upstreamModel = existing.upstreamModel
   if (body.modelRef !== undefined) {
     const modelRef = typeof body.modelRef === 'string' ? body.modelRef.trim() : ''
     if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
-    meshllm = { ...existing.meshllm, modelRef }
+    meshllm = { ...meshllm, modelRef }
     upstreamModel = modelRef
   }
+  if (maxVram !== undefined) meshllm = { ...meshllm, maxVramGb: maxVram }
   // Bump the version so a later deploy's default re-seed (shouldRefreshDefaultProfile
   // refreshes only when stored version <= shipped version) does not overwrite this edit.
   const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, version: existing.version + 1 }
   await deps.store.setProfile(updated)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef } })
-  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef }, 200, requestId)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0 } })
+  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0 }, 200, requestId)
 }
 
 async function handleAdminMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -1006,7 +1020,8 @@ function toApiModel(profile: ModelProfile) {
     active: profile.active,
     rolloutPercent: profile.rolloutPercent,
     contextWindow: profile.contextWindow,
-    modelRef: profile.meshllm.modelRef
+    modelRef: profile.meshllm.modelRef,
+    maxVramGb: profile.meshllm.maxVramGb ?? 0
   }
 }
 
@@ -1020,20 +1035,23 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
   const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
-  const body = await readJson<{ contextWindow?: number; modelRef?: string }>(request)
+  const body = await readJson<{ contextWindow?: number; modelRef?: string; maxVramGb?: number }>(request)
   if (!body) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   const existing = (await deps.store.listProfiles()).find((profile) => profile.id === profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   const contextWindow = body.contextWindow ?? existing.contextWindow
   if (!Number.isInteger(contextWindow) || contextWindow <= 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
+  const maxVram = resolveMaxVram(body.maxVramGb)
+  if (maxVram === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
   let meshllm = existing.meshllm
   let upstreamModel = existing.upstreamModel
   if (body.modelRef !== undefined) {
     const modelRef = typeof body.modelRef === 'string' ? body.modelRef.trim() : ''
     if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
-    meshllm = { ...existing.meshllm, modelRef }
+    meshllm = { ...meshllm, modelRef }
     upstreamModel = modelRef
   }
+  if (maxVram !== undefined) meshllm = { ...meshllm, maxVramGb: maxVram }
   const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, version: existing.version + 1 }
   await deps.store.setProfile(updated)
   await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef } })

@@ -529,6 +529,30 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-021: Model serving configuration
+
+**Intent:** An operator must be able to adjust a model's serving settings — its context window, its model file, and how much GPU memory (VRAM) is dedicated to running it — from the Models drawer, without editing seed configuration, so a machine that cannot fit a model at full VRAM can still serve it within a budget.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The model detail drawer exposes an editable context window, model file, and a "Max VRAM (GB, 0 = no limit)" field, each populated from the model's current settings. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-021 loads and saves a per-model VRAM budget from the model drawer) -->
+2. Saving posts to `POST /admin/profiles/config`, which persists the context window, model reference, and VRAM budget through the validated store path and bumps the profile version so a later default re-seed does not overwrite the edit. <!-- @impl: packages/router-worker/src/router.ts::handleProfileConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-021 configures a profile context window, model ref, and VRAM budget through the validated store path) -->
+3. `POST /admin/profiles/config` rejects a non-positive-integer context window, a blank model reference, and a negative VRAM budget; an empty or zero VRAM budget means no cap, so the node agent renders no `--max-vram` for that model. <!-- @impl: packages/router-worker/src/router.ts::handleProfileConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-021 configures a profile context window, model ref, and VRAM budget through the validated store path) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-018](#req-adm-018-models-section-ordering), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)

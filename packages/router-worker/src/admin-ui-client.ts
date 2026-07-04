@@ -612,6 +612,18 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     modelInput.value = (profile.meshllm && profile.meshllm.modelRef) || '';
     modelRow.appendChild(modelInput);
     bodyEl.appendChild(modelRow);
+    const vramRow = document.createElement('label');
+    vramRow.className = 'drawer-row';
+    vramRow.textContent = 'Max VRAM for this model (GB, 0 = no limit)';
+    const vramInput = document.createElement('input');
+    vramInput.id = 'model-edit-vram';
+    vramInput.type = 'number';
+    vramInput.min = '0';
+    vramInput.step = '0.5';
+    // Empty when there is no cap (unset or zero); a positive value is the GB ceiling.
+    vramInput.value = profile.meshllm && profile.meshllm.maxVramGb ? String(profile.meshllm.maxVramGb) : '';
+    vramRow.appendChild(vramInput);
+    bodyEl.appendChild(vramRow);
     const save = document.createElement('button');
     save.type = 'button';
     save.className = 'btn btn-primary';
@@ -1270,9 +1282,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const id = button.dataset.profileId || '';
       const ctxRaw = readInput('model-edit-context');
       const modelRaw = readInput('model-edit-model');
+      const vramRaw = readInput('model-edit-vram');
       const payload = { profileId: id };
       if (ctxRaw !== '') payload.contextWindow = Number(ctxRaw);
       if (modelRaw !== '') payload.modelRef = modelRaw;
+      // Empty means "leave as-is"; 0 explicitly clears the cap.
+      if (vramRaw !== '') payload.maxVramGb = Number(vramRaw);
       setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       toast('Model settings saved');
       await refreshStatus().catch(() => undefined);

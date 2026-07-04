@@ -1734,7 +1734,7 @@ describe('router worker behavioral contracts', () => {
     expect(afterRollout.find((profile) => profile.id === 'mesh-default-qwen36-35b')).toMatchObject({ active: false, rolloutPercent: 0 })
   })
 
-  it('REQ-ADM-006 configures a profile context window and model ref through the validated store path', async () => {
+  it('REQ-ADM-021 configures a profile context window, model ref, and VRAM budget through the validated store path', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', {
@@ -1758,10 +1758,20 @@ describe('router worker behavioral contracts', () => {
     expect(afterCtx.contextWindow).toBe(4096)
     expect(afterCtx.meshllm.modelRef).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
 
-    // Boundary validation: non-positive context, blank model, unknown profile, and missing admin auth are all rejected.
+    // A per-model VRAM budget persists to the mesh settings; a fractional cap is allowed and
+    // 0 clears the cap. A context-only update must not disturb an existing budget.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', maxVramGb: 22.5 })).status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm.maxVramGb).toBe(22.5)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 2048 })).status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm.maxVramGb).toBe(22.5)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', maxVramGb: 0 })).status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm.maxVramGb).toBe(0)
+
+    // Boundary validation: non-positive context, blank model, negative VRAM, unknown profile, and missing admin auth are all rejected.
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 0 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 2.5 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', modelRef: '   ' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', maxVramGb: -1 })).status).toBe(400)
     expect((await configure({ profileId: 'no-such-profile', contextWindow: 1024 })).status).toBe(404)
     const noAuth = await router(new Request('https://router.test/admin/profiles/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 1024 }) }))
     expect(noAuth.status).toBe(401)
@@ -2912,10 +2922,12 @@ describe('control-plane API (/api/v1)', () => {
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models', { headers: bearer(key.token) }))
     expect(res.status).toBe(200)
-    const body = await res.json() as { models: Array<{ id: string; callableNames: string[]; displayName: string }> }
+    const body = await res.json() as { models: Array<{ id: string; callableNames: string[]; displayName: string; maxVramGb: number }> }
     const model = body.models.find((entry) => entry.id === 'mesh-default-qwen36-35b')
     expect(model?.displayName).toBe('Qwen3.6 35B')
     expect(model?.callableNames).toContain('codeflare-mesh')
+    // The projection always carries a numeric VRAM budget (0 = no cap) so machine callers can read it.
+    expect(typeof model?.maxVramGb).toBe('number')
   })
 
   it('REQ-API-005 configures a model context window and rejects invalid input', async () => {
@@ -2925,6 +2937,12 @@ describe('control-plane API (/api/v1)', () => {
     const ok = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 8192 }) }))
     expect(ok.status).toBe(200)
     expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-default-qwen36-35b')?.contextWindow).toBe(8192)
+    // A VRAM budget is accepted, stored, and echoed in the returned projection; a negative budget is rejected.
+    const vram = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ maxVramGb: 16 }) }))
+    expect(vram.status).toBe(200)
+    expect((await vram.json() as { model: { maxVramGb: number } }).model.maxVramGb).toBe(16)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-default-qwen36-35b')?.meshllm.maxVramGb).toBe(16)
+    expect((await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ maxVramGb: -5 }) }))).status).toBe(400)
     const bad = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 0 }) }))
     expect(bad.status).toBe(400)
     const missing = await router(new Request('https://router.test/api/v1/models/ghost', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 8192 }) }))

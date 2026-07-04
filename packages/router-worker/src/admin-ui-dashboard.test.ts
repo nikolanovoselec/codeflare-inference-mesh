@@ -272,6 +272,21 @@ describe('dashboard overview contracts', () => {
     expect(servingNodes.map((node) => node.dataset.drawerServingNode).sort()).toEqual(['node-big', 'node-small'])
     expect(fields.find((node) => node.dataset.drawerField === 'aliases')!.dataset.value).toBe('codeflare-mesh, qwen3.6:35b-a3b')
   })
+
+  it('REQ-ADM-021 loads and saves a per-model VRAM budget from the model drawer', async () => {
+    const profiles = [
+      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 262144, meshllm: { split: false, modelRef: 'ref-a', maxVramGb: 18 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
+    await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
+    // The drawer loads the model's current VRAM budget.
+    expect(harness.byId('model-edit-vram').value).toBe('18')
+    // Saving a new budget posts it to the validated profile-config endpoint.
+    harness.byId('model-edit-vram').value = '12.5'
+    await harness.clickAction('model-save', { profileId: 'mesh-default-qwen36-35b', out: 'model-output' })
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
+    expect(JSON.parse(String(call?.init?.body)).maxVramGb).toBe(12.5)
+  })
 })
 
 describe('dashboard polling contracts', () => {
