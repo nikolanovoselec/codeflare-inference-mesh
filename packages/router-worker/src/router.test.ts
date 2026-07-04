@@ -1166,7 +1166,7 @@ describe('router worker behavioral contracts', () => {
       if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'POST') return Response.json({ success: true, result: { id: 'gateway-a' } })
       if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [] })
       if (url.pathname.endsWith('/custom-providers') && method === 'POST') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev' } })
-      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, result: { data: { routes: [] } } })
+      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, data: { routes: [] } })
       // Creating a route with elements inline yields the version and deployment in one call.
       return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
     }) as typeof fetch
@@ -1190,6 +1190,37 @@ describe('router worker behavioral contracts', () => {
     expect(routeBody.enabled).toBe(true)
     expect(modelNode.properties).toEqual({ provider: 'custom-codeflare-inference-mesh-router-example-workers-dev', model: 'codeflare-mesh', retries: 1, timeout: 120000 })
     expect(result).toMatchObject({ providerId: 'provider-a', providerSlug: 'codeflare-inference-mesh-router-example-workers-dev', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: 'gateway-a', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', workerUrl: 'https://router.example.workers.dev', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
+  })
+
+  it('REQ-GWY-003 re-sync reuses the existing dynamic route (data + route envelopes) instead of re-creating it', async () => {
+    const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
+    const workerUrl = 'https://router.example.workers.dev/v1/chat/completions'
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
+      calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
+      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [{ id: 'gateway-a' }] })
+      if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [{ id: 'provider-a', slug: 'codeflare-inference-mesh-router-example-workers-dev', name: 'Codeflare Inference Mesh', base_url: 'https://router.example.workers.dev' }] })
+      // Listing routes uses the `data` envelope; the existing route must be found here so sync stays idempotent.
+      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, data: { routes: [{ id: 'route-a', name: 'codeflare-mesh', elements: [{ stale: true }] }] } })
+      // Get-one uses `result`; stale elements force reconciliation down the PATCH branch.
+      if (url.pathname.endsWith('/routes/route-a') && method === 'GET') return Response.json({ success: true, result: { id: 'route-a', name: 'codeflare-mesh', enabled: true, elements: [{ stale: true }] } })
+      // PATCH returns the route under the `route` envelope; unwrapping it (not `result`) proves the fix.
+      if (url.pathname.endsWith('/routes/route-a') && method === 'PATCH') return Response.json({ success: true, route: { id: 'route-a', name: 'codeflare-mesh', version: { version_id: 'version-b' }, deployment: { deployment_id: 'deployment-b', version_id: 'version-b' } } })
+      throw new Error(`unexpected call ${method} ${url.pathname}`)
+    }) as typeof fetch
+
+    const result = await new CloudflareGatewayClient('runtime-token', fetcher).syncCustomProvider({ accountId: 'account-a', gatewayId: 'gateway-a', workerUrl, providerName: 'Codeflare Inference Mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', providerTokenInstructions: 'manual' })
+
+    const routeCalls = calls.filter((call) => call.path.includes('/routes')).map((call) => `${call.method} ${call.path.split('/ai-gateway/')[1]}`)
+    expect(routeCalls).toEqual([
+      'GET gateways/gateway-a/routes',
+      'GET gateways/gateway-a/routes/route-a',
+      'PATCH gateways/gateway-a/routes/route-a'
+    ])
+    expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/routes'))).toBe(false)
+    expect(result).toMatchObject({ routeId: 'route-a', routeVersionId: 'version-b', deploymentId: 'deployment-b' })
   })
 
   it('CloudflareGatewayClient invokes the fetcher as a free function so the global fetch keeps its native receiver (no Workers illegal invocation)', async () => {

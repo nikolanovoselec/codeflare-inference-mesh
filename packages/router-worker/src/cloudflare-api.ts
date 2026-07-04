@@ -219,13 +219,19 @@ export class CloudflareGatewayClient {
     })
     const payload = await response.json() as ApiEnvelope<T>
     if (!response.ok || payload.success === false) throw new Error(`Cloudflare API failed: ${response.status}${formatCloudflareApiErrors(payload.errors)}`)
-    return payload.result
+    return (payload.result ?? payload.route ?? payload.data) as T
   }
 }
 
 interface ApiEnvelope<T> {
   readonly success: boolean
-  readonly result: T
+  // AI Gateway's dynamic-routing endpoints break the usual `result` envelope: listing
+  // routes returns `{ data: { routes: [...] } }` and PATCHing a route returns `{ route: {...} }`,
+  // while every other endpoint (gateways, custom-providers, route create/get) uses `result`.
+  // apiRequest unwraps whichever key is present so route reconciliation stays idempotent.
+  readonly result?: T
+  readonly route?: T
+  readonly data?: T
   readonly errors?: readonly CloudflareApiError[]
 }
 
