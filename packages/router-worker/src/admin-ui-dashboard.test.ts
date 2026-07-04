@@ -287,6 +287,43 @@ describe('dashboard overview contracts', () => {
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
     expect(JSON.parse(String(call?.init?.body)).maxVramGb).toBe(12.5)
   })
+
+  it('REQ-ADM-022 manages API keys from Settings: list renders, create reveals the secret once, rotate and revoke call the API', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/api/v1/keys' && method === 'GET') return Response.json({ keys: [{ id: 'automation_a', createdAt: 1_700_000_000_000 }] })
+      if (path === '/api/v1/keys' && method === 'POST') return Response.json({ id: 'automation_new', token: 'automation_secret_xyz', createdAt: 1_700_000_100_000 }, { status: 201 })
+      if (path === '/api/v1/keys/automation_a/rotate' && method === 'POST') return Response.json({ id: 'automation_rot', token: 'automation_secret_rot', rotatedFrom: 'automation_a', createdAt: 1_700_000_200_000 }, { status: 201 })
+      if (path === '/api/v1/keys/automation_a' && method === 'DELETE') return Response.json({ ok: true, id: 'automation_a' })
+      return undefined
+    } })
+    // Active keys render from GET /api/v1/keys.
+    expect(harness.byId('api-key-list').children.find((row) => row.dataset.apiKeyRow === 'automation_a')).toBeDefined()
+    // Creating a key reveals the secret exactly once in the output.
+    await harness.clickAction('api-key-create', { out: 'api-key-output' })
+    await harness.flush(3)
+    expect(harness.byId('api-key-output').textContent).toBe('automation_secret_xyz')
+    // Rotate posts to the key's rotate endpoint; revoke deletes the key.
+    await harness.clickAction('api-key-rotate', { keyId: 'automation_a', out: 'api-key-output' })
+    await harness.flush(3)
+    expect(harness.fetchCalls.find((entry) => entry.path === '/api/v1/keys/automation_a/rotate')?.init?.method).toBe('POST')
+    await harness.clickAction('api-key-revoke', { keyId: 'automation_a', out: 'api-key-output' })
+    await harness.flush(3)
+    expect(harness.fetchCalls.find((entry) => entry.path === '/api/v1/keys/automation_a' && entry.init?.method === 'DELETE')).toBeDefined()
+  })
+
+  it('REQ-ADM-023 loads and saves a per-node VRAM override from the node drawer', async () => {
+    const nodes = [{ id: 'node-weak', status: 'online', agentVersion: 'v1.3.0', maxVramGbOverride: 4, metrics: { runtimeState: 'ready', readyModels: ['codeflare-mesh'], gpuMemoryTotalMiB: 8192, gpuMemoryUsedMiB: 4000, tokensPerSecond: 20, activeRequests: 0 } }]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    await harness.clickAction('node-detail', { nodeId: 'node-weak' })
+    // The drawer loads the node's current override.
+    expect(harness.byId('node-edit-vram').value).toBe('4')
+    // Saving posts the new override to the node config endpoint.
+    harness.byId('node-edit-vram').value = '2'
+    await harness.clickAction('node-config-save', { nodeId: 'node-weak', out: 'node-output' })
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/nodes/node-weak/config')
+    expect(JSON.parse(String(call?.init?.body)).maxVramGbOverride).toBe(2)
+  })
 })
 
 describe('dashboard polling contracts', () => {

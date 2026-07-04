@@ -1042,6 +1042,30 @@ describe('router worker behavioral contracts', () => {
     expect(stored?.metrics?.readyModels).toEqual([QWEN_UPSTREAM])
   })
 
+  it('REQ-ADM-023 sets a per-node VRAM override that caps the node heartbeat and clears back to the model default', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode({ ...nodeFixture({ status: 'online' }), nodeTokenVerifier: await hashToken('node-secret') })
+    const config = (body: unknown) => router(new Request('https://router.test/admin/nodes/node-a/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+    const heartbeat = () => router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: { ...bearer('node-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2, inFlight: 1, runtime: 'meshllm' }) }))
+
+    expect((await config({ maxVramGbOverride: 4 })).status).toBe(200)
+    expect((await store.getNode('node-a'))?.maxVramGbOverride).toBe(4)
+    // The node's heartbeat now carries the override on every desired profile, capping it below the global.
+    const capped = await (await heartbeat()).json() as { desiredProfiles: Array<{ meshllm: { maxVramGb?: number } }> }
+    expect(capped.desiredProfiles.length).toBeGreaterThan(0)
+    expect(capped.desiredProfiles.every((profile) => profile.meshllm.maxVramGb === 4)).toBe(true)
+
+    // Clearing removes the override so the node follows the model default again.
+    expect((await config({ maxVramGbOverride: null })).status).toBe(200)
+    expect((await store.getNode('node-a'))?.maxVramGbOverride).toBeUndefined()
+
+    // Boundary + auth: a negative override is 400, an unknown node 404, a non-admin 401.
+    expect((await config({ maxVramGbOverride: -1 })).status).toBe(400)
+    expect((await router(new Request('https://router.test/admin/nodes/ghost/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 4 }) }))).status).toBe(404)
+    expect((await router(new Request('https://router.test/admin/nodes/node-a/config', { method: 'POST', headers: { ...bearer('not-admin'), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 4 }) }))).status).toBe(401)
+  })
+
   it('REQ-OBS-005 lets an authenticated node remove itself from scheduling', async () => {
     // NodeUnregisterAuthorizationTestAnchor
     const { router, store } = routerFixture()
@@ -2774,6 +2798,25 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request('https://router.test/api/v1/keys/automation_nope', { method: 'DELETE', headers: bearer('admin-secret') }))).status).toBe(404)
   })
 
+  it('REQ-API-001 rotates an automation key so the old secret dies and a new one authenticates', async () => {
+    const { router, store } = routerFixture()
+    const created = await mintKey(router)
+    expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer(created.token) }))).status).toBe(200)
+    const rot = await router(new Request(`https://router.test/api/v1/keys/${created.id}/rotate`, { method: 'POST', headers: bearer('admin-secret') }))
+    expect(rot.status).toBe(201)
+    const rotated = await rot.json() as { id: string; token: string; rotatedFrom: string }
+    expect(rotated.rotatedFrom).toBe(created.id)
+    expect(rotated.token).not.toBe(created.token)
+    // The retired secret stops authenticating; the fresh secret works.
+    expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer(created.token) }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer(rotated.token) }))).status).toBe(200)
+    // Rotation is audited by key id, never the secret; unknown id is 404; a non-admin is refused.
+    expect(store.audit.find((event) => event.type === 'automation_key_rotated')?.detail).toMatchObject({ previousKeyId: created.id, keyId: rotated.id })
+    expect(JSON.stringify(store.audit)).not.toContain(rotated.token)
+    expect((await router(new Request('https://router.test/api/v1/keys/automation_nope/rotate', { method: 'POST', headers: bearer('admin-secret') }))).status).toBe(404)
+    expect((await router(new Request(`https://router.test/api/v1/keys/${rotated.id}/rotate`, { method: 'POST', headers: bearer('not-admin') }))).status).toBe(401)
+  })
+
   it('REQ-API-001 refuses automation-key management without an admin credential', async () => {
     const { router } = routerFixture()
     expect((await router(new Request('https://router.test/api/v1/keys', { method: 'POST', headers: bearer('not-admin') }))).status).toBe(401)
@@ -2908,6 +2951,19 @@ describe('control-plane API (/api/v1)', () => {
     expect(event?.actor).toBe(`automation:${key.id}`)
     // Decommissioning an unknown node is a 404.
     expect((await router(new Request('https://router.test/api/v1/nodes/node-ghost', { method: 'DELETE', headers: bearer(key.token) }))).status).toBe(404)
+  })
+
+  it('REQ-ADM-023 reconfigures a node VRAM override through the automation API', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({ id: 'node-weak' }))
+    const res = await router(new Request('https://router.test/api/v1/nodes/node-weak/reconfigure', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))
+    expect(res.status).toBe(200)
+    expect((await res.json() as { node: { maxVramGbOverride: number } }).node.maxVramGbOverride).toBe(6)
+    expect((await store.getNode('node-weak'))?.maxVramGbOverride).toBe(6)
+    // Unknown node is 404; a request without an automation key is 401.
+    expect((await router(new Request('https://router.test/api/v1/nodes/node-ghost/reconfigure', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))).status).toBe(404)
+    expect((await router(new Request('https://router.test/api/v1/nodes/node-weak/reconfigure', { method: 'POST', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))).status).toBe(401)
   })
 
   it('REQ-API-004 refuses node access without an automation key', async () => {

@@ -253,6 +253,11 @@ function settingsSection(): string {
 ${field({ id: ADMIN_UI_AGENT_VERSION.selectId, label: 'Version to run on every machine', control: emptySlotSelect(ADMIN_UI_AGENT_VERSION.slotId, ADMIN_UI_AGENT_VERSION.selectId, 'agentVersion', 'data-agent-version-select="true" data-stale="false"'), hint: 'Each machine updates to this version the next time it checks in.' })}
 <div class="form-actions">${button({ action: 'agent-version-set', label: 'Apply to all machines', out: 'agent-version-output' })}</div>
 ${output({ id: 'agent-version-output', kind: 'agent-version', pre: true })}
+<div class="subpanel"><h3>API keys</h3>
+<p class="field-hint">Create a key to operate the mesh over the <code>/api/v1</code> API. The secret is shown once, so copy it immediately. Rotate issues a fresh secret and retires the old one; revoke disables a key immediately.</p>
+<div class="form-actions">${button({ action: 'api-key-create', label: 'Create API key', out: 'api-key-output' })}</div>
+${output({ id: 'api-key-output', kind: 'api-key', pre: true, extraClass: 'copyable' })}
+<div class="key-list" id="api-key-list"><p class="empty-note">API keys appear here after you create one.</p></div></div>
 <div class="subpanel"><h3>Offline machines</h3>
 ${field({ id: 'prune-seconds', label: 'Remove a machine after it is offline for (seconds)', control: textInput({ id: 'prune-seconds', name: 'offlinePruneSeconds', type: 'number', min: 0 }), hint: 'A removed machine must re-enroll. 0 keeps offline machines forever. Example: 3600 = one hour, 2592000 = 30 days.' })}
 <div class="form-actions">${button({ action: 'settings-save', label: 'Save', out: 'settings-output' })}</div>

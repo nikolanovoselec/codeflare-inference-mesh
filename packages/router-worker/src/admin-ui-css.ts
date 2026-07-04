@@ -152,6 +152,8 @@ main{width:min(1120px,100%);margin:0 auto;padding:1.25rem clamp(1rem,3vw,1.5rem)
 #overview-tiles [data-stat=gateway] code,#overview-tiles [data-stat=domain] code,#overview-tiles [data-stat=version] code{font-size:var(--fs-xs)}
 .row-list{display:grid;gap:.5rem}
 .row-item{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface-2);padding:.6rem .75rem;min-width:0}
+.key-list{display:grid;gap:.5rem;margin-top:.6rem}
+.key-list time{color:var(--muted);font-size:var(--fs-xs)}
 .row-item code{color:var(--text);font-size:var(--fs-sm);overflow-wrap:anywhere}
 .row-item .grow{flex:1 1 10rem;min-width:0;display:grid;gap:.15rem}
 .row-item small{color:var(--muted);font-size:var(--fs-xs)}

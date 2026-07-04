@@ -553,6 +553,55 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-022: API key management console
+
+**Intent:** An admin operating the Access-gated console must be able to mint, rotate, and revoke the automation keys that drive the mesh over the `/api/v1` API from the browser, without hand-crafting API calls, so the console is the single place a system admin issues machine credentials.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The Settings section lists the active API keys by id and creation time (never the secret) and offers a control to create a new key. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderApiKeys --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-022 manages API keys from Settings: list renders, create reveals the secret once, rotate and revoke call the API) -->
+2. Creating a key reveals its secret exactly once in a copy-ready output and refreshes the key list. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-022 manages API keys from Settings: list renders, create reveals the secret once, rotate and revoke call the API) -->
+3. Each listed key offers a rotate action (issues a fresh secret revealed once) and a revoke action (disables the key immediately), each calling the control-plane API under the admin's Access session. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-022 manages API keys from Settings: list renders, create reveals the secret once, rotate and revoke call the API) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-API-001](control-plane-api.md#req-api-001-automation-credentials), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-023: Per-node VRAM override
+
+**Intent:** A weaker machine may not fit a model at the model's global VRAM budget, so an admin must be able to cap the VRAM a specific node dedicates to inference below the model's global setting, after the node has registered, from both the console and the API (for example, a 16 GB global budget capped to 4 GB on a weak node).
+
+**Applies To:** Admin, Automation
+
+**Acceptance Criteria:**
+
+1. The node detail drawer exposes an editable "Max VRAM override (GB)" field populated from the node; saving posts to `POST /admin/nodes/{id}/config`, where a blank value clears the override and a number sets it. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-023 loads and saves a per-node VRAM override from the node drawer) -->
+2. `POST /admin/nodes/{id}/config` sets or clears a node's VRAM override, rejecting a negative value and returning `404` for an unknown node. <!-- @impl: packages/router-worker/src/router.ts::handleNodeConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 sets a per-node VRAM override that caps the node heartbeat and clears back to the model default) -->
+3. When a node has an override, its heartbeat's desired profiles carry the override as `maxVramGb` in place of each model's global budget, so the node agent renders `--max-vram` at the node's ceiling. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 sets a per-node VRAM override that caps the node heartbeat and clears back to the model default) -->
+4. `POST /api/v1/nodes/{id}/reconfigure` sets or clears the same override for an automation caller and returns the node projection including it. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeReconfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reconfigures a node VRAM override through the automation API) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-021](#req-adm-021-model-serving-configuration), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-API-004](control-plane-api.md#req-api-004-programmatic-node-management)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)

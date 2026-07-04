@@ -76,6 +76,8 @@ export interface NodeRecord {
   readonly nodeTokenVerifier?: string
   readonly upstreamTokenVerifier?: string
   readonly metrics?: NodeMetrics
+  /** Per-node VRAM budget in GB that overrides the model's global maxVramGb for this node (0 = uncapped on this node). */
+  readonly maxVramGbOverride?: number
 }
 
 export interface SessionRecord {

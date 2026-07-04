@@ -87,6 +87,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/cloudflare/zones' && request.method === 'GET') return await handleZones(request, deps, id, now())
       if (url.pathname === '/admin/cloudflare/gateway/options' && request.method === 'GET') return await handleGatewayOptions(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/revoke$/) && request.method === 'POST') return await handleNodeRevoke(request, deps, url, id, now())
+      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/config$/) && request.method === 'POST') return await handleNodeConfig(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
       if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
@@ -98,11 +99,13 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/whoami' && request.method === 'GET') return await handleWhoami(request, deps, id, now())
       if (url.pathname === '/api/v1/keys' && request.method === 'POST') return await handleApiKeyCreate(request, deps, id, now())
       if (url.pathname === '/api/v1/keys' && request.method === 'GET') return await handleApiKeyList(request, deps, id, now())
+      if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+\/rotate$/) && request.method === 'POST') return await handleApiKeyRotate(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+$/) && request.method === 'DELETE') return await handleApiKeyRevoke(request, deps, url, id, now())
       if (url.pathname === '/api/v1/status' && request.method === 'GET') return await handleApiStatus(request, deps, id, now())
       if (url.pathname === '/api/v1/enrollment-tokens' && request.method === 'POST') return await handleApiEnrollmentToken(request, deps, id, now())
       if (url.pathname === '/api/v1/nodes' && request.method === 'GET') return await handleApiNodeList(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'GET') return await handleApiNodeGet(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/reconfigure$/) && request.method === 'POST') return await handleApiNodeReconfigure(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'DELETE') return await handleApiNodeDecommission(request, deps, url, id, now())
       if (url.pathname === '/api/v1/models' && request.method === 'GET') return await handleApiModelList(request, deps, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/enable$/) && request.method === 'POST') return await handleApiModelEnable(request, deps, url, id, now())
@@ -241,9 +244,11 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   const meshProfile = await selectedMeshProfile(deps.store, next.activeProfileIds)
   const meshBootstrap = meshProfile ? await meshBootstrapFor(deps.store, deps.env, next, meshProfile, now) : undefined
   const desiredVersion = await desiredAgentVersion(deps.store)
+  // A per-node VRAM override caps this node's models below the model's global budget.
+  const desiredProfiles = applyNodeVramOverride(await deps.store.listProfiles(), next.maxVramGbOverride)
   return json({
     ok: true,
-    desiredProfiles: await deps.store.listProfiles(),
+    desiredProfiles,
     ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
   }, 200, requestId)
@@ -533,6 +538,22 @@ async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, re
   return json({ ok: true }, 200, requestId)
 }
 
+// handleNodeConfig sets or clears a node's per-node VRAM override from the admin console
+// (blank/`null` reverts to the model's global budget; a non-negative number caps this node).
+async function handleNodeConfig(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const nodeId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
+  const node = await deps.store.getNode(nodeId)
+  if (!node) return json({ error: 'unknown_node', requestId }, 404, requestId)
+  const body = await readJson<{ maxVramGbOverride?: number | null }>(request)
+  const updated = nodeWithVramOverride(node, body?.maxVramGbOverride)
+  if (updated === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
+  await deps.store.upsertNode(updated)
+  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor, target: nodeId, detail: { maxVramGbOverride: updated.maxVramGbOverride ?? null } })
+  return json({ ok: true, id: nodeId, maxVramGbOverride: updated.maxVramGbOverride ?? null }, 200, requestId)
+}
+
 async function handleProfileRollout(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
@@ -571,6 +592,25 @@ function resolveMaxVram(value: number | undefined): number | undefined | typeof 
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return INVALID_MAX_VRAM
   return value
+}
+
+// A node's VRAM override replaces the model's global maxVramGb for that node. `null` clears the
+// override (revert to the model default); a finite number >= 0 sets it (0 = uncapped on this node).
+function nodeWithVramOverride(node: NodeRecord, value: number | null | undefined): NodeRecord | typeof INVALID_MAX_VRAM {
+  if (value === null) {
+    const { maxVramGbOverride, ...rest } = node
+    void maxVramGbOverride
+    return rest
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return INVALID_MAX_VRAM
+  return { ...node, maxVramGbOverride: value }
+}
+
+// Apply a node's VRAM override to the profile set it will run, so the agent renders --max-vram
+// at the node's ceiling instead of the model's global budget.
+function applyNodeVramOverride(profiles: readonly ModelProfile[], override: number | undefined): readonly ModelProfile[] {
+  if (override === undefined) return profiles
+  return profiles.map((profile) => ({ ...profile, meshllm: { ...profile.meshllm, maxVramGb: override } }))
 }
 
 // handleProfileConfig persists a profile's serving settings — the context window,
@@ -928,6 +968,22 @@ async function handleApiKeyRevoke(request: Request, deps: RouterDeps, url: URL, 
   return json({ ok: true, id: keyId }, 200, requestId)
 }
 
+// handleApiKeyRotate retires a key and issues a fresh secret in one step so the previous
+// secret stops authenticating immediately; the new secret is returned exactly once.
+async function handleApiKeyRotate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const keyId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
+  const existing = await deps.store.getToken('automation', keyId)
+  if (!existing) return json({ error: 'not_found', requestId }, 404, requestId)
+  await deps.store.revokeToken('automation', keyId, now)
+  const token = generateBearerToken('automation')
+  const record = await createTokenRecord('automation', token, now)
+  await deps.store.putToken(record)
+  await deps.store.appendAudit({ id: requestId, type: 'automation_key_rotated', at: now, actor, detail: { previousKeyId: keyId, keyId: record.id } })
+  return json({ id: record.id, token, createdAt: record.createdAt, rotatedFrom: keyId }, 201, requestId)
+}
+
 async function handleApiStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
   const nodes = await deps.store.listNodes(now)
@@ -968,7 +1024,8 @@ function toApiNode(node: NodeRecord) {
     runtime: node.runtime,
     ...(node.runtimeModel !== undefined ? { runtimeModel: node.runtimeModel } : {}),
     ...(node.agentVersion !== undefined ? { agentVersion: node.agentVersion } : {}),
-    ...(node.metrics !== undefined ? { metrics: node.metrics } : {})
+    ...(node.metrics !== undefined ? { metrics: node.metrics } : {}),
+    maxVramGbOverride: node.maxVramGbOverride ?? null
   }
 }
 
@@ -997,6 +1054,22 @@ async function handleApiNodeGet(request: Request, deps: RouterDeps, url: URL, re
 }
 
 /** Decommission a node: revoke it and its node/mesh tokens so it must re-enroll. */
+// handleApiNodeReconfigure sets or clears a node's per-node VRAM override for an automation caller,
+// mirroring the admin console control so MDM/fleet tooling can cap weaker nodes.
+async function handleApiNodeReconfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  const nodeId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
+  const node = await deps.store.getNode(nodeId)
+  if (!node) return json({ error: 'unknown_node', requestId }, 404, requestId)
+  const body = await readJson<{ maxVramGbOverride?: number | null }>(request)
+  const updated = nodeWithVramOverride(node, body?.maxVramGbOverride)
+  if (updated === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
+  await deps.store.upsertNode(updated)
+  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: { maxVramGbOverride: updated.maxVramGbOverride ?? null } })
+  return json({ ok: true, node: toApiNode(updated) }, 200, requestId)
+}
+
 async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)

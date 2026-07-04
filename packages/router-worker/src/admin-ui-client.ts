@@ -158,6 +158,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     refreshStatus().catch(() => undefined);
     loadVersions().catch(() => undefined);
     loadInstaller('').catch(() => undefined);
+    loadApiKeys().catch(() => undefined);
     closeDrawer();
     schedulePoll();
   };
@@ -581,6 +582,26 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       item.textContent = model;
       bodyEl.appendChild(item);
     });
+    const vramRow = document.createElement('label');
+    vramRow.className = 'drawer-row';
+    vramRow.textContent = 'Max VRAM override (GB, blank = use model default)';
+    const vramInput = document.createElement('input');
+    vramInput.id = 'node-edit-vram';
+    vramInput.type = 'number';
+    vramInput.min = '0';
+    vramInput.step = '0.5';
+    // Blank = follow the model's global budget; a number caps just this node (0 = uncapped here).
+    vramInput.value = node.maxVramGbOverride != null ? String(node.maxVramGbOverride) : '';
+    vramRow.appendChild(vramInput);
+    bodyEl.appendChild(vramRow);
+    const saveVram = document.createElement('button');
+    saveVram.type = 'button';
+    saveVram.className = 'btn';
+    saveVram.textContent = 'Save VRAM override';
+    saveVram.dataset.action = 'node-config-save';
+    saveVram.dataset.nodeId = node.id;
+    saveVram.dataset.out = 'node-output';
+    bodyEl.appendChild(saveVram);
     bodyEl.appendChild(revokeButton(node.id));
   }
   function openModelDrawer(profileId) {
@@ -815,6 +836,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       case 'node_unregistered': return 'Machine ' + target + ' left';
       case 'node_revoked': return 'Machine ' + target + ' removed';
       case 'node_pruned': return 'Machine ' + target + ' removed after staying offline';
+      case 'node_reconfigured': return 'Machine ' + target + ' settings changed';
       case 'setup_token_created': return 'Enrollment token created';
       case 'profile_activated': return 'Model turned on';
       case 'profile_rollout': return 'Model traffic changed';
@@ -822,6 +844,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       case 'settings_updated': return 'Settings changed';
       case 'agent_version_selected': return 'Machine software version updated';
       case 'automation_key_created': return 'API key created';
+      case 'automation_key_rotated': return 'API key rotated';
       case 'automation_key_revoked': return 'API key removed';
       case 'gateway_sync': return 'AI Gateway connected';
       case 'gateway_sync_failed': return 'AI Gateway connection failed';
@@ -962,6 +985,57 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     select.disabled = tags.length === 0;
     select.value = view && view.desired ? view.desired : (tags[0] || '');
     slot.appendChild(select);
+  }
+  function renderApiKeys(keys) {
+    const listEl = byId('api-key-list');
+    if (!listEl) return;
+    listEl.textContent = '';
+    if (!keys.length) {
+      const empty = document.createElement('p');
+      empty.className = 'empty-note';
+      empty.textContent = 'No API keys yet. Create one to operate the mesh over the API.';
+      listEl.appendChild(empty);
+      return;
+    }
+    keys.forEach((key) => {
+      const row = document.createElement('div');
+      row.className = 'row-item';
+      row.setAttribute('data-api-key-row', key.id);
+      const grow = document.createElement('div');
+      grow.className = 'grow';
+      const id = document.createElement('code');
+      id.textContent = key.id;
+      const when = document.createElement('time');
+      when.textContent = key.createdAt ? new Date(key.createdAt).toISOString().slice(0, 16).replace('T', ' ') : '';
+      grow.append(id, when);
+      const rotate = document.createElement('button');
+      rotate.type = 'button';
+      rotate.className = 'btn btn-ghost';
+      rotate.textContent = 'Rotate';
+      rotate.dataset.action = 'api-key-rotate';
+      rotate.dataset.keyId = key.id;
+      rotate.dataset.out = 'api-key-output';
+      const revoke = document.createElement('button');
+      revoke.type = 'button';
+      revoke.className = 'btn btn-danger';
+      revoke.textContent = 'Revoke';
+      revoke.dataset.action = 'api-key-revoke';
+      revoke.dataset.keyId = key.id;
+      revoke.dataset.out = 'api-key-output';
+      revoke.dataset.confirm = 'Revoke this API key? It stops working immediately.';
+      row.append(grow, rotate, revoke);
+      listEl.appendChild(row);
+    });
+  }
+  async function loadApiKeys() {
+    if (!byId('api-key-list')) return;
+    const view = await request('/api/v1/keys', { headers: headers(false) });
+    renderApiKeys(Array.isArray(view.keys) ? view.keys : []);
+  }
+  // Reveal a freshly minted or rotated secret exactly once — it can never be read back.
+  function revealApiKey(body) {
+    setOutput('api-key-output', (body && body.token) || '');
+    toast('API key ready. Copy it now, it is shown only once');
   }
   async function loadVersions() {
     const view = await request('/admin/agent-versions', { headers: headers(false) });
@@ -1267,6 +1341,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
       setOutput(out, await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(false) }));
       await refreshStatus().catch(() => undefined);
+    } else if (action === 'node-config-save') {
+      const nodeId = encodeURIComponent(button.dataset.nodeId || '');
+      const raw = readInput('node-edit-vram');
+      // Blank clears the override (revert to the model default); a number caps just this node.
+      const payload = { maxVramGbOverride: raw === '' ? null : Number(raw) };
+      setOutput(out, await request('/admin/nodes/' + nodeId + '/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
+      toast('Node VRAM override saved');
+      await refreshStatus().catch(() => undefined);
     } else if (action === 'model-toggle') {
       const id = button.dataset.profileId || '';
       const isOn = button.dataset.on === 'true';
@@ -1291,6 +1373,18 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       toast('Model settings saved');
       await refreshStatus().catch(() => undefined);
+    } else if (action === 'api-key-create') {
+      revealApiKey(await request('/api/v1/keys', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
+      await loadApiKeys().catch(() => undefined);
+    } else if (action === 'api-key-rotate') {
+      const keyId = encodeURIComponent(button.dataset.keyId || '');
+      revealApiKey(await request('/api/v1/keys/' + keyId + '/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
+      await loadApiKeys().catch(() => undefined);
+    } else if (action === 'api-key-revoke') {
+      const keyId = encodeURIComponent(button.dataset.keyId || '');
+      await request('/api/v1/keys/' + keyId, { method: 'DELETE', headers: headers(false) });
+      toast('API key revoked');
+      await loadApiKeys().catch(() => undefined);
     } else if (action === 'agent-versions-refresh') {
       await loadVersions();
     } else if (action === 'agent-version-set') {
@@ -1340,6 +1434,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (copy) { await navigator.clipboard.writeText(copy.dataset.copy || ''); toast('Copied'); return; }
     const copyCommand = event.target.closest('[data-output="installer-command"]');
     if (copyCommand && copyCommand.textContent) { await navigator.clipboard.writeText(copyCommand.textContent); toast('Command copied'); return; }
+    const copyKey = event.target.closest('[data-output="api-key"]');
+    if (copyKey && copyKey.textContent) { await navigator.clipboard.writeText(copyKey.textContent); toast('Key copied'); return; }
     const removeIdent = event.target.closest('[data-remove-ident]');
     if (removeIdent) { const kind = removeIdent.dataset.removeKind === 'user' ? 'user' : 'admin'; accessIdents[kind] = accessIdents[kind].filter((value) => value !== removeIdent.dataset.removeIdent); renderIdentChips(kind); return; }
     const wizardNext = event.target.closest('[data-wizard-next]');
