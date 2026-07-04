@@ -90,10 +90,11 @@ This domain covers the local cross-platform service that registers nodes, proxie
 **Acceptance Criteria:**
 
 1. The agent detects the WARP overlay IPv4 by matching the Cloudflare WARP adapter by name and by the WARP CGNAT range `100.96.0.0/12`, so detection works on Linux, Windows, and macOS `utun` adapters. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectWARPMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsWARPAdapterAndIP) -->
-2. A WARP-range address is preferred over coexisting LAN addresses; a host without WARP falls back to a single unambiguous private IPv4. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsWARPAdapterAndIP) -->
-3. Detection fails closed when the chosen candidate tier is ambiguous. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsUnambiguousMeshIP) -->
-4. Before first claim, the agent persists an unambiguous detected Mesh IP into config. <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008AppliesDetectedMeshIPBeforeClaim) -->
-5. The agent fails with a clear, actionable error before claim when the Mesh IP is unresolved. <!-- @impl: packages/node-agent/internal/agent/config.go::RequireMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestRequireMeshIPFailsClosedWhenUnresolved) -->
+2. A WARP-range address is preferred over coexisting LAN addresses. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsWARPAdapterAndIP) -->
+3. A host without a WARP adapter falls back to a single unambiguous private IPv4. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsWARPAdapterAndIP) -->
+4. Detection fails closed when the chosen candidate tier is ambiguous. <!-- @impl: packages/node-agent/internal/agent/config.go::DetectMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008DetectsUnambiguousMeshIP) -->
+5. Before first claim, the agent persists an unambiguous detected Mesh IP into config. <!-- @impl: packages/node-agent/internal/agent/config.go::ApplyDetectedMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE008AppliesDetectedMeshIPBeforeClaim) -->
+6. The agent fails with a clear, actionable error before claim when the Mesh IP is unresolved. <!-- @impl: packages/node-agent/internal/agent/config.go::RequireMeshIP --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestRequireMeshIPFailsClosedWhenUnresolved) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 

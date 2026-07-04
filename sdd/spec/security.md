@@ -301,14 +301,15 @@ This domain covers credential separation, route-level auth, header filtering, to
 **Acceptance Criteria:**
 
 1. The mesh provisions its AI Gateway with authentication enabled, so provider-native requests require a valid AI Gateway token. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 provisions an Authenticated Gateway and reconciles an existing open gateway) -->
-2. A gateway created before authentication was enforced is reconciled to authenticated on the next sync, and an already-authenticated gateway is left unchanged. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 provisions an Authenticated Gateway and reconciles an existing open gateway) -->
-3. The operator playground authenticates to the gateway with an AI Gateway Run token in the `cf-aig-authorization` header. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 playground authenticates to the gateway with cf-aig-authorization) -->
+2. A gateway created before authentication was enforced is reconciled to authenticated on the next sync, preserving its existing cache and rate-limit settings. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 provisions an Authenticated Gateway and reconciles an existing open gateway) -->
+3. An already-authenticated gateway is left unchanged on sync. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 provisions an Authenticated Gateway and reconciles an existing open gateway) -->
+4. The operator playground authenticates to the gateway with an AI Gateway Run token in the `cf-aig-authorization` header, and fails fast with an actionable error when that token is absent. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 playground authenticates to the gateway with cf-aig-authorization) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-012 fails fast when the gateway auth token is missing instead of an opaque upstream 401) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning)
+**Dependencies:** [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning), [REQ-ADM-016](setup-admin.md#req-adm-016-operator-playground)
 
 **Verification:** Automated test
 

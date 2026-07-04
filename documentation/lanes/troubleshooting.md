@@ -51,7 +51,7 @@
 
 **Cause:** No Cloudflare WARP adapter is connected, or more than one candidate address exists in the chosen tier so detection fails closed.
 
-**Fix:** Connect WARP (desktop client or headless WARP Connector) so the node has a `100.96.0.0/12` address on the `CloudflareWARP` adapter, or set `meshIp` explicitly in the agent config to the node's WARP address. ([REQ-NODE-008](../../sdd/spec/node-agent.md))
+**Fix:** Connect WARP (desktop client or a headless `warp-cli` enrollment) so the node has a `100.96.0.0/12` address on the `CloudflareWARP` adapter, or set `meshIp` explicitly in the agent config to the node's WARP address. ([REQ-NODE-008](../../sdd/spec/node-agent.md))
 
 ## Requests return no-node
 

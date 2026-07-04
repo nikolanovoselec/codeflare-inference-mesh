@@ -1323,10 +1323,11 @@ describe('router worker behavioral contracts', () => {
     await new CloudflareGatewayClient('runtime-token', created.fetcher).syncCustomProvider(syncInput)
     expect(created.calls.find((call) => call.method === 'POST' && call.path.endsWith('/ai-gateway/gateways'))!.body).toMatchObject({ authentication: true })
 
-    // An existing open gateway is reconciled to authenticated via PUT.
-    const reconciled = makeFetcher([{ id: 'gateway-a', authentication: false }])
+    // An existing open gateway is reconciled to authenticated via PUT, preserving
+    // its operator-tuned cache/rate-limit settings instead of resetting them.
+    const reconciled = makeFetcher([{ id: 'gateway-a', authentication: false, cache_ttl: 300, rate_limiting_limit: 50 }])
     await new CloudflareGatewayClient('runtime-token', reconciled.fetcher).syncCustomProvider(syncInput)
-    expect(reconciled.calls.find((call) => call.method === 'PUT' && call.path.endsWith('/ai-gateway/gateways/gateway-a'))?.body).toMatchObject({ authentication: true })
+    expect(reconciled.calls.find((call) => call.method === 'PUT' && call.path.endsWith('/ai-gateway/gateways/gateway-a'))?.body).toMatchObject({ authentication: true, cache_ttl: 300, rate_limiting_limit: 50 })
 
     // An already-authenticated gateway triggers no reconcile write.
     const skipped = makeFetcher([{ id: 'gateway-a', authentication: true }])
@@ -2566,7 +2567,7 @@ describe('operator playground contracts', () => {
     await store.putConfig('cloudflare_gateway', connectedGateway)
     await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1', gatewayId: 'inference-mesh' })
     const capture: { url?: string; init?: RequestInit | undefined } = {}
-    const { router } = routerFixture({ store, playgroundFetcher: sseFetcher(capture) })
+    const { router } = routerFixture({ store, env: { CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-run-token' }, playgroundFetcher: sseFetcher(capture) })
 
     const response = await router(new Request('https://router.test/admin/playground/chat', {
       method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
@@ -2580,6 +2581,23 @@ describe('operator playground contracts', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('content-type')).toContain('text/event-stream')
     expect(await response.text()).toContain('"content":"Hi"')
+  })
+
+  it('REQ-SEC-012 fails fast when the gateway auth token is missing instead of an opaque upstream 401', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('cloudflare_gateway', connectedGateway)
+    await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1', gatewayId: 'inference-mesh' })
+    let called = false
+    const { router } = routerFixture({ store, playgroundFetcher: (async () => { called = true; return new Response('', { status: 200 }) }) as typeof fetch })
+
+    const response = await router(new Request('https://router.test/admin/playground/chat', {
+      method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
+    }))
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: 'gateway_auth_token_missing' })
+    expect(called).toBe(false)
   })
 
   it('REQ-SEC-012 playground authenticates to the gateway with cf-aig-authorization', async () => {
@@ -2602,7 +2620,7 @@ describe('operator playground contracts', () => {
     await store.putConfig('cloudflare_gateway', connectedGateway)
     await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1' })
     const capture: { url?: string; init?: RequestInit | undefined } = {}
-    const { router } = routerFixture({ store, playgroundFetcher: sseFetcher(capture) })
+    const { router } = routerFixture({ store, env: { CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-run-token' }, playgroundFetcher: sseFetcher(capture) })
 
     await router(new Request('https://router.test/admin/playground/chat', {
       method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },

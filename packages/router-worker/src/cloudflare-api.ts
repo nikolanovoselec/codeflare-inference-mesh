@@ -43,7 +43,15 @@ export interface CustomDomainProvisionResult {
 }
 
 interface ProviderRecord { readonly id: string; readonly slug?: string; readonly name?: string; readonly base_url?: string }
-export interface GatewayRecord { readonly id: string; readonly authentication?: boolean }
+export interface GatewayRecord {
+  readonly id: string
+  readonly authentication?: boolean
+  readonly cache_invalidate_on_update?: boolean
+  readonly cache_ttl?: number
+  readonly collect_logs?: boolean
+  readonly rate_limiting_interval?: number
+  readonly rate_limiting_limit?: number
+}
 export interface RouteRecord {
   readonly id: string
   readonly name?: string
@@ -97,24 +105,31 @@ export class CloudflareGatewayClient {
     // gateway is open, and because it forwards using the stored BYOK provider key
     // any caller who knows the gateway URL reaches the router with valid
     // credentials attached. The gateway must therefore always be authenticated.
-    const settings = {
+    const defaults = {
       cache_invalidate_on_update: false,
       cache_ttl: 0,
       collect_logs: true,
       rate_limiting_interval: 0,
-      rate_limiting_limit: 0,
-      authentication: true
+      rate_limiting_limit: 0
     }
     const existing = (await this.listGateways(accountId)).find((gateway) => gateway.id === gatewayId)
     if (!existing) {
-      await this.accountRequest(accountId, '/ai-gateway/gateways', 'POST', { id: gatewayId, ...settings })
+      await this.accountRequest(accountId, '/ai-gateway/gateways', 'POST', { id: gatewayId, ...defaults, authentication: true })
       return
     }
+    if (existing.authentication === true) return
     // Reconcile a gateway created before authentication was enforced so it never
-    // stays open; PUT requires the full settings body.
-    if (existing.authentication !== true) {
-      await this.accountRequest(accountId, `/ai-gateway/gateways/${gatewayId}`, 'PUT', settings)
+    // stays open. PUT requires the full settings body, so preserve the gateway's
+    // existing cache/rate-limit settings and only add authentication rather than
+    // resetting operator-tuned values to defaults.
+    const preserved = {
+      cache_invalidate_on_update: existing.cache_invalidate_on_update ?? defaults.cache_invalidate_on_update,
+      cache_ttl: existing.cache_ttl ?? defaults.cache_ttl,
+      collect_logs: existing.collect_logs ?? defaults.collect_logs,
+      rate_limiting_interval: existing.rate_limiting_interval ?? defaults.rate_limiting_interval,
+      rate_limiting_limit: existing.rate_limiting_limit ?? defaults.rate_limiting_limit
     }
+    await this.accountRequest(accountId, `/ai-gateway/gateways/${gatewayId}`, 'PUT', { ...preserved, authentication: true })
   }
 
   async syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult> {
