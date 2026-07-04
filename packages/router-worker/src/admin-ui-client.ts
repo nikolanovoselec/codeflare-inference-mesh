@@ -75,9 +75,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // Map a failed playground status to an actionable next step. The raw status alone
   // ('failed (401)') tells an operator nothing about what to fix.
   const playgroundHint = (status) => {
+    if (status === 400) return ' The Gateway rejected the request. Re-sync the Gateway so its route matches the current model alias.';
     if (status === 401 || status === 403) return ' Paste the router provider token into the AI Gateway custom provider key.';
     if (status === 409) return ' Connect an AI Gateway in Routing first.';
-    if (status === 404 || status === 429) return ' No serving profile or ready node yet — enroll a node and activate a profile.';
+    if (status === 404 || status === 429) return ' No serving profile or ready node yet. Enroll a node and activate a profile.';
     if (status === 503) return ' Re-sync the Gateway in Routing.';
     return '';
   };
@@ -754,7 +755,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const domainCurrent = byId('custom-domain-current');
     if (domainCurrent) {
       const domain = status.customDomain || {};
-      domainCurrent.textContent = domain.hostname ? 'Provisioned: ' + [domain.hostname, domain.status].filter(Boolean).join(' · ') : 'No custom domain provisioned yet.';
+      domainCurrent.textContent = domain.hostname ? [domain.hostname, domain.status].filter(Boolean).join(' · ') : 'No custom domain provisioned yet.';
     }
     lastStatus = status;
     renderNodesTable(nodes, status.desiredAgentVersion);

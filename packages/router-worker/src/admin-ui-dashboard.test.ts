@@ -326,14 +326,17 @@ describe('dashboard throughput trace and playground contracts', () => {
       await send
       return harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent
     }
+    const out400 = await outputFor(400)
     const out401 = await outputFor(401)
     const out409 = await outputFor(409)
     // Behavioral contract (survives without pinning copy): each failure carries the status code plus a
-    // hint beyond the bare line, and distinct statuses map to distinct hints. Gut playgroundHint -> both
+    // hint beyond the bare line, and distinct statuses map to distinct hints. Gut playgroundHint -> all
     // collapse to the bare line and the length + inequality assertions fail.
     expect(out401).toContain('(401)')
+    expect(out400.length).toBeGreaterThan(bareLen(400))
     expect(out401.length).toBeGreaterThan(bareLen(401))
     expect(out409.length).toBeGreaterThan(bareLen(409))
+    expect(out400).not.toBe(out401)
     expect(out401).not.toBe(out409)
   })
 

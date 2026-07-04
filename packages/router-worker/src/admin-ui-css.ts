@@ -149,6 +149,7 @@ main{width:min(1120px,100%);margin:0 auto;padding:1.25rem clamp(1rem,3vw,1.5rem)
 .tile{display:grid;gap:.2rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface-2);padding:.65rem .75rem;min-width:0}
 .tile strong{color:var(--muted);font-size:var(--fs-xs);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
 .tile code{color:var(--text);font-size:var(--fs-sm);overflow-wrap:anywhere}
+#overview-tiles [data-stat=gateway] code,#overview-tiles [data-stat=domain] code,#overview-tiles [data-stat=version] code{font-size:var(--fs-xs)}
 .row-list{display:grid;gap:.5rem}
 .row-item{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface-2);padding:.6rem .75rem;min-width:0}
 .row-item code{color:var(--text);font-size:var(--fs-sm);overflow-wrap:anywhere}
