@@ -804,7 +804,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       case 'profile_rollout': return 'Model traffic changed';
       case 'profile_configured': return 'Model settings changed';
       case 'settings_updated': return 'Settings changed';
-      case 'agent_version_selected': return 'Fleet version set';
+      case 'agent_version_selected': return 'Machine software version updated';
       case 'gateway_sync': return 'AI Gateway connected';
       case 'gateway_sync_failed': return 'AI Gateway connection failed';
       case 'custom_domain_provisioned': return 'Custom domain set up' + (target ? ': ' + target : '');
@@ -872,7 +872,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       tiles.appendChild(tile('Tokens/s', round1(toks), 'toks'));
       tiles.appendChild(tile('Gateway', [gateway.gatewayId, gateway.routeName].filter(Boolean).join(' / ') || 'not connected', 'gateway'));
       tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured', 'domain'));
-      tiles.appendChild(tile('Fleet version', status.desiredAgentVersion || 'not pinned', 'version'));
+      tiles.appendChild(tile('Machine version', status.desiredAgentVersion || 'not set', 'version'));
     }
     const pruneInput = byId('prune-seconds');
     if (pruneInput && status.offlinePruneSeconds != null && pruneInput.value === '') pruneInput.value = String(status.offlinePruneSeconds);
@@ -939,7 +939,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   async function loadVersions() {
     const view = await request('/admin/agent-versions', { headers: headers(false) });
     renderVersions(view);
-    setOutput('agent-version-output', 'Loaded ' + ((view.tags || []).length) + ' release tags' + (view.stale ? ' (stale cache)' : ''));
+    setOutput('agent-version-output', 'Loaded ' + ((view.tags || []).length) + ' versions' + (view.stale ? ' (list may be out of date)' : ''));
     return view;
   }
   async function loadInstaller(prefix) {

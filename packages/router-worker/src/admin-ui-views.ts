@@ -98,9 +98,9 @@ ${output({ id: 'wizard-access-output', kind: 'setup-access', pre: true })}
     body: `<div class="wizard-actions" id="wizard-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Create gateway + route', variant: 'primary', out: 'wiz-gateway-output' })}</div>
 <div class="form-grid" id="wizard-gateway-selects">
 ${field({ id: 'wiz-gateway-select', label: 'Gateway', control: '<span class="slot" id="wiz-gateway-slot"><select id="wiz-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
-${field({ id: 'wiz-route-select', label: 'Dynamic route', control: '<span class="slot" id="wiz-route-slot"><select id="wiz-route-select" name="routeName" data-route-select="true" disabled></select></span>' })}
+${field({ id: 'wiz-route-select', label: 'Route', control: '<span class="slot" id="wiz-route-slot"><select id="wiz-route-select" name="routeName" data-route-select="true" disabled></select></span>' })}
 </div>
-<div class="form-grid"><div id="wiz-gateway-new-wrap" hidden>${field({ id: 'wiz-gateway-new', label: 'New gateway ID', control: textInput({ id: 'wiz-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div>
+<div class="form-grid"><div id="wiz-gateway-new-wrap" hidden>${field({ id: 'wiz-gateway-new', label: 'New gateway name', control: textInput({ id: 'wiz-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div>
 <div id="wiz-route-new-wrap" hidden>${field({ id: 'wiz-route-new', label: 'New route name', control: textInput({ id: 'wiz-route-new', name: 'newRouteName', placeholder: 'e.g. codeflare-mesh' }) })}</div></div>
 <details class="gate-alt"><summary>Advanced overrides</summary>
 <div class="form-grid">
@@ -146,7 +146,7 @@ function overviewSection(): string {
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
 <div class="topo-list" id="${ADMIN_UI_TOPOLOGY.listId}" data-output="topology-list"></div>
 </div>
-<div class="subpanel"><h3>Mesh</h3><div class="form-actions" id="overview-mesh"></div></div>
+<div class="subpanel"><h3>Model sharing</h3><div class="form-actions" id="overview-mesh"></div></div>
 <div class="subpanel"><h3>Recent activity</h3><div class="feed" id="overview-audit" data-output="audit"></div></div>`
   })
 }
@@ -219,9 +219,9 @@ function meshSection(): string {
     actions: button({ action: 'status-refresh', label: 'Refresh' }),
     body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a sharing group. Set it in the deployment and redeploy.</p>
 <div class="tile-grid" id="${ADMIN_UI_MESH_HEALTH.panelId}" data-output="mesh-health"><p class="empty-note">Model sharing appears here only when several machines run one model together.</p></div>
-<div class="subpanel"><h3>Rotate mesh secret</h3>
-${field({ id: ADMIN_UI_MESH_HEALTH.rotateSelectId, label: 'Mesh profile', control: emptySlotSelect('mesh-rotate-slot', ADMIN_UI_MESH_HEALTH.rotateSelectId, 'meshProfileId', 'data-mesh-profile-select="true"'), hint: 'Rotation drains and rejoins mesh members within about two minutes.' })}
-<div class="form-actions">${button({ action: 'mesh-rotate', label: 'Rotate mesh secret', variant: 'danger', confirm: 'Confirm rotation?', out: 'mesh-rotate-output' })}</div>
+<div class="subpanel"><h3>Reset the sharing key</h3>
+${field({ id: ADMIN_UI_MESH_HEALTH.rotateSelectId, label: 'Shared model', control: emptySlotSelect('mesh-rotate-slot', ADMIN_UI_MESH_HEALTH.rotateSelectId, 'meshProfileId', 'data-mesh-profile-select="true"'), hint: 'Resetting briefly disconnects and reconnects the machines, about two minutes.' })}
+<div class="form-actions">${button({ action: 'mesh-rotate', label: 'Reset sharing key', variant: 'danger', confirm: 'Reset the sharing key?', out: 'mesh-rotate-output' })}</div>
 ${output({ id: 'mesh-rotate-output', kind: 'mesh-rotate', pre: true })}</div>`
   })
 }
@@ -230,9 +230,9 @@ function playgroundSection(): string {
   return sectionPanel({
     id: 'playground',
     title: 'Playground',
-    description: 'Send a prompt through the connected AI Gateway route and watch tokens stream back.',
+    description: 'Send a test prompt to your models and watch the answer stream back.',
     body: `<div class="form-grid">
-${field({ id: ADMIN_UI_PLAYGROUND.selectId, label: 'Model', control: emptySlotSelect(ADMIN_UI_PLAYGROUND.slotId, ADMIN_UI_PLAYGROUND.selectId, 'playgroundModel', 'data-playground-model-select="true"'), hint: 'Active profile aliases route through the connected dynamic gateway route.' })}
+${field({ id: ADMIN_UI_PLAYGROUND.selectId, label: 'Model', control: emptySlotSelect(ADMIN_UI_PLAYGROUND.slotId, ADMIN_UI_PLAYGROUND.selectId, 'playgroundModel', 'data-playground-model-select="true"'), hint: 'Only models that are switched on appear here. Your prompt takes the same path your apps use.' })}
 </div>
 ${field({ id: ADMIN_UI_PLAYGROUND.promptId, label: 'Prompt', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.promptId}" name="prompt" rows="4" placeholder="Ask the mesh something to verify the full path."></textarea>` })}
 <div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}</div>
@@ -247,17 +247,17 @@ function settingsSection(): string {
   return sectionPanel({
     id: 'settings',
     title: 'Settings',
-    description: 'Fleet version, audit trail, session, and recovery.',
-    body: `<h3>Fleet agent version</h3>
-<div class="form-actions">${button({ action: 'agent-versions-refresh', label: 'Load release tags' })}</div>
-${field({ id: ADMIN_UI_AGENT_VERSION.selectId, label: 'Fleet version', control: emptySlotSelect(ADMIN_UI_AGENT_VERSION.slotId, ADMIN_UI_AGENT_VERSION.selectId, 'agentVersion', 'data-agent-version-select="true" data-stale="false"'), hint: 'Nodes converge on the selected release through heartbeats.' })}
-<div class="form-actions">${button({ action: 'agent-version-set', label: 'Set fleet version', out: 'agent-version-output' })}</div>
+    description: 'Machine software version, activity log, session, and recovery.',
+    body: `<h3>Machine software version</h3>
+<div class="form-actions">${button({ action: 'agent-versions-refresh', label: 'Load available versions' })}</div>
+${field({ id: ADMIN_UI_AGENT_VERSION.selectId, label: 'Version to run on every machine', control: emptySlotSelect(ADMIN_UI_AGENT_VERSION.slotId, ADMIN_UI_AGENT_VERSION.selectId, 'agentVersion', 'data-agent-version-select="true" data-stale="false"'), hint: 'Each machine updates to this version the next time it checks in.' })}
+<div class="form-actions">${button({ action: 'agent-version-set', label: 'Apply to all machines', out: 'agent-version-output' })}</div>
 ${output({ id: 'agent-version-output', kind: 'agent-version', pre: true })}
 <div class="subpanel"><h3>Offline machines</h3>
 ${field({ id: 'prune-seconds', label: 'Remove a machine after it is offline for (seconds)', control: textInput({ id: 'prune-seconds', name: 'offlinePruneSeconds', type: 'number', min: 0 }), hint: 'A removed machine must re-enroll. 0 keeps offline machines forever. Example: 3600 = one hour, 2592000 = 30 days.' })}
 <div class="form-actions">${button({ action: 'settings-save', label: 'Save', out: 'settings-output' })}</div>
 ${output({ id: 'settings-output', kind: 'settings', pre: true })}</div>
-<div class="subpanel"><h3>Audit log</h3><div class="feed" id="audit-log"><p class="empty-note">Audit events appear after sign-in.</p></div></div>
+<div class="subpanel"><h3>Activity log</h3><div class="feed" id="audit-log"><p class="empty-note">Activity appears here after you sign in.</p></div></div>
 <div class="subpanel"><h3>Session</h3><p class="empty-note">The admin token lives only in this browser's storage.</p><div class="form-actions">${button({ action: 'sign-out', label: 'Sign out and forget token', variant: 'ghost' })}</div></div>
 <div class="subpanel"><h3>Recovery</h3><p class="empty-note">Lost the admin token? <code>POST /admin/recovery/reset</code> with the <code>ADMIN_RECOVERY_TOKEN</code> Worker secret mints a replacement.</p></div>
 <div class="subpanel"><details><summary>API reference</summary><div class="api-list">${apiRows}</div></details></div>`
@@ -266,25 +266,25 @@ ${output({ id: 'settings-output', kind: 'settings', pre: true })}</div>
 
 export function dashboardView(active: boolean): string {
   const navItems = [
-    navItem({ section: 'overview', label: 'Overview', hint: 'Health + activity', current: true }),
-    navItem({ section: 'nodes', label: 'Nodes', hint: 'Machines + enroll' }),
-    navItem({ section: 'models', label: 'Models', hint: 'Profiles + rollout' }),
-    navItem({ section: 'routing', label: 'Routing', hint: 'Gateway + domain' }),
-    navItem({ section: 'mesh', label: 'Mesh', hint: 'Formation + rotation' }),
+    navItem({ section: 'overview', label: 'Overview', hint: 'Health and activity', current: true }),
+    navItem({ section: 'nodes', label: 'Nodes', hint: 'Your machines' }),
+    navItem({ section: 'models', label: 'Models', hint: 'Your AI models' }),
+    navItem({ section: 'routing', label: 'Routing', hint: 'Address and gateway' }),
+    navItem({ section: 'mesh', label: 'Model sharing', hint: 'Machines sharing a model' }),
     navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
-    navItem({ section: 'settings', label: 'Settings', hint: 'Versions + audit' })
+    navItem({ section: 'settings', label: 'Settings', hint: 'Version and activity' })
   ].join('')
   const tabs = [
     tabItem({ tab: 'overview', label: 'Overview', glyph: '◎', current: true }),
     tabItem({ tab: 'nodes', label: 'Nodes', glyph: '●' }),
-    tabItem({ tab: 'mesh', label: 'Mesh', glyph: '◆' }),
+    tabItem({ tab: 'mesh', label: 'Sharing', glyph: '◆' }),
     tabItem({ tab: 'more', label: 'More', glyph: '⋯' })
   ].join('')
   const moreItems = [
-    navItem({ section: 'models', label: 'Models', hint: 'Profiles + rollout' }),
-    navItem({ section: 'routing', label: 'Routing', hint: 'Gateway + domain' }),
+    navItem({ section: 'models', label: 'Models', hint: 'Your AI models' }),
+    navItem({ section: 'routing', label: 'Routing', hint: 'Address and gateway' }),
     navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
-    navItem({ section: 'settings', label: 'Settings', hint: 'Versions + audit' })
+    navItem({ section: 'settings', label: 'Settings', hint: 'Version and activity' })
   ].join('')
   return `<div class="view dash" id="view-dashboard"${active ? '' : ' hidden'}>
 <nav class="side-nav" aria-label="Console sections" data-nav-sections="${escapeHtml(ADMIN_UI_NAV.sections.join(' '))}">${navItems}</nav>
