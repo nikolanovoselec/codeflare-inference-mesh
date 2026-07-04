@@ -158,11 +158,12 @@ function nodesSection(): string {
     description: 'The machines running your models. Ready = serving a model. Active = online, still loading. Offline = has not checked in.',
     actions: button({ action: 'status-refresh', label: 'Refresh' }),
     body: `<div class="node-filters form-actions" role="group" aria-label="Filter machines">
-<button class="btn btn-ghost" type="button" data-action="nodes-filter" data-filter="all" aria-current="page">All</button>
-<button class="btn btn-ghost" type="button" data-action="nodes-filter" data-filter="ready">Ready</button>
-<button class="btn btn-ghost" type="button" data-action="nodes-filter" data-filter="active">Active</button>
-<button class="btn btn-ghost" type="button" data-action="nodes-filter" data-filter="offline">Offline</button>
-<input class="node-search" id="node-search" type="search" name="nodeSearch" placeholder="Search machines…" data-node-search="true" aria-label="Search machines">
+<button class="btn btn-ghost" type="button" id="node-filter-all" data-action="nodes-filter" data-filter="all" aria-current="page">All</button>
+<button class="btn btn-ghost" type="button" id="node-filter-ready" data-action="nodes-filter" data-filter="ready">Ready</button>
+<button class="btn btn-ghost" type="button" id="node-filter-active" data-action="nodes-filter" data-filter="active">Active</button>
+<button class="btn btn-ghost" type="button" id="node-filter-offline" data-action="nodes-filter" data-filter="offline">Offline</button>
+<label for="node-search">Search</label>
+<input class="node-search" id="node-search" type="search" name="nodeSearch" placeholder="Search machines…" data-node-search="true">
 </div>
 <div class="table-wrap"><table class="nodes-table" data-output="nodes-table">
 <thead><tr>${ADMIN_UI_NODES_TABLE.columns.map((column) => `<th scope="col"><button class="sort-btn" type="button" data-action="nodes-sort" data-sort="${column}">${column === 'toks' ? 'tok/s' : column === 'vram' ? 'VRAM' : column}</button></th>`).join('')}</tr></thead>

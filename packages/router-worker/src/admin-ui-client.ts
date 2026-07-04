@@ -1154,7 +1154,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       if (lastStatus) renderNodesTable(Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [], lastStatus.desiredAgentVersion);
     } else if (action === 'nodes-filter') {
       nodeFilter = button.dataset.filter || 'all';
-      document.querySelectorAll('[data-action="nodes-filter"]').forEach((chip) => { if (chip.dataset.filter === nodeFilter) chip.setAttribute('aria-current', 'page'); else chip.removeAttribute('aria-current'); });
+      ['all', 'ready', 'active', 'offline'].forEach((name) => {
+        const chip = byId('node-filter-' + name);
+        if (!chip) return;
+        if (name === nodeFilter) chip.setAttribute('aria-current', 'page'); else chip.removeAttribute('aria-current');
+      });
       if (lastStatus) renderNodesTable(Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [], lastStatus.desiredAgentVersion);
     } else if (action === 'node-detail') {
       openNodeDrawer(button.dataset.nodeId || '');
