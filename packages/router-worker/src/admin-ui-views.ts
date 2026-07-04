@@ -6,7 +6,6 @@ import {
   ADMIN_UI_NAV,
   ADMIN_UI_NODES_TABLE,
   ADMIN_UI_PLAYGROUND,
-  ADMIN_UI_PROFILE_ACTIVATION,
   ADMIN_UI_TOKS_TRACE,
   ADMIN_UI_TOPOLOGY,
   ADMIN_UI_WIZARD
@@ -182,25 +181,9 @@ function modelsSection(): string {
   return sectionPanel({
     id: 'models',
     title: 'Models',
-    description: 'Serving profiles, readiness, activation, and rollout.',
-    body: `<div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Profiles appear here after sign-in.</p></div>
-<div class="subpanel"><h3>Serving profile</h3>
-${field({ id: ADMIN_UI_PROFILE_ACTIVATION.selectId, label: 'Serving profile', control: emptySlotSelect(ADMIN_UI_PROFILE_ACTIVATION.slotId, ADMIN_UI_PROFILE_ACTIVATION.selectId, 'activateProfileId', 'data-profile-activate-select="true"'), hint: 'Activation atomically deactivates the alias-sharing pair.' })}
-<div class="form-actions">${button({ action: 'profile-activate', label: 'Activate profile', out: 'profile-activate-output' })}</div>
-${output({ id: 'profile-activate-output', kind: 'profile-activate', pre: true })}</div>
-<div class="subpanel"><h3>Rollout</h3>
-<div class="form-grid">
-${field({ id: 'rollout-profile-select', label: 'Profile', control: '<span class="slot"><select id="rollout-profile-select" name="profileId" disabled></select></span>' })}
-${field({ id: 'rollout-percent', label: 'Rollout percent', control: textInput({ id: 'rollout-percent', name: 'rolloutPercent', type: 'number', value: '100', min: 0, max: 100 }), hint: 'How much traffic can use this profile, from 0 to 100 percent.' })}
-</div>
-<div class="form-actions">${button({ action: 'profile-rollout', label: 'Update rollout', out: 'profile-output' })}</div>
-${output({ id: 'profile-output', kind: 'profile-rollout', pre: true })}</div>
-<div class="subpanel"><h3>Profile settings</h3>
-${field({ id: 'profile-config-select', label: 'Profile', control: '<span class="slot"><select id="profile-config-select" name="profileId" data-profile-config-select="true" disabled></select></span>' })}
-${field({ id: 'profile-config-context', label: 'Context window', control: textInput({ id: 'profile-config-context', name: 'contextWindow', type: 'number', min: 1 }), hint: 'Maximum sequence length the profile serves, in tokens. Written to the mesh-llm model_fit.ctx_size.' })}
-${field({ id: 'profile-config-model', label: 'Model ref', control: textInput({ id: 'profile-config-model', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M' }), hint: 'The model the node loads and the gateway upstream model.' })}
-<div class="form-actions">${button({ action: 'profile-config', label: 'Save settings', out: 'profile-config-output' })}</div>
-${output({ id: 'profile-config-output', kind: 'profile-config', pre: true })}</div>`
+    description: 'The AI models your machines can run. Turn one on to start serving it; open Manage to rename what callers ask for or change its settings.',
+    body: `<div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Turn one on to start serving it.</p></div>
+${output({ id: 'models-output', kind: 'models', pre: true })}`
   })
 }
 

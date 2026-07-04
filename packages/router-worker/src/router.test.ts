@@ -208,7 +208,7 @@ describe('router worker behavioral contracts', () => {
     expect(config.confirm).toEqual({ attribute: 'data-confirm', disarmMs: 5000 })
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
-    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'profile-rollout', 'profile-activate', 'profile-config', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'playground-send', 'sign-out']
+    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'playground-send', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')

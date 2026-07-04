@@ -25,8 +25,8 @@ const dashboardNodes = [
 ]
 
 const dashboardProfiles = [
-  { id: 'mesh-default-qwen36-35b', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
-  { id: 'mesh-split-qwen36-35b', publicAliases: ['mesh-split'], active: false, rolloutPercent: 100, meshllm: { split: true } }
+  { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+  { id: 'mesh-split-qwen36-35b', displayName: 'Qwen3.6 35B (multi-machine)', publicAliases: ['mesh-split'], active: false, rolloutPercent: 100, meshllm: { split: true } }
 ]
 
 function statusFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -175,7 +175,7 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     const drawer = harness.byId(ADMIN_UI_DRAWER.containerId)
     expect(drawer.hidden).toBe(false)
-    expect(harness.byId(ADMIN_UI_DRAWER.titleId).textContent).toBe('mesh-default-qwen36-35b')
+    expect(harness.byId(ADMIN_UI_DRAWER.titleId).textContent).toBe('Qwen3.6 35B')
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const servingNodes = fields.filter((node) => node.dataset.drawerServingNode)
     expect(servingNodes.map((node) => node.dataset.drawerServingNode).sort()).toEqual(['node-big', 'node-small'])
@@ -284,11 +284,14 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(bars.length).toBe(ADMIN_UI_TOKS_TRACE.window)
   })
 
-  it('REQ-ADM-016 populates the playground model select from active profile aliases', async () => {
+  it('REQ-ADM-016 lists one playground option per model on, labeled by name and valued by callable name', async () => {
     const harness = await dashboardHarness()
     const select = harness.byId(ADMIN_UI_PLAYGROUND.selectId)
-    expect(select.children.map((option) => option.value)).toEqual(['codeflare-mesh', 'qwen3.6:35b-a3b'])
-    expect(select.children.map((option) => option.dataset.playgroundModelOption)).toEqual(['codeflare-mesh', 'qwen3.6:35b-a3b'])
+    // One option per model that is on; the option value is the callable name the
+    // gateway resolves, while the visible label is the canonical model name.
+    expect(select.children.map((option) => option.value)).toEqual(['codeflare-mesh'])
+    expect(select.children.map((option) => option.dataset.playgroundModelOption)).toEqual(['codeflare-mesh'])
+    expect(select.children.map((option) => option.textContent)).toEqual(['Qwen3.6 35B'])
   })
 
   it('REQ-ADM-016 streams the playground response incrementally as chunks arrive', async () => {
@@ -359,6 +362,21 @@ describe('dashboard throughput trace and playground contracts', () => {
     const rows = harness.byId('profile-list').children.filter((row) => row.dataset.profileRow)
     // Active surfaces first; stable sort preserves source order within each group.
     expect(rows.map((row) => row.dataset.profileRow)).toEqual(['serving-b', 'standby-a', 'standby-c'])
+  })
+
+  it('REQ-ADM-018 shows each model as one card with its canonical name and an on/off toggle', async () => {
+    const harness = await dashboardHarness()
+    const rows = harness.byId('profile-list').children.filter((row) => row.dataset.profileRow)
+    // Every model is visible, named by its display name (not its wiring id).
+    const names = descendants(harness.byId('profile-list')).filter((node) => node.dataset.modelName).map((node) => node.textContent)
+    expect(names).toContain('Qwen3.6 35B')
+    expect(names).toContain('Qwen3.6 35B (multi-machine)')
+    // The toggle reflects state: the model that is on offers "Turn off", the one that is off offers "Turn on".
+    const toggle = (id: string) => descendants(rows.find((row) => row.dataset.profileRow === id)!).find((node) => node.dataset.action === 'model-toggle')!
+    expect(toggle('mesh-default-qwen36-35b').dataset.on).toBe('true')
+    expect(toggle('mesh-default-qwen36-35b').textContent).toBe('Turn off')
+    expect(toggle('mesh-split-qwen36-35b').dataset.on).toBe('false')
+    expect(toggle('mesh-split-qwen36-35b').textContent).toBe('Turn on')
   })
 })
 

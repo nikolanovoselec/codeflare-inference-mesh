@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, ADMIN_UI_PROFILE_ACTIVATION, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, adminUiHtml } from './admin-ui'
 import type { MeshHealthEntry, MeshUiStatusNode } from './admin-ui'
 import { adminUiHarness, descendants, elementStub, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 import { SETUP_TOKEN_PLACEHOLDER } from './installers'
@@ -89,12 +89,11 @@ describe('admin UI mesh operations contracts', () => {
     expect(html).toContain('data-mesh-key-banner="true"')
     expect(html).toContain(`id="${ADMIN_UI_MESH_HEALTH.rotateSelectId}"`)
     expect(html).toContain('data-mesh-profile-select="true"')
-    expect(html).toContain(`id="${ADMIN_UI_PROFILE_ACTIVATION.selectId}"`)
-    expect(html).toContain('data-profile-activate-select="true"')
+    // Models are one client-rendered list; the section ships the list container, not activation/rollout dropdowns.
+    expect(html).toContain('id="profile-list"')
+    expect(html).toContain('data-output="profiles"')
     expect(html).toContain(`id="${ADMIN_UI_AGENT_VERSION.selectId}"`)
     expect(html).toMatch(/data-action="mesh-rotate" [^>]*data-confirm="[^"]+"/)
-    expect(html).toContain('data-action="profile-activate"')
-    expect(html).toContain('data-action="profile-rollout"')
     expect(html).toContain('data-action="agent-versions-refresh"')
     expect(html).toContain('data-action="agent-version-set"')
     expect([...html.matchAll(/data-action="status-refresh"/g)].length).toBeGreaterThanOrEqual(3)
@@ -136,25 +135,25 @@ describe('admin UI mesh operations contracts', () => {
     expect(JSON.parse(harness.byId('mesh-rotate-output').textContent) as { rotation: number }).toMatchObject({ rotation: 4 })
   })
 
-  it('REQ-ADM-009 renders the profile activation selection control', async () => {
+  it('REQ-ADM-009 turns a model on from the unified model list', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')
 
-    const slot = harness.byId(ADMIN_UI_PROFILE_ACTIVATION.slotId)
-    const select = slot.children[0]!
-    expect(select.dataset.profileActivateSelect).toBe('true')
-    expect(select.disabled).toBe(false)
-    const options = select.children.map((option) => option.dataset.profileOption)
-    expect(options).toEqual(['mesh-default-qwen36-35b', 'mesh-split-qwen36-35b'])
-    expect(select.children.map((option) => option.dataset.split)).toEqual(['false', 'true'])
-    expect(select.value).toBe('mesh-default-qwen36-35b')
+    // Every model shows as its own card — including ones with a unique callable name.
+    const rows = harness.byId('profile-list').children.filter((row) => row.dataset.profileRow)
+    expect(rows.map((row) => row.dataset.profileRow)).toContain('mesh-split-qwen36-35b')
 
-    expect(harness.byId(ADMIN_UI_PROFILE_ACTIVATION.selectId)).toBe(select)
-    select.value = 'mesh-split-qwen36-35b'
-    await harness.clickAction('profile-activate', { out: 'profile-activate-output' })
+    // Turning an off model on activates it through the validated endpoint.
+    await harness.clickAction('model-toggle', { profileId: 'mesh-split-qwen36-35b', on: 'false' })
     const call = harness.fetchCalls.find((item) => item.path === '/admin/profiles/activate')
     expect(call).toBeDefined()
     expect(JSON.parse(String(call!.init?.body))).toEqual({ profileId: 'mesh-split-qwen36-35b' })
+
+    // Turning an on model off drops its traffic to zero.
+    await harness.clickAction('model-toggle', { profileId: 'mesh-default-qwen36-35b', on: 'true' })
+    const off = harness.fetchCalls.find((item) => item.path === '/admin/profiles/rollout')
+    expect(off).toBeDefined()
+    expect(JSON.parse(String(off!.init?.body))).toEqual({ profileId: 'mesh-default-qwen36-35b', rolloutPercent: 0 })
   })
 
   it('REQ-ADM-008 renders the agent-version dropdown and per-node reported-versus-desired view', async () => {
@@ -257,10 +256,10 @@ describe('admin UI mesh operations contracts', () => {
     harness.run()
     await harness.flush(10)
 
-    await harness.clickAction('profile-activate', { out: 'profile-activate-output' })
+    await harness.clickAction('model-toggle', { profileId: 'mesh-split-qwen36-35b', on: 'false', out: 'models-output' })
     await harness.flush()
 
-    const output = harness.byId('profile-activate-output')
+    const output = harness.byId('models-output')
     expect(output.classList.contains('is-error')).toBe(true)
     expect(output.textContent).not.toContain('internal_error')
     expect(output.textContent).toContain('req-xyz')

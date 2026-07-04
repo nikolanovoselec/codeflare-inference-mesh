@@ -149,9 +149,9 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The UI exposes initial setup, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain provisioning, node revocation, the mesh health panel, mesh-profile readiness, profile activation, mesh-secret rotation, and profile rollout controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 exposes mesh health, rotation, and activation controls) -->
+1. The UI exposes initial setup, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain provisioning, node revocation, the mesh health panel, mesh-profile readiness, a unified per-model on/off and settings list, and mesh-secret rotation controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 exposes mesh health, rotation, and activation controls) -->
 2. The UI provides a one-click "Rotate mesh secret" action that submits `POST /admin/mesh/rotate` for the selected mesh profile. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 wires the one-click rotate action to the mesh rotate endpoint) -->
-3. The UI presents the single-node and split serving profiles as one activation selection control that submits `POST /admin/profiles/activate`. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 renders the profile activation selection control) -->
+3. The Models section shows every model as one card with a per-model on/off toggle: turning a model on submits `POST /admin/profiles/activate`, and turning it off submits `POST /admin/profiles/rollout` at zero percent, so a model with a unique callable name is never hidden from selection. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 turns a model on from the unified model list) -->
 4. Activating a profile records a `profile_activated` audit event. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-009 activates profiles alias-exclusively and records the audit event) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
@@ -438,7 +438,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Playground section offers a model selection populated from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 populates the playground model select from active profile aliases) -->
+1. The Playground section offers one model option per model that is on, labeled by the canonical display name and valued by the callable name the gateway resolves, populated from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 lists one playground option per model on, labeled by name and valued by callable name) -->
 2. Sending a prompt submits it through the admin playground endpoint and renders the streamed response incrementally. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 streams the playground response incrementally as chunks arrive) -->
 3. The playground endpoint forwards prompts through the configured AI Gateway route and streams the response back. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 forwards playground prompts through the configured gateway route and strips upstream secrets) -->
 4. The playground endpoint requires a valid console role (admin or read-only user) and never exposes gateway credentials to the browser. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 rejects unauthenticated playground requests) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 REQ-ADM-017 lets the read-only user role reach the playground endpoint) -->
@@ -459,13 +459,14 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ### REQ-ADM-018: Models section ordering
 
-**Intent:** Operators scanning the Models section need the serving set surfaced first, so the profiles actually answering traffic are visible without scrolling past standby ones.
+**Intent:** Operators scanning the Models section need the serving set surfaced first, so the models actually answering traffic are visible without scrolling past ones that are off, and every model must be shown by one clear name.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. The Models section lists active profiles before standby profiles, preserving source order within each group. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 orders profile rows active-first regardless of source order) -->
+1. The Models section lists models that are on before models that are off, preserving source order within each group. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 orders profile rows active-first regardless of source order) -->
+2. Each model renders as one card labeled by its canonical display name (not its wiring id) with an on/off toggle whose state and label reflect whether the model is on. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 shows each model as one card with its canonical name and an on/off toggle) -->
 
 **Constraints:** None.
 

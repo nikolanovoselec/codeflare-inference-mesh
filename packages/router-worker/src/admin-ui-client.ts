@@ -539,14 +539,43 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const profiles = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
     const profile = profiles.find((candidate) => candidate.id === profileId);
     if (!profile) return;
-    const bodyEl = openDrawer(profile.id);
+    const bodyEl = openDrawer(modelName(profile));
     if (!bodyEl) return;
     const aliases = profile.publicAliases || [];
-    bodyEl.appendChild(drawerField('aliases', 'Aliases', aliases.join(', '), aliases.join(', ')));
-    bodyEl.appendChild(drawerField('active', 'Active', profile.active ? 'yes' : 'standby'));
+    bodyEl.appendChild(drawerField('aliases', 'Callers ask for', aliases.join(', '), aliases.join(', ')));
+    bodyEl.appendChild(drawerField('active', 'Status', profile.active ? 'On' : 'Off'));
+    // Editable settings, saved through the validated profile-config endpoint.
+    const ctxRow = document.createElement('label');
+    ctxRow.className = 'drawer-row';
+    ctxRow.textContent = 'Context window (tokens)';
+    const ctxInput = document.createElement('input');
+    ctxInput.id = 'model-edit-context';
+    ctxInput.type = 'number';
+    ctxInput.min = '1';
+    ctxInput.value = profile.contextWindow != null ? String(profile.contextWindow) : '';
+    ctxRow.appendChild(ctxInput);
+    bodyEl.appendChild(ctxRow);
+    const modelRow = document.createElement('label');
+    modelRow.className = 'drawer-row';
+    modelRow.textContent = 'Model file';
+    const modelInput = document.createElement('input');
+    modelInput.id = 'model-edit-model';
+    modelInput.type = 'text';
+    modelInput.value = (profile.meshllm && profile.meshllm.modelRef) || '';
+    modelRow.appendChild(modelInput);
+    bodyEl.appendChild(modelRow);
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn btn-primary';
+    save.textContent = 'Save settings';
+    save.dataset.action = 'model-save';
+    save.dataset.profileId = profile.id;
+    save.dataset.out = 'model-edit-output';
+    bodyEl.appendChild(save);
+    bodyEl.appendChild(output2('model-edit-output'));
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
     const servingNodes = nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.some((model) => aliases.indexOf(model) >= 0));
-    bodyEl.appendChild(drawerField('serving', 'Serving nodes', String(servingNodes.length), String(servingNodes.length)));
+    bodyEl.appendChild(drawerField('serving', 'Machines serving it', String(servingNodes.length), String(servingNodes.length)));
     servingNodes.forEach((node) => {
       const item = document.createElement('div');
       item.className = 'drawer-row';
@@ -554,6 +583,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       item.textContent = node.id;
       bodyEl.appendChild(item);
     });
+  }
+  function output2(id) {
+    const el = document.createElement('div');
+    el.id = id;
+    el.className = 'result';
+    el.setAttribute('role', 'log');
+    el.setAttribute('aria-live', 'polite');
+    return el;
   }
   const profileOption = (profile, selectedId) => {
     const option = document.createElement('option');
@@ -571,87 +608,78 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     select.disabled = profiles.length === 0;
     select.value = selectedId || (profiles[0] ? profiles[0].id : '');
   }
-  function renderActivationSelect(profiles) {
-    const slot = byId(config.profileActivation.slotId);
-    if (!slot) return;
-    const shares = (a, b) => a.publicAliases.some((alias) => b.publicAliases.indexOf(alias) >= 0);
-    const choices = profiles.filter((profile) => profiles.some((other) => other.id !== profile.id && shares(profile, other)));
-    const active = choices.filter((profile) => profile.active)[0];
-    slot.textContent = '';
-    const select = document.createElement('select');
-    select.id = config.profileActivation.selectId;
-    select.name = 'activateProfileId';
-    select.setAttribute('data-profile-activate-select', 'true');
-    fillProfileSelect(select, choices, active ? active.id : undefined);
-    slot.appendChild(select);
-  }
   function renderPlaygroundSelect(profiles) {
     const slot = byId(config.playground.slotId);
     if (!slot) return;
-    const aliases = [];
+    // One option per model that is on: label with the canonical model name, but
+    // send the callable name (public alias) the gateway route actually resolves.
+    const options = [];
     profiles.filter((profile) => profile.active).forEach((profile) => {
-      (profile.publicAliases || []).forEach((alias) => { if (aliases.indexOf(alias) < 0) aliases.push(alias); });
+      const callable = (profile.publicAliases || [])[0];
+      if (callable && !options.some((opt) => opt.value === callable)) options.push({ value: callable, label: modelName(profile) });
     });
     slot.textContent = '';
     const select = document.createElement('select');
     select.id = config.playground.selectId;
     select.name = 'playgroundModel';
     select.setAttribute('data-playground-model-select', 'true');
-    aliases.forEach((alias) => {
+    options.forEach((opt) => {
       const option = document.createElement('option');
-      option.value = alias;
-      option.setAttribute('data-playground-model-option', alias);
-      option.textContent = alias;
+      option.value = opt.value;
+      option.setAttribute('data-playground-model-option', opt.value);
+      option.textContent = opt.label;
       select.appendChild(option);
     });
-    select.disabled = aliases.length === 0;
-    if (aliases.length) select.value = aliases[0];
+    select.disabled = options.length === 0;
+    if (options.length) select.value = options[0].value;
     slot.appendChild(select);
+  }
+  function modelName(profile) { return (profile.displayName && String(profile.displayName)) || profile.id; }
+  function servingCount(profile) {
+    const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
+    const aliases = profile.publicAliases || [];
+    return nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.some((model) => aliases.indexOf(model) >= 0)).length;
   }
   function renderProfiles(profiles, readiness) {
     const list = byId('profile-list');
     if (!list) return;
     list.textContent = '';
-    // Active-first (stable): the serving set surfaces above standby without scrolling.
+    // Active-first (stable): models that are on surface above the ones that are off.
     const ordered = [...profiles].sort((a, b) => Number(Boolean(b.active)) - Number(Boolean(a.active)));
     ordered.forEach((profile) => {
       const row = document.createElement('div');
       row.className = 'row-item';
       row.setAttribute('data-profile-row', profile.id);
-      row.appendChild(statusDot(profile.active ? 'ok' : 'warn', profile.active ? 'active' : 'standby'));
+      row.appendChild(statusDot(profile.active ? 'ok' : 'warn', profile.active ? 'On' : 'Off'));
       const body = document.createElement('div');
       body.className = 'grow';
-      const idCode = document.createElement('code');
-      idCode.textContent = profile.id;
+      const name = document.createElement('strong');
+      name.setAttribute('data-model-name', profile.id);
+      name.textContent = modelName(profile);
       const detail = document.createElement('small');
       const ready = readiness.find((item) => item.profileId === profile.id);
-      detail.textContent = (profile.publicAliases || []).join(', ') + ' · rollout ' + profile.rolloutPercent + '%' + (ready ? ' · ready ' + ready.ready + ' · failed ' + ready.failed : '');
-      body.append(idCode, detail);
+      const callable = (profile.publicAliases || []).join(', ') || '—';
+      const serving = servingCount(profile);
+      detail.textContent = 'Call it: ' + callable + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
+      body.append(name, detail);
       row.appendChild(body);
-      const details = document.createElement('button');
-      details.type = 'button';
-      details.className = 'btn btn-ghost';
-      details.textContent = 'Details';
-      details.dataset.action = 'model-detail';
-      details.dataset.profileId = profile.id;
-      row.appendChild(details);
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'btn ' + (profile.active ? 'btn-ghost' : 'btn-primary');
+      toggle.textContent = profile.active ? 'Turn off' : 'Turn on';
+      toggle.dataset.action = 'model-toggle';
+      toggle.dataset.profileId = profile.id;
+      toggle.dataset.on = profile.active ? 'true' : 'false';
+      row.appendChild(toggle);
+      const manage = document.createElement('button');
+      manage.type = 'button';
+      manage.className = 'btn btn-ghost';
+      manage.textContent = 'Manage';
+      manage.dataset.action = 'model-detail';
+      manage.dataset.profileId = profile.id;
+      row.appendChild(manage);
       list.appendChild(row);
     });
-    renderActivationSelect(profiles);
-    fillProfileSelect(byId('rollout-profile-select'), profiles, undefined);
-    const configSelect = byId('profile-config-select');
-    if (configSelect) {
-      const applyConfigFields = () => {
-        const selected = profiles.find((profile) => profile.id === configSelect.value);
-        const ctx = byId('profile-config-context');
-        const model = byId('profile-config-model');
-        if (selected && ctx) ctx.value = selected.contextWindow;
-        if (selected && model) model.value = (selected.meshllm && selected.meshllm.modelRef) || '';
-      };
-      fillProfileSelect(configSelect, profiles, configSelect.value || undefined);
-      if (!configSelect.dataset.bound) { configSelect.addEventListener('change', applyConfigFields); configSelect.dataset.bound = 'true'; }
-      applyConfigFields();
-    }
     const rotateSlot = byId('mesh-rotate-slot');
     if (rotateSlot) {
       rotateSlot.textContent = '';
@@ -1008,9 +1036,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'gateway-sync': 'gateway-output',
     'custom-domain-validate': 'domain-output',
     'node-revoke': 'node-output',
-    'profile-rollout': 'profile-output',
-    'profile-activate': 'profile-activate-output',
-    'profile-config': 'profile-config-output',
+    'model-toggle': 'models-output',
+    'model-save': 'model-edit-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
     'mesh-rotate': 'mesh-rotate-output',
@@ -1098,21 +1125,26 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
       setOutput(out, await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(false) }));
       await refreshStatus().catch(() => undefined);
-    } else if (action === 'profile-rollout') {
-      const select = byId('rollout-profile-select');
-      setOutput(out, await request('/admin/profiles/rollout', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: select ? select.value : '', rolloutPercent: Number(readInput('rollout-percent')) }) }));
-    } else if (action === 'profile-activate') {
-      const select = byId(config.profileActivation.selectId);
-      setOutput(out, await request('/admin/profiles/activate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: select ? select.value : '' }) }));
+    } else if (action === 'model-toggle') {
+      const id = button.dataset.profileId || '';
+      const isOn = button.dataset.on === 'true';
+      // Turning a model on = activate it (the router switches off any other model that
+      // answers to the same name); turning it off = drop its traffic to zero.
+      const result = isOn
+        ? await request('/admin/profiles/rollout', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id, rolloutPercent: 0 }) })
+        : await request('/admin/profiles/activate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id }) });
+      setOutput(out, result);
+      toast(isOn ? 'Model turned off' : 'Model turned on');
       await refreshStatus().catch(() => undefined);
-    } else if (action === 'profile-config') {
-      const select = byId('profile-config-select');
-      const ctxRaw = readInput('profile-config-context');
-      const modelRaw = readInput('profile-config-model');
-      const payload = { profileId: select ? select.value : '' };
+    } else if (action === 'model-save') {
+      const id = button.dataset.profileId || '';
+      const ctxRaw = readInput('model-edit-context');
+      const modelRaw = readInput('model-edit-model');
+      const payload = { profileId: id };
       if (ctxRaw !== '') payload.contextWindow = Number(ctxRaw);
       if (modelRaw !== '') payload.modelRef = modelRaw;
       setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
+      toast('Model settings saved');
       await refreshStatus().catch(() => undefined);
     } else if (action === 'agent-versions-refresh') {
       await loadVersions();
