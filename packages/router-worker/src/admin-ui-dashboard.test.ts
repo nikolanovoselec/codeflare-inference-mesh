@@ -190,6 +190,17 @@ describe('dashboard overview contracts', () => {
     expect(rowOrder(harness)).toEqual(['node-small'])
   })
 
+  it('REQ-ADM-020 saves the offline-machine prune window from Settings', async () => {
+    const harness = await dashboardHarness()
+    const input = harness.byId('prune-seconds')
+    input.value = '3600'
+    await harness.clickAction('settings-save', { out: 'settings-output' })
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/settings')
+    expect(call).toBeDefined()
+    expect(call!.init?.method).toBe('POST')
+    expect(JSON.parse(String(call!.init?.body))).toEqual({ offlinePruneSeconds: 3600 })
+  })
+
   it('REQ-ADM-015 opens a node drawer with metrics, version drift, and an armed revoke control', async () => {
     const harness = await dashboardHarness()
     const drawer = harness.byId(ADMIN_UI_DRAWER.containerId)

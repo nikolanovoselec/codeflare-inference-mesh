@@ -62,6 +62,10 @@ export class MemoryStore implements Store {
     this.nodes.set(nodeId, { ...nodeWithoutCredentials, status: 'revoked', failurePenaltyUntil: now + 31536000000 })
   }
 
+  async deleteNode(nodeId: string): Promise<void> {
+    this.nodes.delete(nodeId)
+  }
+
   async getSession(sessionId: string): Promise<SessionRecord | undefined> {
     return this.sessions.get(sessionId)
   }

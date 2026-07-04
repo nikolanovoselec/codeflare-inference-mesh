@@ -253,6 +253,10 @@ function settingsSection(): string {
 ${field({ id: ADMIN_UI_AGENT_VERSION.selectId, label: 'Fleet version', control: emptySlotSelect(ADMIN_UI_AGENT_VERSION.slotId, ADMIN_UI_AGENT_VERSION.selectId, 'agentVersion', 'data-agent-version-select="true" data-stale="false"'), hint: 'Nodes converge on the selected release through heartbeats.' })}
 <div class="form-actions">${button({ action: 'agent-version-set', label: 'Set fleet version', out: 'agent-version-output' })}</div>
 ${output({ id: 'agent-version-output', kind: 'agent-version', pre: true })}
+<div class="subpanel"><h3>Offline machines</h3>
+${field({ id: 'prune-seconds', label: 'Remove a machine after it is offline for (seconds)', control: textInput({ id: 'prune-seconds', name: 'offlinePruneSeconds', type: 'number', min: 0 }), hint: 'A removed machine must re-enroll. 0 keeps offline machines forever. Example: 3600 = one hour, 2592000 = 30 days.' })}
+<div class="form-actions">${button({ action: 'settings-save', label: 'Save', out: 'settings-output' })}</div>
+${output({ id: 'settings-output', kind: 'settings', pre: true })}</div>
 <div class="subpanel"><h3>Audit log</h3><div class="feed" id="audit-log"><p class="empty-note">Audit events appear after sign-in.</p></div></div>
 <div class="subpanel"><h3>Session</h3><p class="empty-note">The admin token lives only in this browser's storage.</p><div class="form-actions">${button({ action: 'sign-out', label: 'Sign out and forget token', variant: 'ghost' })}</div></div>
 <div class="subpanel"><h3>Recovery</h3><p class="empty-note">Lost the admin token? <code>POST /admin/recovery/reset</code> with the <code>ADMIN_RECOVERY_TOKEN</code> Worker secret mints a replacement.</p></div>

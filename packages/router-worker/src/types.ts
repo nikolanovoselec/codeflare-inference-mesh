@@ -182,6 +182,7 @@ export interface Store {
   upsertNode(node: NodeRecord): Promise<void>
   updateNodeHeartbeat(node: NodeRecord): Promise<void>
   revokeNode(nodeId: string, now: number): Promise<void>
+  deleteNode(nodeId: string): Promise<void>
   getSession(sessionId: string): Promise<SessionRecord | undefined>
   putSession(session: SessionRecord): Promise<void>
   putReservation(reservation: ReservationRecord): Promise<void>

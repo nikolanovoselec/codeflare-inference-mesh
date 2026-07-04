@@ -81,6 +81,10 @@ export class D1Store implements Store {
     await this.upsertNode({ ...nodeWithoutCredentials, status: 'revoked', failurePenaltyUntil: now + 31536000000 })
   }
 
+  async deleteNode(nodeId: string): Promise<void> {
+    await this.db.prepare('DELETE FROM nodes WHERE id = ?').bind(nodeId).run()
+  }
+
   async getSession(sessionId: string): Promise<SessionRecord | undefined> {
     const row = await this.db.prepare('SELECT node_id, public_model, profile_id, upstream_model, expires_at FROM sessions WHERE session_id = ?').bind(sessionId).first<{ node_id: string; public_model: string; profile_id: string; upstream_model: string; expires_at: number }>()
     if (!row) return undefined

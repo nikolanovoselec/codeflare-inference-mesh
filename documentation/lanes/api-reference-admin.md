@@ -579,6 +579,30 @@ POST /admin/agent-version
 
 **Implements:** [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
+### POST /admin/settings
+
+Persists operator-tunable fleet settings. Currently accepts the offline-machine prune window.
+
+```http
+POST /admin/settings
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `offlinePruneSeconds` (non-negative integer; `0` disables pruning). A machine offline longer than this window is removed on the next admin status read and must re-enroll; the default when unset is 2592000 (30 days).
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The window is stored and recorded as a `settings_updated` audit event. | `{ "ok": true, "offlinePruneSeconds": number }` |
+| `400` | `offlinePruneSeconds` is missing, non-integer, or negative. | `{ "error": "invalid_settings", "requestId": string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+
+**Implements:** [REQ-ADM-020](../../sdd/spec/setup-admin.md)
+
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |

@@ -90,6 +90,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
       if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
+      if (url.pathname === '/admin/settings' && request.method === 'POST') return await handleAdminSettings(request, deps, id, now())
       if (url.pathname === '/admin/mesh/rotate' && request.method === 'POST') return await handleAdminMeshRotate(request, deps, id, now())
       if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
       if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
@@ -298,10 +299,50 @@ async function handleAdminLogin(request: Request, deps: RouterDeps, requestId: s
   return json({ ok: true, session: 'bearer-token' }, 200, requestId)
 }
 
+// DEFAULT_OFFLINE_PRUNE_SECONDS removes a node that has been offline this long (30 days).
+// The operator can shorten it or disable pruning with 0 via the Settings surface.
+const DEFAULT_OFFLINE_PRUNE_SECONDS = 2592000
+
+async function offlinePruneSeconds(deps: RouterDeps): Promise<number> {
+  const stored = await deps.store.getConfig<number>('offline_prune_seconds')
+  return typeof stored === 'number' && Number.isInteger(stored) && stored >= 0 ? stored : DEFAULT_OFFLINE_PRUNE_SECONDS
+}
+
+// handleAdminSettings persists operator-tunable fleet settings. offlinePruneSeconds
+// must be a non-negative integer (0 disables offline-node pruning).
+async function handleAdminSettings(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ offlinePruneSeconds?: number }>(request)
+  if (!body || typeof body.offlinePruneSeconds !== 'number' || !Number.isInteger(body.offlinePruneSeconds) || body.offlinePruneSeconds < 0) {
+    return json({ error: 'invalid_settings', requestId }, 400, requestId)
+  }
+  await deps.store.putConfig('offline_prune_seconds', body.offlinePruneSeconds)
+  await deps.store.appendAudit({ id: requestId, type: 'settings_updated', at: now, actor, detail: { offlinePruneSeconds: body.offlinePruneSeconds } })
+  return json({ ok: true, offlinePruneSeconds: body.offlinePruneSeconds }, 200, requestId)
+}
+
+// pruneStaleNodes deletes nodes that have been offline longer than the configured
+// window so a decommissioned machine drops out of the fleet and must re-enroll.
+async function pruneStaleNodes(deps: RouterDeps, requestId: string, now: number): Promise<void> {
+  const threshold = await offlinePruneSeconds(deps)
+  if (threshold <= 0) return
+  const nodes = await deps.store.listNodes(now)
+  let index = 0
+  for (const node of nodes) {
+    if (node.status === 'offline' && now - node.lastSeenAt > threshold * 1000) {
+      await deps.store.deleteNode(node.id)
+      await deps.store.appendAudit({ id: `${requestId}-prune-${index}`, type: 'node_pruned', at: now, actor: 'system', target: node.id, detail: { offlineSeconds: Math.round((now - node.lastSeenAt) / 1000) } })
+      index += 1
+    }
+  }
+}
+
 async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
   const isAdmin = viewer.role === 'admin'
+  await pruneStaleNodes(deps, requestId, now)
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
@@ -314,6 +355,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
         setup: await deps.store.getConfig('setup_state'),
         gateway: await deps.store.getConfig('cloudflare_gateway'),
         customDomain: await deps.store.getConfig('custom_domain'),
+        offlinePruneSeconds: await offlinePruneSeconds(deps),
         audit: await deps.store.listAudit(20)
       }
     : {}

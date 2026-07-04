@@ -33,6 +33,7 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'profile-config', method: 'POST', path: '/admin/profiles/config', auth: 'admin' },
   { id: 'agent-versions-refresh', method: 'GET', path: '/admin/agent-versions', auth: 'admin' },
   { id: 'agent-version-set', method: 'POST', path: '/admin/agent-version', auth: 'admin' },
+  { id: 'settings-save', method: 'POST', path: '/admin/settings', auth: 'admin' },
   { id: 'mesh-rotate', method: 'POST', path: '/admin/mesh/rotate', auth: 'admin' },
   { id: 'playground-chat', method: 'POST', path: '/admin/playground/chat', auth: 'admin' }
 ] as const

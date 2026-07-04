@@ -171,6 +171,7 @@ describe('router worker behavioral contracts', () => {
       'profile-config',
       'agent-versions-refresh',
       'agent-version-set',
+      'settings-save',
       'mesh-rotate',
       'playground-chat'
     ])
@@ -194,6 +195,7 @@ describe('router worker behavioral contracts', () => {
       '/admin/profiles/config',
       '/admin/agent-versions',
       '/admin/agent-version',
+      '/admin/settings',
       '/admin/mesh/rotate',
       '/admin/playground/chat'
     ])
@@ -208,7 +210,7 @@ describe('router worker behavioral contracts', () => {
     expect(config.confirm).toEqual({ attribute: 'data-confirm', disarmMs: 5000 })
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
-    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'agent-versions-refresh', 'agent-version-set', 'mesh-rotate', 'playground-send', 'sign-out']
+    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'installer-generate', 'gateway-sync', 'custom-domain-validate', 'agent-versions-refresh', 'agent-version-set', 'settings-save', 'mesh-rotate', 'playground-send', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
@@ -1081,6 +1083,37 @@ describe('router worker behavioral contracts', () => {
     expect(store.tokens.filter((token) => token.kind === 'node' && token.nodeId === 'node-a').every((token) => token.active === false)).toBe(true)
     expect(node?.failurePenaltyUntil).toBeGreaterThan(1_700_000_000_000)
     expect(store.audit.some((event) => event.type === 'node_revoked' && event.target === 'node-a')).toBe(true)
+  })
+
+  it('REQ-ADM-020 prunes nodes offline past the configured window and records the removal', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode(nodeFixture({ id: 'stale', status: 'offline', lastSeenAt: 1_700_000_000_000 - 7_200_000 }))
+    await store.upsertNode(nodeFixture({ id: 'fresh', status: 'online', lastSeenAt: 1_700_000_000_000 }))
+    await store.putConfig('offline_prune_seconds', 3600)
+
+    const response = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+
+    expect(response.status).toBe(200)
+    expect(await store.getNode('stale')).toBeUndefined()
+    expect(await store.getNode('fresh')).toBeDefined()
+    expect(store.audit.some((event) => event.type === 'node_pruned' && event.target === 'stale')).toBe(true)
+  })
+
+  it('REQ-ADM-020 keeps offline nodes when the prune window is zero', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode(nodeFixture({ id: 'stale', status: 'offline', lastSeenAt: 1 }))
+    await store.putConfig('offline_prune_seconds', 0)
+    await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+    expect(await store.getNode('stale')).toBeDefined()
+  })
+
+  it('REQ-ADM-020 sets the offline prune window through the settings endpoint', async () => {
+    const { router, store } = routerFixture()
+    const ok = await router(new Request('https://router.test/admin/settings', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ offlinePruneSeconds: 3600 }) }))
+    expect(ok.status).toBe(200)
+    expect(await store.getConfig('offline_prune_seconds')).toBe(3600)
+    expect((await router(new Request('https://router.test/admin/settings', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ offlinePruneSeconds: -5 }) }))).status).toBe(400)
+    expect((await router(new Request('https://router.test/admin/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ offlinePruneSeconds: 3600 }) }))).status).toBe(401)
   })
 
   it('REQ-OBS-006 records audit events for setup, claim, unregister, revoke, route provisioning, and profile switch actions', async () => {

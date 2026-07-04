@@ -826,6 +826,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured', 'domain'));
       tiles.appendChild(tile('Fleet version', status.desiredAgentVersion || 'not pinned', 'version'));
     }
+    const pruneInput = byId('prune-seconds');
+    if (pruneInput && status.offlinePruneSeconds != null && pruneInput.value === '') pruneInput.value = String(status.offlinePruneSeconds);
     renderTopology(nodes);
     pushToksSample(nodes.reduce((total, node) => total + nodeToks(node), 0));
     renderToksTrace();
@@ -1094,6 +1096,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'model-save': 'model-edit-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
+    'settings-save': 'settings-output',
     'mesh-rotate': 'mesh-rotate-output',
     'playground-send': 'playground-output'
   };
@@ -1214,6 +1217,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'agent-version-set') {
       const select = byId(config.agentVersion.selectId);
       setOutput(out, await request('/admin/agent-version', { method: 'POST', headers: headers(true), body: JSON.stringify({ version: select ? select.value : '' }) }));
+    } else if (action === 'settings-save') {
+      setOutput(out, await request('/admin/settings', { method: 'POST', headers: headers(true), body: JSON.stringify({ offlinePruneSeconds: Number(readInput('prune-seconds')) }) }));
+      toast('Settings saved');
     } else if (action === 'mesh-rotate') {
       const select = byId(config.meshHealth.rotateSelectId);
       setOutput(out, await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: select ? select.value : '' }) }));
