@@ -34,6 +34,7 @@ Codeflare Inference Mesh provides one stable AI Gateway route for private local 
 | Security | [security.md](spec/security.md) | Credential classes, route-level authorization, token storage, and header filtering. | P0 |
 | Release And CI | [release-ci.md](spec/release-ci.md) | PR checks, deploy workflow, signed node-agent artifacts, and update metadata. | P1 |
 | Observability | [observability.md](spec/observability.md) | Status surfaces, response headers, node metrics, audit records, and failure reporting. | P1 |
+| Control-Plane API | [control-plane-api.md](spec/control-plane-api.md) | Automation credentials and the `/api/v1` surface for programmatic fleet orchestration. | P1 |
 
 ## Support files
 

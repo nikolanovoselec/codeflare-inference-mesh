@@ -2715,3 +2715,85 @@ describe('operator playground contracts', () => {
     expect(JSON.parse(String(capture.init?.body)).model).toBe('custom-inference-mesh-router-test/qwen3.6:35b-a3b')
   })
 })
+
+describe('control-plane API (/api/v1)', () => {
+  async function mintKey(router: (request: Request) => Promise<Response>): Promise<{ id: string; token: string; createdAt: number }> {
+    const res = await router(new Request('https://router.test/api/v1/keys', { method: 'POST', headers: bearer('admin-secret') }))
+    return await res.json() as { id: string; token: string; createdAt: number }
+  }
+
+  it('REQ-API-001 mints an automation key for an admin and returns the secret once', async () => {
+    const { router } = routerFixture()
+    const res = await router(new Request('https://router.test/api/v1/keys', { method: 'POST', headers: bearer('admin-secret') }))
+    expect(res.status).toBe(201)
+    const body = await res.json() as { id: string; token: string; createdAt: number }
+    expect(body.id).toMatch(/^automation_/)
+    expect(body.token).toMatch(/^automation_/)
+    expect(body.createdAt).toBe(1_700_000_000_000)
+  })
+
+  it('REQ-API-001 lists active automation keys without the secret or verifier', async () => {
+    const { router } = routerFixture()
+    const created = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/keys', { headers: bearer('admin-secret') }))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { keys: Array<{ id: string; createdAt: number }> }
+    expect(body.keys.map((key) => key.id)).toContain(created.id)
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain(created.token)
+    expect(serialized).not.toContain('verifier')
+  })
+
+  it('REQ-API-001 revokes an automation key so it stops authenticating', async () => {
+    const { router } = routerFixture()
+    const created = await mintKey(router)
+    // The key authenticates the control plane before revocation.
+    expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer(created.token) }))).status).toBe(200)
+    const del = await router(new Request(`https://router.test/api/v1/keys/${created.id}`, { method: 'DELETE', headers: bearer('admin-secret') }))
+    expect(del.status).toBe(200)
+    // After revocation the same key no longer authenticates.
+    expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer(created.token) }))).status).toBe(401)
+    // An unknown key id is a 404.
+    expect((await router(new Request('https://router.test/api/v1/keys/automation_nope', { method: 'DELETE', headers: bearer('admin-secret') }))).status).toBe(404)
+  })
+
+  it('REQ-API-001 refuses automation-key management without an admin credential', async () => {
+    const { router } = routerFixture()
+    expect((await router(new Request('https://router.test/api/v1/keys', { method: 'POST', headers: bearer('not-admin') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/keys', { headers: bearer('not-admin') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/keys/automation_x', { method: 'DELETE', headers: bearer('not-admin') }))).status).toBe(401)
+  })
+
+  it('REQ-API-001 audits automation key creation and revocation', async () => {
+    const { router, store } = routerFixture()
+    const created = await mintKey(router)
+    await router(new Request(`https://router.test/api/v1/keys/${created.id}`, { method: 'DELETE', headers: bearer('admin-secret') }))
+    const createdEvent = store.audit.find((event) => event.type === 'automation_key_created')
+    const revokedEvent = store.audit.find((event) => event.type === 'automation_key_revoked')
+    expect(createdEvent?.detail).toMatchObject({ keyId: created.id })
+    expect(revokedEvent?.detail).toMatchObject({ keyId: created.id })
+    // The secret never lands in the audit trail.
+    expect(JSON.stringify(store.audit)).not.toContain(created.token)
+  })
+
+  it('REQ-API-002 returns a fleet snapshot to an authenticated automation caller', async () => {
+    const { router } = routerFixture()
+    const created = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/status', { headers: bearer(created.token) }))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { generatedAt: number; nodes: { total: number; online: number }; models: { total: number; active: number } }
+    expect(body.generatedAt).toBe(1_700_000_000_000)
+    expect(typeof body.nodes.total).toBe('number')
+    expect(typeof body.nodes.online).toBe('number')
+    // Seeded default profiles are visible to the snapshot.
+    expect(body.models.total).toBeGreaterThan(0)
+    expect(typeof body.models.active).toBe('number')
+  })
+
+  it('REQ-API-002 rejects an api request without a valid automation key', async () => {
+    const { router } = routerFixture()
+    expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer('not-a-key') }))).status).toBe(401)
+    // An admin session is not an automation key for the machine plane; the credential classes stay separate.
+    expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer('admin-secret') }))).status).toBe(401)
+  })
+})

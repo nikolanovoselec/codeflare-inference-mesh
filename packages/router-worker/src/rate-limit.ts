@@ -4,18 +4,19 @@ import type { RateLimiter, RouterEnv } from './types'
  * Rate-limit buckets. Each maps to a distinct Cloudflare [[ratelimits]] binding with its own
  * namespace and limit, so a flood on one class of endpoint cannot exhaust another's budget.
  */
-export type RateBucket = 'inference' | 'heartbeat' | 'enroll' | 'auth' | 'public'
+export type RateBucket = 'inference' | 'heartbeat' | 'enroll' | 'auth' | 'public' | 'api'
 
 const BUCKET_BINDING: Record<RateBucket, keyof RouterEnv> = {
   inference: 'RL_INFERENCE',
   heartbeat: 'RL_HEARTBEAT',
   enroll: 'RL_ENROLL',
   auth: 'RL_AUTH',
-  public: 'RL_PUBLIC'
+  public: 'RL_PUBLIC',
+  api: 'RL_API'
 }
 
 /** Buckets keyed by the caller's bearer credential; every other bucket keys by client IP. */
-const TOKEN_KEYED: ReadonlySet<RateBucket> = new Set<RateBucket>(['inference', 'heartbeat'])
+const TOKEN_KEYED: ReadonlySet<RateBucket> = new Set<RateBucket>(['inference', 'heartbeat', 'api'])
 
 function bearerToken(request: Request): string | undefined {
   const auth = request.headers.get('authorization')
@@ -30,6 +31,7 @@ function bearerToken(request: Request): string | undefined {
  * to `public`, so no endpoint is left unprotected.
  */
 export function classifyRoute(pathname: string, hasBearer: boolean): RateBucket {
+  if (pathname.startsWith('/api/v1/')) return 'api'
   if (pathname === '/v1/chat/completions' || pathname === '/v1/models') return hasBearer ? 'inference' : 'public'
   if (pathname === '/node/heartbeat') return 'heartbeat'
   if (pathname === '/node/claim' || pathname === '/node/unregister') return 'enroll'

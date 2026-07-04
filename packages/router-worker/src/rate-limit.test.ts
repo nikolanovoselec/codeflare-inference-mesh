@@ -22,7 +22,11 @@ describe('rate-limit classification', () => {
       ['/admin/setup-tokens', false, 'auth'],
       ['/health', false, 'public'],
       ['/install.sh', false, 'public'],
-      ['/admin/status', false, 'public']
+      ['/admin/status', false, 'public'],
+      // The enterprise control plane has its own bucket regardless of credential presence.
+      ['/api/v1/status', true, 'api'],
+      ['/api/v1/keys', false, 'api'],
+      ['/api/v1/nodes', true, 'api']
     ]
     for (const [path, hasBearer, bucket] of cases) expect(classifyRoute(path, hasBearer), path).toBe(bucket)
   })

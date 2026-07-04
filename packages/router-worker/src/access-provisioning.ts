@@ -2,7 +2,7 @@ import { formatCloudflareApiErrors, type CloudflareApiError } from './cloudflare
 
 export const ADMIN_APP_NAME = 'inference-mesh-admin'
 export const BYPASS_APP_NAME = 'inference-mesh-machine-bypass'
-export const MACHINE_BYPASS_SUFFIXES = ['/v1/*', '/node/*', '/health', '/install.sh', '/install.ps1'] as const
+export const MACHINE_BYPASS_SUFFIXES = ['/v1/*', '/api/v1/*', '/node/*', '/health', '/install.sh', '/install.ps1'] as const
 
 export interface AccessProvisionRequest {
   readonly accountId: string

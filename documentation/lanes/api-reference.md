@@ -319,6 +319,106 @@ POST /api/runtime/restart
 
 **Notes:** Browser runtime-control requests with an `Origin` header must match the localhost dashboard origin; no-Origin localhost clients are allowed. ([REQ-SEC-008](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/dashboard.go::dashboardControlAllowed -->
 
+## Control-plane API (`/api/v1`)
+
+The `/api/v1` surface lets fleet managers and MDM systems orchestrate the mesh programmatically. It authenticates with a scoped, revocable **automation key** presented as a bearer token — no Cloudflare Access session — and the `/api/v1/*` paths are covered by the machine Access-bypass, so automation reaches them from anywhere. Every `/api/v1` request is metered by a dedicated `api` rate-limit bucket keyed by a hash of the automation key, so one caller's burst cannot spend another's budget. Over-limit requests receive the shared `429` described in [Conventions](#conventions). ([REQ-API-001](../../sdd/spec/control-plane-api.md#req-api-001-automation-credentials), [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status))
+
+An admin mints automation keys with `POST /api/v1/keys` (which itself requires the admin credential). The secret is returned once at creation — store it securely, because it is never retrievable again. List active keys with `GET /api/v1/keys` and revoke one with `DELETE /api/v1/keys/{id}`; a revoked key stops authenticating immediately.
+
+```bash
+# Mint an automation key (admin credential required); capture the one-time secret.
+KEY=$(curl -s -X POST https://mesh.example.com/api/v1/keys \
+  -H "authorization: Bearer $ADMIN_TOKEN" | jq -r .token)
+
+# Use the key to read a fleet snapshot.
+curl -s https://mesh.example.com/api/v1/status -H "authorization: Bearer $KEY"
+```
+
+### POST /api/v1/keys
+
+Mints a new automation key. Requires the admin credential; the secret is returned once.
+
+```http
+POST /api/v1/keys
+```
+
+**Authentication:** admin
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `201` | A new automation key was minted. | `{ "id": string, "token": string, "createdAt": number }` — `token` is shown only here. |
+| `401` | No valid admin credential was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-001](../../sdd/spec/control-plane-api.md#req-api-001-automation-credentials)
+
+### GET /api/v1/keys
+
+Lists the active automation keys. Requires the admin credential; secrets are never returned.
+
+```http
+GET /api/v1/keys
+```
+
+**Authentication:** admin
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The active automation keys. | `{ "keys": [{ "id": string, "createdAt": number }] }`. |
+| `401` | No valid admin credential was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-001](../../sdd/spec/control-plane-api.md#req-api-001-automation-credentials)
+
+### DELETE /api/v1/keys/{id}
+
+Revokes an automation key by id. Requires the admin credential; the key stops authenticating immediately.
+
+```http
+DELETE /api/v1/keys/{id}
+```
+
+**Authentication:** admin
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The key was revoked. | `{ "ok": true, "id": string }`. |
+| `401` | No valid admin credential was presented. | `unauthorized` error body. |
+| `404` | No automation key with that id exists. | `not_found` error body. |
+
+**Implements:** [REQ-API-001](../../sdd/spec/control-plane-api.md#req-api-001-automation-credentials)
+
+### GET /api/v1/status
+
+Returns a fleet status snapshot to an authenticated automation caller.
+
+```http
+GET /api/v1/status
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "agentVersion"?: string }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status)
+
 ## Source anchors and specification backlinks
 
 | Surface | Specification | Source |

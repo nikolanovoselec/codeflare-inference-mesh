@@ -77,6 +77,16 @@ namespace_id = "2005"
   limit = 600
   period = 60
 
+# Enterprise control-plane API (/api/v1/*), keyed by a hash of the automation
+# key so one caller's burst cannot spend another's budget. Sized for fleet-scale
+# enrollment minting (thousands of tokens per minute).
+[[ratelimits]]
+name = "RL_API"
+namespace_id = "2006"
+  [ratelimits.simple]
+  limit = 6000
+  period = 60
+
 [env.integration]
 name = "codeflare-inference-mesh-router-integration"
 workers_dev = true
@@ -149,4 +159,11 @@ name = "RL_PUBLIC"
 namespace_id = "2105"
   [env.integration.ratelimits.simple]
   limit = 600
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_API"
+namespace_id = "2106"
+  [env.integration.ratelimits.simple]
+  limit = 6000
   period = 60

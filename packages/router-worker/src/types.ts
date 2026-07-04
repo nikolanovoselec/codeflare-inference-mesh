@@ -1,4 +1,4 @@
-export type CredentialKind = 'provider' | 'admin' | 'setup' | 'node' | 'upstream'
+export type CredentialKind = 'provider' | 'admin' | 'setup' | 'node' | 'upstream' | 'automation'
 
 export type NodeStatus = 'online' | 'offline' | 'draining' | 'revoked'
 
@@ -221,6 +221,7 @@ export interface RouterEnv {
   readonly RL_ENROLL?: RateLimiter
   readonly RL_AUTH?: RateLimiter
   readonly RL_PUBLIC?: RateLimiter
+  readonly RL_API?: RateLimiter
   readonly ROUTER_PROVIDER_TOKEN?: string
   readonly ADMIN_TOKEN?: string
   readonly NODE_UPSTREAM_TOKEN?: string

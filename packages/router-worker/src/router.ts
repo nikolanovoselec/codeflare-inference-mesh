@@ -59,7 +59,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
           await recordBreakGlassEntry(deps, id, now())
           return html(adminUiHtml(url.origin, await adminUiState(deps, true)), id)
         }
-        const machinePath = url.pathname.startsWith('/v1/') || url.pathname.startsWith('/node/')
+        const machinePath = url.pathname.startsWith('/v1/') || url.pathname.startsWith('/node/') || url.pathname.startsWith('/api/v1/')
         if (machinePath || (!gate.recovery && url.pathname.startsWith('/admin'))) {
           return json({ error: 'console_moved', customDomain: gate.hostname, requestId: id }, 410, id)
         }
@@ -96,6 +96,10 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
       if (url.pathname === '/admin/playground/chat' && request.method === 'POST') return await handlePlaygroundChat(request, deps, id, now())
       if (url.pathname === '/admin/whoami' && request.method === 'GET') return await handleWhoami(request, deps, id, now())
+      if (url.pathname === '/api/v1/keys' && request.method === 'POST') return await handleApiKeyCreate(request, deps, id, now())
+      if (url.pathname === '/api/v1/keys' && request.method === 'GET') return await handleApiKeyList(request, deps, id, now())
+      if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+$/) && request.method === 'DELETE') return await handleApiKeyRevoke(request, deps, url, id, now())
+      if (url.pathname === '/api/v1/status' && request.method === 'GET') return await handleApiStatus(request, deps, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
@@ -859,6 +863,59 @@ async function requireUser(request: Request, deps: RouterDeps, now: number): Pro
   return await resolveRole(request, deps, now)
 }
 
+/**
+ * Machine gate for the `/api/v1` control plane. Authenticates a scoped, revocable
+ * automation key presented as a bearer token — no Cloudflare Access session — so
+ * fleet managers and MDM can orchestrate the mesh programmatically. Returns the
+ * matched token record, or undefined when the key is missing, unknown, revoked, or expired.
+ */
+async function requireAutomation(request: Request, deps: RouterDeps, now: number): Promise<TokenRecord | undefined> {
+  return await authenticateAnyStoredToken(request, deps.store, 'automation', now)
+}
+
+async function handleApiKeyCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const token = generateBearerToken('automation')
+  const record = await createTokenRecord('automation', token, now)
+  await deps.store.putToken(record)
+  await deps.store.appendAudit({ id: requestId, type: 'automation_key_created', at: now, actor, detail: { keyId: record.id } })
+  return json({ id: record.id, token, createdAt: record.createdAt }, 201, requestId)
+}
+
+async function handleApiKeyList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const keys = (await deps.store.listTokens('automation'))
+    .filter((token) => token.active)
+    .map((token) => ({ id: token.id, createdAt: token.createdAt }))
+  return json({ keys }, 200, requestId)
+}
+
+async function handleApiKeyRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const keyId = decodeURIComponent(url.pathname.split('/').pop() ?? '')
+  const existing = await deps.store.getToken('automation', keyId)
+  if (!existing) return json({ error: 'not_found', requestId }, 404, requestId)
+  await deps.store.revokeToken('automation', keyId, now)
+  await deps.store.appendAudit({ id: requestId, type: 'automation_key_revoked', at: now, actor, detail: { keyId } })
+  return json({ ok: true, id: keyId }, 200, requestId)
+}
+
+async function handleApiStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  const nodes = await deps.store.listNodes(now)
+  const profiles = await deps.store.listProfiles()
+  const desiredVersion = await desiredAgentVersion(deps.store)
+  return json({
+    generatedAt: now,
+    nodes: { total: nodes.length, online: nodes.filter((node) => node.status === 'online').length },
+    models: { total: profiles.length, active: profiles.filter((profile) => profile.active).length },
+    ...(desiredVersion !== undefined ? { agentVersion: desiredVersion } : {})
+  }, 200, requestId)
+}
+
 async function authenticateKind(request: Request, deps: RouterDeps, kind: CredentialKind, now: number, envSecret?: string): Promise<boolean> {
   const presented = bearerToken(request)
   if (await verifyPlainOrHashed(envSecret, presented)) return true
@@ -1009,5 +1066,7 @@ export const ROUTER_ANCHORS = {
   REQ_SEC_002: 'REQ-SEC-002',
   REQ_SEC_006: 'REQ-SEC-006',
   REQ_SEC_009: 'REQ-SEC-009',
-  REQ_SEC_010: 'REQ-SEC-010'
+  REQ_SEC_010: 'REQ-SEC-010',
+  REQ_API_001: 'REQ-API-001',
+  REQ_API_002: 'REQ-API-002'
 } as const

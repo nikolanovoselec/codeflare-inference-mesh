@@ -805,6 +805,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       case 'profile_configured': return 'Model settings changed';
       case 'settings_updated': return 'Settings changed';
       case 'agent_version_selected': return 'Machine software version updated';
+      case 'automation_key_created': return 'API key created';
+      case 'automation_key_revoked': return 'API key removed';
       case 'gateway_sync': return 'AI Gateway connected';
       case 'gateway_sync_failed': return 'AI Gateway connection failed';
       case 'custom_domain_provisioned': return 'Custom domain set up' + (target ? ': ' + target : '');
