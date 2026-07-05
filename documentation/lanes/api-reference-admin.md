@@ -298,9 +298,9 @@ POST /admin/nodes/{nodeId}/config
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The node's VRAM override was set or cleared. | `{ "ok": true, "id": string, "maxVramGbOverride": number \| null }` |
-| `400` | The override was a negative or non-numeric value. | `{ "error": "invalid_max_vram" }` |
+| `400` | The override was a negative or non-numeric value. | `{ "error": "invalid_max_vram", "requestId": string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
-| `404` | No node with that id exists, or the node is revoked. | `{ "error": "unknown_node" }` |
+| `404` | No node with that id exists, or the node is revoked. | `{ "error": "unknown_node", "requestId": string }` |
 
 **Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-vram-override)
 
