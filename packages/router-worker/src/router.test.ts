@@ -3215,6 +3215,9 @@ describe('control-plane API (/api/v1)', () => {
     const badRotate = await router(new Request('https://router.test/admin/mesh/rotate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: '{ not json' }))
     expect(badRotate.status).toBe(400)
     expect((await badRotate.json() as { error: string }).error).toBe('invalid_json')
+    const badChat = await router(new Request('https://router.test/admin/playground/chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: '{ not json' }))
+    expect(badChat.status).toBe(400)
+    expect((await badChat.json() as { error: string }).error).toBe('invalid_json')
     // An ABSENT body is still accepted (the route applies its defaults) — never rejected as invalid_json.
     const absentSync = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
     expect((await absentSync.json() as { error?: string }).error).not.toBe('invalid_json')

@@ -14,7 +14,7 @@ Any admin route can also return `500` with body `{ "error": "internal_error", "r
 
 Admin routes are also rate-limited: `RL_AUTH` covers `/admin/login`, `/admin/setup`, `/admin/recovery/reset`, and `/admin/setup-tokens`; every other admin route falls to `RL_PUBLIC`. An over-limit request receives `429` with body `{ "error": "rate_limited", "requestId": string }` before its handler runs, and the per-route Response tables below omit this shared `429` the same way they omit the shared `500`. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
-An admin route that reads a JSON body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. A route whose body is optional (for example `POST /admin/cloudflare/gateway/sync` or `POST /admin/mesh/rotate`) still accepts a request with no body and applies its defaults — only a present, unparseable body is rejected. ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
+An admin route that reads a JSON body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. The three optional-body routes — `POST /admin/cloudflare/gateway/sync`, `POST /admin/mesh/rotate`, and `POST /admin/playground/chat` — still accept a request with no body and apply their defaults; only a present, unparseable body is rejected. ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
 
 ## Endpoints
 
@@ -193,7 +193,7 @@ POST /admin/playground/chat
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `model` (public alias) and `messages` (chat message array).
+**Request body:** JSON body with `model` (public alias) and `messages` (chat message array). The body is optional — an absent body falls back to defaults (empty `messages`, the gateway's default model) — but a present, malformed body is rejected with the shared `400` `invalid_json`.
 
 **Response**
 
