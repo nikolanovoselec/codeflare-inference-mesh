@@ -541,6 +541,11 @@ async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, re
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const nodeId = decodeURIComponent(url.pathname.split('/')[3] ?? '')
+  // Neutralize the node's credential first (strips its embedded verifier and marks it
+  // revoked) so a failure mid-sequence fails closed — heartbeat auth checks the node
+  // record's verifier, so this alone stops it. Then revoke tokens, clear mesh tokens,
+  // and delete the row so the node also disappears from the console.
+  await deps.store.revokeNode(nodeId, now)
   const nodeTokens = await deps.store.listTokens('node')
   await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))
   await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
@@ -673,7 +678,7 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
   const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, displayName, publicAliases, version: existing.version + 1 }
   await deps.store.setProfile(updated)
   await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0 } })
-  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0, displayName: updated.displayName, callNames: updated.publicAliases }, 200, requestId)
+  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0, displayName: updated.displayName, callableNames: updated.publicAliases }, 200, requestId)
 }
 
 // handleProfileAdd creates a new inactive model profile from an operator-supplied
@@ -1130,6 +1135,9 @@ async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url
   const nodeId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
   const node = (await deps.store.listNodes(now)).find((candidate) => candidate.id === nodeId)
   if (!node) return json({ error: 'not_found', requestId }, 404, requestId)
+  // Neutralize the credential first (fail-closed), then revoke tokens, clear mesh tokens,
+  // and delete the node record so it also disappears from the fleet.
+  await deps.store.revokeNode(nodeId, now)
   const nodeTokens = await deps.store.listTokens('node')
   await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))
   await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)

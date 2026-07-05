@@ -2057,6 +2057,11 @@ describe('router worker behavioral contracts', () => {
     const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
     const smoke = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
 
+    // A freshly-seeded default carries extra canonical aliases; an unrelated setting save
+    // must NOT collapse them (the config path only rewrites aliases when callName is sent).
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 16384 })).status).toBe(200)
+    expect((await smoke()).publicAliases).toEqual(['codeflare-mesh', 'mesh-smoke', 'smoke-test'])
+
     // Rename sets the display name and swaps the model's own call name, keeping the shared alias.
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', name: 'Speedy', callName: 'Speedy Coder!' })).status).toBe(200)
     const renamed = await smoke()

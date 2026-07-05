@@ -527,7 +527,33 @@ POST /admin/profiles/add
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `409` | The reference's derived profile id already exists. | `{ "error": "duplicate_profile", "profileId": string, "requestId": string }` |
 
-**Implements:** [REQ-RUN-011](../../sdd/spec/runtime-profiles.md), [REQ-ADM-025](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-RUN-011](../../sdd/spec/runtime-profiles.md), [REQ-ADM-025](../../sdd/spec/setup-admin.md), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
+
+### POST /admin/profiles/config
+
+Updates a model's serving settings — context window, model reference, VRAM budget, display name, and/or callable name — through the same validated store path the automation API uses, bumping the profile version so a later default re-seed does not overwrite the edit.
+
+```http
+POST /admin/profiles/config
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `profileId` (required) plus any of `contextWindow` (positive integer), `modelRef` (non-empty string), `maxVramGb` (number `≥ 0`, `0` = no cap), `name` (display name; must be non-blank), and `callName` (slugified callable alias; non-empty, not the reserved `codeflare-mesh`, not a collision with another model's alias). A changed call name keeps the shared `codeflare-mesh` alias. Each field besides `profileId` is optional; an omitted field is left unchanged.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The updated profile's settings (`displayName`/`callableNames` reflect a changed name or call name); a `profile_configured` audit event records the context window, model reference, and VRAM budget. | `{ "ok": true, "profileId": string, "contextWindow": number, "modelRef": string, "maxVramGb": number, "displayName": string, "callableNames": string[] }` |
+| `400` | `profileId` is missing, or the context window, model reference, VRAM budget, display name, or call name was invalid. | `invalid_profile_config` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` error body. |
+| `401` | Admin credential is missing or invalid. | Error object. |
+| `404` | No profile with that id exists. | `unknown_profile` error body. |
+| `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |
+
+**Implements:** [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
 
 ### POST /admin/profiles/delete
 

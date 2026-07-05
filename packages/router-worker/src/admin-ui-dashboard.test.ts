@@ -714,6 +714,25 @@ describe('dashboard routing contracts', () => {
     expect(css).toContain('@keyframes route-pulse')
   })
 
+  it('REQ-ADM-024 places the route chip with the Gateway selector and reads the connected gateway as a state card', async () => {
+    // The operational chip must sit with the gateway it describes: after the gateway select
+    // and before the Connect button, not stranded below it.
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const selectAt = html.indexOf('id="rt-gateway-select"')
+    const chipAt = html.indexOf('id="rt-route-chip"')
+    const connectAt = html.lastIndexOf('data-action="gateway-sync"')
+    expect(selectAt).toBeGreaterThan(-1)
+    expect(chipAt).toBeGreaterThan(selectAt)
+    expect(connectAt).toBeGreaterThan(chipAt)
+
+    // The connected gateway renders as a prominent state card carrying the gateway id as its value.
+    const harness = await dashboardHarness()
+    const card = harness.byId('gateway-current')
+    const value = descendants(card).find((node) => node.className === 'state-value')
+    expect(value!.textContent).toBe('inference-mesh')
+    expect(card.classList.contains('is-empty')).toBe(false)
+  })
+
   it('REQ-GWY-005 the gateway step renders a provider-name field and no route select', async () => {
     const harness = await dashboardHarness()
     expect(harness.html).toContain('id="rt-gateway-provider-name"')

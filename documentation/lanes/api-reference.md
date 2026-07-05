@@ -519,7 +519,7 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 
 **Authentication:** automation key
 
-**Query parameters:** `status` (exact node status: `online`, `offline`, `draining`, `revoked`), `q` (case-insensitive match on node id or display name), `limit` (page size, default 100, max 1000), `cursor` (return nodes with id greater than this value).
+**Query parameters:** `status` (exact node status: `online`, `offline`, `draining` — a revoked node is deleted rather than kept in a `revoked` state, so that filter never matches), `q` (case-insensitive match on node id or display name), `limit` (page size, default 100, max 1000), `cursor` (return nodes with id greater than this value).
 
 **Request body:** None.
 
@@ -570,7 +570,7 @@ DELETE /api/v1/nodes/{id}
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The node was decommissioned. | `{ "ok": true, "id": string }`. |
+| `200` | The node's node and mesh tokens are revoked and the node record is deleted (`node_revoked` audit event), so it disappears from the fleet and can no longer authenticate. | `{ "ok": true, "id": string }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No node with that id exists. | `not_found` error body. |
 
@@ -641,7 +641,7 @@ POST /api/v1/models
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `409` | The reference's derived id already exists. | `duplicate_profile` error body. |
 
-**Implements:** [REQ-API-007](../../sdd/spec/control-plane-api.md#req-api-007-programmatic-model-onboarding)
+**Implements:** [REQ-API-007](../../sdd/spec/control-plane-api.md#req-api-007-programmatic-model-onboarding), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
 
 ### POST /api/v1/models/{id}
 
@@ -660,7 +660,7 @@ POST /api/v1/models/{id}
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The updated model projection (`callableNames` reflects a changed call name). | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | The context window, model reference, display name, or call name was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_display_name` / `invalid_call_name` / `invalid_model_config` error body. |
+| `400` | The context window, model reference, VRAM budget, display name, or call name was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_model_config` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |
