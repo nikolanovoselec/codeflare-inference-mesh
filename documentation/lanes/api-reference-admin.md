@@ -222,9 +222,9 @@ POST /admin/setup-tokens
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `201` | Setup token is displayed once, stored as a verifier, and expires after 24h. | `{ "setupToken": string, "expiresAt": number }` |
-| `401` | Admin credential is missing or invalid. | Error object. |
+| `401` | Admin credential is missing or invalid; the response is identical whether or not setup has completed. | Error object. |
 
-**Implements:** [REQ-ADM-003](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md), [REQ-ADM-003](../../sdd/spec/setup-admin.md)
 
 ### GET /admin/installers/:platform
 

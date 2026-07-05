@@ -592,6 +592,14 @@ describe('router worker behavioral contracts', () => {
     expect((await router(new Request('https://router.test/v1/models', { headers: bearer('admin-secret') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/admin/status', { headers: bearer(setup.setupToken) }))).status).toBe(401)
     expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: bearer(setup.setupToken), body: JSON.stringify({ nodeId: 'node-a' }) }))).status).not.toBe(200)
+
+    // Admin credentials must never authenticate a node heartbeat: claim a real node, then present the admin token as its identity.
+    const claimed = await (await router(new Request('https://router.test/node/claim', {
+      method: 'POST',
+      headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-smoke-qwen25-1.5b'], capacity: 1 })
+    }))).json() as { nodeId: string }
+    expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ nodeId: claimed.nodeId }) }))).status).toBe(401)
   })
 
   it('REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API', async () => {
@@ -2272,6 +2280,7 @@ describe('Access-first setup and host gating contracts', () => {
   })
 
   it('REQ-ADM-002 failed admin authentication returns an identical unauthorized response before and after setup completes', async () => {
+    // SetupStateNondisclosureTestAnchor
     // Pre-setup: no Access config, so admin routes fall back to the bootstrap admin token.
     const before = routerFixture()
     const beforeResponse = await before.router(new Request(`https://${HOST}/admin/setup-tokens`, { method: 'POST', headers: bearer('wrong-secret') }))
