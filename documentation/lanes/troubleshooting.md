@@ -57,13 +57,9 @@
 
 **Symptom:** Client receives `429` with `no-node` plus a request ID.
 
-**Cause:** No eligible node can currently serve the requested public model.
+**Cause:** No eligible node can currently serve the requested public model, or a prior request reserved the node but its release never landed — for example an AI Gateway retry abandoned the response stream — leaving the node's in-flight count elevated (on a capacity-1 node this reads as a persistent `no-node` even though the node is healthy and idle).
 
-**Fix:** Use the request ID to inspect admin status, free an in-flight request, start another compatible node, or switch the public alias to a ready fallback profile. ([REQ-SCH-005](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md))
-
-**Cause (stale reservation):** A prior request reserved the node but its release never landed — for example an AI Gateway retry abandoned the response stream — leaving the node's in-flight count elevated. On a capacity-1 node this reads as a persistent `no-node` even though the node is healthy and idle.
-
-**Fix:** No action needed. The scheduler reclaims a reservation once its 30-minute TTL lapses, on the next scheduling decision, so the node becomes schedulable again automatically. ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
+**Fix:** Use the request ID to inspect admin status, free an in-flight request, start another compatible node, or switch the public alias to a ready fallback profile. A stale reservation needs no action: the scheduler reclaims it once its 30-minute TTL lapses, on the next scheduling decision, so the node becomes schedulable again automatically. ([REQ-SCH-005](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
 
 ## Session latency suddenly increases
 

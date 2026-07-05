@@ -234,6 +234,22 @@ describe('D1 store behavioral contracts', () => {
     expect(rebuilt.reservation).toMatchObject({ reservationId: 'reservation-b', nodeId: 'node-a', publicModel: 'codeflare-mesh', profileId: profile.id })
   })
 
+  it('REQ-SCH-002 lists only unreleased reservations past their TTL over D1', async () => {
+    const db = new FakeD1Database()
+    const store = new D1Store(db as unknown as D1Database, () => 1_700_000_000_000)
+    const rec = (id: string, expiresAt: number, releasedAt?: number): ReservationRecord => ({ reservationId: id, nodeId: 'node-a', sessionId: 'session-' + id, publicModel: 'codeflare-mesh', profileId: 'profile-a', upstreamModel: 'upstream-a', expiresAt, ...(releasedAt !== undefined ? { releasedAt } : {}) })
+    await store.putReservation(rec('open-expired', 1_000))
+    await store.putReservation(rec('open-fresh', 9_000))
+    await store.putReservation(rec('released-expired', 1_000, 500))
+    await store.putReservation(rec('released-fresh', 9_000, 500))
+
+    const open = await store.listOpenExpiredReservations(2_000)
+
+    expect(open.map((reservation) => reservation.reservationId)).toEqual(['open-expired'])
+    expect(open[0]).toMatchObject({ reservationId: 'open-expired', nodeId: 'node-a', expiresAt: 1_000 })
+    expect(open[0]!.releasedAt).toBeUndefined()
+  })
+
   it('REQ-SEC-002 listNodes excludes revoked tombstone rows that getNode can still reach', async () => {
     const db = new FakeD1Database()
     const store = new D1Store(db as unknown as D1Database, () => 1_700_000_000_000)
