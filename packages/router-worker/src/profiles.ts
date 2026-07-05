@@ -104,7 +104,7 @@ export function slugifyModelRef(ref: string): string {
 // omitted it falls back to the model reference's last segment. The bind port
 // advances past every existing profile so a later live process never collides on
 // the mesh bind port.
-export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string }): ModelProfile {
+export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string | undefined }): ModelProfile {
   const ref = input.modelRef.trim()
   const slug = slugifyModelRef(ref)
   const segment = modelRefSegment(ref)
