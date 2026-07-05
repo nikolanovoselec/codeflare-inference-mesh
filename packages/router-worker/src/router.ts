@@ -7,7 +7,7 @@ import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToke
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
-import { buildCustomProfile, DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
+import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
@@ -92,6 +92,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
       if (url.pathname === '/admin/profiles/add' && request.method === 'POST') return await handleProfileAdd(request, deps, id, now())
       if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
+      if (url.pathname === '/admin/profiles/delete' && request.method === 'POST') return await handleProfileDelete(request, deps, id, now())
       if (url.pathname === '/admin/settings' && request.method === 'POST') return await handleAdminSettings(request, deps, id, now())
       if (url.pathname === '/admin/mesh/rotate' && request.method === 'POST') return await handleAdminMeshRotate(request, deps, id, now())
       if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
@@ -112,6 +113,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/models' && request.method === 'POST') return await handleApiModelAdd(request, deps, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/enable$/) && request.method === 'POST') return await handleApiModelEnable(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/disable$/) && request.method === 'POST') return await handleApiModelDisable(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'DELETE') return await handleApiModelDelete(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'POST') return await handleApiModelConfigure(request, deps, url, id, now())
       if (url.pathname === '/api/v1/agent-versions' && request.method === 'GET') return await handleApiAgentVersions(request, deps, id, now())
       if (url.pathname === '/api/v1/agent-version' && request.method === 'PUT') return await handleApiAgentVersionSet(request, deps, id, now())
@@ -1149,6 +1151,43 @@ async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: 
   await deps.store.setProfile(profile)
   await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: `automation:${automation.id}`, target: profile.id, detail: { modelRef, split } })
   return json({ ok: true, model: toApiModel(profile) }, 201, requestId)
+}
+
+// classifyModelDeletion is the single deletion rule the console and API both obey so
+// they never diverge: a model can be removed only when it is a custom (non-default)
+// profile that is switched off. A default profile re-seeds on boot, and deleting the
+// active model would 404 the stable codeflare-mesh route, so both are refused.
+function classifyModelDeletion(profiles: readonly ModelProfile[], profileId: string): { profile: ModelProfile } | { error: string; status: number } {
+  const profile = profiles.find((candidate) => candidate.id === profileId)
+  if (!profile) return { error: 'unknown_profile', status: 404 }
+  if (isDefaultModelId(profileId)) return { error: 'model_builtin', status: 409 }
+  if (profile.active) return { error: 'model_active', status: 409 }
+  return { profile }
+}
+
+async function handleApiModelDelete(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  const profileId = decodeURIComponent(url.pathname.split('/').pop() ?? '')
+  const outcome = classifyModelDeletion(await deps.store.listProfiles(), profileId)
+  if ('error' in outcome) return json({ error: outcome.error, requestId }, outcome.status, requestId)
+  await deps.store.deleteProfile(profileId)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_deleted', at: now, actor: `automation:${automation.id}`, target: profileId, detail: {} })
+  return json({ ok: true, id: profileId }, 200, requestId)
+}
+
+// handleProfileDelete is the Access-session twin of handleApiModelDelete: the console
+// removes a custom, switched-off model through the same shared deletion rules.
+async function handleProfileDelete(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ profileId?: string }>(request)
+  const profileId = typeof body?.profileId === 'string' ? body.profileId.trim() : ''
+  const outcome = classifyModelDeletion(await deps.store.listProfiles(), profileId)
+  if ('error' in outcome) return json({ error: outcome.error, requestId }, outcome.status, requestId)
+  await deps.store.deleteProfile(profileId)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_deleted', at: now, actor, target: profileId, detail: {} })
+  return json({ ok: true, profileId }, 200, requestId)
 }
 
 async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {

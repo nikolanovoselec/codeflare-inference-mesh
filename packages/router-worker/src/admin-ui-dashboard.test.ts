@@ -289,6 +289,67 @@ describe('dashboard overview contracts', () => {
     expect(JSON.parse(String(call?.init?.body)).maxVramGb).toBe(12.5)
   })
 
+  it('REQ-ADM-026 shows a Delete control only for a custom, switched-off model', async () => {
+    const profiles = [
+      { id: 'custom-qwen3-14b-gguf-q4-k-m', displayName: 'Qwen3-14B', publicAliases: ['codeflare-mesh', 'q'], active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } },
+      { id: 'custom-live', displayName: 'Live custom', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 32768, meshllm: { split: false, modelRef: 'y' } },
+      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: false, rolloutPercent: 0, contextWindow: 262144, meshllm: { split: false, modelRef: 'z' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
+    const deleteButton = () => descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.dataset.action === 'model-delete')
+
+    await harness.clickAction('model-detail', { profileId: 'custom-qwen3-14b-gguf-q4-k-m' })
+    const del = deleteButton()
+    expect(del, 'a custom, off model exposes Delete').toBeDefined()
+    expect(del!.dataset.profileId).toBe('custom-qwen3-14b-gguf-q4-k-m')
+    expect(del!.dataset.confirm, 'delete must arm before submitting').toBeTruthy()
+    await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
+
+    await harness.clickAction('model-detail', { profileId: 'custom-live' })
+    expect(deleteButton(), 'an active model hides Delete (turn it off first)').toBeUndefined()
+    await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
+
+    await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
+    expect(deleteButton(), 'a built-in model hides Delete (it re-seeds)').toBeUndefined()
+  })
+
+  it('REQ-ADM-026 deletes a model from the drawer through the profiles delete endpoint and closes the drawer', async () => {
+    const profiles = [
+      { id: 'custom-gone', displayName: 'Gone', publicAliases: ['codeflare-mesh', 'g'], active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'r' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }), respond: (path, init) => {
+      if (path === '/admin/profiles/delete' && (init?.method || 'GET') === 'POST') return Response.json({ ok: true, profileId: 'custom-gone' })
+      return undefined
+    } })
+    await harness.clickAction('model-detail', { profileId: 'custom-gone' })
+    expect(harness.byId(ADMIN_UI_DRAWER.containerId).hidden).toBe(false)
+    await harness.clickAction('model-delete', { profileId: 'custom-gone', out: 'model-edit-output' })
+    await harness.flush(5)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/delete')
+    expect(call, 'delete posts to /admin/profiles/delete').toBeDefined()
+    expect(JSON.parse(String(call?.init?.body)).profileId).toBe('custom-gone')
+    expect(harness.byId(ADMIN_UI_DRAWER.containerId).hidden, 'drawer closes after delete').toBe(true)
+  })
+
+  it('REQ-ADM-026 holds the status poll while a destructive confirm is armed so it is not clobbered', async () => {
+    const profiles = [
+      { id: 'custom-keep', displayName: 'Keep', publicAliases: ['codeflare-mesh', 'k'], active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'r' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
+    await harness.clickAction('model-detail', { profileId: 'custom-keep' })
+    const del = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.dataset.action === 'model-delete')
+    expect(del, 'drawer exposes the delete control').toBeDefined()
+    // The first click arms the confirm and must not submit or clear.
+    await harness.click(del!)
+    expect(del!.dataset.armed).toBe('true')
+    const baseline = statusFetches(harness)
+    // Firing the poll while armed must skip the refresh that would rebuild the cards and drop the arm.
+    harness.runTimers()
+    await harness.flush(10)
+    expect(statusFetches(harness), 'poll is held while a confirm is armed').toBe(baseline)
+    expect(harness.timers.some((timer) => timer.delay === ADMIN_UI_POLLING.intervalMs && !timer.cancelled), 'poll keeps rescheduling').toBe(true)
+  })
+
   it('REQ-ADM-022 manages API keys from Settings: list renders, create reveals the secret once, rotate and revoke call the API', async () => {
     const harness = await dashboardHarness({ respond: (path, init) => {
       const method = (init && init.method) || 'GET'

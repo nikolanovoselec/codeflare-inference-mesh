@@ -17,6 +17,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   let nodeFilter = 'all';
   let nodeSearch = '';
   let pollTimer;
+  // Confirm-arm state lives at this scope (not only inside the confirm closure) so the
+  // status poll can see it and skip the re-render that would otherwise destroy an armed
+  // button mid-confirm — the root of the earlier confirm flake.
+  let armedButton;
+  let disarmTimer;
   let toksSamples = [];
   const byId = (id) => document.getElementById(id);
   const tokenKey = 'codeflareInferenceMeshAdminToken';
@@ -138,6 +143,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     pollTimer = setTimeout(() => {
       pollTimer = undefined;
       if (document.hidden || document.body.dataset.view !== 'dashboard') return;
+      // A refresh rebuilds the cards and would drop a pending confirm; hold it while a
+      // destructive action is armed, and resume on the next tick after the arm clears.
+      if (armedButton && armedButton.dataset.armed === 'true') { schedulePoll(); return; }
       refreshStatus().catch(() => undefined);
       schedulePoll();
     }, config.polling.intervalMs);
@@ -653,6 +661,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     save.dataset.profileId = profile.id;
     save.dataset.out = 'model-edit-output';
     bodyEl.appendChild(save);
+    // A custom, switched-off model can be permanently removed here; built-in models
+    // re-seed on boot and the active model owns the route, so neither shows Delete.
+    if (String(profile.id).indexOf('custom-') === 0 && !profile.active) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn btn-danger';
+      del.textContent = 'Delete model';
+      del.dataset.action = 'model-delete';
+      del.dataset.profileId = profile.id;
+      del.dataset.confirm = 'Delete this model permanently?';
+      del.dataset.out = 'model-edit-output';
+      bodyEl.appendChild(del);
+    }
     bodyEl.appendChild(output2('model-edit-output'));
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
     const servingNodes = nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.some((model) => aliases.indexOf(model) >= 0));
@@ -1207,8 +1228,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
 
   // --- destructive-action arming ---------------------------------------------
-  let disarmTimer;
-  let armedButton;
   const disarm = (button) => {
     if (!button || button.dataset.armed !== 'true') return;
     delete button.dataset.armed;
@@ -1245,6 +1264,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'node-revoke': 'node-output',
     'model-toggle': 'models-output',
     'model-save': 'model-edit-output',
+    'model-delete': 'model-edit-output',
     'model-add': 'model-add-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
@@ -1378,6 +1398,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       toast('Model settings saved');
       await refreshStatus().catch(() => undefined);
+    } else if (action === 'model-delete') {
+      const id = button.dataset.profileId || '';
+      setOutput(out, await request('/admin/profiles/delete', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id }) }));
+      closeDrawer();
+      await refreshStatus().catch(() => undefined);
+      toast('Model deleted');
     } else if (action === 'api-key-create') {
       revealApiKey(await request('/api/v1/keys', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
       await loadApiKeys().catch(() => undefined);

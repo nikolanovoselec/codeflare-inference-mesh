@@ -37,6 +37,10 @@ export class MemoryStore implements Store {
     this.profiles.set(profileId, { ...profile, rolloutPercent, active: rolloutPercent > 0, version: profile.version + 1 })
   }
 
+  async deleteProfile(profileId: string): Promise<void> {
+    this.profiles.delete(profileId)
+  }
+
   async listNodes(_now: number): Promise<readonly NodeRecord[]> {
     return [...this.nodes.values()]
   }

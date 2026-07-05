@@ -189,6 +189,32 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ---
 
+### REQ-API-008: Programmatic model deletion
+
+**Intent:** Fleet managers must remove a custom model programmatically, wrapping the same deletion rules the console uses, so automation can prune onboarded models without an Access session and the API and console never diverge.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `DELETE /api/v1/models/{id}` with an automation key removes a custom, switched-off model and returns `{ ok, id }`. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 deletes a custom inactive model over the API) -->
+2. Deleting the active model is rejected with status 409 without removing it. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses deleting the active model) -->
+3. Deleting a built-in model is rejected with status 409 without removing it. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses deleting a built-in model) -->
+4. Deleting an unknown model returns status 404. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 returns 404 deleting an unknown model) -->
+5. Deleting a model refuses a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses model deletion without an automation key) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-API-007](#req-api-007-programmatic-model-onboarding), [REQ-RUN-012](runtime-profiles.md#req-run-012-custom-model-removal)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference.md](../../documentation/lanes/api-reference.md)

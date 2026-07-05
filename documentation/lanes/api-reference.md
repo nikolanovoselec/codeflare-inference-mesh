@@ -710,6 +710,29 @@ POST /api/v1/models/{id}/disable
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
 
+### DELETE /api/v1/models/{id}
+
+Permanently removes a custom, switched-off model from the catalog.
+
+```http
+DELETE /api/v1/models/{id}
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The model was removed. | `{ "ok": true, "id": string }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No model with that id exists. | `unknown_profile` error body. |
+| `409` | The model is a built-in (it re-seeds on boot) or is active; nothing was removed. | `model_builtin` or `model_active` error body. |
+
+**Implements:** [REQ-API-008](../../sdd/spec/control-plane-api.md#req-api-008-programmatic-model-deletion)
+
 ### GET /api/v1/agent-versions
 
 Lists the available node-agent versions.

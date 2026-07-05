@@ -656,6 +656,38 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-026: Delete-a-model console control
+
+**Intent:** An admin must be able to remove a custom model from the console once it is no longer needed, with a delete control that appears only where deletion is allowed and a confirm that cannot be lost to a background refresh before the operator commits.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The model Manage drawer shows a Delete control only for a custom, switched-off model, and hides it for a built-in model or the active model. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 shows a Delete control only for a custom, switched-off model) -->
+
+2. Deleting from the drawer posts to the profile-delete endpoint and closes the drawer, so the removed model leaves the list on the next refresh. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 deletes a model from the drawer through the profiles delete endpoint and closes the drawer) -->
+
+3. `POST /admin/profiles/delete` under admin authentication removes the named custom model. <!-- @impl: packages/router-worker/src/router.ts::handleProfileDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 deletes a custom model from the console) -->
+
+4. The console delete refuses a built-in model with status 409. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console deletion of a built-in model) -->
+
+5. The console delete refuses a request that carries no admin credential. <!-- @impl: packages/router-worker/src/router.ts::handleProfileDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console model deletion without an admin credential) -->
+
+6. While a destructive confirm is armed, the dashboard holds its status poll so a refresh cannot rebuild the control and drop the confirm before the operator commits. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 holds the status poll while a destructive confirm is armed so it is not clobbered) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-012](runtime-profiles.md#req-run-012-custom-model-removal), [REQ-ADM-025](#req-adm-025-add-a-model-console-control), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)

@@ -3302,6 +3302,97 @@ describe('control-plane API (/api/v1)', () => {
     expect(event?.detail).toMatchObject({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', split: false })
   })
 
+  const apiDeleteModel = (router: (request: Request) => Promise<Response>, token: string | undefined, id: string) =>
+    router(new Request('https://router.test/api/v1/models/' + id, { method: 'DELETE', headers: token ? bearer(token) : {} }))
+
+  const adminAddModel = (router: (request: Request) => Promise<Response>, ref: string, mode = 'single', token = 'admin-secret') =>
+    router(new Request('https://router.test/admin/profiles/add', { method: 'POST', headers: { ...bearer(token), 'content-type': 'application/json' }, body: JSON.stringify({ modelRef: ref, mode }) }))
+
+  const adminDeleteModel = (router: (request: Request) => Promise<Response>, profileId: string, token = 'admin-secret') =>
+    router(new Request('https://router.test/admin/profiles/delete', { method: 'POST', headers: { ...bearer(token), 'content-type': 'application/json' }, body: JSON.stringify({ profileId }) }))
+
+  const addApiModelId = async (router: (request: Request) => Promise<Response>, token: string, ref = 'unsloth/Qwen3-14B-GGUF:Q4_K_M') =>
+    (await (await apiAddModel(router, token, ref, 'single')).json() as { model: { id: string } }).model.id
+
+  it('REQ-API-008 deletes a custom inactive model over the API', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const id = await addApiModelId(router, key.token)
+    const res = await apiDeleteModel(router, key.token, id)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, id })
+    expect((await store.listProfiles()).some((profile) => profile.id === id)).toBe(false)
+  })
+
+  it('REQ-API-008 refuses deleting the active model', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const id = await addApiModelId(router, key.token)
+    await router(new Request('https://router.test/api/v1/models/' + id + '/enable', { method: 'POST', headers: bearer(key.token) }))
+    const res = await apiDeleteModel(router, key.token, id)
+    expect(res.status).toBe(409)
+    expect((await res.json() as { error: string }).error).toBe('model_active')
+    expect((await store.listProfiles()).some((profile) => profile.id === id)).toBe(true)
+  })
+
+  it('REQ-API-008 refuses deleting a built-in model', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiDeleteModel(router, key.token, 'mesh-default-qwen36-35b')
+    expect(res.status).toBe(409)
+    expect((await res.json() as { error: string }).error).toBe('model_builtin')
+    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-default-qwen36-35b')).toBe(true)
+  })
+
+  it('REQ-API-008 returns 404 deleting an unknown model', async () => {
+    const { router } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiDeleteModel(router, key.token, 'custom-does-not-exist')
+    expect(res.status).toBe(404)
+  })
+
+  it('REQ-API-008 refuses model deletion without an automation key', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const id = await addApiModelId(router, key.token)
+    const res = await apiDeleteModel(router, undefined, id)
+    expect(res.status).toBe(401)
+    expect((await store.listProfiles()).some((profile) => profile.id === id)).toBe(true)
+  })
+
+  it('REQ-ADM-026 deletes a custom model from the console', async () => {
+    const { router, store } = routerFixture()
+    const added = await (await adminAddModel(router, 'unsloth/Qwen3-14B-GGUF:Q4_K_M')).json() as { profileId: string }
+    const res = await adminDeleteModel(router, added.profileId)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, profileId: added.profileId })
+    expect((await store.listProfiles()).some((profile) => profile.id === added.profileId)).toBe(false)
+  })
+
+  it('REQ-ADM-026 refuses console deletion of a built-in model', async () => {
+    const { router, store } = routerFixture()
+    const res = await adminDeleteModel(router, 'mesh-default-qwen36-35b')
+    expect(res.status).toBe(409)
+    expect((await res.json() as { error: string }).error).toBe('model_builtin')
+    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-default-qwen36-35b')).toBe(true)
+  })
+
+  it('REQ-ADM-026 refuses console model deletion without an admin credential', async () => {
+    const { router } = routerFixture()
+    const res = await adminDeleteModel(router, 'custom-anything', 'not-admin')
+    expect(res.status).toBe(401)
+  })
+
+  it('REQ-OBS-006 records a profile-deleted audit event for model deletion', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const id = await addApiModelId(router, key.token)
+    await apiDeleteModel(router, key.token, id)
+    const event = (await store.listAudit(10)).find((entry) => entry.type === 'profile_deleted')
+    expect(event?.target).toBe(id)
+    expect(event?.actor).toMatch(/^automation:/)
+  })
+
   it('REQ-API-005 configures a model context window and rejects invalid input', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)

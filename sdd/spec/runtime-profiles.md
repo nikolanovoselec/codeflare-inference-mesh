@@ -301,6 +301,34 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ---
 
+### REQ-RUN-012: Custom model removal
+
+**Intent:** Operators must be able to remove a custom model they onboarded so the catalog does not accumulate abandoned entries, while the router protects the models that must not disappear: the shipped defaults that re-seed on boot and the one model currently answering the stable route.
+
+**Applies To:** Admin, Automation
+
+**Acceptance Criteria:**
+
+1. A custom (non-default), switched-off model is permanently removed from the catalog. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @impl: packages/router-worker/src/store.ts::deleteProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 deletes a custom inactive model over the API) -->
+
+2. Removing the active model is refused with status 409 so the stable `codeflare-mesh` route is never left without a target. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses deleting the active model) -->
+
+3. Removing a default (shipped) model is refused with status 409 because it re-seeds on the next boot. <!-- @impl: packages/router-worker/src/profiles.ts::isDefaultModelId --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses deleting a built-in model) -->
+
+4. Removing an unknown model returns status 404 and changes nothing. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 returns 404 deleting an unknown model) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-RUN-001](#req-run-001-stable-public-model), [REQ-RUN-002](#req-run-002-default-model-profiles)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)

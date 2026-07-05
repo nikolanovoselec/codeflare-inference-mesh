@@ -57,6 +57,10 @@ export class D1Store implements Store {
     await this.setProfile({ ...profile, active: rolloutPercent > 0, rolloutPercent, version: profile.version + 1 })
   }
 
+  async deleteProfile(profileId: string): Promise<void> {
+    await this.db.prepare('DELETE FROM model_profiles WHERE id = ?').bind(profileId).run()
+  }
+
   async listNodes(now: number): Promise<readonly NodeRecord[]> {
     const rows = await this.db.prepare('SELECT node_json, in_flight FROM nodes ORDER BY id').all<NodeRow>()
     return (rows.results ?? []).map((row) => materializeNode(nodeFromRow(row), now))

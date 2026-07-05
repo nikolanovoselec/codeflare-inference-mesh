@@ -529,6 +529,31 @@ POST /admin/profiles/add
 
 **Implements:** [REQ-RUN-011](../../sdd/spec/runtime-profiles.md), [REQ-ADM-025](../../sdd/spec/setup-admin.md)
 
+### POST /admin/profiles/delete
+
+Permanently removes a custom, switched-off model profile from the catalog under the admin's Access session; built-in models (which re-seed on boot) and the active model are refused.
+
+```http
+POST /admin/profiles/delete
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `profileId`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The custom model is removed and a `profile_deleted` audit event records it. | `{ "ok": true, "profileId": string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `404` | No profile with that id exists. | `{ "error": "unknown_profile", "requestId": string }` |
+| `409` | The profile is a built-in (re-seeds on boot) or is active; nothing was removed. | `model_builtin` or `model_active` error body with `requestId`. |
+
+**Implements:** [REQ-RUN-012](../../sdd/spec/runtime-profiles.md), [REQ-ADM-026](../../sdd/spec/setup-admin.md)
+
 ### POST /admin/mesh/rotate
 
 Rotates a profile's mesh: increments the rotation counter and clears the stored mesh id, seed, and invite-token set so the fleet reforms a new mesh.

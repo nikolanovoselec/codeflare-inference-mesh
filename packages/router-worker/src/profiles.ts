@@ -115,6 +115,12 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
   }
 }
 
+// A default (shipped) profile re-seeds on boot, so it cannot be permanently deleted;
+// deletion is reserved for custom onboarded models.
+export function isDefaultModelId(profileId: string): boolean {
+  return DEFAULT_MODEL_PROFILES.some((profile) => profile.id === profileId)
+}
+
 export const PROFILE_ANCHORS = {
   REQ_RUN_001: 'REQ-RUN-001',
   REQ_RUN_002: 'REQ-RUN-002',

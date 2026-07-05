@@ -179,6 +179,7 @@ export interface Store {
   listProfiles(): Promise<readonly ModelProfile[]>
   setProfile(profile: ModelProfile): Promise<void>
   setActiveProfile(profileId: string, rolloutPercent: number): Promise<void>
+  deleteProfile(profileId: string): Promise<void>
   listNodes(now: number): Promise<readonly NodeRecord[]>
   getNode(nodeId: string): Promise<NodeRecord | undefined>
   upsertNode(node: NodeRecord): Promise<void>
