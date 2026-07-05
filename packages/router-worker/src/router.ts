@@ -120,6 +120,10 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/events' && request.method === 'GET') return await handleApiEvents(request, deps, url, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
+      // A malformed JSON body makes request.json() throw a SyntaxError — that is client error,
+      // not a router fault, so answer 400 invalid_json (matching the chat endpoint's contract)
+      // instead of letting it fall through to a 500 that would also spam the audit log.
+      if (error instanceof SyntaxError) return json({ error: 'invalid_json', requestId: id }, 400, id)
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
       return json({ error: 'internal_error', requestId: id }, 500, id)
     }

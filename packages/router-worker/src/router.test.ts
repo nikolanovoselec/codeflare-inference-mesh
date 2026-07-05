@@ -3179,6 +3179,15 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer('admin-secret') }))).status).toBe(401)
   })
 
+  it('REQ-API-002 rejects a malformed JSON body with 400 invalid_json', async () => {
+    const { router } = routerFixture()
+    const key = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/models', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: '{ not valid json' }))
+    // A malformed body is client error, not a router fault: 400 invalid_json, never a 500.
+    expect(res.status).toBe(400)
+    expect((await res.json() as { error: string }).error).toBe('invalid_json')
+  })
+
   it('REQ-API-003 mints an enrollment token from an automation key', async () => {
     const { router } = routerFixture()
     const key = await mintKey(router)
