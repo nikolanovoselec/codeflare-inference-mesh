@@ -120,10 +120,10 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/events' && request.method === 'GET') return await handleApiEvents(request, deps, url, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
-      // A malformed JSON body makes request.json() throw a SyntaxError — that is client error,
-      // not a router fault, so answer 400 invalid_json (matching the chat endpoint's contract)
-      // instead of letting it fall through to a 500 that would also spam the audit log.
-      if (error instanceof SyntaxError) return json({ error: 'invalid_json', requestId: id }, 400, id)
+      // A malformed request BODY (readJson) is client error, not a router fault: answer 400
+      // invalid_json (matching the chat endpoint's contract) instead of a 500. Scoped to the
+      // request-body boundary so a server-side JSON.parse fault still hits the audited 500 below.
+      if (error instanceof InvalidJsonBodyError) return json({ error: 'invalid_json', requestId: id }, 400, id)
       await deps.store.appendAudit({ id, type: 'router_error', at: now(), actor: 'system', detail: { error: String(error) } })
       return json({ error: 'internal_error', requestId: id }, 500, id)
     }
@@ -1374,8 +1374,17 @@ function html(body: string, requestId: string): Response {
   })
 }
 
+// Thrown only when a request BODY fails to parse as JSON, so the top-level catch can answer
+// 400 invalid_json for that client error without also swallowing server-side JSON.parse faults
+// (stored-record reads, decrypt) — those must still surface as an audited 500.
+class InvalidJsonBodyError extends Error {}
+
 async function readJson<T>(request: Request): Promise<T> {
-  return await request.json() as T
+  try {
+    return await request.json() as T
+  } catch {
+    throw new InvalidJsonBodyError()
+  }
 }
 
 async function readOptionalObject<T>(request: Request): Promise<T | undefined> {
