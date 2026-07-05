@@ -193,7 +193,7 @@ POST /admin/playground/chat
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `model` (public alias) and `messages` (chat message array). The body is optional — an absent body falls back to defaults (empty `messages`, the gateway's default model) — but a present, malformed body is rejected with the shared `400` `invalid_json`.
+**Request body:** JSON body with `model` (public alias) and `messages` (chat message array). The body is optional — an absent body falls back to defaults (empty `messages`, the gateway's public model) — but a present, malformed body is rejected with the shared `400` `invalid_json`.
 
 **Response**
 
