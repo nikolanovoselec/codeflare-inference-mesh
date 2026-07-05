@@ -149,8 +149,8 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The UI exposes initial setup, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain provisioning, node revocation, the mesh health panel, mesh-profile readiness, a unified per-model on/off and settings list, and mesh-secret rotation controls. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 exposes mesh health, rotation, and activation controls) -->
-2. The UI provides a one-click "Rotate mesh secret" action that submits `POST /admin/mesh/rotate` for the selected mesh profile. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 wires the one-click rotate action to the mesh rotate endpoint) -->
+1. The UI exposes initial setup, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain provisioning, node revocation, the mesh-secret-missing banner, a unified per-model on/off and settings list, and the agent-version control; a model's mesh health detail lives in that model's Manage drawer rather than a standalone section. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 exposes the mesh-key banner, the model list, and the agent-version control) -->
+2. The UI provides a one-click "Reset sharing key" action in a model's Manage drawer that submits `POST /admin/mesh/rotate` for the model it belongs to. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 wires the one-click rotate action to the mesh rotate endpoint) -->
 3. The Models section shows every model as one card with a per-model on/off toggle: turning a model on submits `POST /admin/profiles/activate`, and turning it off submits `POST /admin/profiles/rollout` at zero percent, so a model with a unique callable name is never hidden from selection. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 turns a model on from the unified model list) -->
 4. Activating a profile records a `profile_activated` audit event. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-009 activates profiles alias-exclusively and records the audit event) -->
 
@@ -175,7 +175,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. The Worker pre-renders the entry view from host and setup phase: the setup wizard while setup is in progress, the locked console page on the bootstrap origin after completion, and the dashboard on the custom domain. <!-- @impl: packages/router-worker/src/router.ts::adminUiState --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_VIEWS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 pre-renders the entry view from host and setup phase) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-014 locks non-custom-domain hosts after setup completes) -->
-2. The authenticated dashboard separates operations into Overview, Nodes, Models, Routing, Mesh, Playground, and Settings sections behind persistent navigation that marks the active section. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_NAV --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
+2. The authenticated dashboard separates operations into Overview, Nodes, Models, Routing, Playground, and Settings sections behind persistent navigation that marks the active section; model sharing is not its own section, since a sharded model is just a model whose mesh detail lives in its Manage drawer. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_NAV --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
 3. Each navigation entry resolves to a rendered dashboard section, and mobile viewports reach every section through a bottom tab bar. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
 4. Every text, number, and select control carries a visible label, with inline hints and per-action feedback in predictable placement. <!-- @impl: packages/router-worker/src/admin-ui-components.ts::ADMIN_UI_FIELD_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 labels every dashboard control visibly) -->
 5. Destructive actions arm into an explicit same-control confirm step that auto-disarms before submitting. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-007 arms destructive controls and auto-disarms before submitting) -->
@@ -438,7 +438,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Playground section offers one model option per model that is on, labeled by the canonical display name and valued by the callable name the gateway resolves, populated from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 lists one playground option per model on, labeled by name and valued by callable name) -->
+1. The Playground section offers one model option per model that is on, valued by the model's own callable name the gateway resolves and labeled with that callable name paired with the model name, populated from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 lists one playground option per model on, valued by callable name and labeled with the model name) -->
 2. Sending a prompt submits it through the admin playground endpoint and renders the streamed response incrementally. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 streams the playground response incrementally as chunks arrive) -->
 3. The playground endpoint forwards prompts through the configured AI Gateway route and streams the response back. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 forwards playground prompts through the configured gateway route and strips upstream secrets) -->
 4. The playground endpoint requires a valid console role (admin or read-only user) and never exposes gateway credentials to the browser. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 rejects unauthenticated playground requests) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 REQ-ADM-017 lets the read-only user role reach the playground endpoint) -->
@@ -467,6 +467,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 1. The Models section lists models that are on before models that are off, preserving source order within each group. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 orders profile rows active-first regardless of source order) -->
 2. Each model renders as one card labeled by its canonical display name (not its wiring id) with an on/off toggle whose state and label reflect whether the model is on. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 shows each model as one card with its canonical name and an on/off toggle) -->
+3. Each model card carries a serving-mode badge — single machine (the whole model on each machine) or split across machines (machines share the model's layers) — as a badge attribute rather than baked into the model name. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 badges each model with its serving mode instead of baking it into the name) -->
 
 **Constraints:** None.
 
@@ -681,6 +682,34 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-012](runtime-profiles.md#req-run-012-custom-model-removal), [REQ-ADM-025](#req-adm-025-add-a-model-console-control), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-027: Model naming and rename
+
+**Intent:** An operator must be able to name a model when adding it and rename it afterwards — both the human display name and the model's own callable name — so a model is never stuck with a machine-derived label or an alias nobody chose, without ever colliding with the shared `codeflare-mesh` route or another model's alias.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The add-model form carries a Name field; a supplied name becomes the model's display name, and a blank name defaults to the model-file segment, with the serving mode carried by a badge rather than baked into the name. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-027 names a model on creation and defaults the name to the model file) -->
+
+2. The Manage drawer exposes editable Name and "Call it" fields prefilled with the current display name and the model's own callable name (its non-shared alias); saving a changed name sets the display name and a changed call name replaces that callable alias while keeping the shared `codeflare-mesh` alias. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @impl: packages/router-worker/src/router.ts::handleProfileConfig --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer listing the nodes serving each alias) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-027 renames a model display name and call name with collision and reserved-alias guards) -->
+
+3. A call name must slugify to a non-empty token, cannot be the reserved shared alias `codeflare-mesh` (409), and cannot collide with another model's alias (409); a blank display name is rejected (400); an unrelated setting save leaves name and aliases untouched. <!-- @impl: packages/router-worker/src/router.ts::handleProfileConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-027 renames a model display name and call name with collision and reserved-alias guards) -->
+
+4. The same naming is available to automation: `POST /api/v1/models` accepts an optional name, and `POST /api/v1/models/{id}` renames the display name and call name under the identical guards. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @impl: packages/router-worker/src/router.ts::handleApiModelConfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-027 renames a model over the automation API with the same guards) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-025](#req-adm-025-add-a-model-console-control), [REQ-ADM-021](#req-adm-021-model-serving-configuration), [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding)
 
 **Verification:** Automated test
 

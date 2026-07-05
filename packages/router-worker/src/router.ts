@@ -7,7 +7,7 @@ import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToke
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
-import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, STABLE_PUBLIC_MODEL } from './profiles'
+import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
@@ -532,14 +532,19 @@ async function handleCustomDomain(request: Request, deps: RouterDeps, requestId:
   return json({ valid: true, ...provisioned }, 200, requestId)
 }
 
+// handleNodeRevoke removes a machine outright: it revokes the node's credentials
+// and mesh tokens (so a still-running agent is rejected on its next heartbeat and
+// cannot rejoin) and then deletes the node row so the machine disappears from the
+// console immediately. The node_revoked audit event preserves the record; a real
+// re-enrollment mints a fresh row.
 async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const nodeId = decodeURIComponent(url.pathname.split('/')[3] ?? '')
-  await deps.store.revokeNode(nodeId, now)
   const nodeTokens = await deps.store.listTokens('node')
   await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))
   await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
+  await deps.store.deleteNode(nodeId)
   await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor, target: nodeId, detail: {} })
   return json({ ok: true }, 200, requestId)
 }
@@ -627,9 +632,10 @@ function applyNodeVramOverride(profiles: readonly ModelProfile[], override: numb
 async function handleProfileConfig(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number }>(request)
+  const body = await readJson<{ profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string }>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
-  const existing = (await deps.store.listProfiles()).find((profile) => profile.id === body.profileId)
+  const profiles = await deps.store.listProfiles()
+  const existing = profiles.find((profile) => profile.id === body.profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   const contextWindow = body.contextWindow ?? existing.contextWindow
   if (!Number.isInteger(contextWindow) || contextWindow <= 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
@@ -644,12 +650,30 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
     upstreamModel = modelRef
   }
   if (maxVram !== undefined) meshllm = { ...meshllm, maxVramGb: maxVram }
+  // Optional rename. The display name is the human label shown in the console; the
+  // call name is this model's own public alias, kept alongside the shared
+  // codeflare-mesh alias. A call name must slugify to a non-empty token, cannot be
+  // the reserved shared alias, and cannot collide with another model's alias.
+  let displayName = existing.displayName
+  if (body.name !== undefined) {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return json({ error: 'invalid_display_name', requestId }, 400, requestId)
+    displayName = name
+  }
+  let publicAliases = existing.publicAliases
+  if (body.callName !== undefined) {
+    const alias = slugify(typeof body.callName === 'string' ? body.callName : '')
+    if (!alias) return json({ error: 'invalid_call_name', requestId }, 400, requestId)
+    if (alias === STABLE_PUBLIC_MODEL) return json({ error: 'call_name_conflict', requestId }, 409, requestId)
+    if (profiles.some((profile) => profile.id !== existing.id && profile.publicAliases.includes(alias))) return json({ error: 'call_name_conflict', requestId }, 409, requestId)
+    publicAliases = [STABLE_PUBLIC_MODEL, alias]
+  }
   // Bump the version so a later deploy's default re-seed (shouldRefreshDefaultProfile
   // refreshes only when stored version <= shipped version) does not overwrite this edit.
-  const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, version: existing.version + 1 }
+  const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, displayName, publicAliases, version: existing.version + 1 }
   await deps.store.setProfile(updated)
   await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0 } })
-  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0 }, 200, requestId)
+  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0, displayName: updated.displayName, callNames: updated.publicAliases }, 200, requestId)
 }
 
 // handleProfileAdd creates a new inactive model profile from an operator-supplied
@@ -661,12 +685,13 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
 async function handleProfileAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ modelRef?: string; mode?: string }>(request)
+  const body = await readJson<{ modelRef?: string; mode?: string; name?: string }>(request)
   const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
   if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
   const split = body?.mode === 'split'
+  const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
-  const profile = buildCustomProfile({ modelRef, split, existing })
+  const profile = buildCustomProfile({ modelRef, split, existing, name })
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
   await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor, target: profile.id, detail: { modelRef, split } })
@@ -1105,10 +1130,10 @@ async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url
   const nodeId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
   const node = (await deps.store.listNodes(now)).find((candidate) => candidate.id === nodeId)
   if (!node) return json({ error: 'not_found', requestId }, 404, requestId)
-  await deps.store.revokeNode(nodeId, now)
   const nodeTokens = await deps.store.listTokens('node')
   await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))
   await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
+  await deps.store.deleteNode(nodeId)
   await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
   return json({ ok: true, id: nodeId }, 200, requestId)
 }
@@ -1141,12 +1166,13 @@ async function handleApiModelList(request: Request, deps: RouterDeps, requestId:
 async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ modelRef?: string; mode?: string }>(request)
+  const body = await readJson<{ modelRef?: string; mode?: string; name?: string }>(request)
   const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
   if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
   const split = body?.mode === 'split'
+  const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
-  const profile = buildCustomProfile({ modelRef, split, existing })
+  const profile = buildCustomProfile({ modelRef, split, existing, name })
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
   await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: `automation:${automation.id}`, target: profile.id, detail: { modelRef, split } })
@@ -1194,9 +1220,10 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
   const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
-  const body = await readJson<{ contextWindow?: number; modelRef?: string; maxVramGb?: number }>(request)
+  const body = await readJson<{ contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string }>(request)
   if (!body) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
-  const existing = (await deps.store.listProfiles()).find((profile) => profile.id === profileId)
+  const profiles = await deps.store.listProfiles()
+  const existing = profiles.find((profile) => profile.id === profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   const contextWindow = body.contextWindow ?? existing.contextWindow
   if (!Number.isInteger(contextWindow) || contextWindow <= 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
@@ -1211,7 +1238,24 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
     upstreamModel = modelRef
   }
   if (maxVram !== undefined) meshllm = { ...meshllm, maxVramGb: maxVram }
-  const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, version: existing.version + 1 }
+  // Rename parity with the console: name sets the display name; callName sets this
+  // model's own public alias (kept alongside the shared codeflare-mesh alias), with
+  // the same non-empty / not-reserved / no-collision rules.
+  let displayName = existing.displayName
+  if (body.name !== undefined) {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return json({ error: 'invalid_display_name', requestId }, 400, requestId)
+    displayName = name
+  }
+  let publicAliases = existing.publicAliases
+  if (body.callName !== undefined) {
+    const alias = slugify(typeof body.callName === 'string' ? body.callName : '')
+    if (!alias) return json({ error: 'invalid_call_name', requestId }, 400, requestId)
+    if (alias === STABLE_PUBLIC_MODEL) return json({ error: 'call_name_conflict', requestId }, 409, requestId)
+    if (profiles.some((profile) => profile.id !== existing.id && profile.publicAliases.includes(alias))) return json({ error: 'call_name_conflict', requestId }, 409, requestId)
+    publicAliases = [STABLE_PUBLIC_MODEL, alias]
+  }
+  const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, displayName, publicAliases, version: existing.version + 1 }
   await deps.store.setProfile(updated)
   await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef } })
   return json({ ok: true, model: toApiModel(updated) }, 200, requestId)

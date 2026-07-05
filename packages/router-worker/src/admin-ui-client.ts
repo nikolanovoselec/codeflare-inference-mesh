@@ -24,6 +24,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   let disarmTimer;
   let toksSamples = [];
   const byId = (id) => document.getElementById(id);
+  // The single stable public model id AI Gateway forwards (mirrors profiles.ts). A
+  // model's own callable name is any public alias other than this shared one.
+  const STABLE_PUBLIC_MODEL = 'codeflare-mesh';
+  const chipEl = (tone, text) => { const c = document.createElement('span'); c.className = 'chip'; if (tone) c.setAttribute('data-tone', tone); c.textContent = text; return c; };
+  const callName = (profile) => { const aliases = (profile && profile.publicAliases) || []; return aliases.find((alias) => alias !== STABLE_PUBLIC_MODEL) || aliases[0] || ''; };
   const tokenKey = 'codeflareInferenceMeshAdminToken';
   const savedToken = () => sessionStorage.getItem(tokenKey) || localStorage.getItem(tokenKey) || '';
   const storeToken = (value, remember) => {
@@ -619,9 +624,32 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const bodyEl = openDrawer(modelName(profile));
     if (!bodyEl) return;
     const aliases = profile.publicAliases || [];
-    bodyEl.appendChild(drawerField('aliases', 'Callers ask for', aliases.join(', '), aliases.join(', ')));
     bodyEl.appendChild(drawerField('active', 'Status', profile.active ? 'On' : 'Off'));
-    // Editable settings, saved through the validated profile-config endpoint.
+    // Editable settings, saved through the validated profile-config endpoint. Name is
+    // the human label; call name is this model's own public alias. Apps can always
+    // also reach whichever model is on through the shared codeflare-mesh name. Only a
+    // changed value is sent, so a default model keeps its extra canonical aliases.
+    const nameRow = document.createElement('label');
+    nameRow.className = 'drawer-row';
+    nameRow.textContent = 'Name';
+    const nameInput = document.createElement('input');
+    nameInput.id = 'model-edit-name';
+    nameInput.type = 'text';
+    nameInput.value = modelName(profile);
+    nameInput.dataset.original = modelName(profile);
+    nameRow.appendChild(nameInput);
+    bodyEl.appendChild(nameRow);
+    const callRow = document.createElement('label');
+    callRow.className = 'drawer-row';
+    callRow.textContent = 'Call it';
+    const callInput = document.createElement('input');
+    callInput.id = 'model-edit-callname';
+    callInput.type = 'text';
+    const currentCall = callName(profile);
+    callInput.value = currentCall;
+    callInput.dataset.original = currentCall;
+    callRow.appendChild(callInput);
+    bodyEl.appendChild(callRow);
     const ctxRow = document.createElement('label');
     ctxRow.className = 'drawer-row';
     ctxRow.textContent = 'Context window (tokens)';
@@ -685,6 +713,28 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       item.textContent = node.id;
       bodyEl.appendChild(item);
     });
+    // Mesh detail lives with the model it belongs to: both a single-machine model
+    // (every machine runs the whole model) and a split model (machines share the
+    // model's layers) form a mesh, so this shows whenever this model has one.
+    const meshEntries = lastStatus && Array.isArray(lastStatus.meshHealth) ? lastStatus.meshHealth : [];
+    const meshEntry = meshEntries.find((entry) => entry.profileId === profile.id);
+    if (meshEntry) {
+      const heading = document.createElement('h3');
+      heading.className = 'drawer-subhead';
+      heading.textContent = 'Mesh';
+      bodyEl.appendChild(heading);
+      bodyEl.appendChild(buildMeshCard(meshEntry));
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'btn btn-danger';
+      reset.textContent = 'Reset sharing key';
+      reset.dataset.action = 'mesh-rotate';
+      reset.dataset.profileId = profile.id;
+      reset.dataset.confirm = 'Reset the sharing key?';
+      reset.dataset.out = 'mesh-rotate-output';
+      bodyEl.appendChild(reset);
+      bodyEl.appendChild(output2('mesh-rotate-output'));
+    }
   }
   function output2(id) {
     const el = document.createElement('div');
@@ -694,32 +744,32 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     el.setAttribute('aria-live', 'polite');
     return el;
   }
-  const profileOption = (profile, selectedId) => {
-    const option = document.createElement('option');
-    option.value = profile.id;
-    option.setAttribute('data-profile-option', profile.id);
-    option.setAttribute('data-split', profile.meshllm && profile.meshllm.split ? 'true' : 'false');
-    if (profile.id === selectedId) option.selected = true;
-    // Show the human model name (never the internal id); only flag models that span machines.
-    option.textContent = modelName(profile) + (profile.meshllm && profile.meshllm.split ? ' (multi-machine)' : '');
-    return option;
-  };
-  function fillProfileSelect(select, profiles, selectedId) {
-    if (!select) return;
-    select.textContent = '';
-    profiles.forEach((profile) => select.appendChild(profileOption(profile, selectedId)));
-    select.disabled = profiles.length === 0;
-    select.value = selectedId || (profiles[0] ? profiles[0].id : '');
+  // Prominent current-value display: an accented card that surfaces a configured
+  // value (custom domain, connected gateway) instead of burying it in helper text.
+  function renderStateCard(el, parts) {
+    if (!el) return;
+    el.textContent = '';
+    const present = Boolean(parts.value);
+    el.classList.toggle('is-empty', !present);
+    const label = document.createElement('span');
+    label.className = 'state-label';
+    label.textContent = parts.label;
+    const value = document.createElement('span');
+    value.className = 'state-value';
+    value.textContent = present ? parts.value : (parts.placeholder || '—');
+    el.append(label, value);
+    if (present && parts.sub) { const sub = document.createElement('span'); sub.className = 'state-sub'; sub.textContent = parts.sub; el.appendChild(sub); }
+    if (present && parts.chip) el.appendChild(chipEl(parts.chipTone || 'ok', parts.chip));
   }
   function renderPlaygroundSelect(profiles) {
     const slot = byId(config.playground.slotId);
     if (!slot) return;
-    // One option per model that is on: label with the canonical model name, but
-    // send the callable name (public alias) the gateway route actually resolves.
+    // One option per model that is on: send and show the model's own callable name,
+    // with the human model name in brackets — e.g. mesh-smoke (Qwen2.5 Coder 1.5B).
     const options = [];
     profiles.filter((profile) => profile.active).forEach((profile) => {
-      const callable = (profile.publicAliases || [])[0];
-      if (callable && !options.some((opt) => opt.value === callable)) options.push({ value: callable, label: modelName(profile) });
+      const callable = callName(profile);
+      if (callable && !options.some((opt) => opt.value === callable)) options.push({ value: callable, label: callable + ' (' + modelName(profile) + ')' });
     });
     slot.textContent = '';
     const select = document.createElement('select');
@@ -756,15 +806,21 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       row.appendChild(statusDot(profile.active ? 'ok' : 'warn', profile.active ? 'On' : 'Off'));
       const body = document.createElement('div');
       body.className = 'grow';
+      const nameRow = document.createElement('div');
+      nameRow.className = 'model-name-row';
       const name = document.createElement('strong');
       name.setAttribute('data-model-name', profile.id);
       name.textContent = modelName(profile);
+      // Serving mode is a badge, not part of the name: a split model stands out in accent.
+      const split = Boolean(profile.meshllm && profile.meshllm.split);
+      const badge = chipEl(split ? 'accent' : null, split ? 'Split across machines' : 'Full model per machine');
+      badge.setAttribute('data-serving-mode', split ? 'split' : 'single');
+      nameRow.append(name, badge);
       const detail = document.createElement('small');
       const ready = readiness.find((item) => item.profileId === profile.id);
-      const callable = (profile.publicAliases || []).join(', ') || '—';
       const serving = servingCount(profile);
-      detail.textContent = 'Call it: ' + callable + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
-      body.append(name, detail);
+      detail.textContent = 'Call it: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
+      body.append(nameRow, detail);
       row.appendChild(body);
       const toggle = document.createElement('button');
       toggle.type = 'button';
@@ -783,70 +839,49 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       row.appendChild(manage);
       list.appendChild(row);
     });
-    const rotateSlot = byId('mesh-rotate-slot');
-    if (rotateSlot) {
-      rotateSlot.textContent = '';
-      const select = document.createElement('select');
-      select.id = config.meshHealth.rotateSelectId;
-      select.name = 'meshProfileId';
-      select.setAttribute('data-mesh-profile-select', 'true');
-      const active = profiles.filter((profile) => profile.active)[0];
-      fillProfileSelect(select, profiles, active ? active.id : undefined);
-      rotateSlot.appendChild(select);
-    }
   }
-  function renderMeshHealth(entries) {
-    const panel = byId(config.meshHealth.panelId);
-    if (!panel) return;
-    panel.textContent = '';
-    if (!entries.length) {
-      const empty = document.createElement('p');
-      empty.className = 'empty-note';
-      empty.textContent = 'Nothing shared across machines yet. This only matters when a model is too big for one machine and several team up to run it.';
-      panel.appendChild(empty);
-    }
+  // buildMeshCard renders one model's mesh detail (a plain summary plus the raw
+  // fields behind a disclosure). It lives in that model's Manage drawer, since both
+  // single-machine and split models form a mesh.
+  function buildMeshCard(entry) {
     const profilesById = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
-    entries.forEach((entry) => {
-      const card = document.createElement('div');
-      card.className = 'tile';
-      card.setAttribute('data-mesh-entry', entry.profileId);
-      card.setAttribute('data-mesh-rotation', String(entry.rotation));
-      card.setAttribute('data-secret-present', entry.tokenCount > 0 ? 'true' : 'false');
-      const profile = profilesById.find((candidate) => candidate.id === entry.profileId);
-      const title = document.createElement('strong');
-      title.textContent = profile ? modelName(profile) : entry.profileId;
-      card.appendChild(title);
-      // Plain-language summary first; the raw internals go behind a Technical details disclosure.
-      const peers = (entry.peerNodeIds || []).length;
-      const summary = document.createElement('span');
-      summary.className = 'mesh-summary';
-      summary.textContent = peers > 0
-        ? (peers + ' machine' + (peers === 1 ? '' : 's') + ' sharing this model' + (entry.lastError ? ' · needs attention' : entry.tokenCount > 0 ? ' · ready' : ' · forming'))
-        : 'Not shared across machines yet';
-      card.appendChild(summary);
-      const details = document.createElement('details');
-      const detailsSummary = document.createElement('summary');
-      detailsSummary.textContent = 'Technical details';
-      details.appendChild(detailsSummary);
-      config.meshHealth.fields.forEach((fieldName) => {
-        const line = document.createElement('code');
-        line.setAttribute('data-mesh-field', fieldName);
-        let value = 'none';
-        if (fieldName === 'coordinator') value = entry.coordinatorNodeId || 'none';
-        else if (fieldName === 'peers') value = String((entry.peerNodeIds || []).length);
-        else if (fieldName === 'ready-models') value = (entry.readyModels || []).join(', ') || 'none';
-        else if (fieldName === 'failed-nodes') value = (entry.failedNodeIds || []).join(', ') || 'none';
-        else if (fieldName === 'last-error') value = entry.lastError || 'none';
-        else if (fieldName === 'rotation') value = 'r' + entry.rotation;
-        else if (fieldName === 'secret') value = entry.tokenCount > 0 ? 'present' + (entry.secretAgeMs != null ? ' · ' + fmtAge(entry.secretAgeMs) : '') : 'absent';
-        line.textContent = fieldName.replace(/-/g, ' ') + ': ' + value;
-        details.appendChild(line);
-      });
-      card.appendChild(details);
-      panel.appendChild(card);
+    const card = document.createElement('div');
+    card.className = 'tile';
+    card.setAttribute('data-mesh-entry', entry.profileId);
+    card.setAttribute('data-mesh-rotation', String(entry.rotation));
+    card.setAttribute('data-secret-present', entry.tokenCount > 0 ? 'true' : 'false');
+    const profile = profilesById.find((candidate) => candidate.id === entry.profileId);
+    const title = document.createElement('strong');
+    title.textContent = profile ? modelName(profile) : entry.profileId;
+    card.appendChild(title);
+    // Plain-language summary first; the raw internals go behind a Technical details disclosure.
+    const peers = (entry.peerNodeIds || []).length;
+    const summary = document.createElement('span');
+    summary.className = 'mesh-summary';
+    summary.textContent = peers > 0
+      ? (peers + ' machine' + (peers === 1 ? '' : 's') + ' in this mesh' + (entry.lastError ? ' · needs attention' : entry.tokenCount > 0 ? ' · ready' : ' · forming'))
+      : 'One machine in this mesh';
+    card.appendChild(summary);
+    const details = document.createElement('details');
+    const detailsSummary = document.createElement('summary');
+    detailsSummary.textContent = 'Technical details';
+    details.appendChild(detailsSummary);
+    config.meshHealth.fields.forEach((fieldName) => {
+      const line = document.createElement('code');
+      line.setAttribute('data-mesh-field', fieldName);
+      let value = 'none';
+      if (fieldName === 'coordinator') value = entry.coordinatorNodeId || 'none';
+      else if (fieldName === 'peers') value = String((entry.peerNodeIds || []).length);
+      else if (fieldName === 'ready-models') value = (entry.readyModels || []).join(', ') || 'none';
+      else if (fieldName === 'failed-nodes') value = (entry.failedNodeIds || []).join(', ') || 'none';
+      else if (fieldName === 'last-error') value = entry.lastError || 'none';
+      else if (fieldName === 'rotation') value = 'r' + entry.rotation;
+      else if (fieldName === 'secret') value = entry.tokenCount > 0 ? 'present' + (entry.secretAgeMs != null ? ' · ' + fmtAge(entry.secretAgeMs) : '') : 'absent';
+      line.textContent = fieldName.replace(/-/g, ' ') + ': ' + value;
+      details.appendChild(line);
     });
-    const banner = byId(config.meshHealth.bannerId);
-    if (banner) banner.hidden = !entries.some((entry) => entry.lastError === config.meshHealth.keyMissingError);
+    card.appendChild(details);
+    return card;
   }
   // Internal per-heartbeat bookkeeping never belongs in a human activity log.
   const AUDIT_HIDDEN = { mesh_state_stored: 1, mesh_state_cleared: 1, mesh_token_rotated: 1, mesh_token_removed: 1 };
@@ -961,8 +996,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const gatewayCurrent = byId('gateway-current');
     if (gatewayCurrent) {
       const gateway = status.gateway || {};
-      const labelled = [['gateway', gateway.gatewayId], ['route', gateway.routeName], ['model', gateway.publicModel]].filter((pair) => pair[1]).map((pair) => pair[0] + ' ' + pair[1]).join(' · ');
-      gatewayCurrent.textContent = gateway.gatewayId ? 'Current target: ' + labelled : 'No Gateway connected yet.';
+      renderStateCard(gatewayCurrent, {
+        label: 'Connected gateway',
+        value: gateway.gatewayId || '',
+        placeholder: 'Not connected yet',
+        sub: gateway.gatewayId ? ('route ' + (gateway.routeName || STABLE_PUBLIC_MODEL)) : ''
+      });
     }
     const routeChip = byId('rt-route-chip');
     if (routeChip) {
@@ -977,13 +1016,22 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const domainCurrent = byId('custom-domain-current');
     if (domainCurrent) {
       const domain = status.customDomain || {};
-      domainCurrent.textContent = domain.hostname ? [domain.hostname, domain.status].filter(Boolean).join(' · ') : 'No custom domain provisioned yet.';
+      renderStateCard(domainCurrent, {
+        label: 'Custom domain',
+        value: domain.hostname || '',
+        placeholder: 'Not set yet',
+        chip: domain.hostname ? (domain.status || 'unprovisioned') : '',
+        chipTone: domain.status === 'provisioned' ? 'ok' : 'warn'
+      });
     }
     lastStatus = status;
     renderNodesTable(nodes, status.desiredAgentVersion);
     renderProfiles(profiles, readiness);
     renderPlaygroundSelect(profiles);
-    renderMeshHealth(meshEntries);
+    // Mesh detail now lives per-model in the Manage drawer; here we only keep the
+    // global mesh-secret-missing banner (shown on the Models section) in sync.
+    const meshBanner = byId(config.meshHealth.bannerId);
+    if (meshBanner) meshBanner.hidden = !meshEntries.some((entry) => entry.lastError === config.meshHealth.keyMissingError);
     renderAudit(audit);
     setHealth('ok', 'live');
   }
@@ -1390,11 +1438,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const ctxRaw = readInput('model-edit-context');
       const modelRaw = readInput('model-edit-model');
       const vramRaw = readInput('model-edit-vram');
+      const nameEl = byId('model-edit-name');
+      const callEl = byId('model-edit-callname');
       const payload = { profileId: id };
       if (ctxRaw !== '') payload.contextWindow = Number(ctxRaw);
       if (modelRaw !== '') payload.modelRef = modelRaw;
       // Empty means "leave as-is"; 0 explicitly clears the cap.
       if (vramRaw !== '') payload.maxVramGb = Number(vramRaw);
+      // Only send name / call name when the operator actually changed them, so saving
+      // an unrelated setting never rewrites a default model's extra canonical aliases.
+      if (nameEl && nameEl.value.trim() && nameEl.value !== nameEl.dataset.original) payload.name = nameEl.value.trim();
+      if (callEl && callEl.value.trim() && callEl.value !== callEl.dataset.original) payload.callName = callEl.value.trim();
       setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       toast('Model settings saved');
       await refreshStatus().catch(() => undefined);
@@ -1425,13 +1479,18 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       setOutput(out, await request('/admin/settings', { method: 'POST', headers: headers(true), body: JSON.stringify({ offlinePruneSeconds: Number(readInput('prune-seconds')) }) }));
       toast('Settings saved');
     } else if (action === 'mesh-rotate') {
-      const select = byId(config.meshHealth.rotateSelectId);
-      setOutput(out, await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: select ? select.value : '' }) }));
+      // The reset control lives in a model's Manage drawer and carries its profile id.
+      const profileId = button.dataset.profileId || '';
+      setOutput(out, await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId }) }));
+      await refreshStatus().catch(() => undefined);
     } else if (action === 'model-add') {
       const ref = readInput('model-add-ref');
       if (!ref) { setOutput(out, 'Enter a model reference to add.', true); return; }
       const modeSelect = byId('model-add-mode');
-      setOutput(out, await request('/admin/profiles/add', { method: 'POST', headers: headers(true), body: JSON.stringify({ modelRef: ref, mode: modeSelect ? modeSelect.value : 'single' }) }));
+      const name = readInput('model-add-name');
+      const payload = { modelRef: ref, mode: modeSelect ? modeSelect.value : 'single' };
+      if (name) payload.name = name;
+      setOutput(out, await request('/admin/profiles/add', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       await refreshStatus().catch(() => undefined);
       toast('Model added');
     } else if (action === config.playground.sendAction) {

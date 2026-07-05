@@ -254,7 +254,7 @@ GET /admin/installers/{platform}
 
 ### POST /admin/nodes/:nodeId/revoke
 
-Revokes a node token and removes the node from eligible scheduling.
+Removes a node: revokes its node and mesh tokens and deletes the node record so it disappears from the console at once and must re-enroll.
 
 ```http
 POST /admin/nodes/{nodeId}/revoke
@@ -272,7 +272,7 @@ POST /admin/nodes/{nodeId}/revoke
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Node is marked revoked, stored node credentials are revoked, the node's mesh invite-token entry is removed from every active MeshLLM profile's mesh state (`mesh_token_removed` audit event), and later node heartbeats/unregister calls cannot restore eligibility. | `{ "ok": true }` |
+| `200` | The node's node and mesh tokens are revoked, its mesh invite-token entry is removed from every active MeshLLM profile's mesh state (`mesh_token_removed` audit event), and the node record is deleted (`node_revoked` audit event), so it disappears from the console at once and later heartbeats/unregister calls are rejected. | `{ "ok": true }` |
 | `401` | Admin credential is missing or invalid. | Error object. |
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md), [REQ-SEC-007](../../sdd/spec/security.md)
@@ -516,7 +516,7 @@ POST /admin/profiles/add
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `modelRef` (required, trimmed, non-empty) and `mode` (`single` or `split`, default `single`). Mode `split` builds a layer-package (multi-machine) profile; any other value a single-machine profile. The profile id and public alias are derived from the reference.
+**Request body:** JSON body with `modelRef` (required, trimmed, non-empty), `mode` (`single` or `split`, default `single`), and optional `name` (display name; defaults to the model-file segment). Mode `split` builds a layer-package (multi-machine) profile; any other value a single-machine profile. The profile id and public alias are derived from the reference.
 
 **Response**
 

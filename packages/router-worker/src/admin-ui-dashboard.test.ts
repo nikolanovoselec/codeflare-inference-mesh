@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_DRAWER, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
 import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
@@ -271,7 +271,10 @@ describe('dashboard overview contracts', () => {
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const servingNodes = fields.filter((node) => node.dataset.drawerServingNode)
     expect(servingNodes.map((node) => node.dataset.drawerServingNode).sort()).toEqual(['node-big', 'node-small'])
-    expect(fields.find((node) => node.dataset.drawerField === 'aliases')!.dataset.value).toBe('codeflare-mesh, qwen3.6:35b-a3b')
+    // The drawer prefills the editable name and the model's own call name (its non-shared
+    // alias) — not the shared codeflare-mesh alias, which apps use to reach the active model.
+    expect(harness.byId('model-edit-name').value).toBe('Qwen3.6 35B')
+    expect(harness.byId('model-edit-callname').value).toBe('qwen3.6:35b-a3b')
   })
 
   it('REQ-ADM-021 loads and saves a per-model VRAM budget from the model drawer', async () => {
@@ -489,14 +492,17 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(bars.length).toBe(ADMIN_UI_TOKS_TRACE.window)
   })
 
-  it('REQ-ADM-016 lists one playground option per model on, labeled by name and valued by callable name', async () => {
+  it('REQ-ADM-016 lists one playground option per model on, valued by callable name and labeled with the model name', async () => {
     const harness = await dashboardHarness()
     const select = harness.byId(ADMIN_UI_PLAYGROUND.selectId)
-    // One option per model that is on; the option value is the callable name the
-    // gateway resolves, while the visible label is the canonical model name.
-    expect(select.children.map((option) => option.value)).toEqual(['codeflare-mesh'])
-    expect(select.children.map((option) => option.dataset.playgroundModelOption)).toEqual(['codeflare-mesh'])
-    expect(select.children.map((option) => option.textContent)).toEqual(['Qwen3.6 35B'])
+    // One option per model that is on. The value (and the option's data attribute) is the model's
+    // own callable name — the alias the gateway resolves — not the shared codeflare-mesh alias.
+    expect(select.children.map((option) => option.value)).toEqual(['qwen3.6:35b-a3b'])
+    expect(select.children.map((option) => option.dataset.playgroundModelOption)).toEqual(['qwen3.6:35b-a3b'])
+    // The label pairs both contract values (callable name and model name); format is not pinned.
+    const label = select.children[0]!.textContent || ''
+    expect(label).toContain('qwen3.6:35b-a3b')
+    expect(label).toContain('Qwen3.6 35B')
   })
 
   it('REQ-ADM-016 streams the playground response incrementally as chunks arrive', async () => {
@@ -550,11 +556,16 @@ describe('dashboard throughput trace and playground contracts', () => {
 
   it('REQ-ADM-005 surfaces the currently provisioned custom domain in Routing', async () => {
     const harness = await dashboardHarness()
-    const text = harness.byId('custom-domain-current').textContent
-    // Contract values, not copy: the live readout renders the provisioned host then its status.
-    // Gutting the readout falls back to a no-domain note that matches neither the host nor this ordering.
-    expect(text).toContain('router.test')
-    expect(text).toMatch(/router\.test.*provisioned/)
+    const card = harness.byId('custom-domain-current')
+    const value = descendants(card).find((node) => node.className === 'state-value')
+    const chip = descendants(card).find((node) => node.className === 'chip')
+    // Contract values, not copy: the prominent readout carries the provisioned host as its value
+    // and its status as a chip. Gutting the readout leaves the empty-state card (placeholder value,
+    // no chip), so the host and the ok-toned status chip both disappear.
+    expect(value!.textContent).toBe('router.test')
+    expect(card.classList.contains('is-empty')).toBe(false)
+    expect(chip, 'a provisioned domain shows a status chip').toBeDefined()
+    expect(chip!.dataset.tone).toBe('ok')
   })
 
   it('REQ-ADM-018 orders profile rows active-first regardless of source order', async () => {
@@ -584,13 +595,19 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(toggle('mesh-split-qwen36-35b').textContent).toBe('Turn on')
   })
 
-  it('REQ-ADM-018 labels the shared-model select by model name, never the internal id', async () => {
-    const harness = await dashboardHarness()
-    const select = harness.byId(ADMIN_UI_MESH_HEALTH.rotateSelectId)
-    // The reset-sharing-key dropdown shows the human model name; the wiring id never leaks to the label.
-    const option = select.children.find((opt) => opt.textContent === 'Qwen3.6 35B')
-    expect(option, 'shared-model option should be labeled by display name').toBeDefined()
-    expect(select.children.some((opt) => (opt.textContent || '').includes('mesh-default-qwen36-35b'))).toBe(false)
+  it('REQ-ADM-018 badges each model with its serving mode instead of baking it into the name', async () => {
+    const profiles = [
+      { id: 'single-a', displayName: 'Single A', publicAliases: ['codeflare-mesh', 'single-a'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'split-b', displayName: 'Split B', publicAliases: ['codeflare-mesh', 'split-b'], active: false, rolloutPercent: 0, meshllm: { split: true } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
+    const rows = harness.byId('profile-list').children.filter((row) => row.dataset.profileRow)
+    const badge = (id: string) => descendants(rows.find((row) => row.dataset.profileRow === id)!).find((node) => node.dataset.servingMode)!
+    // Serving mode is carried by a badge attribute; a split model's badge stands out in accent.
+    expect(badge('single-a').dataset.servingMode).toBe('single')
+    expect(badge('split-b').dataset.servingMode).toBe('split')
+    expect(badge('split-b').dataset.tone).toBe('accent')
+    expect(badge('single-a').dataset.tone).toBeUndefined()
   })
 
   it('REQ-OBS-007 labels overview mesh chips by model name and stays neutral when a model is not shared', async () => {
@@ -626,14 +643,14 @@ describe('read-only user console contracts', () => {
     const harness = await dashboardHarness({ status: statusFixture({ viewerRole: 'user' }) })
     expect(harness.byId('overview').hidden).toBe(false)
     expect(harness.byId('playground').hidden).toBe(false)
-    for (const section of ['nodes', 'models', 'routing', 'mesh', 'settings']) {
+    for (const section of ['nodes', 'models', 'routing', 'settings']) {
       expect(harness.byId(section).hidden).toBe(true)
     }
   })
 
   it('REQ-ADM-017 leaves every section visible for the admin role', async () => {
     const harness = await dashboardHarness({ status: statusFixture({ viewerRole: 'admin' }) })
-    for (const section of ['overview', 'nodes', 'models', 'routing', 'mesh', 'playground', 'settings']) {
+    for (const section of ['overview', 'nodes', 'models', 'routing', 'playground', 'settings']) {
       expect(harness.byId(section).hidden).toBe(false)
     }
   })

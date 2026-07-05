@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_DRAWER, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, adminUiHtml } from './admin-ui'
 import type { MeshHealthEntry, MeshUiStatusNode } from './admin-ui'
 import { adminUiHarness, descendants, elementStub, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 import { SETUP_TOKEN_PLACEHOLDER } from './installers'
@@ -69,10 +69,13 @@ async function dashboardHarness(status: Record<string, unknown> = statusFixture(
   return harness
 }
 
-function meshCard(harness: AdminUiHarness, profileId: string): StubElement {
-  const panel = harness.byId(ADMIN_UI_MESH_HEALTH.panelId)
-  const card = panel.children.find((child) => child.dataset.meshEntry === profileId)
-  expect(card, `no mesh card for ${profileId}`).toBeDefined()
+// Mesh detail now lives in a model's Manage drawer (a sharded model is just a model),
+// so a card is reached by opening that model's drawer rather than a standalone panel.
+async function meshCard(harness: AdminUiHarness, profileId: string): Promise<StubElement> {
+  await harness.clickAction('model-detail', { profileId })
+  const body = harness.byId(ADMIN_UI_DRAWER.bodyId)
+  const card = descendants(body).find((node) => node.dataset.meshEntry === profileId)
+  expect(card, `no mesh card in the drawer for ${profileId}`).toBeDefined()
   return card!
 }
 
@@ -83,49 +86,49 @@ function meshField(card: StubElement, field: string): StubElement {
 }
 
 describe('admin UI mesh operations contracts', () => {
-  it('REQ-ADM-009 exposes mesh health, rotation, and activation controls', () => {
+  it('REQ-ADM-009 exposes the mesh-key banner, the model list, and the agent-version control', () => {
     const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', recovery: false })
-    expect(html).toContain(`id="${ADMIN_UI_MESH_HEALTH.panelId}"`)
+    // The mesh-secret-missing banner lives on the Models section now that mesh has no own section.
     expect(html).toContain('data-mesh-key-banner="true"')
-    expect(html).toContain(`id="${ADMIN_UI_MESH_HEALTH.rotateSelectId}"`)
-    expect(html).toContain('data-mesh-profile-select="true"')
-    // Models are one client-rendered list; the section ships the list container, not activation/rollout dropdowns.
+    expect(html).toContain(`id="${ADMIN_UI_MESH_HEALTH.bannerId}"`)
+    // Models are one client-rendered list; activation and the sharing-key reset are per-model controls.
     expect(html).toContain('id="profile-list"')
     expect(html).toContain('data-output="profiles"')
     expect(html).toContain(`id="${ADMIN_UI_AGENT_VERSION.selectId}"`)
-    expect(html).toMatch(/data-action="mesh-rotate" [^>]*data-confirm="[^"]+"/)
     expect(html).toContain('data-action="agent-versions-refresh"')
     expect(html).toContain('data-action="agent-version-set"')
-    expect([...html.matchAll(/data-action="status-refresh"/g)].length).toBeGreaterThanOrEqual(3)
+    expect([...html.matchAll(/data-action="status-refresh"/g)].length).toBeGreaterThanOrEqual(2)
   })
 
   it('REQ-ADM-006 shows mesh invite tokens as presence, status, and age only', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')
 
-    const present = meshCard(harness, 'mesh-default-qwen36-35b')
-    const absent = meshCard(harness, 'mesh-split-qwen36-35b')
+    // Opening a model's drawer replaces the body, so assert the present card fully first.
+    const present = await meshCard(harness, 'mesh-default-qwen36-35b')
     expect(present.dataset.secretPresent).toBe('true')
     expect(meshField(present, 'secret').textContent).toBe('secret: present · 5m')
-    expect(absent.dataset.secretPresent).toBe('false')
-    expect(meshField(absent, 'secret').textContent).toBe('secret: absent')
     const renderedFields = descendants(present).map((node) => node.dataset.meshField).filter(Boolean)
     expect(renderedFields).toEqual([...ADMIN_UI_MESH_HEALTH.fields])
+
+    const absent = await meshCard(harness, 'mesh-split-qwen36-35b')
+    expect(absent.dataset.secretPresent).toBe('false')
+    expect(meshField(absent, 'secret').textContent).toBe('secret: absent')
   })
 
   it('REQ-ADM-009 wires the one-click rotate action to the mesh rotate endpoint', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')
-    const rotateSelect = harness.byId(ADMIN_UI_MESH_HEALTH.rotateSelectId)
-    expect(rotateSelect.value).toBe('mesh-default-qwen36-35b')
+    // The sharing-key reset lives in the model's Manage drawer and carries its profile id.
+    await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
+    const reset = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.dataset.action === 'mesh-rotate')
+    expect(reset, 'the drawer exposes a sharing-key reset').toBeDefined()
+    expect(reset!.dataset.profileId).toBe('mesh-default-qwen36-35b')
+    expect(reset!.dataset.confirm, 'reset must arm before submitting').toBeTruthy()
 
-    const rotate = elementStub({ tagName: 'button', textContent: 'Rotate mesh secret' })
-    rotate.dataset.action = 'mesh-rotate'
-    rotate.dataset.confirm = 'Confirm rotation?'
-    rotate.dataset.out = 'mesh-rotate-output'
-    await harness.click(rotate)
+    await harness.click(reset!)
     expect(harness.fetchCalls.filter((call) => call.path === '/admin/mesh/rotate')).toHaveLength(0)
-    await harness.click(rotate)
+    await harness.click(reset!)
 
     const call = harness.fetchCalls.find((item) => item.path === '/admin/mesh/rotate')
     expect(call).toBeDefined()
@@ -200,7 +203,7 @@ describe('admin UI mesh operations contracts', () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')
 
-    const card = meshCard(harness, 'mesh-default-qwen36-35b')
+    const card = await meshCard(harness, 'mesh-default-qwen36-35b')
     expect(card.dataset.meshRotation).toBe('3')
     expect(meshField(card, 'coordinator').textContent).toBe('coordinator: node-coord')
     expect(meshField(card, 'peers').textContent).toBe('peers: 2')
@@ -213,13 +216,14 @@ describe('admin UI mesh operations contracts', () => {
   it('REQ-OBS-007 shows a plain sharing summary while keeping the technical fields behind a disclosure', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')
-    const card = meshCard(harness, 'mesh-default-qwen36-35b')
-    const summary = descendants(card).find((node) => node.className === 'mesh-summary')!
-    expect(summary).toBeDefined()
-    expect(summary.textContent).toContain('2 machines sharing')
-    // The raw internals still exist (nested under Technical details), so power users keep them.
+    const card = await meshCard(harness, 'mesh-default-qwen36-35b')
+    const summary = descendants(card).find((node) => node.className === 'mesh-summary')
+    expect(summary, 'a plain summary is shown').toBeDefined()
+    // Behavioral: the peers field carries the real peer count (2), and the raw internals
+    // remain available behind a Technical details disclosure — no prose is pinned.
+    expect(meshField(card, 'peers').textContent).toBe('peers: 2')
     expect(meshField(card, 'coordinator').textContent).toBe('coordinator: node-coord')
-    expect(descendants(card).some((node) => node.tagName === 'details' || node.textContent === 'Technical details')).toBe(true)
+    expect(descendants(card).some((node) => node.tagName === 'details')).toBe(true)
   })
 
   it('REQ-ADM-006 verifies the admin token before storing it', async () => {

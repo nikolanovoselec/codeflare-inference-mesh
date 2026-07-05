@@ -58,11 +58,13 @@ export interface AdminUiStateView {
   readonly recovery?: boolean
 }
 
-/** Dashboard IA: seven noun sections; mobile reaches them through four tabs. */
+/** Dashboard IA: six noun sections; mobile reaches them through four tabs. Model
+ * sharing is not its own section — a sharded model is just a model, so its mesh
+ * detail lives in that model's Manage drawer alongside every other model. */
 export const ADMIN_UI_NAV = {
-  sections: ['overview', 'nodes', 'models', 'routing', 'mesh', 'playground', 'settings'],
-  mobileTabs: ['overview', 'nodes', 'mesh', 'more'],
-  moreSections: ['models', 'routing', 'playground', 'settings']
+  sections: ['overview', 'nodes', 'models', 'routing', 'playground', 'settings'],
+  mobileTabs: ['overview', 'nodes', 'models', 'more'],
+  moreSections: ['routing', 'playground', 'settings']
 } as const
 
 /**
@@ -138,8 +140,6 @@ export const ADMIN_UI_TOKS_TRACE = {
 } as const
 
 export const ADMIN_UI_MESH_HEALTH = {
-  panelId: 'mesh-health-output',
-  rotateSelectId: 'mesh-rotate-profile',
   bannerId: 'mesh-key-banner',
   keyMissingError: 'mesh_state_key_missing',
   fields: ['coordinator', 'peers', 'ready-models', 'failed-nodes', 'last-error', 'rotation', 'secret']

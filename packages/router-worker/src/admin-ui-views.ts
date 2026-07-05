@@ -140,7 +140,7 @@ function overviewSection(): string {
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
 <div class="topo-list" id="${ADMIN_UI_TOPOLOGY.listId}" data-output="topology-list"></div>
 </div>
-<div class="subpanel"><h3>Model sharing</h3><div class="form-actions" id="overview-mesh"></div></div>
+<div class="subpanel"><h3>Mesh status</h3><div class="form-actions" id="overview-mesh"></div></div>
 <div class="subpanel"><h3>Recent activity</h3><div class="feed" id="overview-audit" data-output="audit"></div></div>`
   })
 }
@@ -170,9 +170,12 @@ ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}
 
 function addModelCard(): string {
   return `<div class="subpanel"><h3>Add a model</h3>
-<p class="field-hint">Add any mesh-llm-compatible model. Single machine runs a full GGUF model on one machine; split runs a layer package across several.</p>
+<p class="field-hint">Add any mesh-llm-compatible model. Single machine: every machine runs the whole model. Split across machines: the machines share the model's layers, for a model too big for one machine.</p>
 <div class="form-grid">
-${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine</option><option value="split">Split (multi-machine)</option></select></span>' })}
+${field({ id: 'model-add-name', label: 'Name', control: textInput({ id: 'model-add-name', name: 'name', placeholder: 'e.g. Fast Coder' }), hint: 'Shown in the console. Leave blank to name it after the model file.' })}
+${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine (full model each)</option><option value="split">Split across machines</option></select></span>' })}
+</div>
+<div class="form-grid">
 ${field({ id: 'model-add-ref', label: 'Model reference', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'Paste a model reference, or find one below.' })}
 </div>
 <p class="field-hint">Find a model: <a id="model-add-search-single" href="https://huggingface.co/unsloth?search_models=GGUF" target="_blank" rel="noopener">Unsloth GGUF (single machine)</a> · <a id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">mesh-llm layer packages (split)</a> · <a id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">prepare your own split model</a></p>
@@ -184,8 +187,9 @@ function modelsSection(): string {
   return sectionPanel({
     id: 'models',
     title: 'Models',
-    description: 'The AI models your machines can run. Turn one on to start serving it; open Manage to rename what callers ask for or change its settings.',
-    body: `<div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Turn one on to start serving it.</p></div>
+    description: 'The AI models your machines can run. Turn one on to serve it across the mesh; open Manage to rename it, change what callers ask for, or see the machines running it.',
+    body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a mesh to share a model. Set it in the deployment and redeploy.</p>
+<div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Turn one on to start serving it.</p></div>
 ${output({ id: 'models-output', kind: 'models', pre: true })}
 ${addModelCard()}`
   })
@@ -196,40 +200,25 @@ function routingSection(): string {
     id: 'routing',
     title: 'Routing',
     description: 'The address people use to reach your models, and how requests find this router. Everything here is discovered from your connected Cloudflare account, so you never type an ID by hand.',
-    body: `<h3>AI Gateway</h3>
-<p class="empty-note" id="gateway-current">No gateway connected yet.</p>
+    body: `<div class="subpanel"><h3>AI Gateway</h3>
+<div class="state-card is-empty" id="gateway-current"><span class="state-label">Connected gateway</span><span class="state-value">Not connected yet</span></div>
 <p class="field-hint">Pick one of your existing gateways, or create a new one. The dynamic route <code>codeflare-mesh</code> is created for you.</p>
 <div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Create gateway + route', variant: 'primary', out: 'gateway-output' })}</div>
 <div class="form-grid" id="rt-gateway-selects">
 ${field({ id: 'rt-gateway-select', label: 'Gateway', control: '<span class="slot" id="rt-gateway-slot"><select id="rt-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
 ${field({ id: 'rt-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'rt-gateway-provider-name', name: 'providerName', value: 'Codeflare Inference Mesh' }), hint: 'The provider created on your AI Gateway. Copy its API key below into the provider API Key field.' })}
 </div>
+<p class="route-status"><span class="route-chip" id="rt-route-chip"><span class="route-dot"></span>route <code>codeflare-mesh</code> on this gateway · <span id="rt-route-state">not connected</span></span></p>
 <div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
 <div class="form-actions">${button({ action: 'gateway-sync', label: 'Connect gateway', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
-${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}
-<p class="route-status"><span class="route-chip" id="rt-route-chip"><span class="route-dot"></span>dynamic route <code>codeflare-mesh</code> · <span id="rt-route-state">not connected</span></span></p>
+${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}</div>
 <div class="subpanel"><h3>Custom domain</h3>
-<p class="empty-note" id="custom-domain-current">No custom domain yet.</p>
+<div class="state-card is-empty" id="custom-domain-current"><span class="state-label">Custom domain</span><span class="state-value">Not set yet</span></div>
 <div class="form-grid">
 ${field({ id: 'custom-domain', label: 'Address people will use', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }), hint: 'Just the address. We match it to your Cloudflare domain automatically.' })}
 </div>
 <div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Set up custom domain', out: 'domain-output' })}</div>
 ${output({ id: 'domain-output', kind: 'custom-domain', pre: true })}</div>`
-  })
-}
-
-function meshSection(): string {
-  return sectionPanel({
-    id: 'mesh',
-    title: 'Model sharing',
-    description: 'When a model is too big for one machine, several machines team up to run it together. This shows those groups; with a single machine it stays empty.',
-    actions: button({ action: 'status-refresh', label: 'Refresh' }),
-    body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a sharing group. Set it in the deployment and redeploy.</p>
-<div class="tile-grid" id="${ADMIN_UI_MESH_HEALTH.panelId}" data-output="mesh-health"><p class="empty-note">Model sharing appears here only when several machines run one model together.</p></div>
-<div class="subpanel"><h3>Reset the sharing key</h3>
-${field({ id: ADMIN_UI_MESH_HEALTH.rotateSelectId, label: 'Shared model', control: emptySlotSelect('mesh-rotate-slot', ADMIN_UI_MESH_HEALTH.rotateSelectId, 'meshProfileId', 'data-mesh-profile-select="true"'), hint: 'Resetting briefly disconnects and reconnects the machines, about two minutes.' })}
-<div class="form-actions">${button({ action: 'mesh-rotate', label: 'Reset sharing key', variant: 'danger', confirm: 'Reset the sharing key?', out: 'mesh-rotate-output' })}</div>
-${output({ id: 'mesh-rotate-output', kind: 'mesh-rotate', pre: true })}</div>`
   })
 }
 
@@ -282,25 +271,23 @@ export function dashboardView(active: boolean): string {
     navItem({ section: 'nodes', label: 'Nodes', hint: 'Your machines' }),
     navItem({ section: 'models', label: 'Models', hint: 'Your AI models' }),
     navItem({ section: 'routing', label: 'Routing', hint: 'Address and gateway' }),
-    navItem({ section: 'mesh', label: 'Model sharing', hint: 'Machines sharing a model' }),
     navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
     navItem({ section: 'settings', label: 'Settings', hint: 'Version and activity' })
   ].join('')
   const tabs = [
     tabItem({ tab: 'overview', label: 'Overview', glyph: '◎', current: true }),
     tabItem({ tab: 'nodes', label: 'Nodes', glyph: '●' }),
-    tabItem({ tab: 'mesh', label: 'Sharing', glyph: '◆' }),
+    tabItem({ tab: 'models', label: 'Models', glyph: '◈' }),
     tabItem({ tab: 'more', label: 'More', glyph: '⋯' })
   ].join('')
   const moreItems = [
-    navItem({ section: 'models', label: 'Models', hint: 'Your AI models' }),
     navItem({ section: 'routing', label: 'Routing', hint: 'Address and gateway' }),
     navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
     navItem({ section: 'settings', label: 'Settings', hint: 'Version and activity' })
   ].join('')
   return `<div class="view dash" id="view-dashboard"${active ? '' : ' hidden'}>
 <nav class="side-nav" aria-label="Console sections" data-nav-sections="${escapeHtml(ADMIN_UI_NAV.sections.join(' '))}">${navItems}</nav>
-<div class="sections">${overviewSection()}${nodesSection()}${modelsSection()}${routingSection()}${meshSection()}${playgroundSection()}${settingsSection()}</div>
+<div class="sections">${overviewSection()}${nodesSection()}${modelsSection()}${routingSection()}${playgroundSection()}${settingsSection()}</div>
 <nav class="tab-bar" aria-label="Console sections" data-mobile-tabs="${escapeHtml(ADMIN_UI_NAV.mobileTabs.join(' '))}">${tabs}</nav>
 <div class="more-sheet" id="more-sheet" data-more-sections="${escapeHtml(ADMIN_UI_NAV.moreSections.join(' '))}" hidden>${moreItems}</div>
 <aside class="drawer" id="${ADMIN_UI_DRAWER.containerId}" role="dialog" aria-labelledby="${ADMIN_UI_DRAWER.titleId}" hidden>

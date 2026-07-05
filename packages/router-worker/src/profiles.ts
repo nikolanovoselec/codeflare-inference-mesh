@@ -83,26 +83,36 @@ function modelRefSegment(ref: string): string {
   return lastSegment.split('@')[0] ?? lastSegment
 }
 
+// slugify reduces an arbitrary human string to a url-safe, lowercase token so an
+// operator-chosen callable name becomes a valid public alias.
+export function slugify(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
 // slugifyModelRef derives a stable, url-safe public alias / id fragment from a
 // model reference so two different quantizations never collapse to one alias
 // while the same reference always yields the same slug.
 export function slugifyModelRef(ref: string): string {
-  return modelRefSegment(ref).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return slugify(modelRefSegment(ref))
 }
 
 // buildCustomProfile constructs an inactive profile from an operator-supplied
 // model reference. It carries the STABLE_PUBLIC_MODEL shared alias, starts
 // deactivated with zero rollout so it never serves until an admin activates it,
-// and sets split per the chosen serving mode. The bind port advances past every
-// existing profile so a later live process never collides on the mesh bind port.
-export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[] }): ModelProfile {
+// and sets split per the chosen serving mode. An optional name becomes the human
+// display name (the serving-mode badge, not the name, carries single/split); when
+// omitted it falls back to the model reference's last segment. The bind port
+// advances past every existing profile so a later live process never collides on
+// the mesh bind port.
+export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string }): ModelProfile {
   const ref = input.modelRef.trim()
   const slug = slugifyModelRef(ref)
   const segment = modelRefSegment(ref)
+  const name = input.name?.trim()
   const highestBindPort = input.existing.reduce((max, profile) => Math.max(max, profile.meshllm.bindPort), BIND_PORT_BASE)
   return {
     id: `custom-${slug}${input.split ? '-split' : ''}`,
-    displayName: input.split ? `${segment} (multi-machine)` : segment,
+    displayName: name && name.length > 0 ? name : segment,
     publicAliases: [STABLE_PUBLIC_MODEL, slug],
     upstreamModel: ref,
     sourceMode: 'meshllm-ref',

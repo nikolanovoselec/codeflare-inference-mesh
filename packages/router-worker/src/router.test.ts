@@ -202,7 +202,7 @@ describe('router worker behavioral contracts', () => {
     ])
     expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 1, minTouchTargetPx: 44 })
     expect(config.views).toEqual({ modes: ['setup', 'dashboard'], attribute: 'data-view' })
-    expect(config.nav).toEqual({ sections: ['overview', 'nodes', 'models', 'routing', 'mesh', 'playground', 'settings'], mobileTabs: ['overview', 'nodes', 'mesh', 'more'], moreSections: ['models', 'routing', 'playground', 'settings'] })
+    expect(config.nav).toEqual({ sections: ['overview', 'nodes', 'models', 'routing', 'playground', 'settings'], mobileTabs: ['overview', 'nodes', 'models', 'more'], moreSections: ['routing', 'playground', 'settings'] })
     expect(config.wizard).toEqual({
       steps: ['connect', 'domain', 'access', 'gateway', 'node', 'review'],
       skippable: ['gateway', 'node'],
@@ -211,7 +211,9 @@ describe('router worker behavioral contracts', () => {
     expect(config.confirm).toEqual({ attribute: 'data-confirm', disarmMs: 5000 })
     expect(config.setupLockedFeedback).toEqual({ status: 401, variant: 'setup-locked' })
     const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
-    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'gateway-sync', 'custom-domain-validate', 'agent-versions-refresh', 'agent-version-set', 'settings-save', 'mesh-rotate', 'playground-send', 'sign-out']
+    // mesh-rotate is no longer a server-rendered control: the sharing-key reset lives in
+    // a model's Manage drawer, rendered client-side, so it is not in the initial HTML.
+    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'gateway-sync', 'custom-domain-validate', 'agent-versions-refresh', 'agent-version-set', 'settings-save', 'playground-send', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
@@ -272,16 +274,16 @@ describe('router worker behavioral contracts', () => {
     const navTargets = [...html.matchAll(/class="nav-item" href="#([^"]+)"/g)].map((match) => match[1])
     const sectionIds = new Set([...html.matchAll(/<section class="panel section-panel" id="([^"]+)"/g)].map((match) => match[1]))
 
-    expect(sections).toEqual(['overview', 'nodes', 'models', 'routing', 'mesh', 'playground', 'settings'])
+    expect(sections).toEqual(['overview', 'nodes', 'models', 'routing', 'playground', 'settings'])
     expect([...config.nav.sections]).toEqual(sections)
-    expect(navTargets.slice(0, 7)).toEqual(sections)
-    expect(navTargets.slice(7)).toEqual(['models', 'routing', 'playground', 'settings'])
+    expect(navTargets.slice(0, 6)).toEqual(sections)
+    expect(navTargets.slice(6)).toEqual(['routing', 'playground', 'settings'])
     expect(navTargets.every((target) => sectionIds.has(target))).toBe(true)
-    expect(html.match(/data-mobile-tabs="([^"]+)"/)?.[1]).toBe('overview nodes mesh more')
-    expect([...html.matchAll(/<button class="tab-item"[^>]*data-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(['overview', 'nodes', 'mesh', 'more'])
+    expect(html.match(/data-mobile-tabs="([^"]+)"/)?.[1]).toBe('overview nodes models more')
+    expect([...html.matchAll(/<button class="tab-item"[^>]*data-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(['overview', 'nodes', 'models', 'more'])
     expect([...html.matchAll(/data-active="true"/g)]).toHaveLength(1)
     expect(html).toMatch(/data-nav="overview" aria-current="page"/)
-    expect(html.match(/data-more-sections="([^"]+)"/)?.[1]).toBe('models routing playground settings')
+    expect(html.match(/data-more-sections="([^"]+)"/)?.[1]).toBe('routing playground settings')
   })
 
   it('REQ-ADM-007 labels every dashboard control visibly', async () => {
@@ -1272,15 +1274,17 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ nodeId: 'node-a' })
     }))
     const node = await store.getNode('node-a')
+    const listed = await store.listNodes(1_700_000_000_000)
 
     expect(response.status).toBe(200)
     expect(heartbeat.status).toBe(403)
     expect(unregister.status).toBe(403)
-    expect(node?.status).toBe('revoked')
-    expect(node?.nodeTokenVerifier).toBeUndefined()
-    expect(node?.upstreamTokenVerifier).toBeUndefined()
+    // Revoke removes the node outright: it is gone from the store and from the list,
+    // so it disappears from the console immediately (no lingering tombstone row).
+    expect(node).toBeUndefined()
+    expect(listed.some((candidate) => candidate.id === 'node-a')).toBe(false)
+    // Its node tokens are revoked so a still-running agent cannot re-authenticate.
     expect(store.tokens.filter((token) => token.kind === 'node' && token.nodeId === 'node-a').every((token) => token.active === false)).toBe(true)
-    expect(node?.failurePenaltyUntil).toBeGreaterThan(1_700_000_000_000)
     expect(store.audit.some((event) => event.type === 'node_revoked' && event.target === 'node-a')).toBe(true)
   })
 
@@ -2022,6 +2026,74 @@ describe('router worker behavioral contracts', () => {
     expect((await configure({ profileId: 'no-such-profile', contextWindow: 1024 })).status).toBe(404)
     const noAuth = await router(new Request('https://router.test/admin/profiles/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 1024 }) }))
     expect(noAuth.status).toBe(401)
+  })
+
+  it('REQ-ADM-027 names a model on creation and defaults the name to the model file', async () => {
+    const { router, store } = routerFixture()
+    const add = (body: unknown) => router(new Request('https://router.test/admin/profiles/add', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+
+    // A supplied name becomes the display name; the model's own call name comes from the ref.
+    const named = await add({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', name: 'Fast Coder' })
+    expect(named.status).toBe(201)
+    const created = (await store.listProfiles()).find((profile) => profile.displayName === 'Fast Coder')
+    expect(created).toBeDefined()
+    expect(created!.publicAliases[0]).toBe('codeflare-mesh')
+    expect(created!.publicAliases).toContain('qwen3-14b-gguf-q4-k-m')
+
+    // With no name, the display name is the model-file segment — and a split model gets
+    // no "(multi-machine)" suffix, because the serving-mode badge carries that now.
+    const unnamed = await add({ modelRef: 'unsloth/Other-Model-GGUF:Q4_K_M', mode: 'split' })
+    expect(unnamed.status).toBe(201)
+    const other = (await store.listProfiles()).find((profile) => profile.id.indexOf('custom-other-model') === 0)!
+    expect(other.displayName).toBe('Other-Model-GGUF:Q4_K_M')
+    expect(other.meshllm.split).toBe(true)
+  })
+
+  it('REQ-ADM-027 renames a model display name and call name with collision and reserved-alias guards', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+    const smoke = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
+
+    // Rename sets the display name and swaps the model's own call name, keeping the shared alias.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', name: 'Speedy', callName: 'Speedy Coder!' })).status).toBe(200)
+    const renamed = await smoke()
+    expect(renamed.displayName).toBe('Speedy')
+    expect(renamed.publicAliases).toEqual(['codeflare-mesh', 'speedy-coder'])
+
+    // A context-only save leaves the name and aliases untouched (partial update, so a
+    // default model never loses its extra canonical aliases on an unrelated edit).
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 4096 })).status).toBe(200)
+    const afterCtx = await smoke()
+    expect(afterCtx.displayName).toBe('Speedy')
+    expect(afterCtx.publicAliases).toEqual(['codeflare-mesh', 'speedy-coder'])
+
+    // A call name whose slug collides with another model's alias is refused; unchanged.
+    expect((await configure({ profileId: 'mesh-split-qwen36-35b', callName: 'shared' })).status).toBe(200)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', callName: 'Shared' })).status).toBe(409)
+    expect((await smoke()).publicAliases).toEqual(['codeflare-mesh', 'speedy-coder'])
+
+    // The reserved shared alias, an empty slug, and a blank display name are all rejected.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', callName: 'codeflare-mesh' })).status).toBe(409)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', callName: '   ' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', name: '   ' })).status).toBe(400)
+  })
+
+  it('REQ-ADM-027 renames a model over the automation API with the same guards', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const key = await mintKey(router)
+    const configure = (body: unknown) => router(new Request('https://router.test/api/v1/models/mesh-smoke-qwen25-1.5b', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
+
+    const ok = await configure({ name: 'API Named', callName: 'api-handle' })
+    expect(ok.status).toBe(200)
+    const model = (await ok.json() as { model: { displayName: string; callableNames: string[] } }).model
+    expect(model.displayName).toBe('API Named')
+    expect(model.callableNames).toEqual(['codeflare-mesh', 'api-handle'])
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.publicAliases).toEqual(['codeflare-mesh', 'api-handle'])
+
+    // The reserved shared alias is refused over the API too.
+    expect((await configure({ callName: 'codeflare-mesh' })).status).toBe(409)
   })
 
   it('REQ-ADM-009 activates profiles alias-exclusively and records the audit event', async () => {
@@ -3187,6 +3259,8 @@ describe('control-plane API (/api/v1)', () => {
     await store.putToken(await createTokenRecord('node', 'node-secret', 1_700_000_000_000, 'node-doomed'))
     const res = await router(new Request('https://router.test/api/v1/nodes/node-doomed', { method: 'DELETE', headers: bearer(key.token) }))
     expect(res.status).toBe(200)
+    // Decommission removes the node from the store, not just soft-revokes it.
+    expect(await store.getNode('node-doomed')).toBeUndefined()
     // The node's credential is revoked so it can no longer authenticate.
     const nodeTokens = await store.listTokens('node')
     expect(nodeTokens.filter((token) => token.nodeId === 'node-doomed' && token.active)).toHaveLength(0)
