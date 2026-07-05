@@ -35,7 +35,7 @@
 
 **Cause:** Mesh IP, allowed CIDR, listener binding, WARP enrollment, or the Workers VPC binding is wrong; a default-deny host firewall is dropping inbound WARP traffic; or the WARP-to-WARP network policy is off.
 
-**Fix:** The agent auto-provisions the inbound mesh firewall rule at startup — if its log reports the rule was not provisioned, allow inbound TCP on the mesh port over the WARP interface by hand (`ufw allow in on <WARP-interface> to any port <port> proto tcp`). Confirm the *Allow all Cloudflare One traffic to reach enrolled devices* Zero Trust toggle is on, verify WARP/Mesh enrollment and the Mesh IP in admin status, confirm the listener port, and check `env.MESH.fetch` against the node health endpoint. ([REQ-NODE-010](../../sdd/spec/node-agent.md)) ([REQ-RTR-004](../../sdd/spec/router-worker.md)) ([REQ-NODE-002](../../sdd/spec/node-agent.md))
+**Fix:** The agent auto-provisions the inbound mesh firewall rule at startup — if its log reports the rule was not provisioned, allow inbound TCP on the mesh port over the WARP interface by hand (`ufw allow in on <WARP-interface> to any port <inferencePort> proto tcp`). Confirm the *Allow all Cloudflare One traffic to reach enrolled devices* Zero Trust toggle is on, verify WARP/Mesh enrollment and the Mesh IP in admin status, confirm the listener port, and check `env.MESH.fetch` against the node health endpoint. ([REQ-NODE-010](../../sdd/spec/node-agent.md)) ([REQ-RTR-004](../../sdd/spec/router-worker.md)) ([REQ-NODE-002](../../sdd/spec/node-agent.md))
 
 ## Node service crash-loops after install
 

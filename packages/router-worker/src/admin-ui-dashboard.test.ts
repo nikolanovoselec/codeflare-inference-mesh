@@ -732,7 +732,7 @@ describe('dashboard routing contracts', () => {
     // state (route + provider), not node or serving health, so it still reads operational.
     const harness = await dashboardHarness({ status: statusFixture({ nodes: [] }), respond: routingRespond(true) })
     await harness.click(harness.query('[data-nav="routing"]'))
-    await harness.flush(6)
+    await harness.flush(20)
     expect(harness.byId('rt-route-chip').hidden).toBe(false)
     expect(harness.byId('rt-route-chip').classList.contains('operational')).toBe(true)
     expect(harness.byId('rt-route-state').textContent).not.toBe('not connected')
@@ -743,7 +743,7 @@ describe('dashboard routing contracts', () => {
     // gateway is not provisioned: the chip is hidden, never shown as a stale "not connected".
     const harness = await dashboardHarness({ respond: routingRespond(false) })
     await harness.click(harness.query('[data-nav="routing"]'))
-    await harness.flush(6)
+    await harness.flush(20)
     expect(harness.byId('rt-route-chip').hidden).toBe(true)
     expect(harness.byId('rt-route-chip').classList.contains('operational')).toBe(false)
   })

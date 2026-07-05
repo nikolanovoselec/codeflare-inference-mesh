@@ -193,7 +193,7 @@ POST /admin/playground/chat
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `gatewayId` (the target gateway) and `route` (the dynamic route to forward as `dynamic/<route>`), plus `messages` (chat message array). The body is optional — absent fields fall back to the resolved gateway defaults — but a present, malformed body is rejected with the shared `400` `invalid_json`.
+**Request body:** JSON body with `gatewayId` (the target gateway) and `route` (the dynamic route to forward as `dynamic/<route>`), plus `messages` (chat message array). The body is optional — absent fields fall back to the resolved gateway defaults — but a present, malformed body is rejected with the shared `400` `invalid_json`. A non-admin (read-only user) caller's `gatewayId` and `route` are ignored and forced to the default gateway and route, so a viewer cannot target an arbitrary gateway.
 
 **Response**
 

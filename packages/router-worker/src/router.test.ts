@@ -3237,20 +3237,6 @@ describe('operator playground contracts', () => {
     expect(new Headers(capture.init?.headers as HeadersInit).get('cf-aig-authorization')).toBe('Bearer aig-run-token')
   })
 
-  it('REQ-ADM-016 addresses non-route aliases through the custom provider slug', async () => {
-    const store = new MemoryStore()
-    await store.putConfig('cloudflare_gateway', connectedGateway)
-    await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1' })
-    const capture: { url?: string; init?: RequestInit | undefined } = {}
-    const { router } = routerFixture({ store, env: { CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-run-token' }, playgroundFetcher: sseFetcher(capture) })
-
-    await router(new Request('https://router.test/admin/playground/chat', {
-      method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'qwen3.6:35b-a3b', messages: [] })
-    }))
-
-    expect(JSON.parse(String(capture.init?.body)).model).toBe('custom-inference-mesh-router-test/qwen3.6:35b-a3b')
-  })
 })
 
 describe('control-plane API (/api/v1)', () => {

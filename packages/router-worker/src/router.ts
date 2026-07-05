@@ -769,7 +769,7 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
   // in cf-aig-authorization or the gateway rejects them; fail fast with an actionable error.
   const gatewayToken = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!gatewayToken) return json({ error: 'gateway_auth_token_missing', requestId }, 503, requestId)
-  const upstream = await (deps.playgroundFetcher ?? fetch)(`https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`, {
+  const upstream = await (deps.playgroundFetcher ?? fetch)(`https://gateway.ai.cloudflare.com/v1/${encodeURIComponent(accountId)}/${encodeURIComponent(gatewayId)}/compat/chat/completions`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',

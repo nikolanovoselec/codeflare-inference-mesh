@@ -1448,7 +1448,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'gateway-provision-default') {
       revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
       await loadGatewayOptions('').catch(() => undefined);
-      await loadGatewayOptions('', 'routing').catch(() => undefined);
     } else if (action === 'nodes-sort') {
       const key = button.dataset.sort || 'id';
       nodeSort = { key: key, dir: nodeSort.key === key ? -nodeSort.dir : -1 };
@@ -1480,7 +1479,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       await loadInstaller(prefix);
     } else if (action === 'gateway-sync') {
       revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify(gatewayPayload(prefix)) }));
-      await loadGatewayOptions('', 'routing').catch(() => undefined);
+      // Refresh the chip for the currently selected gateway only; a brand-new gateway
+      // (select still on create-new) makes no extra call and updates on the next routing view.
+      const rtSelect = byId('rt-gateway-select');
+      await refreshProvisionChip(rtSelect ? rtSelect.value : '').catch(() => undefined);
     } else if (action === 'custom-domain-validate') {
       // Hostname only; the owning zone is matched server-side from the runtime token.
       setOutput(out, await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('custom-domain') }) }));
