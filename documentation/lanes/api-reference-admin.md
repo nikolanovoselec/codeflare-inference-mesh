@@ -531,7 +531,7 @@ POST /admin/profiles/add
 
 ### POST /admin/profiles/delete
 
-Permanently removes a custom, switched-off model profile from the catalog under the admin's Access session; built-in models (which re-seed on boot) and the active model are refused.
+Permanently removes a custom, switched-off model profile from the catalog; built-in models (which re-seed on boot) and the active model are refused.
 
 ```http
 POST /admin/profiles/delete
@@ -550,7 +550,7 @@ POST /admin/profiles/delete
 | `200` | The custom model is removed and a `profile_deleted` audit event records it. | `{ "ok": true, "profileId": string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | No profile with that id exists. | `{ "error": "unknown_profile", "requestId": string }` |
-| `409` | The profile is a built-in (re-seeds on boot) or is active; nothing was removed. | `model_builtin` or `model_active` error body with `requestId`. |
+| `409` | The profile is a built-in (re-seeds on boot) or is active; nothing was removed. | `{ "error": "model_builtin", "requestId": string }` or `{ "error": "model_active", "requestId": string }` |
 
 **Implements:** [REQ-RUN-012](../../sdd/spec/runtime-profiles.md), [REQ-ADM-026](../../sdd/spec/setup-admin.md)
 

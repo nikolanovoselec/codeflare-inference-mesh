@@ -3314,7 +3314,7 @@ describe('control-plane API (/api/v1)', () => {
   const addApiModelId = async (router: (request: Request) => Promise<Response>, token: string, ref = 'unsloth/Qwen3-14B-GGUF:Q4_K_M') =>
     (await (await apiAddModel(router, token, ref, 'single')).json() as { model: { id: string } }).model.id
 
-  it('REQ-API-008 deletes a custom inactive model over the API', async () => {
+  it('REQ-API-008 REQ-RUN-012 deletes a custom inactive model over the API', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     const id = await addApiModelId(router, key.token)
@@ -3324,7 +3324,7 @@ describe('control-plane API (/api/v1)', () => {
     expect((await store.listProfiles()).some((profile) => profile.id === id)).toBe(false)
   })
 
-  it('REQ-API-008 refuses deleting the active model', async () => {
+  it('REQ-API-008 REQ-RUN-012 refuses deleting the active model', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     const id = await addApiModelId(router, key.token)
@@ -3335,7 +3335,7 @@ describe('control-plane API (/api/v1)', () => {
     expect((await store.listProfiles()).some((profile) => profile.id === id)).toBe(true)
   })
 
-  it('REQ-API-008 refuses deleting a built-in model', async () => {
+  it('REQ-API-008 REQ-RUN-012 refuses deleting a built-in model', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     const res = await apiDeleteModel(router, key.token, 'mesh-default-qwen36-35b')
@@ -3344,7 +3344,7 @@ describe('control-plane API (/api/v1)', () => {
     expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-default-qwen36-35b')).toBe(true)
   })
 
-  it('REQ-API-008 returns 404 deleting an unknown model', async () => {
+  it('REQ-API-008 REQ-RUN-012 returns 404 deleting an unknown model', async () => {
     const { router } = routerFixture()
     const key = await mintKey(router)
     const res = await apiDeleteModel(router, key.token, 'custom-does-not-exist')

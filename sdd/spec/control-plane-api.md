@@ -197,10 +197,10 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Acceptance Criteria:**
 
-1. `DELETE /api/v1/models/{id}` with an automation key removes a custom, switched-off model and returns `{ ok, id }`. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 deletes a custom inactive model over the API) -->
-2. Deleting the active model is rejected with status 409 without removing it. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses deleting the active model) -->
-3. Deleting a built-in model is rejected with status 409 without removing it. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses deleting a built-in model) -->
-4. Deleting an unknown model returns status 404. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 returns 404 deleting an unknown model) -->
+1. `DELETE /api/v1/models/{id}` with an automation key removes a custom, switched-off model and returns `{ ok, id }`. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes a custom inactive model over the API) -->
+2. Deleting the active model is rejected with status 409 without removing it. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 refuses deleting the active model) -->
+3. Deleting a built-in model is rejected with status 409 without removing it. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 refuses deleting a built-in model) -->
+4. Deleting an unknown model returns status 404. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 returns 404 deleting an unknown model) -->
 5. Deleting a model refuses a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses model deletion without an automation key) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
