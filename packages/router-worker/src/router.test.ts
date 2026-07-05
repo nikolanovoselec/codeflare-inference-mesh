@@ -3277,6 +3277,36 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request('https://router.test/api/v1/nodes/node-ghost', { method: 'DELETE', headers: bearer(key.token) }))).status).toBe(404)
   })
 
+  it('REQ-SEC-002 hides a revoked tombstone node from every fleet listing', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({ id: 'node-live', status: 'online' }))
+    await store.upsertNode(nodeFixture({ id: 'node-tombstone', status: 'online' }))
+    // Simulate a mid-revoke failure (or a legacy revoke): the row is marked revoked but the
+    // deleteNode step never ran, so the tombstone lingers in storage.
+    await store.revokeNode('node-tombstone', 1_700_000_000_000)
+    expect(await store.getNode('node-tombstone')).toBeDefined()
+
+    // A revoked tombstone must not surface in listNodes or in the automation node list.
+    const listed = await store.listNodes(1_700_000_000_000)
+    expect(listed.map((node) => node.id)).toEqual(['node-live'])
+    const api = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(key.token) }))
+    expect(((await api.json()) as { nodes: { id: string }[] }).nodes.map((node) => node.id)).toEqual(['node-live'])
+  })
+
+  it('REQ-API-004 decommission reaps a lingering revoked tombstone row', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({ id: 'node-tombstone', status: 'online' }))
+    // Leave a revoked-but-undeleted tombstone (deleteNode never ran).
+    await store.revokeNode('node-tombstone', 1_700_000_000_000)
+    expect(await store.getNode('node-tombstone')).toBeDefined()
+    // Decommission must still reach it (getNode, not the revoked-filtered listNodes) and hard-delete it.
+    const res = await router(new Request('https://router.test/api/v1/nodes/node-tombstone', { method: 'DELETE', headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    expect(await store.getNode('node-tombstone')).toBeUndefined()
+  })
+
   it('REQ-ADM-023 reconfigures a node VRAM override through the automation API', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)

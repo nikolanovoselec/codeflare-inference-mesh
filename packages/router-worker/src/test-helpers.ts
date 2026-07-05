@@ -42,7 +42,7 @@ export class MemoryStore implements Store {
   }
 
   async listNodes(_now: number): Promise<readonly NodeRecord[]> {
-    return [...this.nodes.values()]
+    return [...this.nodes.values()].filter((node) => node.status !== 'revoked')
   }
 
   async getNode(nodeId: string): Promise<NodeRecord | undefined> {

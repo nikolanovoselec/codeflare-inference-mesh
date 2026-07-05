@@ -1133,7 +1133,10 @@ async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
   const nodeId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
-  const node = (await deps.store.listNodes(now)).find((candidate) => candidate.id === nodeId)
+  // getNode (not listNodes) so decommission can still reach — and reap — a node whose row is
+  // already a revoked tombstone: listNodes now hides revoked nodes, but the delete must remain
+  // reachable so a lingering tombstone from a mid-revoke failure can be cleaned up idempotently.
+  const node = await deps.store.getNode(nodeId)
   if (!node) return json({ error: 'not_found', requestId }, 404, requestId)
   // Neutralize the credential first (fail-closed), then revoke tokens, clear mesh tokens,
   // and delete the node record so it also disappears from the fleet.

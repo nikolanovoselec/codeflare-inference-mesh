@@ -231,6 +231,19 @@ describe('D1 store behavioral contracts', () => {
     expect(rebuilt.reservation).toMatchObject({ reservationId: 'reservation-b', nodeId: 'node-a', publicModel: 'codeflare-mesh', profileId: profile.id })
   })
 
+  it('REQ-SEC-002 listNodes excludes revoked tombstone rows that getNode can still reach', async () => {
+    const db = new FakeD1Database()
+    const store = new D1Store(db as unknown as D1Database, () => 1_700_000_000_000)
+    await store.upsertNode(nodeFixture({ id: 'live', status: 'online' }))
+    await store.upsertNode(nodeFixture({ id: 'ghost', status: 'online' }))
+    await store.revokeNode('ghost', 1_700_000_000_000)
+
+    // The revoked row is still persisted (getNode reaches it for idempotent cleanup) ...
+    expect((await store.getNode('ghost'))?.status).toBe('revoked')
+    // ... but listNodes drops it, so it never reappears in any fleet listing.
+    expect((await store.listNodes(1_700_000_000_000)).map((node) => node.id)).toEqual(['live'])
+  })
+
   it('gate config cache elides D1 reads within the TTL and invalidates on write', async () => {
     const db = new FakeD1Database()
     let now = 1_700_000_000_000

@@ -511,7 +511,7 @@ POST /api/v1/enrollment-tokens
 
 ### GET /api/v1/nodes
 
-Lists the fleet as machine-facing node projections. Supports filtering, search, and id-cursor pagination. Token verifiers and internal ports are never returned.
+Lists the fleet as machine-facing node projections. Supports filtering, search, and id-cursor pagination. Token verifiers and internal ports are never returned. Revoked nodes are never listed — a revoked node is on its way out of the fleet.
 
 ```http
 GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
@@ -519,7 +519,7 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 
 **Authentication:** automation key
 
-**Query parameters:** `status` (exact node status: `online`, `offline`, `draining` — a revoked node is deleted rather than kept in a `revoked` state, so that filter never matches), `q` (case-insensitive match on node id or display name), `limit` (page size, default 100, max 1000), `cursor` (return nodes with id greater than this value).
+**Query parameters:** `status` (exact node status: `online`, `offline`, `draining` — revoked nodes are excluded from every listing, so `revoked` never matches even if a tombstone row survives a mid-revoke failure), `q` (case-insensitive match on node id or display name), `limit` (page size, default 100, max 1000), `cursor` (return nodes with id greater than this value).
 
 **Request body:** None.
 
@@ -556,7 +556,7 @@ GET /api/v1/nodes/{id}
 
 ### DELETE /api/v1/nodes/{id}
 
-Decommissions a node: deletes its record and revokes its node and mesh tokens so it disappears from the fleet at once, must re-enroll, and can no longer authenticate.
+Decommissions a node: deletes its record and revokes its node and mesh tokens so it disappears from the fleet at once, must re-enroll, and can no longer authenticate. It reaches even a revoked tombstone row, so a node left behind by a mid-revoke failure can still be reaped.
 
 ```http
 DELETE /api/v1/nodes/{id}

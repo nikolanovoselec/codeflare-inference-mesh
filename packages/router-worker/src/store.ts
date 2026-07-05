@@ -63,7 +63,10 @@ export class D1Store implements Store {
 
   async listNodes(now: number): Promise<readonly NodeRecord[]> {
     const rows = await this.db.prepare('SELECT node_json, in_flight FROM nodes ORDER BY id').all<NodeRow>()
-    return (rows.results ?? []).map((row) => materializeNode(nodeFromRow(row), now))
+    // A revoked node is a tombstone: its credentials are stripped and it is on its way out.
+    // Exclude it from every fleet listing so it never reappears in the console or API, even
+    // when a mid-revoke failure leaves the row behind (deleteNode is the last, non-fail-closed step).
+    return (rows.results ?? []).map((row) => materializeNode(nodeFromRow(row), now)).filter((node) => node.status !== 'revoked')
   }
 
   async getNode(nodeId: string): Promise<NodeRecord | undefined> {

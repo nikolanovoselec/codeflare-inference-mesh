@@ -641,7 +641,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     bodyEl.appendChild(nameRow);
     const callRow = document.createElement('label');
     callRow.className = 'drawer-row';
-    callRow.textContent = 'Call it';
+    callRow.textContent = 'Alias';
     const callInput = document.createElement('input');
     callInput.id = 'model-edit-callname';
     callInput.type = 'text';
@@ -819,7 +819,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const detail = document.createElement('small');
       const ready = readiness.find((item) => item.profileId === profile.id);
       const serving = servingCount(profile);
-      detail.textContent = 'Call it: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
+      detail.textContent = 'Alias: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
       body.append(nameRow, detail);
       row.appendChild(body);
       const toggle = document.createElement('button');
