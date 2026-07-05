@@ -330,9 +330,9 @@ POST /admin/cloudflare/gateway/sync
 | `424` | Cloudflare rejected the sync call itself (bad token, missing gateway, route conflict). The raw cause is recorded to the audit log as a `gateway_sync_failed` event and never returned to the caller. | `{ "error": "The AI Gateway sync could not be completed. Confirm the gateway exists and the router Cloudflare token has AI Gateway access, then re-sync." }` |
 | `503` | Required runtime Cloudflare configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
-**Notes:** The custom-provider slug is derived from the provider name alone (not the Worker origin), so re-running sync from a different Worker URL reconciles the same provider instead of creating a duplicate. After upgrading to this behavior the first sync may create a new stable-slug provider — paste the returned `providerToken` into that provider's BYOK key field as the response's `byokInstruction` directs. ([REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation))
-
 **Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md), [REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances)
+
+**Notes:** The custom-provider slug is derived from the provider name alone (not the Worker origin), so re-running sync from a different Worker URL reconciles the same provider instead of creating a duplicate. After upgrading to this behavior the first sync may create a new stable-slug provider — paste the returned `providerToken` into that provider's BYOK key field as the response's `byokInstruction` directs. ([REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation))
 
 ### POST /admin/custom-domain/validate
 
