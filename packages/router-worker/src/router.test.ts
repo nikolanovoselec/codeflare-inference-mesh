@@ -1277,8 +1277,10 @@ describe('router worker behavioral contracts', () => {
     const listed = await store.listNodes(1_700_000_000_000)
 
     expect(response.status).toBe(200)
-    expect(heartbeat.status).toBe(403)
-    expect(unregister.status).toBe(403)
+    // The node record is gone, so a still-running agent's heartbeat and unregister are
+    // rejected as unknown (404) and cannot resurrect it.
+    expect(heartbeat.status).toBe(404)
+    expect(unregister.status).toBe(404)
     // Revoke removes the node outright: it is gone from the store and from the list,
     // so it disappears from the console immediately (no lingering tombstone row).
     expect(node).toBeUndefined()
@@ -2082,7 +2084,7 @@ describe('router worker behavioral contracts', () => {
   it('REQ-ADM-027 renames a model over the automation API with the same guards', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    const key = await mintKey(router)
+    const key = await (await router(new Request('https://router.test/api/v1/keys', { method: 'POST', headers: bearer('admin-secret') }))).json() as { token: string }
     const configure = (body: unknown) => router(new Request('https://router.test/api/v1/models/mesh-smoke-qwen25-1.5b', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
 
     const ok = await configure({ name: 'API Named', callName: 'api-handle' })

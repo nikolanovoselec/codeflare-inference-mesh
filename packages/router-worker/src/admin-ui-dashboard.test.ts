@@ -527,7 +527,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toBe('Hello mesh')
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/chat')
     expect(call?.init?.method).toBe('POST')
-    expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hello mesh' }] })
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'qwen3.6:35b-a3b', messages: [{ role: 'user', content: 'hello mesh' }] })
   })
 
   it('REQ-ADM-016 appends a status-specific actionable hint when a playground request fails', async () => {
