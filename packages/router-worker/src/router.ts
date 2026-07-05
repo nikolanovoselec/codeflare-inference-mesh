@@ -362,7 +362,9 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
   const isAdmin = viewer.role === 'admin'
-  await pruneStaleNodes(deps, requestId, now)
+  // Prune stale nodes only on admin polls: a read-only user viewer must never
+  // trigger fleet mutation (node deletion + audit writes) from a status read.
+  if (isAdmin) await pruneStaleNodes(deps, requestId, now)
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
