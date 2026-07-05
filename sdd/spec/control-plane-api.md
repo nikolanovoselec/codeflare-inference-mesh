@@ -181,7 +181,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Priority:** P2
 
-**Dependencies:** [REQ-API-005](#req-api-005-programmatic-model-and-version-management), [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding)
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-API-005](#req-api-005-programmatic-model-and-version-management), [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding)
 
 **Verification:** Automated test
 
