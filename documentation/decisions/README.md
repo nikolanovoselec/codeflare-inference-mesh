@@ -25,7 +25,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Status:** Accepted
 
-**Context:** The README described the client-facing model alias as `codeflare-mesh`, but the shipped default alias, the default gateway route name, the spec, and the glossary all still said `mesh-default`, so the documentation named an alias the system did not serve. The alias is admin-configurable, but its shipped default and every reference must agree. <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES -->
+**Context:** The README described the client-facing model alias as `codeflare-mesh`, but the shipped default alias, the default gateway route name, the spec, and the glossary all still said `mesh-default`, so the documentation named an alias the system did not serve. The alias and route are fixed system-wide (not admin-configurable — see [REQ-RUN-001](../../sdd/spec/runtime-profiles.md)), but its shipped default and every reference must agree. <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES -->
 
 **Decision:** Rename the default public model alias and the default gateway route name from `mesh-default` to `codeflare-mesh` across the shipped profiles, Worker and node-agent defaults, spec, glossary, and operational docs. Internal profile IDs such as `mesh-default-qwen36-35b` and the derived mesh-network names such as `codeflare-mesh-default-qwen36-35b` keep their existing values; only the client-facing alias and the route default change.
 
@@ -33,7 +33,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Rationale:** `codeflare-mesh` matches the product name and the existing private mesh-network naming, and making the shipped default agree with the docs closes the aspirational-documentation gap the spec review flagged. Leaving profile IDs and mesh names unchanged keeps this to a pure default rename with no stored-config migration.
 
-**Consequences:** New deployments default to the `codeflare-mesh` alias and route. Existing deployments keep serving their current alias until the operator re-syncs the Gateway with the new default; stored config and profile IDs are unaffected. Clients or scripts that hardcoded `mesh-default` must switch to `codeflare-mesh`, or the operator can set `AI_GATEWAY_PUBLIC_MODEL` back.
+**Consequences:** New deployments default to the `codeflare-mesh` alias and route. Existing deployments keep serving their current alias until the operator re-syncs the Gateway with the new default; stored config and profile IDs are unaffected. Clients or scripts that hardcoded `mesh-default` must switch to `codeflare-mesh` — `AI_GATEWAY_ROUTE_NAME`/`AI_GATEWAY_PUBLIC_MODEL` are declared in Wrangler but not consumed (see [configuration.md](../lanes/configuration.md)), so there is no environment-variable rollback path.
 
 **Related requirements:** [REQ-RUN-001](../../sdd/spec/runtime-profiles.md), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-GWY-003](../../sdd/spec/gateway.md)
 

@@ -142,7 +142,7 @@ POST /node/heartbeat
 
 **Notes:** Invite-token values (`meshToken`, `joinTokens`) are stored encrypted, never logged, and never surfaced through any admin or status response. ([REQ-SEC-006](../../sdd/spec/security.md)) The `metrics` and `meshBootstrap` shapes are detailed below.
 
-**Heartbeat `metrics` fields**
+#### Heartbeat `metrics` fields
 
 `metrics` carries the MeshLLM status fields alongside the existing runtime-state and throughput fields:
 
@@ -150,7 +150,7 @@ POST /node/heartbeat
 - `readyModels` — the model ids from the node's own `/v1/models` (the mesh-wide union).
 - `peerCount`, `splitEnabled`, `stageCount`, `apiReady`, `consoleReady`, and `meshllmVersion`.
 
-**`meshBootstrap` envelope**
+#### `meshBootstrap` envelope
 
 Computed per node as `{ "action": "create" | "join" | "wait", "rotation": number, "meshId"?: string, "joinTokens"?: string[] }`:
 

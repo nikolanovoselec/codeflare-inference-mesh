@@ -289,7 +289,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON with `accountId`, `gatewayId`, and `providerName` — all optional. The dynamic route name and forwarded model are fixed to the stable public model `codeflare-mesh` and are never read from the body. The console pre-fills `providerName` with `Codeflare Inference Mesh`; when the body omits it, sync falls back to the `AI_GATEWAY_PROVIDER_NAME` env var (see [configuration.md](configuration.md)). For account and Gateway fields, request body values override stored settings, then the environment defaults apply. The Worker URL is resolved from the provisioned custom domain (or a stored explicit override) and is not a request input.
+**Request body:** Optional JSON with `accountId`, `gatewayId`, and `providerName` — all optional. The dynamic route name and forwarded model are fixed to the stable public model `codeflare-mesh` and are never read from the body. For `accountId`, `gatewayId`, and `providerName`, request body values override stored settings, then the environment defaults documented in [configuration.md](configuration.md) apply (`providerName` falls back to `AI_GATEWAY_PROVIDER_NAME`, else the hardcoded `Codeflare Inference Mesh`); the Setup wizard and Routing form additionally prefill the provider-name field with `Codeflare Inference Mesh` as a friendlier starting value. The Worker URL is resolved from the provisioned custom domain (or a stored explicit override) and is not a request input.
 
 **Response**
 
