@@ -191,6 +191,7 @@ export interface Store {
   putReservation(reservation: ReservationRecord): Promise<void>
   getReservation(reservationId: string): Promise<ReservationRecord | undefined>
   releaseReservation(reservationId: string, now: number): Promise<void>
+  listOpenExpiredReservations(now: number): Promise<readonly ReservationRecord[]>
   getToken(kind: CredentialKind, id: string): Promise<TokenRecord | undefined>
   putToken(token: TokenRecord): Promise<void>
   revokeToken(kind: CredentialKind, id: string, now: number): Promise<void>

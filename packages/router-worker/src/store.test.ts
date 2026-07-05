@@ -144,6 +144,9 @@ class FakeD1Statement {
     if (q === 'SELECT reservation_id, node_id, session_id, public_model, profile_id, upstream_model, expires_at, released_at FROM reservations WHERE reservation_id = ?') {
       return maybe(this.db.reservations.get(text(values[0])))
     }
+    if (q === 'SELECT reservation_id, node_id, session_id, public_model, profile_id, upstream_model, expires_at, released_at FROM reservations WHERE released_at IS NULL AND expires_at <= ?') {
+      return [...this.db.reservations.values()].filter((row) => row.released_at === null && number(row.expires_at) <= number(values[0]))
+    }
     if (q === 'SELECT event_json FROM audit_events ORDER BY at DESC LIMIT ?') {
       return [...this.db.audit].sort(desc('at')).slice(0, number(values[0])).map((row) => pick(row, ['event_json']))
     }

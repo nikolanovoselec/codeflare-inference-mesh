@@ -12,6 +12,14 @@ export class StoreScheduler implements Scheduler {
     const profile = await this.store.getProfileByPublicModel(request.publicModel)
     if (!profile) return { reason: 'no-profile' }
 
+    // Reclaim in-flight from reservations whose TTL lapsed without an explicit
+    // release (e.g. a client that abandoned the response stream) before making a
+    // scheduling decision, so a leaked reservation can never wedge a node at
+    // capacity. REQ-SCH-002 AC5.
+    for (const expired of await this.store.listOpenExpiredReservations(request.now)) {
+      await this.finishReservation(expired.reservationId, request.now)
+    }
+
     const sticky = await this.store.getSession(request.sessionId)
     const stickyNode = sticky && sticky.expiresAt > request.now ? await this.store.getNode(sticky.nodeId) : undefined
     const nodes = await this.store.listNodes(request.now)

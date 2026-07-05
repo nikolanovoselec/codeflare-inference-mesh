@@ -128,6 +128,13 @@ export class D1Store implements Store {
     await this.db.prepare('UPDATE reservations SET released_at = COALESCE(released_at, ?) WHERE reservation_id = ?').bind(now, reservationId).run()
   }
 
+  async listOpenExpiredReservations(now: number): Promise<readonly ReservationRecord[]> {
+    const rows = await this.db.prepare('SELECT reservation_id, node_id, session_id, public_model, profile_id, upstream_model, expires_at, released_at FROM reservations WHERE released_at IS NULL AND expires_at <= ?')
+      .bind(now)
+      .all<ReservationRow>()
+    return (rows.results ?? []).map(reservationFromRow)
+  }
+
   async getToken(kind: CredentialKind, id: string): Promise<TokenRecord | undefined> {
     const row = await this.db.prepare('SELECT id, kind, verifier, active, node_id, created_at, expires_at FROM tokens WHERE kind = ? AND id = ?').bind(kind, id).first<TokenRow>()
     return row ? tokenFromRow(row) : undefined

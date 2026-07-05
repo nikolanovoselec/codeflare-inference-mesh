@@ -1041,6 +1041,30 @@ describe('router worker behavioral contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'no-node', requestId: 'request-a' })
   })
 
+  it('REQ-SCH-002 reclaims expired unreleased reservations before scheduling', async () => {
+    const store = new MemoryStore()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture({ capacity: 1, inFlight: 0 }))
+    const base = 1_700_000_000_000
+
+    // A reservation that is never released leaks in-flight capacity.
+    const leaked = await new StoreScheduler(store, () => 'reservation-leak').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-leak', now: base })
+    expect(leaked.reservation?.reservationId).toBe('reservation-leak')
+    expect((await store.getNode('node-a'))?.inFlight).toBe(1)
+
+    // Before the reservation TTL, the capacity-1 node stays wedged at no-node.
+    const wedged = await new StoreScheduler(store, () => 'reservation-wedged').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-wedged', now: base + 1 })
+    expect(wedged.reason).toBe('no-node')
+    expect(wedged.reservation).toBeUndefined()
+
+    // Once the TTL lapses, the next reserve reclaims the leaked count and schedules again.
+    const reclaimed = await new StoreScheduler(store, () => 'reservation-fresh').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-fresh', now: base + 30 * 60 * 1000 + 1 })
+    expect(reclaimed.reservation?.reservationId).toBe('reservation-fresh')
+    expect(reclaimed.reservation?.nodeId).toBe('node-a')
+    expect((await store.getReservation('reservation-leak'))?.releasedAt).toBeDefined()
+    expect((await store.getNode('node-a'))?.inFlight).toBe(1)
+  })
+
   it('REQ-SCH-005 returns no-profile when the public model has no configured profile', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)

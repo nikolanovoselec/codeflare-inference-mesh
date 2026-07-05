@@ -92,6 +92,10 @@ export class MemoryStore implements Store {
     if (reservation) this.reservations.set(reservationId, { ...reservation, releasedAt: reservation.releasedAt ?? now })
   }
 
+  async listOpenExpiredReservations(now: number): Promise<readonly ReservationRecord[]> {
+    return [...this.reservations.values()].filter((reservation) => reservation.releasedAt === undefined && reservation.expiresAt <= now)
+  }
+
   async getToken(kind: CredentialKind, id: string): Promise<TokenRecord | undefined> {
     return this.tokens.find((token) => token.kind === kind && token.id === id)
   }
