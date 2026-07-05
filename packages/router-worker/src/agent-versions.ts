@@ -1,3 +1,4 @@
+import { InvalidJsonBodyError } from './errors'
 import type { RouterEnv, Store } from './types'
 
 export type AgentVersionsEnv = Pick<Partial<RouterEnv>, 'GITHUB_REPOSITORY'>
@@ -26,7 +27,14 @@ export async function handleAgentVersionsList(request: Request, store: Store, en
 }
 
 export async function handleAgentVersionSelect(request: Request, store: Store, env: AgentVersionsEnv, fetcher: typeof fetch = globalThis.fetch, actor = 'admin'): Promise<Response> {
-  const body = await request.json() as { version?: unknown } | null
+  let body: { version?: unknown } | null
+  try {
+    body = await request.json() as { version?: unknown } | null
+  } catch {
+    // Route a malformed body through the shared boundary error so the router's top-level catch
+    // answers 400 invalid_json here too (this handler parses directly, not via readJson).
+    throw new InvalidJsonBodyError()
+  }
   const version = typeof body?.version === 'string' ? body.version : ''
   if (!version) return json({ error: 'invalid_version' }, 400)
   const now = Date.now()

@@ -14,6 +14,8 @@ Any admin route can also return `500` with body `{ "error": "internal_error", "r
 
 Admin routes are also rate-limited: `RL_AUTH` covers `/admin/login`, `/admin/setup`, `/admin/recovery/reset`, and `/admin/setup-tokens`; every other admin route falls to `RL_PUBLIC`. An over-limit request receives `429` with body `{ "error": "rate_limited", "requestId": string }` before its handler runs, and the per-route Response tables below omit this shared `429` the same way they omit the shared `500`. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
+An admin route that reads a JSON body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
+
 ## Endpoints
 
 ### GET /

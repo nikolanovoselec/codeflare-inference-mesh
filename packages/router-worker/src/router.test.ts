@@ -3179,11 +3179,28 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer('admin-secret') }))).status).toBe(401)
   })
 
-  it('REQ-API-002 rejects a malformed JSON body with 400 invalid_json', async () => {
+  it('REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on an api endpoint', async () => {
     const { router } = routerFixture()
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: '{ not valid json' }))
     // A malformed body is client error, not a router fault: 400 invalid_json, never a 500.
+    expect(res.status).toBe(400)
+    expect((await res.json() as { error: string }).error).toBe('invalid_json')
+  })
+
+  it('REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on a node endpoint', async () => {
+    const { router } = routerFixture()
+    // handleNodeHeartbeat parses the body via readJson before auth, so a malformed body is 400 invalid_json.
+    const res = await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{ not valid json' }))
+    expect(res.status).toBe(400)
+    expect((await res.json() as { error: string }).error).toBe('invalid_json')
+  })
+
+  it('REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on an admin endpoint', async () => {
+    const { router } = routerFixture()
+    // handleAgentVersionSelect parses the body directly (not via readJson); it routes a malformed
+    // body through the same InvalidJsonBodyError boundary, so this admin route is 400 not 500.
+    const res = await router(new Request('https://router.test/admin/agent-version', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: '{ not valid json' }))
     expect(res.status).toBe(400)
     expect((await res.json() as { error: string }).error).toBe('invalid_json')
   })

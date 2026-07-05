@@ -5,6 +5,7 @@ import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
+import { InvalidJsonBodyError } from './errors'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
@@ -1373,11 +1374,6 @@ function html(body: string, requestId: string): Response {
     }
   })
 }
-
-// Thrown only when a request BODY fails to parse as JSON, so the top-level catch can answer
-// 400 invalid_json for that client error without also swallowing server-side JSON.parse faults
-// (stored-record reads, decrypt) — those must still surface as an audited 500.
-class InvalidJsonBodyError extends Error {}
 
 async function readJson<T>(request: Request): Promise<T> {
   try {

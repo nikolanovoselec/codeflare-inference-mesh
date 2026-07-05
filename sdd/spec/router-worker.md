@@ -110,6 +110,28 @@ This domain covers the public Worker that receives provider calls, protects rout
 
 ---
 
+### REQ-RTR-005: Malformed request body handling
+
+**Intent:** A client that sends a body that is not valid JSON is making a client error, so every endpoint that reads a JSON body must answer with a clear `400`, never an ambiguous `500`. The guard is a typed request-body parse error, so a server-side parse fault (a stored record or a decrypted payload) is never mistaken for client error and still surfaces as an audited `500`.
+
+**Applies To:** Node Operator, Admin, Automation
+
+**Acceptance Criteria:**
+
+1. A request whose body fails to parse as JSON is rejected with `400` `invalid_json` on every endpoint that reads a JSON body — across the `/api/v1`, `/admin`, and `/node` surfaces. <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @impl: packages/router-worker/src/errors.ts::InvalidJsonBodyError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on an api endpoint) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on a node endpoint) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on an admin endpoint) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RTR-002](#req-rtr-002-chat-completion-forwarding)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)
