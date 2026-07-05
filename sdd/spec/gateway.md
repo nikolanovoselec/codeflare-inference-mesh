@@ -164,7 +164,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Acceptance Criteria:**
 
-1. The existing provider is matched by a slug derived from the provider name alone, never the Worker origin, so a changed Worker URL reconciles the same provider instead of minting a duplicate. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 keeps the provider slug stable across worker origins so a re-sync reconciles instead of duplicating) -->
+1. The existing provider is matched by a slug derived from the provider name alone, never the Worker origin, so a changed Worker URL reconciles the same provider instead of minting a duplicate. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-007 keeps the provider slug stable across worker origins so a re-sync reconciles instead of duplicating) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -186,7 +186,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Acceptance Criteria:**
 
-1. A provision-status endpoint reports, for the selected gateway, whether the mesh route is enabled and the canonical provider exists, to admins only. <!-- @impl: packages/router-worker/src/router.ts::handleGatewayProvisionStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-008 exposes live provision status for the selected gateway to admins only) -->
+1. A provision-status endpoint reports, for the selected gateway, whether the mesh route is enabled and the canonical provider exists, to admins only. <!-- @impl: packages/router-worker/src/router.ts::handleGatewayProvisionStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-008 exposes live provision status for the selected gateway to admins only) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-008 restricts live provision status to admins) -->
 2. The gateway client reports a gateway provisioned only when the mesh route is enabled and the name-derived canonical provider exists. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::provisionStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-008 reports a gateway provisioned only when the mesh route is enabled and the canonical provider exists) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)

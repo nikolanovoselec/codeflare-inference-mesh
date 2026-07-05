@@ -768,6 +768,11 @@ func TestREQOBS009BestEffortHardwareMetrics(t *testing.T) {
 		if metrics.GPUName != "RTX 3090" || metrics.GPUMemoryUsedMiB != 12000 || metrics.GPUMemoryTotalMiB != 24576 {
 			t.Fatalf("unexpected metrics: %#v", metrics)
 		}
+		// nvidia-smi emits one row per GPU; used and total sum across rows, name from the first.
+		multi := ParseNvidiaSMI("RTX 4090, 8000, 24576\nRTX 4090, 2000, 24576")
+		if multi.GPUName != "RTX 4090" || multi.GPUMemoryUsedMiB != 10000 || multi.GPUMemoryTotalMiB != 49152 {
+			t.Fatalf("multi-GPU nvidia-smi rows must sum, got %#v", multi)
+		}
 	})
 }
 

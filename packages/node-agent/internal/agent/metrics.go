@@ -29,14 +29,25 @@ type NodeMetrics struct {
 	LastError                 string   `json:"lastError,omitempty"`
 }
 
+// ParseNvidiaSMI parses `name,memory.used,memory.total` CSV rows. nvidia-smi emits
+// one row per GPU, so used and total memory are summed across all rows (a single-GPU
+// host sums to itself) and the name is taken from the first row.
 func ParseNvidiaSMI(csv string) NodeMetrics {
-	line := strings.TrimSpace(csv)
-	parts := strings.Split(line, ",")
 	metrics := NodeMetrics{RuntimeState: "unknown"}
-	if len(parts) >= 3 {
-		metrics.GPUName = strings.TrimSpace(parts[0])
-		metrics.GPUMemoryUsedMiB = atoi(strings.TrimSpace(parts[1]))
-		metrics.GPUMemoryTotalMiB = atoi(strings.TrimSpace(parts[2]))
+	for _, raw := range strings.Split(csv, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, ",")
+		if len(parts) < 3 {
+			continue
+		}
+		if metrics.GPUName == "" {
+			metrics.GPUName = strings.TrimSpace(parts[0])
+		}
+		metrics.GPUMemoryUsedMiB += atoi(strings.TrimSpace(parts[1]))
+		metrics.GPUMemoryTotalMiB += atoi(strings.TrimSpace(parts[2]))
 	}
 	return metrics
 }

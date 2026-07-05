@@ -328,14 +328,14 @@ func (s *serviceLoop) tick(ctx context.Context) {
 	s.handleResponse(ctx, response)
 }
 
-// collect runs the once-per-tick MeshLLM poll and assembles the heartbeat
-// metrics and identity: mesh id and invite token are resent every tick.
 // execCommandRunner is the production agent.CommandRunner: it shells out to the
 // host GPU tool. Tests inject a fake runner instead.
 func execCommandRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
 }
 
+// collect runs the once-per-tick MeshLLM poll and assembles the heartbeat
+// metrics and identity: mesh id and invite token are resent every tick.
 func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.NodeMetrics, agent.HeartbeatIdentity) {
 	identity := agent.HeartbeatIdentity{AgentVersion: s.agentVersion}
 	metrics := runtimeMetrics(s.manager, s.loadState, current, s.activeRequests.Value(), s.installError)
@@ -584,15 +584,21 @@ func applyMeshStatusMetrics(metrics agent.NodeMetrics, profile agent.ModelProfil
 	// my_vram_gb; the nvidia-smi/system_profiler fallback in collect() fills in
 	// when the console reports no GPUs at all.
 	if len(status.GPUs) > 0 {
-		gpu := status.GPUs[0]
-		if gpu.Name != "" {
-			metrics.GPUName = gpu.Name
+		// Sum rated and used VRAM across every GPU so a multi-GPU node reports its
+		// full memory, not just the first card; the name comes from the first GPU.
+		var ratedGB, usedGB float64
+		for _, gpu := range status.GPUs {
+			ratedGB += gpu.RatedVRAMGB
+			usedGB += gpu.UsedVRAMGB
 		}
-		if gpu.RatedVRAMGB > 0 {
-			metrics.GPUMemoryTotalMiB = int(gpu.RatedVRAMGB * 1024)
+		if name := status.GPUs[0].Name; name != "" {
+			metrics.GPUName = name
 		}
-		if gpu.UsedVRAMGB > 0 {
-			metrics.GPUMemoryUsedMiB = int(gpu.UsedVRAMGB * 1024)
+		if ratedGB > 0 {
+			metrics.GPUMemoryTotalMiB = int(ratedGB * 1024)
+		}
+		if usedGB > 0 {
+			metrics.GPUMemoryUsedMiB = int(usedGB * 1024)
 		}
 	}
 	return metrics

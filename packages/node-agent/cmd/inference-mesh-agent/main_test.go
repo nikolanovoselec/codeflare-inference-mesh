@@ -379,6 +379,12 @@ func TestREQOBS009MeshStatusGPUMetrics(t *testing.T) {
 			t.Fatalf("gpus[] rated/used VRAM must populate GPU metrics, got %#v", got)
 		}
 
+		// Multiple GPUs sum: two 24 GB cards -> 48 GB total, used summed across both.
+		multi := agent.MeshLLMStatus{NodeID: "node-1", GPUs: []agent.GPUStatus{{Name: "RTX 4090", RatedVRAMGB: 24, UsedVRAMGB: 8}, {Name: "RTX 4090", RatedVRAMGB: 24, UsedVRAMGB: 2}}}
+		if summed := applyMeshStatusMetrics(base, profile, multi, true, true, []string{"model-x"}); summed.GPUMemoryTotalMiB != 48*1024 || summed.GPUMemoryUsedMiB != 10*1024 {
+			t.Fatalf("multi-GPU VRAM must sum across cards, got %#v", summed)
+		}
+
 		// No gpus[] reported -> GPU fields stay zero so the collect() host fallback can fill them.
 		none := applyMeshStatusMetrics(base, profile, agent.MeshLLMStatus{NodeID: "node-1"}, true, true, []string{"model-x"})
 		if none.GPUMemoryTotalMiB != 0 || none.GPUMemoryUsedMiB != 0 || none.GPUName != "" {

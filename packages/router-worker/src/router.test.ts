@@ -1605,7 +1605,7 @@ describe('router worker behavioral contracts', () => {
     expect(result).toMatchObject({ providerId: 'provider-a', providerSlug: 'codeflare-inference-mesh', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: 'gateway-a', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', workerUrl: 'https://router.example.workers.dev', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
   })
 
-  it('REQ-GWY-003 keeps the provider slug stable across worker origins so a re-sync reconciles instead of duplicating', async () => {
+  it('REQ-GWY-007 keeps the provider slug stable across worker origins so a re-sync reconciles instead of duplicating', async () => {
     const providers: Array<{ id: string; slug: string; name: string; base_url: string }> = []
     const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
     const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2688,7 +2688,7 @@ describe('Access-first setup and host gating contracts', () => {
     expect(adminBody.audit).toBeDefined()
   })
 
-  it('REQ-ADM-016 REQ-ADM-017 lets the read-only user role reach the playground endpoint', async () => {
+  it('REQ-ADM-029 REQ-ADM-017 lets the read-only user role reach the playground endpoint', async () => {
     const { router, key } = await roleRouter(roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }), [])
     const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
     const response = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [] }) }))
@@ -2697,7 +2697,7 @@ describe('Access-first setup and host gating contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'gateway_not_configured' })
   })
 
-  it('REQ-ADM-016 playground gateway target forwards dynamic/<route> to the selected gateway compat endpoint', async () => {
+  it('REQ-ADM-029 playground gateway target forwards dynamic/<route> to the selected gateway compat endpoint', async () => {
     const calls: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
     const playgroundFetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), body: JSON.parse(String(init!.body)) as Record<string, unknown>, headers: Object.fromEntries(new Headers(init!.headers).entries()) })
@@ -2713,7 +2713,7 @@ describe('Access-first setup and host gating contracts', () => {
     expect(calls[0]!.headers['cf-aig-authorization']).toBe('Bearer aig-token')
   })
 
-  it('REQ-ADM-016 playground direct target reserves a node and forwards the internal model straight to it', async () => {
+  it('REQ-ADM-029 playground direct target reserves a node and forwards the internal model straight to it', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture) })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
@@ -2729,6 +2729,30 @@ describe('Access-first setup and host gating contracts', () => {
     expect(response.status).toBe(200)
     expect(capture.request!.url).toBe('http://100.64.1.10:8080/v1/chat/completions')
     expect((await capture.request!.json() as { model: string }).model).toBe(SMOKE_UPSTREAM)
+  })
+
+  it('REQ-GWY-008 restricts live provision status to admins', async () => {
+    const { router, key } = await roleRouter(roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }), [])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
+    // A valid read-only user role must be rejected: provision-status is an admin-only surface.
+    const res = await router(new Request(`https://${HOST}/admin/cloudflare/gateway/provision-status?gateway=gw`, { headers: { 'cf-access-jwt-assertion': jwt } }))
+    expect(res.status).toBe(401)
+  })
+
+  it('REQ-ADM-029 scopes a non-admin playground gateway target to the default gateway', async () => {
+    resetJwksCache()
+    const key = await accessTestKey('key-1')
+    const store = new MemoryStore()
+    await store.putConfig('access_config', roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }))
+    await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1', gatewayId: 'default-gw' })
+    const calls: string[] = []
+    const playgroundFetcher = (async (input: RequestInfo | URL) => { calls.push(String(input)); return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } }) }) as typeof fetch
+    const { router } = routerFixture({ store, env: { CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-token' }, jwksFetcher: accessJwksFetcher([key.jwk]), identityFetcher: identityGroupsFetcher([]), playgroundFetcher })
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
+    // The read-only user asks for an arbitrary gateway; the server ignores it and uses the default.
+    const res = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt, 'content-type': 'application/json' }, body: JSON.stringify({ gatewayId: 'evil-gw', route: 'evil-route', messages: [] }) }))
+    expect(res.status).toBe(200)
+    expect(calls).toEqual(['https://gateway.ai.cloudflare.com/v1/acct-1/default-gw/compat/chat/completions'])
   })
 
   it('REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase', async () => {
@@ -3143,7 +3167,7 @@ describe('operator playground contracts', () => {
     }) as typeof fetch
   }
 
-  it('REQ-ADM-016 rejects unauthenticated playground requests', async () => {
+  it('REQ-ADM-029 rejects unauthenticated playground requests', async () => {
     const { router } = routerFixture()
     const response = await router(new Request('https://router.test/admin/playground/chat', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
@@ -3151,7 +3175,7 @@ describe('operator playground contracts', () => {
     expect(response.status).toBe(401)
   })
 
-  it('REQ-ADM-016 returns gateway_not_configured until a gateway is connected', async () => {
+  it('REQ-ADM-029 returns gateway_not_configured until a gateway is connected', async () => {
     const { router } = routerFixture()
     const response = await router(new Request('https://router.test/admin/playground/chat', {
       method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
@@ -3160,7 +3184,7 @@ describe('operator playground contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'gateway_not_configured' })
   })
 
-  it('REQ-ADM-016 forwards playground prompts through the configured gateway route and strips upstream secrets', async () => {
+  it('REQ-ADM-029 forwards playground prompts through the configured gateway route and strips upstream secrets', async () => {
     const store = new MemoryStore()
     await store.putConfig('cloudflare_gateway', connectedGateway)
     await store.putConfig('cloudflare_gateway_settings', { accountId: 'acct-1', gatewayId: 'inference-mesh' })

@@ -443,16 +443,39 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 1. The direct target offers one option per model that is on, valued by the model's own callable name and labeled with that callable name paired with the model name, from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 lists one playground option per model on, valued by callable name and labeled with the model name) -->
 2. A gateway target lists that gateway's dynamic routes in the dependent selector and sends the chosen route to the gateway playground endpoint. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::updatePlaygroundModels --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint) -->
 3. Sending a prompt renders the streamed response incrementally as chunks arrive. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 streams the direct-target playground response incrementally as chunks arrive) -->
-4. The gateway playground endpoint forwards the chosen route as `dynamic/<route>` to the selected gateway's compat endpoint and never leaks upstream secrets, reporting `gateway_not_configured` when no gateway resolves. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 forwards playground prompts through the configured gateway route and strips upstream secrets) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 playground gateway target forwards dynamic/<route> to the selected gateway compat endpoint) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 returns gateway_not_configured until a gateway is connected) -->
-5. The direct playground endpoint reserves a node and forwards the internal model straight to it, bypassing the gateway. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundDirect --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 playground direct target reserves a node and forwards the internal model straight to it) -->
-6. Both playground endpoints require a valid console role (admin or read-only user) and never expose gateway credentials to the browser. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundDirect --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 rejects unauthenticated playground requests) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 REQ-ADM-017 lets the read-only user role reach the playground endpoint) -->
-7. Failed playground requests append a status-specific actionable next step (provider key, Gateway connection, missing node or profile, or re-sync) instead of a bare status code. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 appends a status-specific actionable hint when a playground request fails) -->
+4. Failed playground requests append a status-specific actionable next step (provider key, Gateway connection, missing node or profile, or re-sync) instead of a bare status code. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 appends a status-specific actionable hint when a playground request fails) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P2
 
-**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-ADM-017](#req-adm-017-role-based-console-surface), [REQ-SCH-002](state-scheduling.md#req-sch-002-node-reservations)
+**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-ADM-017](#req-adm-017-role-based-console-surface), [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning), [REQ-ADM-029](#req-adm-029-playground-inference-endpoints)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-029: Playground inference endpoints
+
+**Intent:** The Playground's two send paths are server endpoints with distinct guarantees: the gateway path proxies a chosen route through the selected gateway without leaking secrets and never lets a non-admin reach an arbitrary gateway, while the direct path drives the router's own scheduler.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The gateway playground endpoint forwards the chosen route as `dynamic/<route>` to the selected gateway's compat endpoint and never leaks upstream gateway secrets to the caller. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-029 forwards playground prompts through the configured gateway route and strips upstream secrets) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-029 playground gateway target forwards dynamic/<route> to the selected gateway compat endpoint) -->
+2. The gateway playground endpoint reports `gateway_not_configured` when no account or gateway resolves. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-029 returns gateway_not_configured until a gateway is connected) -->
+3. A non-admin console user is scoped to the default gateway and route on the gateway path, so a read-only viewer cannot proxy inference through an arbitrary account gateway. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-029 scopes a non-admin playground gateway target to the default gateway) -->
+4. The direct playground endpoint reserves a node and forwards the internal model straight to it, bypassing the gateway. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundDirect --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-029 playground direct target reserves a node and forwards the internal model straight to it) -->
+5. Both playground endpoints require a valid console role (admin or read-only user) before any upstream work. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundDirect --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-029 rejects unauthenticated playground requests) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-029 REQ-ADM-017 lets the read-only user role reach the playground endpoint) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-SCH-002](state-scheduling.md#req-sch-002-node-reservations), [REQ-ADM-017](#req-adm-017-role-based-console-surface)
 
 **Verification:** Automated test
 
@@ -734,7 +757,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. Each node connector is sized to its node's position so no spoke renders outside the 2:1 topology canvas. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 sizes each topology spoke to stay within the 2:1 canvas (no vertical overflow)) -->
+1. Each node connector is sized to its node's position so no spoke renders outside the 2:1 topology canvas. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-028 sizes each topology spoke to stay within the 2:1 canvas (no vertical overflow)) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 

@@ -758,8 +758,12 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
   const defaults = gatewaySettings({ env: deps.env, ...(storedSettings ? { stored: storedSettings } : {}) })
   const accountId = defaults.accountId
-  const gatewayId = cleanString(body?.gatewayId) ?? defaults.gatewayId
-  const route = cleanString(body?.route) ?? defaults.routeName
+  // Non-admin console users are locked to the default gateway and route: a read-only
+  // viewer must not be able to proxy inference through an arbitrary gateway on the
+  // operator's account. Admins may target any gateway and route they select.
+  const isAdmin = viewer.role === 'admin'
+  const gatewayId = isAdmin ? (cleanString(body?.gatewayId) ?? defaults.gatewayId) : defaults.gatewayId
+  const route = isAdmin ? (cleanString(body?.route) ?? defaults.routeName) : defaults.routeName
   if (!accountId || !gatewayId) return json({ error: 'gateway_not_configured', requestId }, 409, requestId)
   // The mesh gateway is an Authenticated Gateway, so requests must carry an AI Gateway Run token
   // in cf-aig-authorization or the gateway rejects them; fail fast with an actionable error.

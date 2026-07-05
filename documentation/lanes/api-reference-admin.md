@@ -204,7 +204,7 @@ POST /admin/playground/chat
 | `409` | No account or gateway resolved to send through. | `{ "error": "gateway_not_configured", "requestId": string }` |
 | `503` | The AI Gateway Run token is not configured. | `{ "error": "gateway_auth_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/playground/direct-chat
 
@@ -230,7 +230,7 @@ POST /admin/playground/direct-chat
 | `404` / `429` | No profile matched the model, or no node had capacity. | `{ "error": "no-profile" \| "no-node", "requestId": string }` |
 | `503` | The node upstream token is not configured. | `{ "error": "upstream_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/setup-tokens
 
@@ -359,7 +359,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md), [REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances)
 
-**Notes:** The custom-provider slug is derived from the provider name alone (not the Worker origin), so re-running sync from a different Worker URL reconciles the same provider instead of creating a duplicate. After upgrading to this behavior the first sync may create a new stable-slug provider — paste the returned `providerToken` into that provider's BYOK key field as the response's `byokInstruction` directs. ([REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation))
+**Notes:** The custom-provider slug is derived from the provider name alone (not the Worker origin), so re-running sync from a different Worker URL reconciles the same provider instead of creating a duplicate. After upgrading to this behavior the first sync may create a new stable-slug provider — paste the returned `providerToken` into that provider's BYOK key field as the response's `byokInstruction` directs. ([REQ-GWY-007](../../sdd/spec/gateway.md#req-gwy-007-provider-identity-stability-across-worker-origins)) ([REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation))
 
 ### POST /admin/custom-domain/validate
 

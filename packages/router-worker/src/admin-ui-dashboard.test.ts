@@ -126,7 +126,7 @@ describe('dashboard overview contracts', () => {
     expect(descendants(canvas).filter((node) => node.dataset.action === 'node-detail')).toHaveLength(0)
   })
 
-  it('REQ-ADM-015 sizes each topology spoke to stay within the 2:1 canvas (no vertical overflow)', async () => {
+  it('REQ-ADM-028 sizes each topology spoke to stay within the 2:1 canvas (no vertical overflow)', async () => {
     const harness = await dashboardHarness()
     const canvas = harness.byId(ADMIN_UI_TOPOLOGY.canvasId)
     const spokes = descendants(canvas).filter((node) => node.className === 'topo-spoke')
