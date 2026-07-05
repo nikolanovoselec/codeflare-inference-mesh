@@ -1385,7 +1385,17 @@ async function readJson<T>(request: Request): Promise<T> {
 
 async function readOptionalObject<T>(request: Request): Promise<T | undefined> {
   const text = await request.text()
-  return text ? parseObject(text) as T | undefined : undefined
+  if (!text) return undefined
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    // An absent body is fine (returns undefined above → the route uses its defaults), but a
+    // present-but-unparseable body is a client mistake: reject it as 400 invalid_json rather
+    // than silently discarding it and applying defaults the caller never intended.
+    throw new InvalidJsonBodyError()
+  }
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as T : undefined
 }
 
 function parseObject(text: string): Record<string, unknown> | undefined {

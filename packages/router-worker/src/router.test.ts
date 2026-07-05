@@ -3205,6 +3205,21 @@ describe('control-plane API (/api/v1)', () => {
     expect((await res.json() as { error: string }).error).toBe('invalid_json')
   })
 
+  it('REQ-RTR-005 rejects a malformed body but accepts an absent one on an optional-body route', async () => {
+    const { router } = routerFixture()
+    // gateway/sync (readOptionalObject) and mesh/rotate (rotateProfileId) treat the body as
+    // optional, but a PRESENT-yet-malformed body is still a client error -> 400 invalid_json.
+    const badSync = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: '{ not json' }))
+    expect(badSync.status).toBe(400)
+    expect((await badSync.json() as { error: string }).error).toBe('invalid_json')
+    const badRotate = await router(new Request('https://router.test/admin/mesh/rotate', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: '{ not json' }))
+    expect(badRotate.status).toBe(400)
+    expect((await badRotate.json() as { error: string }).error).toBe('invalid_json')
+    // An ABSENT body is still accepted (the route applies its defaults) — never rejected as invalid_json.
+    const absentSync = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+    expect((await absentSync.json() as { error?: string }).error).not.toBe('invalid_json')
+  })
+
   it('REQ-API-003 mints an enrollment token from an automation key', async () => {
     const { router } = routerFixture()
     const key = await mintKey(router)

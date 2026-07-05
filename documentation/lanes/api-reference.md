@@ -12,7 +12,7 @@ All API responses that represent errors use an OpenAI-style `error` object when 
 
 Public endpoints are rate-limited per route class. A request over its bucket's limit receives `429` with body `{ "error": "rate_limited", "requestId": string }` and a `Retry-After` header, returned before the route handler runs; the per-route Response tables below omit this shared rate-limit `429`. This is distinct from the `429` `no-node` response on `POST /v1/chat/completions`, which means no node is available rather than a rate limit. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
-An endpoint that requires a JSON request body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. This covers the `/node` and `/api/v1` routes documented here; `POST /v1/chat/completions` performs the same rejection through its own validation (see its Response table). ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
+An endpoint that reads a JSON request body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. This covers the `/node` and `/api/v1` routes documented here; `POST /v1/chat/completions` performs the same rejection through its own validation (see its Response table). ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
 
 ## Endpoints
 

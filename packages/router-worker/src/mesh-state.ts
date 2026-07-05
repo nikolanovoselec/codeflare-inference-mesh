@@ -1,4 +1,5 @@
 import { bearerToken, verifyPlainOrHashed, verifyToken } from './auth'
+import { InvalidJsonBodyError } from './errors'
 import { decryptJson, encryptJson, importMeshStateKey, type EncryptedEnvelope } from './mesh-crypto'
 import type { HeartbeatRequest, MeshBootstrap, ModelProfile, NodeRecord, RouterEnv, Store } from './types'
 
@@ -351,12 +352,18 @@ async function adminAuthorized(request: Request, store: Store, env: MeshStateEnv
 }
 
 async function rotateProfileId(request: Request): Promise<string | undefined> {
+  const text = await request.text()
+  if (!text) return undefined
+  let body: { profileId?: unknown }
   try {
-    const body = await request.json() as { profileId?: unknown }
-    return typeof body?.profileId === 'string' && body.profileId !== '' ? body.profileId : undefined
+    body = JSON.parse(text) as { profileId?: unknown }
   } catch {
-    return undefined
+    // Absent body → undefined (caller decides how to scope the rotation); a present-but-malformed
+    // body is a client mistake, so surface it as 400 invalid_json rather than silently rotating a
+    // default scope the operator never asked for.
+    throw new InvalidJsonBodyError()
   }
+  return typeof body?.profileId === 'string' && body.profileId !== '' ? body.profileId : undefined
 }
 
 function meshJson(body: unknown, status: number): Response {
