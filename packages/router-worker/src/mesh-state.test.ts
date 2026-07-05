@@ -36,7 +36,16 @@ function keylessEnv(): RouterEnv {
 }
 
 function meshNode(id: string, overrides: Partial<NodeRecord> = {}): NodeRecord {
-  return nodeFixture({ id, displayName: `Node ${id}`, activeProfileIds: [PROFILE_ID], ...overrides })
+  // Mesh-state fixtures serve PROFILE_ID (the 35B upstream), so the node must report
+  // that model — not nodeFixture's smoke-1.5B default — for meshHealth's readyModels.
+  return nodeFixture({
+    id,
+    displayName: `Node ${id}`,
+    activeProfileIds: [PROFILE_ID],
+    runtimeModel: UPSTREAM_MODEL,
+    metrics: { runtimeState: 'ready', loadedModel: UPSTREAM_MODEL, activeRequests: 0, apiReady: true, readyModels: [UPSTREAM_MODEL] },
+    ...overrides
+  })
 }
 
 function heartbeatFor(node: NodeRecord, overrides: Partial<HeartbeatRequest> = {}): HeartbeatRequest {
