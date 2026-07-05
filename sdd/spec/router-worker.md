@@ -112,13 +112,13 @@ This domain covers the public Worker that receives provider calls, protects rout
 
 ### REQ-RTR-005: Malformed request body handling
 
-**Intent:** A client that sends a body that is not valid JSON is making a client error, so every endpoint that reads a JSON body must answer with a clear `400`, never an ambiguous `500`. The guard is a typed request-body parse error, so a server-side parse fault (a stored record or a decrypted payload) is never mistaken for client error and still surfaces as an audited `500`.
+**Intent:** A client that sends a body that is not valid JSON is making a client error, so every endpoint that requires a JSON body must answer with a clear `400`, never an ambiguous `500`. The guard is a typed request-body parse error, so a server-side parse fault (a stored record or a decrypted payload) is never mistaken for client error and still surfaces as an audited `500`. Endpoints that treat the body as optional (gateway sync, playground chat, mesh rotate) instead fall back to their defaults.
 
-**Applies To:** Node Operator, Admin, Automation
+**Applies To:** Node Agent, Admin, Automation
 
 **Acceptance Criteria:**
 
-1. A request whose body fails to parse as JSON is rejected with `400` `invalid_json` on every endpoint that reads a JSON body — across the `/api/v1`, `/admin`, and `/node` surfaces. <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @impl: packages/router-worker/src/errors.ts::InvalidJsonBodyError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on an api endpoint) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on a node endpoint) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on an admin endpoint) -->
+1. A request whose body fails to parse as JSON is rejected with `400` `invalid_json` on every endpoint that requires a JSON request body — across the `/api/v1`, `/admin`, and `/node` surfaces. <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @impl: packages/router-worker/src/errors.ts::InvalidJsonBodyError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on an api endpoint) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on a node endpoint) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-005 rejects a malformed JSON body with 400 invalid_json on an admin endpoint) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
