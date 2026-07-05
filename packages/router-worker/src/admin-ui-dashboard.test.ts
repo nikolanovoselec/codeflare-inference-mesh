@@ -93,7 +93,6 @@ describe('dashboard overview contracts', () => {
       return descendants(tile!).find((node) => node.dataset.value !== undefined)!.dataset.value
     }
     expect(stat('nodes')).toBe('2/3')
-    expect(stat('models')).toBe('1')
     expect(stat('vram')).toBe('32')
     expect(stat('toks')).toBe('103.8')
   })

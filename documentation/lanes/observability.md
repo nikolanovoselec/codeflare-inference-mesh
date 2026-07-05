@@ -26,7 +26,7 @@ Provider responses include request ID, session ID when present, and selected nod
 
 ## Live dashboard surface
 
-The console renders `GET /admin/status` as a live operations surface: a stats strip (serving/stale node counts, active models, aggregate mesh VRAM, total throughput, agent-version spread), a hub-and-spoke mesh topology with node and model detail drawers, and a sortable nodes table. It re-fetches on a five-second poll that pauses when the tab is hidden and resumes on focus, and a LIVE badge reflects poll freshness. ([REQ-OBS-010](../../sdd/spec/observability.md)) ([REQ-ADM-015](../../sdd/spec/setup-admin.md))
+The console renders `GET /admin/status` as a live operations surface: a stats strip (nodes serving, aggregate mesh VRAM, total throughput, custom-domain status, and the fleet's desired agent version), a hub-and-spoke mesh topology with node and model detail drawers, and a sortable nodes table. It re-fetches on a five-second poll that pauses when the tab is hidden and resumes on focus, and a LIVE badge reflects poll freshness. ([REQ-OBS-010](../../sdd/spec/observability.md)) ([REQ-ADM-015](../../sdd/spec/setup-admin.md))
 
 Tokens-per-second are drawn as a rolling-window trace: each poll appends the aggregate throughput as a bar and the client linearly smooths between successive samples, capping the series at the configured window. All values derive from the status contract — nothing is fabricated between polls. ([REQ-OBS-010](../../sdd/spec/observability.md)) The Models section lists active profiles before standby ones, preserving source order within each group, so the serving set is visible without scrolling. ([REQ-ADM-018](../../sdd/spec/setup-admin.md#req-adm-018-models-section-ordering))
 
