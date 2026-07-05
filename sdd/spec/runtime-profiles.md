@@ -279,13 +279,15 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 2. Serving mode `split` creates the profile with `split` true and is otherwise the same inactive shape. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 adds a split model as a profile with split enabled) -->
 
-3. The new profile identifier is derived from the model reference and mode and must be unique; a reference that would collide with an existing profile is rejected without overwriting it. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 derives a unique profile id and refuses a duplicate model) -->
+3. The new profile identifier is derived from the model reference and mode and must be unique; a reference that would collide with an existing profile is rejected without overwriting it. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 derives a unique profile id and refuses a duplicate model) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 single and split of the same model create distinct profiles) -->
 
 4. A missing or blank model reference is rejected with status 400 and creates no profile. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 rejects a blank model reference) -->
 
 5. An added profile serves only after the existing activation path makes it active, which deactivates any previously active profile so the single-active invariant holds. <!-- @impl: packages/router-worker/src/store.ts::singleActiveActivation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 activating an added model deactivates the previously active profile) -->
 
-6. Adding a model requires admin authentication and records a profile-added audit event. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 requires admin authentication to add a model) -->
+6. Adding a model requires admin authentication. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 requires admin authentication to add a model) -->
+
+7. A successful add records a profile-added audit event. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 records a profile-added audit event on a successful add) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 

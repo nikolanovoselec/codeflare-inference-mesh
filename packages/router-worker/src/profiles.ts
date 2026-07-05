@@ -80,7 +80,7 @@ const BIND_PORT_STEP = 10
 function modelRefSegment(ref: string): string {
   const withoutScheme = ref.replace(/^hf:\/\//, '')
   const lastSegment = withoutScheme.split('/').pop() ?? withoutScheme
-  return lastSegment.split('@')[0]
+  return lastSegment.split('@')[0] ?? lastSegment
 }
 
 // slugifyModelRef derives a stable, url-safe public alias / id fragment from a

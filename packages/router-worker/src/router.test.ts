@@ -714,6 +714,24 @@ describe('router worker behavioral contracts', () => {
     expect((await store.listProfiles()).some((profile) => profile.id.startsWith('custom-'))).toBe(false)
   })
 
+  it('REQ-RUN-011 records a profile-added audit event on a successful add', async () => {
+    const { router, store } = routerFixture()
+    const added = await (await addModel(router, CUSTOM_GGUF, 'single')).json() as { profileId: string }
+    const event = (await store.listAudit(10)).find((entry) => entry.type === 'profile_added')
+    expect(event).toBeDefined()
+    expect(event?.target).toBe(added.profileId)
+  })
+
+  it('REQ-RUN-011 single and split of the same model create distinct profiles', async () => {
+    const { router, store } = routerFixture()
+    const single = await (await addModel(router, CUSTOM_GGUF, 'single')).json() as { profileId: string }
+    const split = await (await addModel(router, CUSTOM_GGUF, 'split')).json() as { profileId: string }
+    expect(single.profileId).not.toBe(split.profileId)
+    const ids = (await store.listProfiles()).map((profile) => profile.id)
+    expect(ids).toContain(single.profileId)
+    expect(ids).toContain(split.profileId)
+  })
+
   it('REQ-RUN-001 a chat for codeflare-mesh with no active model returns model-not-found', async () => {
     const { router, store } = routerFixture()
     // Deactivate the seeded model (version-bumped so the per-request default seed leaves it off): no model is active.
