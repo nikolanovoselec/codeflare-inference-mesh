@@ -2271,6 +2271,23 @@ describe('Access-first setup and host gating contracts', () => {
     expect(garbled.status).toBe(401)
   })
 
+  it('REQ-ADM-002 failed admin authentication returns an identical unauthorized response before and after setup completes', async () => {
+    // Pre-setup: no Access config, so admin routes fall back to the bootstrap admin token.
+    const before = routerFixture()
+    const beforeResponse = await before.router(new Request(`https://${HOST}/admin/setup-tokens`, { method: 'POST', headers: bearer('wrong-secret') }))
+
+    // Post-setup: Access config stored and setup marked complete; no custom domain, so the host stays unlocked.
+    const after = routerFixture()
+    await after.store.putConfig('access_config', accessConfig())
+    await after.store.putConfig('setup_state', { phase: 'complete', completedAt: NOW })
+    const afterResponse = await after.router(new Request(`https://${HOST}/admin/setup-tokens`, { method: 'POST', headers: bearer('wrong-secret') }))
+
+    // A rejected admin request looks the same in both states, so it never leaks whether setup has completed.
+    expect(beforeResponse.status).toBe(401)
+    expect(afterResponse.status).toBe(beforeResponse.status)
+    expect(await afterResponse.json()).toEqual(await beforeResponse.json())
+  })
+
   it('REQ-SEC-009 records the Access email as the audit actor for admin actions', async () => {
     resetJwksCache()
     const key = await accessTestKey('key-1')
