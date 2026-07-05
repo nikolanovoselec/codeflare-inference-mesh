@@ -12,12 +12,12 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Acceptance Criteria:**
 
-1. The router exposes one stable public model id `codeflare-mesh`, carried as a shared alias by every model profile and pinned as the AI Gateway route and forwarded model. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL = codeflare-mesh --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 exposes exactly one stable public model constant not a profile alias) -->
-2. The provider model-listing surface returns the stable public model id `codeflare-mesh`. <!-- @impl: packages/router-worker/src/router.ts::handleModels --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 lists the stable public model id from /v1/models) -->
-3. A chat request for `codeflare-mesh` resolves to the single active serving model, because every profile carries `codeflare-mesh` and the single-active invariant leaves exactly one owner. <!-- @impl: packages/router-worker/src/store.ts::getProfileByPublicModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 resolves the stable public model to the active profile independent of its aliases) -->
-4. The resolved request is rewritten to the active model's upstream model name before node forwarding. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 rewrites a stable-public-model chat request to the active upstream model name) -->
-5. Switching which model is active never changes the Gateway dynamic route name or the stable public model id. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 keeps the gateway route and public model id fixed when the active model changes) -->
-6. A request for `codeflare-mesh` while no model is active returns an OpenAI-style model-not-found error. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 returns a model-not-found error for the stable public model when no model is active) -->
+1. The router exposes one stable public model id `codeflare-mesh`, carried as a shared alias by every model profile and pinned as the AI Gateway route and forwarded model. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL = codeflare-mesh --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 exposes one stable public model constant carried as a shared alias by every profile) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 gateway sync pins route and model to codeflare-mesh regardless of request body) -->
+2. The provider model-listing surface returns the stable public model id `codeflare-mesh`. <!-- @impl: packages/router-worker/src/router.ts::handleModels --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
+3. A chat request for `codeflare-mesh` resolves to the single active serving model, because every profile carries `codeflare-mesh` and the single-active invariant leaves exactly one owner. <!-- @impl: packages/router-worker/src/store.ts::getProfileByPublicModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active) -->
+4. The resolved request is rewritten to the active model's upstream model name before node forwarding. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations) -->
+5. Switching which model is active never changes the Gateway dynamic route name or the stable public model id. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 gateway sync pins route and model to codeflare-mesh regardless of request body) -->
+6. A request for `codeflare-mesh` while no model is active returns an OpenAI-style model-not-found error. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 a chat for codeflare-mesh with no active model returns model-not-found) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -27,7 +27,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -53,7 +53,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -68,7 +68,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 1. Default seeding refreshes an existing managed default row when the shipped profile definition changes. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active) -->
 2. Default seeding retires stale active managed defaults that still own a public alias now owned by a shipped default profile. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active) -->
 3. Default seeding deactivates every profile row whose runtime is not `meshllm`, regardless of profile version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 deactivates non-meshllm profile rows regardless of version) -->
-4. `POST /admin/profiles/activate` activates the target profile and atomically deactivates every other active profile, so at most one model is ever active (one mesh, one active model). <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 activation deactivates every other active profile so at most one model is active) -->
+4. `POST /admin/profiles/activate` activates the target profile and atomically deactivates every other active profile, so at most one model is ever active (one mesh, one active model). <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 activation is single-active) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -78,7 +78,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 
@@ -121,7 +121,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 2. The runtime process inherits the agent service environment and always sets `MESH_LLM_NO_SELF_UPDATE=1`. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate) -->
 3. The agent stops the runtime with SIGTERM first and escalates to kill only after a grace period. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010StopSendsSIGTERMBeforeKill) -->
 4. The agent launches the `mesh-llm` binary provisioned per REQ-NODE-006; a missing or failed install surfaces as a dependency-missing error instead of a runtime start. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010MissingBinaryReportsDependencyMissing) -->
-5. When the selected profile changes, the agent preempts an in-flight download or start of a now-deselected profile and switches to the newly selected profile without requiring a manual restart. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (REQ-RUN-010 preempts a deselected in-flight download and switches profiles without restart) -->
+5. When the selected profile changes, the agent preempts an in-flight download or start of a now-deselected profile and switches to the newly selected profile without requiring a manual restart. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010PreemptsDeselectedInflightDownload) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
@@ -131,7 +131,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Verification:** Automated test
 
-**Status:** Planned
+**Status:** Implemented
 
 ---
 

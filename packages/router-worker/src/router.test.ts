@@ -6,7 +6,7 @@ import { resetJwksCache } from './access'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan, SETUP_TOKEN_PLACEHOLDER } from './installers'
-import { DEFAULT_MODEL_PROFILES } from './profiles'
+import { DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
 import { createRouter } from './router'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
 import { accessJwksFetcher, accessTestKey, MemoryStore, nodeFixture, signAccessJwt } from './test-helpers'
@@ -602,6 +602,15 @@ describe('router worker behavioral contracts', () => {
     expect(response.status).toBe(200)
     // Only the smoke profile is active in the default seed, so the listing carries its aliases.
     expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['codeflare-mesh', 'mesh-smoke', 'smoke-test']))
+  })
+
+  it('REQ-RUN-001 exposes one stable public model constant carried as a shared alias by every profile', () => {
+    expect(STABLE_PUBLIC_MODEL).toBe('codeflare-mesh')
+    for (const profile of DEFAULT_MODEL_PROFILES) {
+      // The stable public model is a shared constant every profile carries, never a per-profile wiring id.
+      expect(profile.publicAliases).toContain(STABLE_PUBLIC_MODEL)
+      expect(profile.id).not.toBe(STABLE_PUBLIC_MODEL)
+    }
   })
 
   it('REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active', async () => {
@@ -3189,7 +3198,7 @@ describe('control-plane API (/api/v1)', () => {
     await store.appendAudit({ id: 'e3', type: 'profile_activated', at: 200, actor: 'admin', target: 'm', detail: {} })
     const res = await router(new Request('https://router.test/api/v1/events', { headers: bearer(token) }))
     expect(res.status).toBe(200)
-    const body = await res.json() as { events: Array<{ id: string; type: string }>; nextCursor: number | null }
+    const body = await res.json() as { events: Array<{ id: string; type: string }>; nextCursor: string | null }
     expect(body.events.map((event) => event.id)).toEqual(['e1', 'e3'])
     expect(body.events.map((event) => event.type)).not.toContain('mesh_state_stored')
   })
@@ -3218,12 +3227,27 @@ describe('control-plane API (/api/v1)', () => {
     for (const [id, at] of [['x1', 10], ['x2', 20], ['x3', 30]] as const) {
       await store.appendAudit({ id, type: 'node_claimed', at, actor: 'setup', target: 'n', detail: {} })
     }
-    const first = await (await router(new Request('https://router.test/api/v1/events?limit=2', { headers: bearer(token) }))).json() as { events: Array<{ id: string }>; nextCursor: number | null }
+    const first = await (await router(new Request('https://router.test/api/v1/events?limit=2', { headers: bearer(token) }))).json() as { events: Array<{ id: string }>; nextCursor: string | null }
     expect(first.events.map((event) => event.id)).toEqual(['x1', 'x2'])
-    expect(first.nextCursor).toBe(20)
-    const second = await (await router(new Request('https://router.test/api/v1/events?limit=2&since=20', { headers: bearer(token) }))).json() as { events: Array<{ id: string }>; nextCursor: number | null }
+    expect(first.nextCursor).toBe('20:x2')
+    const second = await (await router(new Request(`https://router.test/api/v1/events?limit=2&since=${first.nextCursor}`, { headers: bearer(token) }))).json() as { events: Array<{ id: string }>; nextCursor: string | null }
     expect(second.events.map((event) => event.id)).toEqual(['x3'])
     expect(second.nextCursor).toBeNull()
+  })
+
+  it('REQ-API-006 keyset cursor does not skip same-millisecond events across a page boundary', async () => {
+    const { router, store } = routerFixture()
+    const token = await seedAutomationKey(store)
+    await store.appendAudit({ id: 'a1', type: 'node_claimed', at: 50, actor: 'setup', target: 'n', detail: {} })
+    await store.appendAudit({ id: 'a2', type: 'node_claimed', at: 50, actor: 'setup', target: 'n', detail: {} })
+    const first = await (await router(new Request('https://router.test/api/v1/events?limit=1', { headers: bearer(token) }))).json() as { events: Array<{ id: string }>; nextCursor: string | null }
+    expect(first.events.map((event) => event.id)).toEqual(['a1'])
+    expect(first.nextCursor).toBe('50:a1')
+    const second = await (await router(new Request(`https://router.test/api/v1/events?limit=1&since=${first.nextCursor}`, { headers: bearer(token) }))).json() as { events: Array<{ id: string }> }
+    expect(second.events.map((event) => event.id)).toEqual(['a2'])
+    // A bare millisecond cursor stays exclusive: both events AT 50 are skipped.
+    const bare = await (await router(new Request('https://router.test/api/v1/events?since=50', { headers: bearer(token) }))).json() as { events: Array<{ id: string }> }
+    expect(bare.events.map((event) => event.id)).toEqual([])
   })
 
   it('REQ-API-006 refuses events access without an automation key', async () => {

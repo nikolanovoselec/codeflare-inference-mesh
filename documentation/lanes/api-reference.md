@@ -140,7 +140,23 @@ POST /node/heartbeat
 
 **Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-NODE-007](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
-**Notes:** `metrics` carries the MeshLLM status fields alongside the existing runtime state and throughput fields: `meshRole` (`coordinator` when the node owns stage 0, else `serving-peer` or `api-client`), `readyModels` (the model ids from the node's own `/v1/models` — the mesh-wide union), `peerCount`, `splitEnabled`, `stageCount`, `apiReady`, `consoleReady`, and `meshllmVersion`. `meshBootstrap` is computed per node as `{ "action": "create" | "join" | "wait", "rotation": number, "meshId"?: string, "joinTokens"?: string[] }`: the elected seed receives `create`, every node receives `join` with all live invite tokens once tokens are stored, and non-seed nodes receive `wait` before then. Invite-token values (`meshToken`, `joinTokens`) are stored encrypted, never logged, and never surfaced through any admin or status response. ([REQ-SEC-006](../../sdd/spec/security.md))
+**Notes:** Invite-token values (`meshToken`, `joinTokens`) are stored encrypted, never logged, and never surfaced through any admin or status response. ([REQ-SEC-006](../../sdd/spec/security.md)) The `metrics` and `meshBootstrap` shapes are detailed below.
+
+**Heartbeat `metrics` fields**
+
+`metrics` carries the MeshLLM status fields alongside the existing runtime-state and throughput fields:
+
+- `meshRole` — `coordinator` when the node owns stage 0, else `serving-peer` or `api-client`.
+- `readyModels` — the model ids from the node's own `/v1/models` (the mesh-wide union).
+- `peerCount`, `splitEnabled`, `stageCount`, `apiReady`, `consoleReady`, and `meshllmVersion`.
+
+**`meshBootstrap` envelope**
+
+Computed per node as `{ "action": "create" | "join" | "wait", "rotation": number, "meshId"?: string, "joinTokens"?: string[] }`:
+
+- The elected seed receives `create`.
+- Every node receives `join` with all live invite tokens once tokens are stored.
+- Non-seed nodes receive `wait` before then.
 
 ### POST /node/unregister
 
@@ -720,7 +736,7 @@ GET /api/v1/events?since={ms}&type={t1,t2}&limit={n}
 
 **Authentication:** automation key
 
-**Query parameters:** `since` (return events recorded strictly after this millisecond timestamp; default `0`), `type` (comma-separated event types to include), `limit` (page size, default 100, max 1000).
+**Query parameters:** `since` (opaque cursor `"<at>:<id>"` — return events keyset-ordered strictly after that `(at, id)`; a bare millisecond `<ms>` is still accepted and stays exclusive of events at that millisecond; default `0`), `type` (comma-separated event types to include), `limit` (page size, default 100, max 1000).
 
 **Request body:** None.
 
@@ -728,7 +744,7 @@ GET /api/v1/events?since={ms}&type={t1,t2}&limit={n}
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | A page of events oldest-first. | `{ "events": AuditEvent[], "nextCursor": number \| null }` — poll again with `since=nextCursor` while it is non-null. |
+| `200` | A page of events oldest-first. | `{ "events": AuditEvent[], "nextCursor": string \| null }` — `nextCursor` is the opaque `"<at>:<id>"` cursor of the last event; poll again with `since=nextCursor` while it is non-null. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-006](../../sdd/spec/control-plane-api.md#req-api-006-operational-events-polling)

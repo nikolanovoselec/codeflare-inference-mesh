@@ -123,11 +123,11 @@ export class MemoryStore implements Store {
     return this.audit.slice(-limit)
   }
 
-  async listEventsSince(sinceMs: number, types: readonly string[] | undefined, limit: number): Promise<readonly AuditEvent[]> {
+  async listEventsSince(sinceMs: number, sinceId: string, types: readonly string[] | undefined, limit: number): Promise<readonly AuditEvent[]> {
     const churn = new Set<string>(OPERATIONAL_EVENT_CHURN_TYPES)
     return [...this.audit]
-      .filter((event) => event.at > sinceMs && !churn.has(event.type) && (!types || types.includes(event.type)))
-      .sort((a, b) => a.at - b.at)
+      .filter((event) => (sinceId ? (event.at > sinceMs || (event.at === sinceMs && event.id > sinceId)) : event.at > sinceMs) && !churn.has(event.type) && (!types || types.includes(event.type)))
+      .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .slice(0, limit)
   }
 }

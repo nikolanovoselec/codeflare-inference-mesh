@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_DRAWER, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
+import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
 // DashboardUiTestAnchor
@@ -589,6 +590,16 @@ describe('dashboard routing contracts', () => {
     expect(pending.byId('rt-route-state').textContent).toBe('not connected')
   })
 
+  it('REQ-ADM-024 the operational chip ignores node and serving health', async () => {
+    // Gateway provisioned (providerId + routeId) but zero nodes online: the chip is still operational.
+    const provisionedNoNodes = await dashboardHarness({ status: statusFixture({ gateway: { providerId: 'p', routeId: 'r' }, nodes: [] }) })
+    expect(provisionedNoNodes.byId('rt-route-chip').classList.contains('operational')).toBe(true)
+
+    // Default fixture nodes are online and serving, but the gateway is unprovisioned: the chip stays not-operational.
+    const healthyNodesNoGateway = await dashboardHarness({ status: statusFixture({ gateway: {} }) })
+    expect(healthyNodesNoGateway.byId('rt-route-chip').classList.contains('operational')).toBe(false)
+  })
+
   it('REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key', async () => {
     const harness = await dashboardHarness({
       respond: (path, init) => path === '/admin/cloudflare/gateway/sync' && (init?.method || 'GET') === 'POST'
@@ -602,6 +613,27 @@ describe('dashboard routing contracts', () => {
     expect(cards).toHaveLength(1)
     expect(cards[0]!.dataset.tokenCard).toBe('AI Gateway provider key')
     expect(cards[0]!.children.find((child) => child.dataset.copy)!.dataset.copy).toBe('provider_minted_key')
+  })
+
+  it('REQ-ADM-024 renders the AI Gateway paste instruction with the minted key', async () => {
+    const harness = await dashboardHarness({
+      respond: (path, init) => path === '/admin/cloudflare/gateway/sync' && (init?.method || 'GET') === 'POST'
+        ? Response.json({ providerToken: 'provider_minted_key', byokInstruction: 'server-provided paste instruction' })
+        : undefined
+    })
+    await harness.clickAction('gateway-sync', { out: 'gateway-output', prefix: 'rt-' })
+    await harness.flush(3)
+    // The server-provided BYOK instruction is rendered to the operator, not just carried in the response body.
+    const warning = harness.byId('gateway-output').children.find((child) => child.dataset.tokenWarning)
+    expect(warning).toBeDefined()
+    expect(warning!.textContent).toBe('server-provided paste instruction')
+  })
+
+  it('REQ-ADM-024 defines the pulsing operational route-chip indicator centrally in the stylesheet', () => {
+    const css = adminUiCss()
+    expect(css).toContain('.route-chip.operational')
+    expect(css).toContain('animation:route-pulse')
+    expect(css).toContain('@keyframes route-pulse')
   })
 
   it('REQ-GWY-005 the gateway step renders a provider-name field and no route select', async () => {

@@ -32,7 +32,7 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 1. Client calls AI Gateway using `dynamic/<route-name>`. ([REQ-GWY-003](../../sdd/spec/gateway.md))
 2. AI Gateway forwards to the custom provider URL on the router Worker. ([REQ-GWY-001](../../sdd/spec/gateway.md))
 3. Worker verifies provider credentials and validates the chat body. ([REQ-GWY-002](../../sdd/spec/gateway.md)) ([REQ-RTR-002](../../sdd/spec/router-worker.md))
-4. Worker maps the public alias to the active model profile. ([REQ-RUN-001](../../sdd/spec/runtime-profiles.md))
+4. Worker maps the stable public model id `codeflare-mesh` to the single active model profile via `getProfileByPublicModel`, since every profile carries the same shared alias and the single-active invariant leaves exactly one owner. ([REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model))
 5. Worker asks the Durable Object scheduler for a reservation. ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
 6. Worker forwards through the `env.MESH.fetch` Workers VPC binding to the validated node Mesh IP and port on the WARP CGNAT range (`100.96.0.0/12`). ([REQ-RTR-004](../../sdd/spec/router-worker.md))
 7. Node agent validates upstream token and proxies to the local `mesh-llm` OpenAI API (default `127.0.0.1:9337`); `mesh-llm` routes internally across the mesh when another member serves the model. ([REQ-NODE-003](../../sdd/spec/node-agent.md))
@@ -41,7 +41,7 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 ## Control plane lifecycle
 
 1. Admin opens the bootstrap origin; the wizard claims the deployment, provisions the custom domain, and provisions role-gated Access plus machine-path bypass, then hands off and the origin locks. ([security.md](security.md#role-based-console-access): policy shape; [security.md](security.md#break-glass-recovery-and-host-gating): the lock.) ([REQ-ADM-011](../../sdd/spec/setup-admin.md)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-ADM-014](../../sdd/spec/setup-admin.md))
-2. Admin connects AI Gateway from the wizard's Gateway step — gateway and route dropdowns populated from the live account, with one-click default provisioning — or later from the dashboard Routing section. ([REQ-GWY-005](../../sdd/spec/gateway.md)) ([REQ-GWY-003](../../sdd/spec/gateway.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
+2. Admin connects AI Gateway from the wizard's Gateway step — gateway and route dropdowns populated from the live account, with one-click default provisioning — or later from the dashboard Routing section, where an operational status chip reflects whether the `codeflare-mesh` provider and route are provisioned. ([REQ-GWY-005](../../sdd/spec/gateway.md)) ([REQ-GWY-003](../../sdd/spec/gateway.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md)) ([REQ-ADM-024](../../sdd/spec/setup-admin.md#req-adm-024-routing-operational-status))
 3. Admin creates a one-time setup token from the wizard's enrollment step or the dashboard Nodes section. ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
 4. Node operator runs the generated install command. ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
 5. Node agent claims the token and starts heartbeat. ([REQ-NODE-002](../../sdd/spec/node-agent.md))
@@ -82,6 +82,7 @@ Only the Worker is public. Node listeners are reachable through Mesh and still r
 | Node agent | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/client.go::ClientAnchors` <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> |
 | Agent command | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/cmd/inference-mesh-agent/main.go::MainAnchors` <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::MainAnchors --> |
 | Mesh state | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
+| Model profiles | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL` <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL --> |
 | Agent versions | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS` <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> |
 | MeshLLM manager | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManagerAnchors` <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManagerAnchors --> |
 | Router type contracts | [router-worker.md](../../sdd/spec/router-worker.md) | `packages/router-worker/src/types.ts::RouterEnv` <!-- @impl: packages/router-worker/src/types.ts::RouterEnv --> |

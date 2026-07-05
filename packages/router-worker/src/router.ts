@@ -1173,14 +1173,19 @@ async function handleApiAgentVersionSet(request: Request, deps: RouterDeps, requ
 /** Poll operational events oldest-first, filtered by since/type, paginated by an `at` cursor. */
 async function handleApiEvents(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
   if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
-  const sinceParam = Number(url.searchParams.get('since') ?? '0')
+  const raw = url.searchParams.get('since') ?? '0'
+  const i = raw.indexOf(':')
+  const atStr = i >= 0 ? raw.slice(0, i) : raw
+  const sinceId = i >= 0 ? raw.slice(i + 1) : ''
+  const sinceParam = Number(atStr)
   const sinceMs = Number.isFinite(sinceParam) && sinceParam >= 0 ? sinceParam : 0
   const typeParam = url.searchParams.get('type')
   const types = typeParam ? typeParam.split(',').map((entry) => entry.trim()).filter(Boolean) : undefined
   const limitParam = Number(url.searchParams.get('limit') ?? '100')
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.floor(limitParam), 1000) : 100
-  const events = await deps.store.listEventsSince(sinceMs, types, limit)
-  const nextCursor = events.length === limit && events.length > 0 ? events[events.length - 1]!.at : null
+  const events = await deps.store.listEventsSince(sinceMs, sinceId, types, limit)
+  const last = events.length > 0 ? events[events.length - 1]! : undefined
+  const nextCursor = events.length === limit && last ? `${last.at}:${last.id}` : null
   return json({ events, nextCursor }, 200, requestId)
 }
 

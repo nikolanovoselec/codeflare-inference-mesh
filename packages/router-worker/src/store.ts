@@ -178,16 +178,17 @@ export class D1Store implements Store {
     return (rows.results ?? []).map((row) => parseJson<AuditEvent>(row.event_json))
   }
 
-  async listEventsSince(sinceMs: number, types: readonly string[] | undefined, limit: number): Promise<readonly AuditEvent[]> {
-    const clauses = ['at > ?', `type NOT IN (${OPERATIONAL_EVENT_CHURN_TYPES.map(() => '?').join(', ')})`]
-    const binds: unknown[] = [sinceMs, ...OPERATIONAL_EVENT_CHURN_TYPES]
+  async listEventsSince(sinceMs: number, sinceId: string, types: readonly string[] | undefined, limit: number): Promise<readonly AuditEvent[]> {
+    const churnClause = `type NOT IN (${OPERATIONAL_EVENT_CHURN_TYPES.map(() => '?').join(', ')})`
+    const clauses = sinceId ? ['(at > ? OR (at = ? AND id > ?))', churnClause] : ['at > ?', churnClause]
+    const binds: unknown[] = sinceId ? [sinceMs, sinceMs, sinceId, ...OPERATIONAL_EVENT_CHURN_TYPES] : [sinceMs, ...OPERATIONAL_EVENT_CHURN_TYPES]
     if (types && types.length > 0) {
       clauses.push(`type IN (${types.map(() => '?').join(', ')})`)
       binds.push(...types)
     }
     binds.push(limit)
     const rows = await this.db
-      .prepare(`SELECT event_json FROM audit_events WHERE ${clauses.join(' AND ')} ORDER BY at ASC LIMIT ?`)
+      .prepare(`SELECT event_json FROM audit_events WHERE ${clauses.join(' AND ')} ORDER BY at ASC, id ASC LIMIT ?`)
       .bind(...binds)
       .all<{ event_json: string }>()
     return (rows.results ?? []).map((row) => parseJson<AuditEvent>(row.event_json))

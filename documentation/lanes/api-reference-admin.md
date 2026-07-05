@@ -447,7 +447,7 @@ GET /admin/cloudflare/gateway/options?gateway=<id>
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Gateways and routes listed. | `{ "gateways": [...], "routes": [...], "defaults": { "accountId": string, "gatewayId": string, "providerName": string, "routeName": string, "publicModel": string } }` |
+| `200` | Gateways and routes listed. | `{ "gateways": [...], "routes": [...], "defaults": { "accountId": string, "gatewayId": string, "providerName": string, "routeName": string, "publicModel": string } }` — `routeName` and `publicModel` are always the fixed stable public model `codeflare-mesh` (not configurable), matching the sibling `POST /admin/cloudflare/gateway/sync`; only `accountId`, `gatewayId`, and `providerName` reflect resolved, request-overridable settings. |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `503` | Runtime Cloudflare account or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
