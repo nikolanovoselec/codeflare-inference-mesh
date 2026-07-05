@@ -38,7 +38,7 @@ The only managed runtime is MeshLLM (`mesh-llm`), forming a private mesh over WA
 
 ## CON-MODEL-001: Stable Gateway aliases
 
-The Gateway is bound to one stable public model id `codeflare-mesh`, a router-level constant rather than a per-profile alias. The router owns internal profile selection, rollout, fallback, and request rewriting, so the operator switches the underlying active model without changing the Gateway route or public model id.
+The Gateway is bound to one stable public model id `codeflare-mesh`, carried as a shared alias by every model profile so the single active model always owns it. The router owns internal profile selection, rollout, fallback, and request rewriting, so the operator switches the underlying active model without changing the Gateway route or public model id.
 
 ## CON-REL-001: Release artifacts are verifiable
 

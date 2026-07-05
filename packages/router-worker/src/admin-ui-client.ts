@@ -943,6 +943,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const labelled = [['gateway', gateway.gatewayId], ['route', gateway.routeName], ['model', gateway.publicModel]].filter((pair) => pair[1]).map((pair) => pair[0] + ' ' + pair[1]).join(' · ');
       gatewayCurrent.textContent = gateway.gatewayId ? 'Current target: ' + labelled : 'No Gateway connected yet.';
     }
+    const routeChip = byId('rt-route-chip');
+    if (routeChip) {
+      // Operational = wiring exists (custom provider + dynamic route provisioned),
+      // not gated on node or serving health.
+      const gateway = status.gateway || {};
+      const operational = Boolean(gateway.providerId && gateway.routeId);
+      routeChip.classList.toggle('operational', operational);
+      const routeState = byId('rt-route-state');
+      if (routeState) routeState.textContent = operational ? 'operational' : 'not connected';
+    }
     const domainCurrent = byId('custom-domain-current');
     if (domainCurrent) {
       const domain = status.customDomain || {};
@@ -1053,8 +1063,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (select.value === platform) setOutput(prefix + 'installer-output', command);
   }
   const gatewayPayload = (prefix) => {
-    if (prefix === 'wiz-') return discoveryGatewayPayload(gatewayScopeIds('wizard'), true);
-    return discoveryGatewayPayload(gatewayScopeIds('routing'), false);
+    if (prefix === 'wiz-') return discoveryGatewayPayload(gatewayScopeIds('wizard'));
+    return discoveryGatewayPayload(gatewayScopeIds('routing'));
   };
 
   // --- wizard data loaders ----------------------------------------------------
@@ -1142,8 +1152,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // The wizard and the Routing section share one gateway-discovery flow; the scope
   // selects which set of element ids to populate so the two never collide.
   function gatewayScopeIds(scope) {
-    if (scope === 'routing') return { empty: 'rt-gateway-empty', selects: 'rt-gateway-selects', gwSlot: 'rt-gateway-slot', gwSelect: 'rt-gateway-select', gwNew: 'rt-gateway-new-wrap', rtSlot: 'rt-route-slot', rtSelect: 'rt-route-select', rtNew: 'rt-route-new-wrap' };
-    return { empty: 'wizard-gateway-empty', selects: 'wizard-gateway-selects', gwSlot: 'wiz-gateway-slot', gwSelect: 'wiz-gateway-select', gwNew: 'wiz-gateway-new-wrap', rtSlot: 'wiz-route-slot', rtSelect: 'wiz-route-select', rtNew: 'wiz-route-new-wrap' };
+    if (scope === 'routing') return { empty: 'rt-gateway-empty', selects: 'rt-gateway-selects', gwSlot: 'rt-gateway-slot', gwSelect: 'rt-gateway-select', gwNew: 'rt-gateway-new-wrap', providerName: 'rt-gateway-provider-name' };
+    return { empty: 'wizard-gateway-empty', selects: 'wizard-gateway-selects', gwSlot: 'wiz-gateway-slot', gwSelect: 'wiz-gateway-select', gwNew: 'wiz-gateway-new-wrap', providerName: 'wiz-gateway-provider-name' };
   }
   async function loadGatewayOptions(gatewayId, scope) {
     const ids = gatewayScopeIds(scope);
@@ -1152,7 +1162,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!emptyPanel || !selects) return;
     const body = await request('/admin/cloudflare/gateway/options' + (gatewayId ? '?gateway=' + encodeURIComponent(gatewayId) : ''), { headers: headers(false) });
     const gateways = (body.gateways || []).map((gateway) => gateway.id);
-    const routes = (body.routes || []).map((route) => route.name).filter(Boolean);
     const defaults = body.defaults || {};
     emptyPanel.hidden = gateways.length > 0;
     selects.hidden = gateways.length === 0;
@@ -1161,20 +1170,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const gatewayValue = gateways.indexOf(wantedGateway) >= 0 ? wantedGateway : '__new__';
     fillChoiceSelect(ids.gwSlot, ids.gwSelect, 'gatewayId', 'data-gateway-select', gateways, gatewayValue, 'Create new gateway\u2026');
     toggleNewField(ids.gwNew, gatewayValue === '__new__');
-    const routeValue = routes.indexOf(defaults.routeName) >= 0 ? defaults.routeName : '__new__';
-    fillChoiceSelect(ids.rtSlot, ids.rtSelect, 'routeName', 'data-route-select', routes, routeValue, 'Create new route\u2026');
-    toggleNewField(ids.rtNew, routeValue === '__new__');
   }
-  // Read the chosen (or newly named) gateway + route from a discovery scope's ids.
-  // The account id, worker url, provider, and public model are all resolved
-  // server-side from the runtime token and Worker env \u2014 never entered by hand.
-  const discoveryGatewayPayload = (ids, extras) => {
+  // Read the chosen (or newly named) gateway and the provider name from a
+  // discovery scope's ids. The account id, worker url, route, and public model
+  // are resolved server-side from the runtime token and Worker env.
+  const discoveryGatewayPayload = (ids) => {
     const gatewaySelect = byId(ids.gwSelect);
-    const routeSelect = byId(ids.rtSelect);
     const gatewayId = gatewaySelect && gatewaySelect.value && gatewaySelect.value !== '__new__' ? gatewaySelect.value : readInput(ids.gwNew.replace('-new-wrap', '-new'));
-    const routeName = routeSelect && routeSelect.value && routeSelect.value !== '__new__' ? routeSelect.value : readInput(ids.rtNew.replace('-new-wrap', '-new'));
-    const raw = { gatewayId, routeName };
-    if (extras) { raw.providerName = readInput('wiz-gateway-provider-name'); raw.publicModel = readInput('wiz-gateway-public-model'); raw.workerUrl = readInput('wiz-gateway-worker-url'); }
+    const providerName = ids.providerName ? readInput(ids.providerName) : '';
+    const raw = { gatewayId, providerName };
     return Object.fromEntries(Object.entries(raw).filter((pair) => pair[1]));
   };
 
@@ -1509,11 +1513,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       toggleNewField(ids.gwNew, gatewaySelect.value === '__new__');
       if (gatewaySelect.value !== '__new__') loadGatewayOptions(gatewaySelect.value, scope).catch(() => undefined);
       return;
-    }
-    const routeSelect = event.target.closest('[data-route-select]');
-    if (routeSelect) {
-      const scope = routeSelect.id === 'rt-route-select' ? 'routing' : 'wizard';
-      toggleNewField(gatewayScopeIds(scope).rtNew, routeSelect.value === '__new__');
     }
   });
 

@@ -192,18 +192,18 @@ export function nodeFixture(overrides: Partial<NodeRecord> = {}): NodeRecord {
     localDashboardPort: 17777,
     status: 'online',
     publicModels: ['codeflare-mesh'],
-    activeProfileIds: ['mesh-default-qwen36-35b'],
+    activeProfileIds: ['mesh-smoke-qwen25-1.5b'],
     capacity: 2,
     inFlight: 0,
     lastSeenAt: 1_700_000_000_000,
     runtime: 'meshllm',
-    runtimeModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
+    runtimeModel: 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M',
     metrics: {
       runtimeState: 'ready',
-      loadedModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
+      loadedModel: 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M',
       activeRequests: 0,
       apiReady: true,
-      readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S']
+      readyModels: ['unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M']
     },
     ...overrides
   }

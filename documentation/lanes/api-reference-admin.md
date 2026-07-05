@@ -289,7 +289,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Origin check:** n/a
 
-**Request body:** Optional JSON with `accountId`, `gatewayId`, `routeName`, `providerName`, `publicModel`, and `workerUrl` — all optional. For account and Gateway fields, request body values override stored settings, then the environment defaults documented in [configuration.md](configuration.md) apply. For `workerUrl`, request body overrides a stored explicit Worker URL; when neither exists, Gateway sync uses the provisioned custom domain.
+**Request body:** Optional JSON with `accountId`, `gatewayId`, and `providerName` — all optional. The dynamic route name and forwarded model are fixed to the stable public model `codeflare-mesh` and are never read from the body; `providerName` defaults to `Codeflare Inference Mesh`. For account and Gateway fields, request body values override stored settings, then the environment defaults documented in [configuration.md](configuration.md) apply. The Worker URL is resolved from the provisioned custom domain (or a stored explicit override) and is not a request input.
 
 **Response**
 

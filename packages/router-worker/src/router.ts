@@ -7,11 +7,11 @@ import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToke
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
-import { DEFAULT_MODEL_PROFILES } from './profiles'
+import { DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
-import { aliasExclusiveActivation } from './store'
+import { singleActiveActivation } from './store'
 import type { ClaimRequest, CredentialKind, HeartbeatRequest, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store, TokenRecord } from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
@@ -561,7 +561,7 @@ async function handleProfileRollout(request: Request, deps: RouterDeps, requestI
   if (!body || typeof body.profileId !== 'string' || typeof body.rolloutPercent !== 'number') return json({ error: 'invalid_rollout' }, 400, requestId)
   if (body.rolloutPercent > 0) {
     // Alias-exclusive invariant: rollout activation must never leave an alias with two active owners.
-    const activation = aliasExclusiveActivation(await deps.store.listProfiles(), body.profileId)
+    const activation = singleActiveActivation(await deps.store.listProfiles(), body.profileId)
     for (const profile of activation?.deactivated ?? []) await deps.store.setProfile(profile)
   }
   await deps.store.setActiveProfile(body.profileId, body.rolloutPercent)
@@ -574,7 +574,7 @@ async function handleProfileActivate(request: Request, deps: RouterDeps, request
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<{ profileId?: string }>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_activation', requestId }, 400, requestId)
-  const activation = aliasExclusiveActivation(await deps.store.listProfiles(), body.profileId)
+  const activation = singleActiveActivation(await deps.store.listProfiles(), body.profileId)
   if (!activation) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   for (const profile of activation.deactivated) await deps.store.setProfile(profile)
   await deps.store.setProfile(activation.activated)
@@ -727,9 +727,11 @@ function gatewaySettings(input: { env: Partial<RouterEnv>; body?: Partial<Gatewa
   return {
     accountId: cleanString(source.accountId) ?? input.env.CLOUDFLARE_ACCOUNT_ID ?? input.env.AI_GATEWAY_ACCOUNT_ID ?? '',
     gatewayId: cleanString(source.gatewayId) ?? input.env.AI_GATEWAY_ID ?? 'inference-mesh',
-    providerName: cleanString(source.providerName) ?? input.env.AI_GATEWAY_PROVIDER_NAME ?? 'codeflare-inference-mesh',
-    routeName: cleanString(source.routeName) ?? input.env.AI_GATEWAY_ROUTE_NAME ?? 'codeflare-mesh',
-    publicModel: cleanString(source.publicModel) ?? input.env.AI_GATEWAY_PUBLIC_MODEL ?? 'codeflare-mesh',
+    providerName: cleanString(source.providerName) ?? input.env.AI_GATEWAY_PROVIDER_NAME ?? 'Codeflare Inference Mesh',
+    // The route name and forwarded model are pinned to the one stable public model:
+    // switching the underlying active model never touches the Gateway route or model.
+    routeName: STABLE_PUBLIC_MODEL,
+    publicModel: STABLE_PUBLIC_MODEL,
     ...(cleanString(source.workerUrl) ? { workerUrl: cleanString(source.workerUrl)! } : {})
   }
 }
@@ -1135,7 +1137,7 @@ async function handleApiModelEnable(request: Request, deps: RouterDeps, url: URL
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
   const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
-  const activation = aliasExclusiveActivation(await deps.store.listProfiles(), profileId)
+  const activation = singleActiveActivation(await deps.store.listProfiles(), profileId)
   if (!activation) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   for (const profile of activation.deactivated) await deps.store.setProfile(profile)
   await deps.store.setProfile(activation.activated)

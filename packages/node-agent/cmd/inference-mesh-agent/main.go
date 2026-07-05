@@ -427,7 +427,10 @@ func (s *serviceLoop) foldUpdateError(current string) string {
 func beginRuntimeProfileRestart(cfg agent.Config, manager meshRuntime, loadState *runtimeLoadState, restartMu *sync.Mutex, restartPending *bool) (agent.Config, bool) {
 	nextProfile := selectedProfileKey(cfg)
 	runtimeState := manager.State()
-	busy := runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping"
+	// Busy blocks a restart only when the in-flight work is for the profile we still
+	// want; a switch to a different profile preempts the stale download/start instead
+	// of waiting for it to finish (which for a large GGUF starves the switch for minutes).
+	busy := (runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping") && loadState.TargetKey() == nextProfile
 	if nextProfile == "" || nextProfile == loadState.Key() || busy || !beginRestart(restartMu, restartPending) {
 		return agent.Config{}, false
 	}
@@ -591,6 +594,18 @@ func (s *runtimeLoadState) Snapshot() (agent.ModelProfile, bool) {
 func (s *runtimeLoadState) Key() string {
 	profile, loaded := s.Snapshot()
 	if !loaded {
+		return ""
+	}
+	return profileKey(profile)
+}
+
+// TargetKey is the profile the runtime is loading or has loaded, regardless of
+// whether the load finished. It lets the reconciler tell "busy loading the
+// profile we still want" (skip) apart from "busy loading a profile we no longer
+// want" (preempt), so a mid-download switch is not starved until the download ends.
+func (s *runtimeLoadState) TargetKey() string {
+	profile, _ := s.Snapshot()
+	if profile.ID == "" {
 		return ""
 	}
 	return profileKey(profile)

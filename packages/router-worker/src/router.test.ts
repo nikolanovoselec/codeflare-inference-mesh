@@ -60,6 +60,7 @@ function bearer(token: string): HeadersInit {
 }
 
 const QWEN_UPSTREAM = 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'
+const SMOKE_UPSTREAM = 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'
 const MESH_STATE_KEY_B64 = `${'A'.repeat(43)}=`
 
 function legacyRuntimeProfile(input: { id: string; publicAliases: readonly string[]; version: number }): ModelProfile {
@@ -89,11 +90,11 @@ function heartbeatBody(overrides: Record<string, unknown> = {}): string {
     localDashboardPort: 17777,
     status: 'online',
     publicModels: ['codeflare-mesh'],
-    activeProfileIds: ['mesh-default-qwen36-35b'],
+    activeProfileIds: ['mesh-smoke-qwen25-1.5b'],
     capacity: 2,
     inFlight: 0,
     runtime: 'meshllm',
-    metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM] },
+    metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] },
     ...overrides
   })
 }
@@ -216,9 +217,11 @@ describe('router worker behavioral contracts', () => {
     expect(html).toContain('data-installer-platform="true"')
     // Only the wizard keeps a zone picker; Routing matches the zone from the hostname server-side.
     expect([...html.matchAll(/name="zoneId"/g)]).toHaveLength(1)
-    // Routing discovers gateways/routes from the runtime token — no hand-typed Cloudflare ids or worker URL.
+    // Routing discovers the gateway from the runtime token; the route is pinned to codeflare-mesh
+    // server-side, so no route picker is rendered — only a gateway select and a provider-name field.
     expect(html).toContain('id="rt-gateway-select"')
-    expect(html).toContain('id="rt-route-select"')
+    expect(html).not.toContain('id="rt-route-select"')
+    expect(html).toContain('id="rt-gateway-provider-name"')
     expect(html).not.toContain('id="gateway-account-id"')
     expect(html).not.toContain('id="custom-domain-zone"')
     const liveOutputSurfaces = [...html.matchAll(/data-output="[^"]+"[^>]*role="log"[^>]*aria-live="polite"/g)]
@@ -350,14 +353,14 @@ describe('router worker behavioral contracts', () => {
     expect(button.disabled).toBe(false)
   })
 
-  it('REQ-GWY-003 connects a gateway from Routing using discovered or new names only', async () => {
+  it('REQ-GWY-003 connects a gateway from Routing using the discovered gateway and provider name only', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/admin'))).text()
     const harness = adminUiHarness(html, async () => Response.json({ deploymentId: 'deployment-a' }), { sessionToken: 'admin-secret' })
     harness.run()
-    // No account id, provider, public model, or worker URL to type — only the gateway + route names.
+    // No account id, route, public model, or worker URL to type — only the gateway and provider name.
     harness.byId('rt-gateway-new').value = 'gateway-admin'
-    harness.byId('rt-route-new').value = 'mesh-admin'
+    harness.byId('rt-gateway-provider-name').value = 'Mesh Provider'
 
     await harness.clickAction('gateway-sync', { out: 'gateway-output', prefix: 'rt-' })
 
@@ -365,8 +368,9 @@ describe('router worker behavioral contracts', () => {
     expect(harness.fetchCalls[0]!.path).toBe('/admin/cloudflare/gateway/sync')
     expect(harness.fetchCalls[0]!.init?.method).toBe('POST')
     expect(harness.fetchCalls[0]!.init?.headers).toMatchObject({ authorization: 'Bearer admin-secret', 'content-type': 'application/json' })
-    // Account id, worker url, provider, and public model are all resolved server-side from the token.
-    expect(JSON.parse(String(harness.fetchCalls[0]!.init?.body))).toEqual({ gatewayId: 'gateway-admin', routeName: 'mesh-admin' })
+    // Account id, worker url, route, and public model are all resolved/pinned server-side; the client
+    // posts only the chosen gateway and the provider name, never a route or public model.
+    expect(JSON.parse(String(harness.fetchCalls[0]!.init?.body))).toEqual({ gatewayId: 'gateway-admin', providerName: 'Mesh Provider' })
     expect(JSON.parse(harness.byId('gateway-output').textContent) as { deploymentId: string }).toEqual({ deploymentId: 'deployment-a' })
   })
 
@@ -596,7 +600,66 @@ describe('router worker behavioral contracts', () => {
     const body = await response.json() as { data: Array<{ id: string }> }
 
     expect(response.status).toBe(200)
-    expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['codeflare-mesh', 'qwen3.6-coder', 'mesh-smoke']))
+    // Only the smoke profile is active in the default seed, so the listing carries its aliases.
+    expect(body.data.map((model) => model.id)).toEqual(expect.arrayContaining(['codeflare-mesh', 'mesh-smoke', 'smoke-test']))
+  })
+
+  it('REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active', async () => {
+    const { router, store } = routerFixture()
+    // The default seed makes the smoke model the single active owner of the stable public model.
+    await router(new Request('https://router.test/health'))
+    const seeded = await store.getProfileByPublicModel('codeflare-mesh')
+    expect(seeded?.id).toBe('mesh-smoke-qwen25-1.5b')
+
+    // Switching the active model to the 35B resolves codeflare-mesh to it instead.
+    const activated = await router(new Request('https://router.test/admin/profiles/activate', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId: 'mesh-default-qwen36-35b' })
+    }))
+    const switched = await store.getProfileByPublicModel('codeflare-mesh')
+
+    expect(activated.status).toBe(200)
+    expect(switched?.id).toBe('mesh-default-qwen36-35b')
+    // Both models answer to the same stable public alias, so the gateway route/public model never has to change.
+    expect(seeded?.publicAliases).toContain('codeflare-mesh')
+    expect(switched?.publicAliases).toContain('codeflare-mesh')
+  })
+
+  it('REQ-RUN-001 a chat for codeflare-mesh with no active model returns model-not-found', async () => {
+    const { router, store } = routerFixture()
+    // Deactivate the seeded model (version-bumped so the per-request default seed leaves it off): no model is active.
+    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[2]!, active: false, rolloutPercent: 0, version: 2 })
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
+    }))
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: 'no-profile', requestId: 'request-a' })
+  })
+
+  it('REQ-RUN-009 activation is single-active', async () => {
+    const { router, store } = routerFixture()
+    // Seed two extra active profiles (version-bumped so the per-request default seed leaves them intact); the
+    // default seed also brings the smoke model up active, so three profiles are active before activation.
+    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[0]!, active: true, rolloutPercent: 100, version: 2 })
+    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[1]!, active: true, rolloutPercent: 100, version: 2 })
+
+    const res = await router(new Request('https://router.test/admin/profiles/activate', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId: 'mesh-default-qwen36-35b' })
+    }))
+    const profiles = await store.listProfiles()
+
+    expect(res.status).toBe(200)
+    // Exactly one model stays active after activation: every other active profile is switched off.
+    expect(profiles.filter((profile) => profile.active).map((profile) => profile.id)).toEqual(['mesh-default-qwen36-35b'])
+    expect(profiles.find((profile) => profile.id === 'mesh-split-qwen36-35b')?.active).toBe(false)
+    expect(profiles.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')?.active).toBe(false)
   })
 
   it('REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active', async () => {
@@ -646,7 +709,9 @@ describe('router worker behavioral contracts', () => {
     const ids = body.data.map((model) => model.id)
 
     expect(response.status).toBe(200)
-    expect(ids).toEqual(expect.arrayContaining(['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder', 'mesh-smoke', 'smoke-test']))
+    // Only the active (smoke) profile's aliases are listed; the inactive 35B/split aliases and the ghost are not.
+    expect(ids).toEqual(expect.arrayContaining(['codeflare-mesh', 'mesh-smoke', 'smoke-test']))
+    expect(ids).not.toContain('qwen3.6-coder')
     expect(ids).not.toContain('ghost-alias')
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -723,7 +788,8 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.status).toBe(200)
     expect(capture.request!.url).toBe('http://100.64.1.10:8080/v1/chat/completions')
-    expect(forwarded.model).toBe(QWEN_UPSTREAM)
+    // codeflare-mesh resolves to the single active profile (smoke), so the request is rewritten to its upstream.
+    expect(forwarded.model).toBe(SMOKE_UPSTREAM)
     expect(capture.request!.headers.get('authorization')).toBe('Bearer upstream-secret')
     expect(response.headers.get('x-inference-mesh-request-id')).toBe('request-a')
     expect(response.headers.get('x-inference-mesh-session')).toBe('session-a')
@@ -749,13 +815,13 @@ describe('router worker behavioral contracts', () => {
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-smoke-qwen25-1.5b'], capacity: 1 })
     }))
     const claimed = await claim.json() as { nodeId: string; nodeToken: string; upstreamToken: string }
     await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer(claimed.nodeToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: claimed.nodeId, displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 0, runtime: 'meshllm', runtimeModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', metrics: { runtimeState: 'ready', loadedModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', activeRequests: 0, apiReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'] } })
+      body: JSON.stringify({ nodeId: claimed.nodeId, displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-smoke-qwen25-1.5b'], capacity: 1, inFlight: 0, runtime: 'meshllm', runtimeModel: SMOKE_UPSTREAM, metrics: { runtimeState: 'ready', loadedModel: SMOKE_UPSTREAM, activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] } })
     }))
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
@@ -890,7 +956,7 @@ describe('router worker behavioral contracts', () => {
       nodeFixture({ id: 'unloaded-profile', activeProfileIds: [] }),
       nodeFixture({ id: 'penalized', failurePenaltyUntil: now + 1_000 }),
       nodeFixture({ id: 'over-capacity', capacity: 1, inFlight: 1 }),
-      nodeFixture({ id: 'runtime-failed', metrics: { runtimeState: 'failed', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM] } }),
+      nodeFixture({ id: 'runtime-failed', metrics: { runtimeState: 'failed', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] } }),
       nodeFixture({ id: 'stale-ready-models', metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: ['other-model'] } }),
       nodeFixture({ id: 'unsafe-mesh', meshIp: '8.8.8.8' })
     ] as const
@@ -920,7 +986,7 @@ describe('router worker behavioral contracts', () => {
   it('REQ-SCH-003 excludes nodes whose MeshLLM API is not ready from scheduling', async () => {
     const store = new MemoryStore()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: false, readyModels: [QWEN_UPSTREAM] } }))
+    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: false, readyModels: [SMOKE_UPSTREAM] } }))
 
     const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-api-ready', now: 1_700_000_000_000 })
 
@@ -931,7 +997,7 @@ describe('router worker behavioral contracts', () => {
   it('REQ-SCH-003 excludes nodes whose ready models omit the requested upstream model', async () => {
     const store = new MemoryStore()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: ['unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'] } }))
+    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM] } }))
 
     const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-ready-models', now: 1_700_000_000_000 })
 
@@ -942,10 +1008,10 @@ describe('router worker behavioral contracts', () => {
   it('REQ-SCH-003 keeps standby nodes unschedulable even when ready models list the requested model', async () => {
     const store = new MemoryStore()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'starting', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM] } }))
+    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'starting', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] } }))
     const standby = await new StoreScheduler(store, () => 'reservation-standby').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-standby', now: 1_700_000_000_000 })
 
-    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM] } }))
+    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] } }))
     const ready = await new StoreScheduler(store, () => 'reservation-ready').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-standby-ready', now: 1_700_000_000_000 })
 
     expect(standby.reason).toBe('no-node')
@@ -1217,11 +1283,11 @@ describe('router worker behavioral contracts', () => {
     expect(body).toMatchObject({ generatedAt: 1_700_000_000_000 })
     expect(body.nodes).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'node-a', status: 'online', capacity: 2, inFlight: 0, lastSeenAt: 1_700_000_000_000 })]))
     expect(body.profiles).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, sourceMode: 'meshllm-ref', version: 1, rolloutPercent: 100, active: true })
+      expect.objectContaining({ id: 'mesh-smoke-qwen25-1.5b', upstreamModel: SMOKE_UPSTREAM, sourceMode: 'meshllm-ref', version: 1, rolloutPercent: 100, active: true })
     ]))
     expect(body.profiles?.[0]).toHaveProperty('publicAliases')
     expect(body.profileReadiness).toEqual(expect.arrayContaining([
-      expect.objectContaining({ profileId: 'mesh-default-qwen36-35b', ready: 1, downloading: 0, failed: 1 })
+      expect.objectContaining({ profileId: 'mesh-smoke-qwen25-1.5b', ready: 1, downloading: 0, failed: 1 })
     ]))
     expect(body.setup).toEqual(expect.objectContaining({ completedAt: 1_700_000_000_000 }))
     expect(body.audit).toEqual([expect.objectContaining({ id: 'audit-a', type: 'profile_rollout', actor: 'admin', target: 'mesh-default-qwen36-35b' })])
@@ -1305,8 +1371,57 @@ describe('router worker behavioral contracts', () => {
     const body = await response.json() as { manualProviderKeyRequired: boolean; deploymentId: string }
 
     expect(response.status).toBe(200)
-    expect(calls).toEqual(['account-admin', 'gateway-admin', 'https://ai.example.com', 'mesh-admin', 'mesh-smoke'])
+    // The body's routeName/publicModel ('mesh-admin'/'mesh-smoke') are ignored: the router pins both to codeflare-mesh.
+    expect(calls).toEqual(['account-admin', 'gateway-admin', 'https://ai.example.com', 'codeflare-mesh', 'codeflare-mesh'])
     expect(body).toMatchObject({ deploymentId: 'deployment-a', manualProviderKeyRequired: true })
+  })
+
+  it('REQ-GWY-003 gateway sync pins route and model to codeflare-mesh regardless of request body', async () => {
+    let received: { routeName: string; publicModel: string } | undefined
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
+      cloudflareClient: {
+        async syncCustomProvider(input) {
+          received = { routeName: input.routeName, publicModel: input.publicModel }
+          return { providerId: 'p', providerSlug: 'slug', routeId: 'r', routeVersionId: 'v', deploymentId: 'd', gatewayId: input.gatewayId, routeName: input.routeName, publicModel: input.publicModel, workerUrl: input.workerUrl, manualProviderKeyRequired: true, providerTokenInstructions: 'x' }
+        },
+        async provisionCustomDomain() { throw new Error('custom domain is not used in this test') }
+      }
+    })
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+
+    const res = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ routeName: 'operator-typed-route', publicModel: 'operator-typed-model' })
+    }))
+
+    expect(res.status).toBe(200)
+    expect(received).toEqual({ routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' })
+  })
+
+  it('REQ-GWY-005 gateway sync defaults the provider name', async () => {
+    let receivedProviderName: string | undefined
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
+      cloudflareClient: {
+        async syncCustomProvider(input) {
+          receivedProviderName = input.providerName
+          return { providerId: 'p', providerSlug: 'slug', routeId: 'r', routeVersionId: 'v', deploymentId: 'd', gatewayId: input.gatewayId, routeName: input.routeName, publicModel: input.publicModel, workerUrl: input.workerUrl, manualProviderKeyRequired: true, providerTokenInstructions: 'x' }
+        },
+        async provisionCustomDomain() { throw new Error('custom domain is not used in this test') }
+      }
+    })
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+
+    const res = await router(new Request('https://router.test/admin/cloudflare/gateway/sync', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({})
+    }))
+
+    expect(res.status).toBe(200)
+    expect(receivedProviderName).toBe('Codeflare Inference Mesh')
   })
 
   it('REQ-GWY-003 uses idempotent Cloudflare custom-provider and dynamic-route payload contracts', async () => {
@@ -1730,8 +1845,9 @@ describe('router worker behavioral contracts', () => {
 
     expect(activateSplit.status).toBe(200)
     expect(afterSplit.find((profile) => profile.id === 'mesh-split-qwen36-35b')).toMatchObject({ active: true, rolloutPercent: 100, version: 2 })
-    expect(afterSplit.find((profile) => profile.id === 'mesh-default-qwen36-35b')).toMatchObject({ active: false, rolloutPercent: 0, version: 2 })
-    expect(afterSplit.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')).toMatchObject({ active: true, version: 1 })
+    // Single-active: activating split deactivates the seeded active model (smoke); the already-inactive 35B is untouched.
+    expect(afterSplit.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')).toMatchObject({ active: false, rolloutPercent: 0, version: 2 })
+    expect(afterSplit.find((profile) => profile.id === 'mesh-default-qwen36-35b')).toMatchObject({ active: false, rolloutPercent: 0, version: 1 })
 
     const activateSingle = await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -1741,7 +1857,8 @@ describe('router worker behavioral contracts', () => {
     const afterSingle = await store.listProfiles()
 
     expect(activateSingle.status).toBe(200)
-    expect(afterSingle.find((profile) => profile.id === 'mesh-default-qwen36-35b')).toMatchObject({ active: true, rolloutPercent: 100, version: 3 })
+    // 35B was inactive at v1, so activating it bumps it to v2; split (active at v2) is deactivated to v3.
+    expect(afterSingle.find((profile) => profile.id === 'mesh-default-qwen36-35b')).toMatchObject({ active: true, rolloutPercent: 100, version: 2 })
     expect(afterSingle.find((profile) => profile.id === 'mesh-split-qwen36-35b')).toMatchObject({ active: false, rolloutPercent: 0, version: 3 })
 
     const rollout = await router(new Request('https://router.test/admin/profiles/rollout', {
@@ -1831,7 +1948,8 @@ describe('router worker behavioral contracts', () => {
     expect(unknown.status).toBe(404)
     expect(invalid.status).toBe(400)
     expect(activated.status).toBe(200)
-    expect(body).toMatchObject({ ok: true, activated: 'mesh-split-qwen36-35b', deactivated: ['mesh-default-qwen36-35b'] })
+    // Single-active: the seeded active model (smoke) is the one deactivated when split is activated.
+    expect(body).toMatchObject({ ok: true, activated: 'mesh-split-qwen36-35b', deactivated: ['mesh-smoke-qwen25-1.5b'] })
     expect(owners.map((profile) => profile.id)).toEqual(['mesh-split-qwen36-35b'])
     expect(store.audit.some((event) => event.type === 'profile_activated' && event.actor === 'admin' && event.target === 'mesh-split-qwen36-35b')).toBe(true)
   })
@@ -1847,7 +1965,7 @@ describe('router worker behavioral contracts', () => {
     const event = store.audit.find((item) => item.type === 'profile_activated')!
 
     expect(event).toMatchObject({ actor: 'admin', target: 'mesh-split-qwen36-35b' })
-    expect(event.detail).toEqual({ deactivated: ['mesh-default-qwen36-35b'] })
+    expect(event.detail).toEqual({ deactivated: ['mesh-smoke-qwen25-1.5b'] })
   })
 
   it('REQ-NODE-002 heartbeat and claim responses carry mesh bootstrap and desired agent version', async () => {
@@ -1867,7 +1985,7 @@ describe('router worker behavioral contracts', () => {
     const claim = await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
-      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-smoke-qwen25-1.5b'], capacity: 2 })
     }))
     const claimed = await claim.json() as { nodeId: string; nodeToken: string; meshBootstrap?: { action: string }; desiredAgentVersion?: string }
     const heartbeat = await router(new Request('https://router.test/node/heartbeat', {
@@ -1906,7 +2024,7 @@ describe('router worker behavioral contracts', () => {
           meshId: 'mesh-1',
           meshRole: 'coordinator',
           peerCount: 2,
-          readyModels: [QWEN_UPSTREAM],
+          readyModels: [SMOKE_UPSTREAM],
           splitEnabled: false,
           stageCount: 1,
           apiReady: true,
@@ -1926,7 +2044,7 @@ describe('router worker behavioral contracts', () => {
       meshId: 'mesh-1',
       meshRole: 'coordinator',
       peerCount: 2,
-      readyModels: [QWEN_UPSTREAM],
+      readyModels: [SMOKE_UPSTREAM],
       splitEnabled: false,
       stageCount: 1,
       apiReady: true,
@@ -1936,7 +2054,7 @@ describe('router worker behavioral contracts', () => {
     expect(Array.isArray(body.meshHealth)).toBe(true)
     expect(body.meshHealth!.length).toBeGreaterThan(0)
     expect(body.profileReadiness).toEqual(expect.arrayContaining([
-      expect.objectContaining({ profileId: 'mesh-default-qwen36-35b', ready: 1, downloading: 0, failed: 0 })
+      expect.objectContaining({ profileId: 'mesh-smoke-qwen25-1.5b', ready: 1, downloading: 0, failed: 0 })
     ]))
   })
 
@@ -1972,7 +2090,7 @@ describe('router worker behavioral contracts', () => {
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
       body: heartbeatBody({ meshId: 'mesh-1', meshToken: 'invite-token-value-a' })
     }))
-    const meshState = store.config.get('mesh_state:mesh-default-qwen36-35b')
+    const meshState = store.config.get('mesh_state:mesh-smoke-qwen25-1.5b')
 
     const response = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
     const body = await response.json() as { meshHealth?: unknown[] }
@@ -1993,7 +2111,7 @@ describe('router worker behavioral contracts', () => {
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
       body: heartbeatBody({ meshId: 'mesh-1', meshToken: 'invite-token-value-a' })
     }))
-    expect(store.config.get('mesh_state:mesh-default-qwen36-35b')).toBeDefined()
+    expect(store.config.get('mesh_state:mesh-smoke-qwen25-1.5b')).toBeDefined()
 
     const revoke = await router(new Request('https://router.test/admin/nodes/node-a/revoke', { method: 'POST', headers: bearer('admin-secret') }))
 
@@ -2008,17 +2126,17 @@ describe('router worker behavioral contracts', () => {
     await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret-a'), 'content-type': 'application/json' },
-      body: heartbeatBody({ meshId: 'mesh-1', meshToken: 'invite-token-value-a', metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM], meshRole: 'coordinator' } })
+      body: heartbeatBody({ meshId: 'mesh-1', meshToken: 'invite-token-value-a', metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM], meshRole: 'coordinator' } })
     }))
     await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret-b'), 'content-type': 'application/json' },
-      body: heartbeatBody({ nodeId: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', meshId: 'mesh-1', meshToken: 'invite-token-value-b', metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM], meshRole: 'serving-peer' } })
+      body: heartbeatBody({ nodeId: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', meshId: 'mesh-1', meshToken: 'invite-token-value-b', metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM], meshRole: 'serving-peer' } })
     }))
 
     const response = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
     const body = await response.json() as { meshHealth?: Array<{ profileId: string; meshId?: string; coordinatorNodeId?: string; peerNodeIds: string[] }> }
-    const entry = body.meshHealth?.find((item) => item.profileId === 'mesh-default-qwen36-35b')
+    const entry = body.meshHealth?.find((item) => item.profileId === 'mesh-smoke-qwen25-1.5b')
 
     expect(response.status).toBe(200)
     expect(entry?.meshId).toBe('mesh-1')
@@ -2043,10 +2161,10 @@ describe('router worker behavioral contracts', () => {
 
     const response = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
     const body = await response.json() as { meshHealth?: Array<{ profileId: string; readyModels: string[]; failedNodeIds: string[] }> }
-    const entry = body.meshHealth?.find((item) => item.profileId === 'mesh-default-qwen36-35b')
+    const entry = body.meshHealth?.find((item) => item.profileId === 'mesh-smoke-qwen25-1.5b')
 
     expect(response.status).toBe(200)
-    expect(entry?.readyModels).toEqual([QWEN_UPSTREAM])
+    expect(entry?.readyModels).toEqual([SMOKE_UPSTREAM])
     expect(entry?.failedNodeIds).toEqual(['node-b'])
   })
 
@@ -2061,7 +2179,7 @@ describe('router worker behavioral contracts', () => {
 
     const response = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
     const body = await response.json() as { meshHealth?: Array<{ profileId: string; lastError?: string }> }
-    const entry = body.meshHealth?.find((item) => item.profileId === 'mesh-default-qwen36-35b')
+    const entry = body.meshHealth?.find((item) => item.profileId === 'mesh-smoke-qwen25-1.5b')
 
     expect(response.status).toBe(200)
     expect(entry?.lastError).toBe('stage 0 exited before ready')
@@ -2078,7 +2196,7 @@ describe('router worker behavioral contracts', () => {
 
     const statusRequest = () => router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
     const before = await (await statusRequest()).json() as { meshHealth?: Array<{ profileId: string; rotation: number; tokenCount: number; secretAgeMs?: number }> }
-    const beforeEntry = before.meshHealth?.find((item) => item.profileId === 'mesh-default-qwen36-35b')
+    const beforeEntry = before.meshHealth?.find((item) => item.profileId === 'mesh-smoke-qwen25-1.5b')
 
     expect(beforeEntry?.rotation).toBe(0)
     expect(beforeEntry?.tokenCount).toBe(1)
@@ -2088,10 +2206,10 @@ describe('router worker behavioral contracts', () => {
     const rotate = await router(new Request('https://router.test/admin/mesh/rotate', {
       method: 'POST',
       headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ profileId: 'mesh-default-qwen36-35b' })
+      body: JSON.stringify({ profileId: 'mesh-smoke-qwen25-1.5b' })
     }))
     const after = await (await statusRequest()).json() as { meshHealth?: Array<{ profileId: string; rotation: number; tokenCount: number; secretAgeMs?: number }> }
-    const afterEntry = after.meshHealth?.find((item) => item.profileId === 'mesh-default-qwen36-35b')
+    const afterEntry = after.meshHealth?.find((item) => item.profileId === 'mesh-smoke-qwen25-1.5b')
 
     expect(rotate.status).toBe(200)
     expect(afterEntry?.rotation).toBe(1)
@@ -2584,13 +2702,14 @@ describe('Access-first setup and host gating contracts', () => {
     const gatewaySelect = harness.byId('wiz-gateway-select')
     expect(gatewaySelect.children.map((option) => option.value)).toEqual(['inference-mesh', 'other-gw', '__new__'])
     expect(gatewaySelect.value).toBe('inference-mesh')
-    const routeSelect = harness.byId('wiz-route-select')
-    expect(routeSelect.children.map((option) => option.value)).toEqual(['codeflare-mesh', '__new__'])
+    // No route picker: the route is pinned to codeflare-mesh server-side. The client posts the chosen
+    // gateway plus the provider name only.
     expect(harness.byId('wiz-gateway-new-wrap').hidden).toBe(true)
+    harness.byId('wiz-gateway-provider-name').value = 'Mesh Provider'
 
     await harness.clickAction('gateway-sync', { prefix: 'wiz-', out: 'wiz-gateway-output' })
     const syncCall = harness.fetchCalls.find((call) => call.path === '/admin/cloudflare/gateway/sync')
-    expect(JSON.parse(String(syncCall?.init?.body))).toEqual({ gatewayId: 'inference-mesh', routeName: 'codeflare-mesh' })
+    expect(JSON.parse(String(syncCall?.init?.body))).toEqual({ gatewayId: 'inference-mesh', providerName: 'Mesh Provider' })
   })
 
   it('REQ-GWY-005 gateway step offers one-click provisioning when the account has no gateway', async () => {
@@ -3012,7 +3131,8 @@ describe('control-plane API (/api/v1)', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as { activated: string; deactivated: string[] }
     expect(body.activated).toBe('mesh-split-qwen36-35b')
-    expect(body.deactivated).toContain('mesh-default-qwen36-35b')
+    // Single-active: enabling split switches off the seeded active model (smoke), not the already-inactive 35B.
+    expect(body.deactivated).toContain('mesh-smoke-qwen25-1.5b')
     const profiles = await store.listProfiles()
     expect(profiles.find((profile) => profile.id === 'mesh-split-qwen36-35b')?.active).toBe(true)
     expect(profiles.find((profile) => profile.id === 'mesh-default-qwen36-35b')?.active).toBe(false)

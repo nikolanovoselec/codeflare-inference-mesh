@@ -588,3 +588,43 @@ func TestConfigFlagResolvesExplicitConfigPath(t *testing.T) {
 		}
 	})
 }
+
+// --- REQ-RUN-010 mid-download profile-switch preemption ----------------------
+
+func TestREQRUN010PreemptsDeselectedInflightDownload(t *testing.T) {
+	t.Run("REQ-RUN-010", func(t *testing.T) {
+		profileA := agent.ModelProfile{ID: "profile-a", UpstreamModel: "upstream-a", Version: 1}
+		profileB := agent.ModelProfile{ID: "profile-b", UpstreamModel: "upstream-b", Version: 1}
+
+		// A switch to a different profile preempts an in-flight download for the now-deselected
+		// one instead of waiting for the stale download (minutes for a large GGUF) to finish.
+		t.Run("switch to a different profile preempts the in-flight download", func(t *testing.T) {
+			manager := missingBinaryMeshManager(t)
+			manager.SetState("downloading")
+			loadState := &runtimeLoadState{}
+			loadState.SetStarting(profileA)
+			cfg := agent.Config{RuntimeModel: profileB.UpstreamModel, ActiveProfileIDs: []string{profileB.ID}, Profiles: []agent.ModelProfile{profileB}}
+			restartMu := &sync.Mutex{}
+			restartPending := false
+
+			if _, started := beginRuntimeProfileRestart(cfg, manager, loadState, restartMu, &restartPending); !started {
+				t.Fatal("a switch to a different profile must preempt the deselected in-flight download")
+			}
+		})
+
+		// A download still in flight for the profile we still want is left alone (no restart thrash).
+		t.Run("in-flight download for the still-selected profile is not preempted", func(t *testing.T) {
+			manager := missingBinaryMeshManager(t)
+			manager.SetState("downloading")
+			loadState := &runtimeLoadState{}
+			loadState.SetStarting(profileA)
+			cfg := agent.Config{RuntimeModel: profileA.UpstreamModel, ActiveProfileIDs: []string{profileA.ID}, Profiles: []agent.ModelProfile{profileA}}
+			restartMu := &sync.Mutex{}
+			restartPending := false
+
+			if _, started := beginRuntimeProfileRestart(cfg, manager, loadState, restartMu, &restartPending); started {
+				t.Fatal("a download for the still-selected profile must not restart while downloading")
+			}
+		})
+	})
+}

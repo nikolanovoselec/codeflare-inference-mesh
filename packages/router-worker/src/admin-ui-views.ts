@@ -94,20 +94,14 @@ ${output({ id: 'wizard-access-output', kind: 'setup-access', pre: true })}
   const gateway = wizardStep({
     step: 'gateway',
     title: 'Connect AI Gateway',
-    description: 'Choose the gateway and dynamic route your clients call, or create the defaults in one click. You can also do this later under Routing.',
+    description: 'Choose your AI Gateway (or create one) and name the provider. The dynamic route your clients call is created for you. You can also do this later under Routing.',
     body: `<div class="wizard-actions" id="wizard-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Create gateway + route', variant: 'primary', out: 'wiz-gateway-output' })}</div>
 <div class="form-grid" id="wizard-gateway-selects">
 ${field({ id: 'wiz-gateway-select', label: 'Gateway', control: '<span class="slot" id="wiz-gateway-slot"><select id="wiz-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
-${field({ id: 'wiz-route-select', label: 'Route', control: '<span class="slot" id="wiz-route-slot"><select id="wiz-route-select" name="routeName" data-route-select="true" disabled></select></span>' })}
+${field({ id: 'wiz-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'wiz-gateway-provider-name', name: 'providerName', value: 'Codeflare Inference Mesh' }), hint: 'The name of the provider created on your AI Gateway.' })}
 </div>
-<div class="form-grid"><div id="wiz-gateway-new-wrap" hidden>${field({ id: 'wiz-gateway-new', label: 'New gateway name', control: textInput({ id: 'wiz-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div>
-<div id="wiz-route-new-wrap" hidden>${field({ id: 'wiz-route-new', label: 'New route name', control: textInput({ id: 'wiz-route-new', name: 'newRouteName', placeholder: 'e.g. codeflare-mesh' }) })}</div></div>
-<details class="gate-alt"><summary>Advanced overrides</summary>
-<div class="form-grid">
-${field({ id: 'wiz-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'wiz-gateway-provider-name', name: 'providerName', placeholder: 'e.g. codeflare-inference-mesh' }) })}
-${field({ id: 'wiz-gateway-public-model', label: 'Public model', control: textInput({ id: 'wiz-gateway-public-model', name: 'publicModel', placeholder: 'e.g. codeflare-mesh' }) })}
-${field({ id: 'wiz-gateway-worker-url', label: 'Worker URL override', control: textInput({ id: 'wiz-gateway-worker-url', name: 'workerUrl', inputmode: 'url', placeholder: 'e.g. https://mesh.example.com' }), hint: 'Blank fields reuse saved settings or Worker environment defaults.' })}
-</div></details>
+<div class="form-grid"><div id="wiz-gateway-new-wrap" hidden>${field({ id: 'wiz-gateway-new', label: 'New gateway name', control: textInput({ id: 'wiz-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
+<p class="field-hint">The dynamic route <code>codeflare-mesh</code> is created for you; you never choose a route or model.</p>
 <div class="wizard-actions">${button({ action: 'gateway-sync', label: 'Connect AI Gateway', variant: 'primary', out: 'wiz-gateway-output', prefix: 'wiz-' })}</div>
 ${output({ id: 'wiz-gateway-output', kind: 'gateway-sync', pre: true })}
 <div class="wizard-actions"><button class="btn btn-ghost" type="button" data-wizard-back>Back</button><button class="btn" type="button" data-wizard-next>Continue</button></div>`
@@ -191,16 +185,16 @@ function routingSection(): string {
     description: 'The address people use to reach your models, and how requests find this router. Everything here is discovered from your connected Cloudflare account, so you never type an ID by hand.',
     body: `<h3>AI Gateway</h3>
 <p class="empty-note" id="gateway-current">No gateway connected yet.</p>
-<p class="field-hint">Pick one of your existing gateways, or create a new one.</p>
+<p class="field-hint">Pick one of your existing gateways, or create a new one. The dynamic route <code>codeflare-mesh</code> is created for you.</p>
 <div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Create gateway + route', variant: 'primary', out: 'gateway-output' })}</div>
 <div class="form-grid" id="rt-gateway-selects">
 ${field({ id: 'rt-gateway-select', label: 'Gateway', control: '<span class="slot" id="rt-gateway-slot"><select id="rt-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
-${field({ id: 'rt-route-select', label: 'Route', control: '<span class="slot" id="rt-route-slot"><select id="rt-route-select" name="routeName" data-route-select="true" disabled></select></span>' })}
+${field({ id: 'rt-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'rt-gateway-provider-name', name: 'providerName', value: 'Codeflare Inference Mesh' }), hint: 'The provider created on your AI Gateway. Copy its API key below into the provider API Key field.' })}
 </div>
-<div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div>
-<div id="rt-route-new-wrap" hidden>${field({ id: 'rt-route-new', label: 'New route name', control: textInput({ id: 'rt-route-new', name: 'newRouteName', placeholder: 'e.g. codeflare-mesh' }) })}</div></div>
+<div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
 <div class="form-actions">${button({ action: 'gateway-sync', label: 'Connect gateway', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
 ${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}
+<p class="route-status"><span class="route-chip" id="rt-route-chip"><span class="route-dot"></span>dynamic route <code>codeflare-mesh</code> · <span id="rt-route-state">not connected</span></span></p>
 <div class="subpanel"><h3>Custom domain</h3>
 <p class="empty-note" id="custom-domain-current">No custom domain yet.</p>
 <div class="form-grid">

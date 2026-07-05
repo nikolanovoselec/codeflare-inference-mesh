@@ -265,13 +265,15 @@ function retiredDefaultProfiles(existing: readonly ModelProfile[], defaults: rea
     .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
 }
 
-export function aliasExclusiveActivation(profiles: readonly ModelProfile[], profileId: string): { readonly activated: ModelProfile; readonly deactivated: readonly ModelProfile[] } | undefined {
+// Single-active activation: activating one model deactivates every other active
+// model, so a mesh serves exactly one model at a time (one mesh, one active model).
+export function singleActiveActivation(profiles: readonly ModelProfile[], profileId: string): { readonly activated: ModelProfile; readonly deactivated: readonly ModelProfile[] } | undefined {
   const target = profiles.find((profile) => profile.id === profileId)
   if (!target) return undefined
   return {
     activated: { ...target, active: true, rolloutPercent: 100, version: target.version + 1 },
     deactivated: profiles
-      .filter((profile) => profile.id !== target.id && profile.active && profile.publicAliases.some((alias) => target.publicAliases.includes(alias)))
+      .filter((profile) => profile.id !== target.id && profile.active)
       .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
   }
 }

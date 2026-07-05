@@ -576,3 +576,37 @@ describe('read-only user console contracts', () => {
     }
   })
 })
+
+describe('dashboard routing contracts', () => {
+  it('REQ-ADM-024 the route chip is operational only when provider and route are provisioned', async () => {
+    // Operational = the custom provider and dynamic route are provisioned (providerId + routeId), not node health.
+    const operational = await dashboardHarness({ status: statusFixture({ gateway: { providerId: 'p', routeId: 'r' } }) })
+    expect(operational.byId('rt-route-chip').classList.contains('operational')).toBe(true)
+    expect(operational.byId('rt-route-state').textContent).not.toBe('not connected')
+
+    const pending = await dashboardHarness({ status: statusFixture({ gateway: {} }) })
+    expect(pending.byId('rt-route-chip').classList.contains('operational')).toBe(false)
+    expect(pending.byId('rt-route-state').textContent).toBe('not connected')
+  })
+
+  it('REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key', async () => {
+    const harness = await dashboardHarness({
+      respond: (path, init) => path === '/admin/cloudflare/gateway/sync' && (init?.method || 'GET') === 'POST'
+        ? Response.json({ providerToken: 'provider_minted_key', byokInstruction: 'paste it into the AI Gateway provider key field' })
+        : undefined
+    })
+    await harness.clickAction('gateway-sync', { out: 'gateway-output', prefix: 'rt-' })
+    await harness.flush(3)
+    // The minted provider key surfaces as a token card with a copy control carrying the key value.
+    const cards = harness.byId('gateway-output').children.filter((child) => child.dataset.tokenCard)
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.dataset.tokenCard).toBe('AI Gateway provider key')
+    expect(cards[0]!.children.find((child) => child.dataset.copy)!.dataset.copy).toBe('provider_minted_key')
+  })
+
+  it('REQ-GWY-005 the gateway step renders a provider-name field and no route select', async () => {
+    const harness = await dashboardHarness()
+    expect(harness.html).toContain('id="rt-gateway-provider-name"')
+    expect(harness.html).not.toContain('id="rt-route-select"')
+  })
+})

@@ -192,7 +192,9 @@ describe('D1 store behavioral contracts', () => {
   it('REQ-SCH-001 persists durable router state and reloads scheduler state from D1', async () => {
     const db = new FakeD1Database()
     const writer = new D1Store(db as unknown as D1Database, () => 1_700_000_000_000)
-    const profile = DEFAULT_MODEL_PROFILES[0]!
+    // Index 2 is the smoke profile: the single active default, so it is the one
+    // getProfileByPublicModel('codeflare-mesh') (WHERE active = 1) resolves to.
+    const profile = DEFAULT_MODEL_PROFILES[2]!
     const node = nodeFixture({ nodeTokenVerifier: 'sha256:node-token', upstreamTokenVerifier: 'sha256:upstream-token' })
     const config = { setupComplete: true, defaultPublicModel: 'codeflare-mesh', resources: { d1DatabaseId: 'd1-a', workerName: 'router-a' } }
     const providerToken: TokenRecord = { kind: 'provider', id: 'provider-a', verifier: 'sha256:provider', active: true, createdAt: 1_700_000_000_001 }

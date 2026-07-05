@@ -1,5 +1,12 @@
 import type { ModelProfile } from './types'
 
+// The single stable public model id AI Gateway forwards. Every model profile
+// carries it as a shared public alias, and the single-active invariant
+// guarantees exactly one profile owns it at a time — so a request for it always
+// resolves to the currently active model and switching the underlying model
+// never changes the Gateway route or the public model id clients call.
+export const STABLE_PUBLIC_MODEL = 'codeflare-mesh'
+
 export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
   {
     id: 'mesh-default-qwen36-35b',
@@ -15,8 +22,8 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
       bindPort: 4300
     },
     version: 1,
-    rolloutPercent: 100,
-    active: true
+    rolloutPercent: 0,
+    active: false
   },
   {
     id: 'mesh-split-qwen36-35b',
@@ -38,7 +45,7 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
   {
     id: 'mesh-smoke-qwen25-1.5b',
     displayName: 'Qwen2.5 Coder 1.5B',
-    publicAliases: ['mesh-smoke', 'smoke-test'],
+    publicAliases: ['codeflare-mesh', 'mesh-smoke', 'smoke-test'],
     upstreamModel: 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M',
     sourceMode: 'meshllm-ref',
     contextWindow: 32768,
