@@ -134,7 +134,13 @@ export class CloudflareGatewayClient {
 
   async syncCustomProvider(input: GatewaySyncRequest): Promise<GatewaySyncResult> {
     await this.ensureGateway(input.accountId, input.gatewayId)
-    const providerSlug = slugify(`${input.providerName}-${new URL(originOnly(input.workerUrl)).hostname}`)
+    // The provider slug is the stable identity the Gateway route points at, so it must NOT
+    // depend on the worker origin. Embedding the worker hostname meant a first sync against the
+    // *.workers.dev origin and a later sync against the custom domain minted two providers and
+    // repointed the route to the newest, orphaning the one that holds the BYOK key. Deriving the
+    // slug from the provider name alone keeps re-syncs idempotent; base_url still tracks the
+    // current origin and is reconciled via PATCH.
+    const providerSlug = slugify(input.providerName)
     const providerBody = {
       name: input.providerName,
       slug: providerSlug,
