@@ -1121,6 +1121,7 @@ function toApiModel(profile: ModelProfile) {
     rolloutPercent: profile.rolloutPercent,
     contextWindow: profile.contextWindow,
     modelRef: profile.meshllm.modelRef,
+    split: profile.meshllm.split,
     maxVramGb: profile.meshllm.maxVramGb ?? 0
   }
 }

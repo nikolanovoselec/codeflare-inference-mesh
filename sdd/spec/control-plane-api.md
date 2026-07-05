@@ -117,7 +117,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Acceptance Criteria:**
 
-1. `GET /api/v1/models` returns each model as a projection with its id, display name, callable names, active flag, rollout percent, context window, model reference, and per-model VRAM budget in GB (`0` = no cap). <!-- @impl: packages/router-worker/src/router.ts::toApiModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists models as projections with callable names) -->
+1. `GET /api/v1/models` returns each model as a projection with its id, display name, callable names, active flag, rollout percent, context window, model reference, split serving flag, and per-model VRAM budget in GB (`0` = no cap). <!-- @impl: packages/router-worker/src/router.ts::toApiModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists models as projections with callable names) -->
 2. `POST /api/v1/models/{id}` updates a model's context window, model reference, and/or VRAM budget, rejecting a non-positive-integer context window, an empty model reference, or a negative VRAM budget, and returns `404` for an unknown model. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelConfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 configures a model context window and rejects invalid input) -->
 3. `POST /api/v1/models/{id}/enable` switches a model on and switches off any other model that answers to the same callable name. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelEnable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 enables a model and switches off another with the same callable name) -->
 4. `POST /api/v1/models/{id}/disable` drops a model's traffic to zero. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDisable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 disables a model by dropping its traffic to zero) -->
@@ -172,13 +172,9 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 **Acceptance Criteria:**
 
 1. `POST /api/v1/models` with a non-empty model reference and serving mode `single` creates a new inactive model carrying the stable `codeflare-mesh` callable name and returns its machine projection. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 adds a single-machine model as an inactive projection) -->
-
 2. Serving mode `split` creates the model with split serving enabled. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 adds a split model with split serving enabled) -->
-
 3. A missing or blank model reference is rejected with status 400 and creates no model. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 rejects a blank model reference) -->
-
 4. A reference whose derived id already exists is rejected with status 409 without overwriting the existing model. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 refuses a duplicate model without overwriting) -->
-
 5. Creating a model refuses a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 refuses model creation without an automation key) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)

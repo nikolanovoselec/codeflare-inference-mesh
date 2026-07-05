@@ -3221,12 +3221,14 @@ describe('control-plane API (/api/v1)', () => {
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models', { headers: bearer(key.token) }))
     expect(res.status).toBe(200)
-    const body = await res.json() as { models: Array<{ id: string; callableNames: string[]; displayName: string; maxVramGb: number }> }
+    const body = await res.json() as { models: Array<{ id: string; callableNames: string[]; displayName: string; maxVramGb: number; split: boolean }> }
     const model = body.models.find((entry) => entry.id === 'mesh-default-qwen36-35b')
     expect(model?.displayName).toBe('Qwen3.6 35B')
     expect(model?.callableNames).toContain('codeflare-mesh')
     // The projection always carries a numeric VRAM budget (0 = no cap) so machine callers can read it.
     expect(typeof model?.maxVramGb).toBe('number')
+    // The split serving flag is projected so automation can read back which models run multi-machine.
+    expect(model?.split).toBe(false)
   })
 
   const apiAddModel = (router: (request: Request) => Promise<Response>, token: string | undefined, modelRef: string, mode: string) =>
@@ -3254,6 +3256,8 @@ describe('control-plane API (/api/v1)', () => {
     const ref = 'hf://meshllm/Qwen3-14B-UD-Q4_K_XL-layers@abc123'
     const res = await apiAddModel(router, key.token, ref, 'split')
     expect(res.status).toBe(201)
+    const body = await res.json() as { model: { split: boolean } }
+    expect(body.model.split).toBe(true)
     const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === ref)
     expect(created?.meshllm.split).toBe(true)
     expect(created?.active).toBe(false)
@@ -3283,6 +3287,19 @@ describe('control-plane API (/api/v1)', () => {
     const res = await apiAddModel(router, undefined, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single')
     expect(res.status).toBe(401)
     expect((await store.listProfiles()).some((profile) => profile.id.startsWith('custom-'))).toBe(false)
+  })
+
+  it('REQ-OBS-006 records a profile-added audit event for programmatic model onboarding', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single')
+    expect(res.status).toBe(201)
+    const added = await res.json() as { model: { id: string } }
+    const event = (await store.listAudit(10)).find((entry) => entry.type === 'profile_added')
+    expect(event?.target).toBe(added.model.id)
+    // The API path stamps an automation actor, distinguishing it from the Access-session console add.
+    expect(event?.actor).toMatch(/^automation:/)
+    expect(event?.detail).toMatchObject({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', split: false })
   })
 
   it('REQ-API-005 configures a model context window and rejects invalid input', async () => {

@@ -611,7 +611,7 @@ GET /api/v1/models
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The models. | `{ "models": [{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "maxVramGb": number }] }`. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). |
+| `200` | The models. | `{ "models": [{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "split": boolean, "maxVramGb": number }] }`. `split` is `true` when the model serves as a layer package across several machines. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
