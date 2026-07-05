@@ -3229,6 +3229,62 @@ describe('control-plane API (/api/v1)', () => {
     expect(typeof model?.maxVramGb).toBe('number')
   })
 
+  const apiAddModel = (router: (request: Request) => Promise<Response>, token: string | undefined, modelRef: string, mode: string) =>
+    router(new Request('https://router.test/api/v1/models', {
+      method: 'POST',
+      headers: { ...(token ? bearer(token) : {}), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef, mode })
+    }))
+
+  it('REQ-API-007 adds a single-machine model as an inactive projection', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single')
+    expect(res.status).toBe(201)
+    const body = await res.json() as { model: { id: string; active: boolean; callableNames: string[]; modelRef: string } }
+    expect(body.model.active).toBe(false)
+    expect(body.model.callableNames).toContain('codeflare-mesh')
+    expect(body.model.modelRef).toBe('unsloth/Qwen3-14B-GGUF:Q4_K_M')
+    expect((await store.listProfiles()).some((profile) => profile.id === body.model.id && !profile.meshllm.split)).toBe(true)
+  })
+
+  it('REQ-API-007 adds a split model with split serving enabled', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const ref = 'hf://meshllm/Qwen3-14B-UD-Q4_K_XL-layers@abc123'
+    const res = await apiAddModel(router, key.token, ref, 'split')
+    expect(res.status).toBe(201)
+    const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === ref)
+    expect(created?.meshllm.split).toBe(true)
+    expect(created?.active).toBe(false)
+  })
+
+  it('REQ-API-007 rejects a blank model reference', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiAddModel(router, key.token, '  ', 'single')
+    expect(res.status).toBe(400)
+    expect((await store.listProfiles()).some((profile) => profile.id.startsWith('custom-'))).toBe(false)
+  })
+
+  it('REQ-API-007 refuses a duplicate model without overwriting', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const first = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single')
+    expect(first.status).toBe(201)
+    const firstId = (await first.json() as { model: { id: string } }).model.id
+    const second = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single')
+    expect(second.status).toBe(409)
+    expect((await store.listProfiles()).filter((profile) => profile.id === firstId).length).toBe(1)
+  })
+
+  it('REQ-API-007 refuses model creation without an automation key', async () => {
+    const { router, store } = routerFixture()
+    const res = await apiAddModel(router, undefined, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single')
+    expect(res.status).toBe(401)
+    expect((await store.listProfiles()).some((profile) => profile.id.startsWith('custom-'))).toBe(false)
+  })
+
   it('REQ-API-005 configures a model context window and rejects invalid input', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)

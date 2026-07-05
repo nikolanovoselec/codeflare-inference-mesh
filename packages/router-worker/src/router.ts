@@ -109,6 +109,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/reconfigure$/) && request.method === 'POST') return await handleApiNodeReconfigure(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'DELETE') return await handleApiNodeDecommission(request, deps, url, id, now())
       if (url.pathname === '/api/v1/models' && request.method === 'GET') return await handleApiModelList(request, deps, id, now())
+      if (url.pathname === '/api/v1/models' && request.method === 'POST') return await handleApiModelAdd(request, deps, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/enable$/) && request.method === 'POST') return await handleApiModelEnable(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/disable$/) && request.method === 'POST') return await handleApiModelDisable(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'POST') return await handleApiModelConfigure(request, deps, url, id, now())
@@ -1128,6 +1129,25 @@ async function handleApiModelList(request: Request, deps: RouterDeps, requestId:
   if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
   const profiles = await deps.store.listProfiles()
   return json({ models: profiles.map(toApiModel) }, 200, requestId)
+}
+
+// handleApiModelAdd is the automation-facing twin of handleProfileAdd: a fleet
+// manager adds a model to the catalog with an automation key instead of an Access
+// session, wrapping the same buildCustomProfile lever so the API and console never
+// diverge. The new model is inactive and reaches production only through the enable path.
+async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ modelRef?: string; mode?: string }>(request)
+  const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
+  if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
+  const split = body?.mode === 'split'
+  const existing = await deps.store.listProfiles()
+  const profile = buildCustomProfile({ modelRef, split, existing })
+  if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
+  await deps.store.setProfile(profile)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: `automation:${automation.id}`, target: profile.id, detail: { modelRef, split } })
+  return json({ ok: true, model: toApiModel(profile) }, 201, requestId)
 }
 
 async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {

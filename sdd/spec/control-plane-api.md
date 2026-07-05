@@ -163,6 +163,36 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ---
 
+### REQ-API-007: Programmatic model onboarding
+
+**Intent:** Fleet managers must add a model to the catalog programmatically, wrapping the same profile-construction lever the console uses, so automation can onboard a model without an Access session or a Worker redeploy and the API and console never diverge.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `POST /api/v1/models` with a non-empty model reference and serving mode `single` creates a new inactive model carrying the stable `codeflare-mesh` callable name and returns its machine projection. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 adds a single-machine model as an inactive projection) -->
+
+2. Serving mode `split` creates the model with split serving enabled. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 adds a split model with split serving enabled) -->
+
+3. A missing or blank model reference is rejected with status 400 and creates no model. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 rejects a blank model reference) -->
+
+4. A reference whose derived id already exists is rejected with status 409 without overwriting the existing model. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 refuses a duplicate model without overwriting) -->
+
+5. Creating a model refuses a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-007 refuses model creation without an automation key) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-API-005](#req-api-005-programmatic-model-and-version-management), [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference.md](../../documentation/lanes/api-reference.md)

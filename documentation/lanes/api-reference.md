@@ -616,6 +616,29 @@ GET /api/v1/models
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
 
+### POST /api/v1/models
+
+Adds a new model to the catalog from a mesh-llm-compatible reference and serving mode (the automation twin of the console add-model form).
+
+```http
+POST /api/v1/models
+```
+
+**Authentication:** automation key
+
+**Request body:** `{ "modelRef": string, "mode"?: "single" | "split" }` — `modelRef` is required, trimmed, and non-empty; `mode` defaults to `single` (`split` builds a layer-package profile). The model id and callable alias are derived from the reference.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `201` | A new inactive model is created carrying the stable `codeflare-mesh` callable name; it reaches production only through `POST /api/v1/models/{id}/enable`. | `{ "ok": true, "model": ModelProjection }`. |
+| `400` | `modelRef` is missing or blank. | `invalid_model_ref` error body. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `409` | The reference's derived id already exists. | `duplicate_profile` error body. |
+
+**Implements:** [REQ-API-007](../../sdd/spec/control-plane-api.md#req-api-007-programmatic-model-onboarding)
+
 ### POST /api/v1/models/{id}
 
 Updates a model's context window, model reference, and/or VRAM budget.

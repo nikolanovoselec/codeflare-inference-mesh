@@ -2,6 +2,7 @@
 
 ## 2026-07-05
 
+- Fleet automation can add a model with `POST /api/v1/models` (the API equivalent of the console add-model form), so a model can be onboarded programmatically without an Access session. ([REQ-API-007](control-plane-api.md#req-api-007-programmatic-model-onboarding))
 - Admins can add a model from the console by picking single-machine or split serving and pasting a mesh-llm-compatible reference (Unsloth GGUF for single-machine, a mesh-llm layer package for split); it joins the model list ready to deploy and activate. ([REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding), [REQ-ADM-025](setup-admin.md#req-adm-025-add-a-model-console-control))
 - AI Gateway now exposes one stable public model `codeflare-mesh` that always routes to the currently active model; switching models no longer touches the Gateway route or public model id. ([REQ-RUN-001](runtime-profiles.md#req-run-001-stable-public-model), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation))
 - Only one model is active at a time: activating a model now atomically switches off every other active model (single-active), so a mesh serves one model. ([REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-retirement), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles))
