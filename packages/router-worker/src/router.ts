@@ -734,11 +734,6 @@ async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps,
   return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, actor)
 }
 
-/**
- * REQ-ADM-029: console proxy to the selected AI Gateway. Forwards through that
- * gateway's dynamic route as `dynamic/<route>` and streams the response back
- * behind fresh headers so no upstream gateway header reaches the browser.
- */
 /** REQ-ADM-017: lets the console render the admin vs read-only user surface. */
 async function handleWhoami(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
@@ -746,9 +741,13 @@ async function handleWhoami(request: Request, deps: RouterDeps, requestId: strin
   return json({ role: viewer.role, actor: viewer.actor }, 200, requestId)
 }
 
-// Playground "gateway" target: send through the AI Gateway compat endpoint of the *selected*
-// gateway with `dynamic/<selected route>`, so an operator can exercise any accessible gateway
-// and any route on it (including hand-made non-`codeflare-mesh` routes), not just the last sync.
+/**
+ * REQ-ADM-029: Playground "gateway" target — console proxy to the *selected* AI Gateway.
+ * Forwards the chosen route as `dynamic/<route>` to that gateway's compat endpoint so an
+ * operator can exercise any accessible gateway and any route on it (including hand-made
+ * non-`codeflare-mesh` routes, not just the last sync), and streams the response back behind
+ * fresh headers so no upstream gateway header reaches the browser.
+ */
 async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
