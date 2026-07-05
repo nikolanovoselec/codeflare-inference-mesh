@@ -541,10 +541,10 @@ async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, re
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const nodeId = decodeURIComponent(url.pathname.split('/')[3] ?? '')
-  // Neutralize the node's credential first (strips its embedded verifier and marks it
-  // revoked) so a failure mid-sequence fails closed — heartbeat auth checks the node
-  // record's verifier, so this alone stops it. Then revoke tokens, clear mesh tokens,
-  // and delete the row so the node also disappears from the console.
+  // Neutralize the node first so a failure mid-sequence fails closed: revokeNode marks it
+  // revoked and strips its verifier, and the heartbeat/unregister handlers reject a revoked
+  // node with 403 before any token check (the status gate is the primary stop). Then revoke
+  // tokens, clear mesh tokens, and delete the row so the node also disappears from the console.
   await deps.store.revokeNode(nodeId, now)
   const nodeTokens = await deps.store.listTokens('node')
   await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))

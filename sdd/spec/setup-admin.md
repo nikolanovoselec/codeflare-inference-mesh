@@ -159,7 +159,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Priority:** P0
 
-**Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle), [REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-retirement)
+**Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle), [REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-retirement), [REQ-OBS-007](observability.md#req-obs-007-mesh-health-surface)
 
 **Verification:** Automated test
 
@@ -263,7 +263,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 5. Successful provisioning durably records the custom domain and advances setup to the Access step. <!-- @impl: packages/router-worker/src/router.ts::handleCustomDomain --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase) -->
 6. After Access provisioning succeeds, setup continues on the custom-domain console. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-011 finishing setup on the custom domain opens the dashboard) -->
 
-7. The Routing view surfaces the currently provisioned custom domain as a prominent state card carrying the host as its value and its status as a chip, or an empty-state card when none is recorded. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStateCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-005 surfaces the currently provisioned custom domain in Routing) -->
+7. The Routing view surfaces the currently provisioned custom domain as a prominent state card carrying the host as its value and its status as a chip, or an empty-state card when none is recorded. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStateCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-005 surfaces the currently provisioned custom domain in Routing) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-005 renders an empty-state card when no custom domain is recorded) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -617,7 +617,8 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 3. After Connect, the minted provider API key is revealed with a one-click copy control. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key) -->
 4. A clear instruction tells the operator to paste the key into the AI Gateway provider's API Key field. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 renders the AI Gateway paste instruction with the minted key) -->
 5. The pulsing operational indicator styling is defined centrally in the stylesheet. <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 defines the pulsing operational route-chip indicator centrally in the stylesheet) -->
-6. The route status chip renders with the Gateway selector — after the gateway select and before the Connect button — and the connected gateway reads as a prominent state card carrying the gateway id. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStateCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 places the route chip with the Gateway selector and reads the connected gateway as a state card) -->
+6. The route status chip renders with the Gateway selector, after the gateway select and before the Connect button. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 places the route chip with the Gateway selector) -->
+7. The connected gateway reads as a prominent state card carrying the gateway id. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStateCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 reads the connected gateway as a state card) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 

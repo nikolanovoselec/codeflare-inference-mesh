@@ -568,6 +568,16 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(chip!.dataset.tone).toBe('ok')
   })
 
+  it('REQ-ADM-005 renders an empty-state card when no custom domain is recorded', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ customDomain: undefined }) })
+    const card = harness.byId('custom-domain-current')
+    // No domain: the card is the empty state (placeholder value, no status chip).
+    expect(card.classList.contains('is-empty')).toBe(true)
+    const value = descendants(card).find((node) => node.className === 'state-value')
+    expect(value!.textContent).toBe('Not set yet')
+    expect(descendants(card).some((node) => node.className === 'chip')).toBe(false)
+  })
+
   it('REQ-ADM-018 orders profile rows active-first regardless of source order', async () => {
     const profiles = [
       { id: 'standby-a', publicAliases: ['standby-a'], active: false, rolloutPercent: 100, meshllm: { split: false } },
@@ -714,7 +724,7 @@ describe('dashboard routing contracts', () => {
     expect(css).toContain('@keyframes route-pulse')
   })
 
-  it('REQ-ADM-024 places the route chip with the Gateway selector and reads the connected gateway as a state card', async () => {
+  it('REQ-ADM-024 places the route chip with the Gateway selector', () => {
     // The operational chip must sit with the gateway it describes: after the gateway select
     // and before the Connect button, not stranded below it.
     const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
@@ -724,7 +734,9 @@ describe('dashboard routing contracts', () => {
     expect(selectAt).toBeGreaterThan(-1)
     expect(chipAt).toBeGreaterThan(selectAt)
     expect(connectAt).toBeGreaterThan(chipAt)
+  })
 
+  it('REQ-ADM-024 reads the connected gateway as a state card', async () => {
     // The connected gateway renders as a prominent state card carrying the gateway id as its value.
     const harness = await dashboardHarness()
     const card = harness.byId('gateway-current')
