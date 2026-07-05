@@ -187,9 +187,9 @@ function modelsSection(): string {
   return sectionPanel({
     id: 'models',
     title: 'Models',
-    description: 'The AI models your machines can run. Turn one on to serve it across the mesh; open Manage to rename it, change what callers ask for, or see the machines running it.',
+    description: 'The AI models your machines can run. Deploy one to serve it across the mesh; open Manage to rename it, change what callers ask for, or see the machines running it.',
     body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a mesh to share a model. Set it in the deployment and redeploy.</p>
-<div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Turn one on to start serving it.</p></div>
+<div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Deploy one to start serving it.</p></div>
 ${output({ id: 'models-output', kind: 'models', pre: true })}
 ${addModelCard()}`
   })

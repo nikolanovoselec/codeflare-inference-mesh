@@ -231,7 +231,7 @@ details summary{cursor:pointer;color:var(--text-2);font-size:var(--fs-sm);font-w
 @media (max-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx}px){
 .dash{grid-template-columns:1fr}
 #overview-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
-#overview-tiles [data-stat=gateway],#overview-tiles [data-stat=domain],#overview-tiles [data-stat=version]{grid-column:1/-1}
+#overview-tiles [data-stat=domain],#overview-tiles [data-stat=version]{grid-column:1/-1}
 .side-nav{display:none}
 .section-panel[data-active=false]{display:none}
 .brand-path{display:none}

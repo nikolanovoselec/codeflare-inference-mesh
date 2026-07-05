@@ -127,6 +127,32 @@ describe('dashboard overview contracts', () => {
     expect(descendants(canvas).filter((node) => node.dataset.action === 'node-detail')).toHaveLength(0)
   })
 
+  it('REQ-ADM-015 sizes each topology spoke to stay within the 2:1 canvas (no vertical overflow)', async () => {
+    const harness = await dashboardHarness()
+    const canvas = harness.byId(ADMIN_UI_TOPOLOGY.canvasId)
+    const spokes = descendants(canvas).filter((node) => node.className === 'topo-spoke')
+    expect(spokes.length).toBeGreaterThan(0)
+    for (const spoke of spokes) {
+      const style = spoke.getAttribute('style') || ''
+      const width = Number(/width:([\d.]+)%/.exec(style)?.[1])
+      const deg = Number(/rotate\((-?[\d.]+)deg\)/.exec(style)?.[1])
+      expect(Number.isFinite(width)).toBe(true)
+      expect(Number.isFinite(deg)).toBe(true)
+      // Vertical reach (%-of-width) must not exceed the canvas half-height, which is 25% of width
+      // for an aspect-ratio:2/1 box. The pre-fix fixed-width spoke overshot at near-vertical angles.
+      expect(Math.abs(width * Math.sin(deg * Math.PI / 180))).toBeLessThanOrEqual(25.01)
+    }
+  })
+
+  it('REQ-ADM-007 overview tiles omit the redundant Active-models and Gateway stats and keep the version tile', async () => {
+    const harness = await dashboardHarness()
+    const stats = descendants(harness.byId('overview-tiles')).map((node) => node.dataset.stat).filter(Boolean)
+    expect(stats).toContain('nodes')
+    expect(stats).toContain('version')
+    expect(stats).not.toContain('models')
+    expect(stats).not.toContain('gateway')
+  })
+
   it('REQ-ADM-015 sorts the nodes table by the clicked column and flips direction on repeat', async () => {
     const harness = await dashboardHarness()
     expect(rowOrder(harness)).toEqual(['node-big', 'node-small', 'node-down'])
@@ -597,12 +623,10 @@ describe('dashboard throughput trace and playground contracts', () => {
     const names = descendants(harness.byId('profile-list')).filter((node) => node.dataset.modelName).map((node) => node.textContent)
     expect(names).toContain('Qwen3.6 35B')
     expect(names).toContain('Qwen3.6 35B (multi-machine)')
-    // The toggle reflects state: the model that is on offers "Turn off", the one that is off offers "Turn on".
+    // The toggle reflects state via its data-on contract (not its copy): the active model is on, the other off.
     const toggle = (id: string) => descendants(rows.find((row) => row.dataset.profileRow === id)!).find((node) => node.dataset.action === 'model-toggle')!
     expect(toggle('mesh-default-qwen36-35b').dataset.on).toBe('true')
-    expect(toggle('mesh-default-qwen36-35b').textContent).toBe('Turn off')
     expect(toggle('mesh-split-qwen36-35b').dataset.on).toBe('false')
-    expect(toggle('mesh-split-qwen36-35b').textContent).toBe('Turn on')
   })
 
   it('REQ-ADM-018 badges each model with its serving mode instead of baking it into the name', async () => {

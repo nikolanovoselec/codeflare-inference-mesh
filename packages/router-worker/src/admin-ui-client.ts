@@ -499,14 +499,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       }
       nodes.forEach((node, index) => {
         const angle = (index / Math.max(1, nodes.length)) * 2 * Math.PI - Math.PI / 2;
+        // The canvas is 2:1, so a percent of height is only half a percent of width in
+        // pixels. Size the spoke to reach the node on that aspect-corrected ellipse (rather
+        // than a fixed width-% line at the raw angle) so a near-vertical connector can never
+        // overshoot the shorter vertical axis and poke outside the canvas.
+        const rx = 38;
+        const ry = 38;
+        const dxWidth = rx * Math.cos(angle);
+        const dyWidth = (ry / 2) * Math.sin(angle);
+        const spokeLength = Math.hypot(dxWidth, dyWidth);
+        const spokeAngle = Math.atan2(dyWidth, dxWidth) * 180 / Math.PI;
         const spoke = document.createElement('span');
         spoke.className = 'topo-spoke';
         spoke.setAttribute('aria-hidden', 'true');
-        spoke.setAttribute('style', 'transform:rotate(' + Math.round(angle * 180 / Math.PI) + 'deg)');
+        spoke.setAttribute('style', 'width:' + spokeLength.toFixed(2) + '%;transform:rotate(' + spokeAngle.toFixed(1) + 'deg)');
         canvas.appendChild(spoke);
         const button = topoNodeButton(node);
-        const x = 50 + 38 * Math.cos(angle);
-        const y = 50 + 38 * Math.sin(angle);
+        const x = 50 + rx * Math.cos(angle);
+        const y = 50 + ry * Math.sin(angle);
         button.setAttribute('style', 'left:' + x.toFixed(1) + '%;top:' + y.toFixed(1) + '%');
         canvas.appendChild(button);
       });
@@ -825,7 +835,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = 'btn ' + (profile.active ? 'btn-ghost' : 'btn-primary');
-      toggle.textContent = profile.active ? 'Turn off' : 'Turn on';
+      toggle.textContent = profile.active ? 'Turn off' : 'Deploy';
       toggle.dataset.action = 'model-toggle';
       toggle.dataset.profileId = profile.id;
       toggle.dataset.on = profile.active ? 'true' : 'false';
@@ -958,18 +968,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const tiles = byId('overview-tiles');
     if (tiles) {
       tiles.textContent = '';
-      const gateway = status.gateway || {};
       const domain = status.customDomain || {};
       const serving = nodes.filter((node) => nodeTone(node) === 'ok').length;
       const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
       const toks = nodes.reduce((total, node) => total + nodeToks(node), 0);
       tiles.appendChild(tile('Nodes serving', serving + '/' + nodes.length, 'nodes'));
-      tiles.appendChild(tile('Active models', String(profiles.filter((profile) => profile.active).length), 'models'));
       tiles.appendChild(tile('Mesh VRAM GB', String(Math.round(vramMiB / 1024)), 'vram'));
       tiles.appendChild(tile('Tokens/s', round1(toks), 'toks'));
-      tiles.appendChild(tile('Gateway', [gateway.gatewayId, gateway.routeName].filter(Boolean).join(' / ') || 'not connected', 'gateway'));
       tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured', 'domain'));
-      tiles.appendChild(tile('Machine version', status.desiredAgentVersion || 'not set', 'version'));
+      tiles.appendChild(tile('Agent version', status.desiredAgentVersion || 'not set', 'version'));
     }
     const pruneInput = byId('prune-seconds');
     if (pruneInput && status.offlinePruneSeconds != null && pruneInput.value === '') pruneInput.value = String(status.offlinePruneSeconds);
