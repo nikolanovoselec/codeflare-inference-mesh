@@ -675,7 +675,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(retired).toMatchObject({ active: false, rolloutPercent: 0, version: 2 })
     expect(retiredVersioned).toMatchObject({ active: false, rolloutPercent: 0, version: 5 })
-    expect(current).toMatchObject({ id: 'mesh-default-qwen36-35b', runtime: 'meshllm', sourceMode: 'meshllm-ref' })
+    expect(current).toMatchObject({ id: 'mesh-smoke-qwen25-1.5b', runtime: 'meshllm', sourceMode: 'meshllm-ref' })
   })
 
   it('REQ-RUN-009 deactivates non-meshllm profile rows regardless of version', async () => {
@@ -731,8 +731,8 @@ describe('router worker behavioral contracts', () => {
       publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
       meshllm: { modelRef: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', split: false, bindPort: 4300 },
       contextWindow: 262144,
-      rolloutPercent: 100,
-      active: true
+      rolloutPercent: 0,
+      active: false
     })
     expect(split).toMatchObject({
       displayName: 'Qwen3.6 35B (multi-machine)',
@@ -744,7 +744,7 @@ describe('router worker behavioral contracts', () => {
     })
     expect(smoke).toMatchObject({
       displayName: 'Qwen2.5 Coder 1.5B',
-      publicAliases: ['mesh-smoke', 'smoke-test'],
+      publicAliases: ['codeflare-mesh', 'mesh-smoke', 'smoke-test'],
       meshllm: { modelRef: 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M', split: false, bindPort: 4320 },
       contextWindow: 32768,
       rolloutPercent: 100,

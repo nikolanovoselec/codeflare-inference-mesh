@@ -36,7 +36,7 @@ function keylessEnv(): RouterEnv {
 }
 
 function meshNode(id: string, overrides: Partial<NodeRecord> = {}): NodeRecord {
-  return nodeFixture({ id, displayName: `Node ${id}`, ...overrides })
+  return nodeFixture({ id, displayName: `Node ${id}`, activeProfileIds: [PROFILE_ID], ...overrides })
 }
 
 function heartbeatFor(node: NodeRecord, overrides: Partial<HeartbeatRequest> = {}): HeartbeatRequest {
