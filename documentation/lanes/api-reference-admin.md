@@ -504,6 +504,31 @@ POST /admin/profiles/activate
 
 **Implements:** [REQ-RUN-009](../../sdd/spec/runtime-profiles.md), [REQ-ADM-009](../../sdd/spec/setup-admin.md)
 
+### POST /admin/profiles/add
+
+Creates a new inactive model profile from an operator-supplied mesh-llm-compatible model reference and serving mode, so a model beyond the seeded set joins the catalog for rollout and activation without redeploying the Worker.
+
+```http
+POST /admin/profiles/add
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `modelRef` (required, trimmed, non-empty) and `mode` (`single` or `split`, default `single`). Mode `split` builds a layer-package (multi-machine) profile; any other value a single-machine profile. The profile id and public alias are derived from the reference.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `201` | A new inactive profile is created carrying the stable `codeflare-mesh` alias with `rolloutPercent` zero and `split` set per mode, and a `profile_added` audit event records the reference. | `{ "ok": true, "profileId": string, "displayName": string, "split": boolean }` |
+| `400` | `modelRef` is missing or blank. | `{ "error": "invalid_model_ref", "requestId": string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `409` | The reference's derived profile id already exists. | `{ "error": "duplicate_profile", "profileId": string, "requestId": string }` |
+
+**Implements:** [REQ-RUN-011](../../sdd/spec/runtime-profiles.md), [REQ-ADM-025](../../sdd/spec/setup-admin.md)
+
 ### POST /admin/mesh/rotate
 
 Rotates a profile's mesh: increments the rotation counter and clears the stored mesh id, seed, and invite-token set so the fleet reforms a new mesh.

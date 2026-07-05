@@ -7,7 +7,7 @@ import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToke
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
-import { DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
+import { buildCustomProfile, DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
@@ -90,6 +90,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/config$/) && request.method === 'POST') return await handleNodeConfig(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
+      if (url.pathname === '/admin/profiles/add' && request.method === 'POST') return await handleProfileAdd(request, deps, id, now())
       if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
       if (url.pathname === '/admin/settings' && request.method === 'POST') return await handleAdminSettings(request, deps, id, now())
       if (url.pathname === '/admin/mesh/rotate' && request.method === 'POST') return await handleAdminMeshRotate(request, deps, id, now())
@@ -646,6 +647,27 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
   await deps.store.setProfile(updated)
   await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0 } })
   return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0 }, 200, requestId)
+}
+
+// handleProfileAdd creates a new inactive model profile from an operator-supplied
+// mesh-llm-compatible reference and serving mode, so a model beyond the seeded set
+// joins the catalog for rollout and activation without redeploying the Worker. The
+// reference is trimmed and must be non-empty; mode "split" builds a layer-package
+// (multi-machine) profile, anything else a single-machine profile. A reference whose
+// derived id collides with an existing profile is refused rather than overwriting it.
+async function handleProfileAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ modelRef?: string; mode?: string }>(request)
+  const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
+  if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
+  const split = body?.mode === 'split'
+  const existing = await deps.store.listProfiles()
+  const profile = buildCustomProfile({ modelRef, split, existing })
+  if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
+  await deps.store.setProfile(profile)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor, target: profile.id, detail: { modelRef, split } })
+  return json({ ok: true, profileId: profile.id, displayName: profile.displayName, split }, 201, requestId)
 }
 
 async function handleAdminMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {

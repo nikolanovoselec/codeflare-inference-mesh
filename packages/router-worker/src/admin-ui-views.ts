@@ -168,13 +168,26 @@ ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}
   })
 }
 
+function addModelCard(): string {
+  return `<div class="subpanel"><h3>Add a model</h3>
+<p class="field-hint">Add any mesh-llm-compatible model. Single machine runs a full GGUF model on one machine; split runs a layer package across several.</p>
+<div class="form-grid">
+${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine</option><option value="split">Split (multi-machine)</option></select></span>' })}
+${field({ id: 'model-add-ref', label: 'Model reference', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'Paste a model reference, or find one below.' })}
+</div>
+<p class="field-hint">Find a model: <a id="model-add-search-single" href="https://huggingface.co/unsloth?search_models=GGUF" target="_blank" rel="noopener">Unsloth GGUF (single machine)</a> · <a id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">mesh-llm layer packages (split)</a> · <a id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">prepare your own split model</a></p>
+<div class="form-actions">${button({ action: 'model-add', label: 'Add model', variant: 'primary', out: 'model-add-output' })}</div>
+${output({ id: 'model-add-output', kind: 'model-add', pre: true })}</div>`
+}
+
 function modelsSection(): string {
   return sectionPanel({
     id: 'models',
     title: 'Models',
     description: 'The AI models your machines can run. Turn one on to start serving it; open Manage to rename what callers ask for or change its settings.',
     body: `<div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Turn one on to start serving it.</p></div>
-${output({ id: 'models-output', kind: 'models', pre: true })}`
+${output({ id: 'models-output', kind: 'models', pre: true })}
+${addModelCard()}`
   })
 }
 

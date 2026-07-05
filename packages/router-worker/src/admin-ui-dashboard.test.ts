@@ -641,4 +641,47 @@ describe('dashboard routing contracts', () => {
     expect(harness.html).toContain('id="rt-gateway-provider-name"')
     expect(harness.html).not.toContain('id="rt-route-select"')
   })
+
+  it('REQ-ADM-025 renders an add-model form with a mode selector defaulting to single machine', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    expect(html).toContain('id="model-add-mode"')
+    expect(html).toContain('id="model-add-ref"')
+    // Single machine is the first (default-selected) option in the mode selector.
+    const singleIndex = html.indexOf('value="single"')
+    const splitIndex = html.indexOf('value="split"')
+    expect(singleIndex).toBeGreaterThan(-1)
+    expect(splitIndex).toBeGreaterThan(singleIndex)
+  })
+
+  it('REQ-ADM-025 links to the Unsloth GGUF catalog, the meshllm layer-package org, and the split-your-own guide', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    expect(html).toContain('href="https://huggingface.co/unsloth?search_models=GGUF"')
+    expect(html).toContain('href="https://huggingface.co/meshllm"')
+    expect(html).toContain('href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter"')
+  })
+
+  it('REQ-ADM-025 posts the model ref and mode and refreshes the model list', async () => {
+    const harness = await dashboardHarness()
+    harness.byId('model-add-ref').value = 'unsloth/Qwen3-14B-GGUF:Q4_K_M'
+    harness.byId('model-add-mode').value = 'split'
+    const statusBefore = statusFetches(harness)
+    await harness.clickAction('model-add')
+    await harness.flush(10)
+    const addCall = harness.fetchCalls.find((call) => call.path === '/admin/profiles/add')
+    expect(addCall).toBeDefined()
+    expect(addCall?.init?.method).toBe('POST')
+    expect(JSON.parse(String(addCall?.init?.body))).toEqual({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'split' })
+    // A successful add refreshes status so the new model appears in the list.
+    expect(statusFetches(harness)).toBeGreaterThan(statusBefore)
+  })
+
+  it('REQ-ADM-025 does not submit an empty model ref', async () => {
+    const harness = await dashboardHarness()
+    harness.byId('model-add-ref').value = '   '
+    await harness.clickAction('model-add')
+    await harness.flush(10)
+    expect(harness.fetchCalls.some((call) => call.path === '/admin/profiles/add')).toBe(false)
+  })
 })

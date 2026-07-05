@@ -2,6 +2,7 @@
 
 ## 2026-07-05
 
+- Admins can add a model from the console by picking single-machine or split serving and pasting a mesh-llm-compatible reference (Unsloth GGUF for single-machine, a mesh-llm layer package for split); it joins the model list ready to deploy and activate. ([REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding), [REQ-ADM-025](setup-admin.md#req-adm-025-add-a-model-console-control))
 - AI Gateway now exposes one stable public model `codeflare-mesh` that always routes to the currently active model; switching models no longer touches the Gateway route or public model id. ([REQ-RUN-001](runtime-profiles.md#req-run-001-stable-public-model), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation))
 - Only one model is active at a time: activating a model now atomically switches off every other active model (single-active), so a mesh serves one model. ([REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-retirement), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles))
 - The Routing screen is now pick a gateway, name the provider, copy the API key, and watch the `codeflare-mesh` route go green — there is no route or model to choose. ([REQ-ADM-024](setup-admin.md#req-adm-024-routing-operational-status), [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning))

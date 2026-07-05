@@ -628,6 +628,34 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-025: Add-a-model console control
+
+**Intent:** An admin must be able to add a model from the console without redeploying the Worker: pick a serving mode, follow a mode-specific link to find a compatible model, enter its reference, and add it so it appears in the model list for deployment and activation.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The dashboard models area renders an add-model form with a serving-mode selector offering single-machine and split, defaulting to single-machine, and a model-reference input. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 renders an add-model form with a mode selector defaulting to single machine) -->
+
+2. The form links to the Unsloth GGUF catalog for single-machine models, to the mesh-llm layer-package organization for split models, and to the layer-package preparation guide for models not already offered. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 links to the Unsloth GGUF catalog, the meshllm layer-package org, and the split-your-own guide) -->
+
+3. Submitting the form posts the entered model reference and selected mode to the profile-add endpoint and refreshes the model list on success so the new model appears without a redeploy. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 posts the model ref and mode and refreshes the model list) -->
+
+4. The form does not submit an empty model reference. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 does not submit an empty model ref) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)

@@ -70,6 +70,51 @@ export function publicAliasIndex(profiles: readonly ModelProfile[]): Map<string,
   return index
 }
 
+const CUSTOM_PROFILE_CONTEXT_WINDOW = 32768
+const BIND_PORT_BASE = 4300
+const BIND_PORT_STEP = 10
+
+// The readable last segment of a model reference: the hf:// scheme, the owner
+// prefix, and any @commit pin are dropped so `hf://meshllm/Model-layers@sha`
+// and `unsloth/Model-GGUF:Q4_K_M` both reduce to their model name.
+function modelRefSegment(ref: string): string {
+  const withoutScheme = ref.replace(/^hf:\/\//, '')
+  const lastSegment = withoutScheme.split('/').pop() ?? withoutScheme
+  return lastSegment.split('@')[0]
+}
+
+// slugifyModelRef derives a stable, url-safe public alias / id fragment from a
+// model reference so two different quantizations never collapse to one alias
+// while the same reference always yields the same slug.
+export function slugifyModelRef(ref: string): string {
+  return modelRefSegment(ref).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+// buildCustomProfile constructs an inactive profile from an operator-supplied
+// model reference. It carries the STABLE_PUBLIC_MODEL shared alias, starts
+// deactivated with zero rollout so it never serves until an admin activates it,
+// and sets split per the chosen serving mode. The bind port advances past every
+// existing profile so a later live process never collides on the mesh bind port.
+export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[] }): ModelProfile {
+  const ref = input.modelRef.trim()
+  const slug = slugifyModelRef(ref)
+  const segment = modelRefSegment(ref)
+  const highestBindPort = input.existing.reduce((max, profile) => Math.max(max, profile.meshllm.bindPort), BIND_PORT_BASE)
+  return {
+    id: `custom-${slug}${input.split ? '-split' : ''}`,
+    displayName: input.split ? `${segment} (multi-machine)` : segment,
+    publicAliases: [STABLE_PUBLIC_MODEL, slug],
+    upstreamModel: ref,
+    sourceMode: 'meshllm-ref',
+    contextWindow: CUSTOM_PROFILE_CONTEXT_WINDOW,
+    runtime: 'meshllm',
+    meshllm: { modelRef: ref, split: input.split, bindPort: highestBindPort + BIND_PORT_STEP },
+    version: 1,
+    rolloutPercent: 0,
+    active: false
+  }
+}
+
 export const PROFILE_ANCHORS = {
   REQ_RUN_001: 'REQ-RUN-001',
   REQ_RUN_002: 'REQ-RUN-002',

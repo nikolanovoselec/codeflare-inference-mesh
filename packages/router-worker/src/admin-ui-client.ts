@@ -1245,6 +1245,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'node-revoke': 'node-output',
     'model-toggle': 'models-output',
     'model-save': 'model-edit-output',
+    'model-add': 'model-add-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
     'settings-save': 'settings-output',
@@ -1400,6 +1401,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'mesh-rotate') {
       const select = byId(config.meshHealth.rotateSelectId);
       setOutput(out, await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: select ? select.value : '' }) }));
+    } else if (action === 'model-add') {
+      const ref = readInput('model-add-ref');
+      if (!ref) { setOutput(out, 'Enter a model reference to add.', true); return; }
+      const modeSelect = byId('model-add-mode');
+      setOutput(out, await request('/admin/profiles/add', { method: 'POST', headers: headers(true), body: JSON.stringify({ modelRef: ref, mode: modeSelect ? modeSelect.value : 'single' }) }));
+      await refreshStatus().catch(() => undefined);
+      toast('Model added');
     } else if (action === config.playground.sendAction) {
       const select = byId(config.playground.selectId);
       const prompt = readInput(config.playground.promptId);

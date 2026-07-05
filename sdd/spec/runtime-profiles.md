@@ -267,6 +267,38 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ---
 
+### REQ-RUN-011: Custom model onboarding
+
+**Intent:** Operators must be able to add a model beyond the seeded profiles by supplying a mesh-llm-compatible model reference and a serving mode, so the router creates a new inactive profile that joins the model catalog and becomes available for rollout and activation without redeploying the Worker.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. `POST /admin/profiles/add` with a non-empty model reference and serving mode `single` creates a new profile carrying the `codeflare-mesh` shared alias with `split` false, `active` false, and `rolloutPercent` zero. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 adds a single-machine model as an inactive profile carrying the stable alias) -->
+
+2. Serving mode `split` creates the profile with `split` true and is otherwise the same inactive shape. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 adds a split model as a profile with split enabled) -->
+
+3. The new profile identifier is derived from the model reference and mode and must be unique; a reference that would collide with an existing profile is rejected without overwriting it. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 derives a unique profile id and refuses a duplicate model) -->
+
+4. A missing or blank model reference is rejected with status 400 and creates no profile. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 rejects a blank model reference) -->
+
+5. An added profile serves only after the existing activation path makes it active, which deactivates any previously active profile so the single-active invariant holds. <!-- @impl: packages/router-worker/src/store.ts::singleActiveActivation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 activating an added model deactivates the previously active profile) -->
+
+6. Adding a model requires admin authentication and records a profile-added audit event. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 requires admin authentication to add a model) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-001](#req-run-001-stable-public-model), [REQ-RUN-002](#req-run-002-default-model-profiles), [REQ-RUN-007](#req-run-007-split-serving-via-layer-packages)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)

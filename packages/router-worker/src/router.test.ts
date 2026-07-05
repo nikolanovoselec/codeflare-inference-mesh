@@ -643,6 +643,77 @@ describe('router worker behavioral contracts', () => {
     expect(switched?.publicAliases).toContain('codeflare-mesh')
   })
 
+  const CUSTOM_GGUF = 'unsloth/Qwen3-14B-GGUF:Q4_K_M'
+  const addModel = (router: (request: Request) => Promise<Response>, modelRef: string, mode: string, token = 'admin-secret') =>
+    router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef, mode })
+    }))
+
+  it('REQ-RUN-011 adds a single-machine model as an inactive profile carrying the stable alias', async () => {
+    const { router, store } = routerFixture()
+    const response = await addModel(router, CUSTOM_GGUF, 'single')
+    expect(response.status).toBe(201)
+    const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === CUSTOM_GGUF)
+    expect(created).toBeDefined()
+    expect(created?.publicAliases).toContain('codeflare-mesh')
+    expect(created?.meshllm.split).toBe(false)
+    expect(created?.active).toBe(false)
+    expect(created?.rolloutPercent).toBe(0)
+  })
+
+  it('REQ-RUN-011 adds a split model as a profile with split enabled', async () => {
+    const { router, store } = routerFixture()
+    const ref = 'hf://meshllm/Qwen3-14B-UD-Q4_K_XL-layers@abc123'
+    const response = await addModel(router, ref, 'split')
+    expect(response.status).toBe(201)
+    const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === ref)
+    expect(created?.meshllm.split).toBe(true)
+    expect(created?.active).toBe(false)
+    expect(created?.publicAliases).toContain('codeflare-mesh')
+  })
+
+  it('REQ-RUN-011 derives a unique profile id and refuses a duplicate model', async () => {
+    const { router, store } = routerFixture()
+    const first = await addModel(router, CUSTOM_GGUF, 'single')
+    expect(first.status).toBe(201)
+    const firstId = (await first.json() as { profileId: string }).profileId
+    const second = await addModel(router, CUSTOM_GGUF, 'single')
+    expect(second.status).toBe(409)
+    // The duplicate request must not add or overwrite: the derived id exists exactly once.
+    expect((await store.listProfiles()).filter((profile) => profile.id === firstId).length).toBe(1)
+  })
+
+  it('REQ-RUN-011 rejects a blank model reference', async () => {
+    const { router, store } = routerFixture()
+    const response = await addModel(router, '   ', 'single')
+    expect(response.status).toBe(400)
+    expect((await store.listProfiles()).some((profile) => profile.id.startsWith('custom-'))).toBe(false)
+  })
+
+  it('REQ-RUN-011 activating an added model deactivates the previously active profile', async () => {
+    const { router, store } = routerFixture()
+    // The seeded smoke profile is the active owner of codeflare-mesh until the added model is activated.
+    const added = await (await addModel(router, CUSTOM_GGUF, 'single')).json() as { profileId: string }
+    const activated = await router(new Request('https://router.test/admin/profiles/activate', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId: added.profileId })
+    }))
+    expect(activated.status).toBe(200)
+    const activeIds = (await store.listProfiles()).filter((profile) => profile.active).map((profile) => profile.id)
+    expect(activeIds).toEqual([added.profileId])
+    expect(await store.getProfileByPublicModel('codeflare-mesh')).toMatchObject({ id: added.profileId })
+  })
+
+  it('REQ-RUN-011 requires admin authentication to add a model', async () => {
+    const { router, store } = routerFixture()
+    const response = await addModel(router, CUSTOM_GGUF, 'single', 'provider-secret')
+    expect(response.status).toBe(401)
+    expect((await store.listProfiles()).some((profile) => profile.id.startsWith('custom-'))).toBe(false)
+  })
+
   it('REQ-RUN-001 a chat for codeflare-mesh with no active model returns model-not-found', async () => {
     const { router, store } = routerFixture()
     // Deactivate the seeded model (version-bumped so the per-request default seed leaves it off): no model is active.
