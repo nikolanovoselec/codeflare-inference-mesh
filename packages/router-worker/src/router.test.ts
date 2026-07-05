@@ -1057,6 +1057,10 @@ describe('router worker behavioral contracts', () => {
     expect(wedged.reason).toBe('no-node')
     expect(wedged.reservation).toBeUndefined()
 
+    // The node keeps heartbeating across the reservation's lifetime so its lease stays fresh;
+    // updateNodeHeartbeat preserves the leaked in-flight count exactly as production does.
+    await store.updateNodeHeartbeat(nodeFixture({ capacity: 1, lastSeenAt: base + 30 * 60 * 1000 }))
+
     // Once the TTL lapses, the next reserve reclaims the leaked count and schedules again.
     const reclaimed = await new StoreScheduler(store, () => 'reservation-fresh').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-fresh', now: base + 30 * 60 * 1000 + 1 })
     expect(reclaimed.reservation?.reservationId).toBe('reservation-fresh')
