@@ -595,7 +595,7 @@ POST /api/v1/nodes/{id}/reconfigure
 | `200` | The node was reconfigured. | `{ "ok": true, "node": NodeProjection }` — the projection includes `maxVramGbOverride` (`null` when unset). |
 | `400` | The override was a negative or non-numeric value. | `invalid_max_vram` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
-| `404` | No node with that id exists. | `not_found` error body. |
+| `404` | No node with that id exists, or the node is revoked (treated as gone here, same as `GET /api/v1/nodes/{id}`). | `unknown_node` error body. |
 
 **Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-vram-override)
 

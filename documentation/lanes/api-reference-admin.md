@@ -277,6 +277,33 @@ POST /admin/nodes/{nodeId}/revoke
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md), [REQ-SEC-007](../../sdd/spec/security.md)
 
+### POST /admin/nodes/:nodeId/config
+
+Sets or clears a per-node VRAM override from the node detail drawer, capping that node's inference VRAM below the model's global budget.
+
+```http
+POST /admin/nodes/{nodeId}/config
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Path parameters:** `nodeId` is the URL-encoded node identifier to reconfigure.
+
+**Request body:** `{ "maxVramGbOverride": number | null }` — a number `≥ 0` caps this node (0 = uncapped on this node); a blank/`null` value clears the override so the node follows the model's global budget.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The node's VRAM override was set or cleared. | `{ "ok": true, "id": string, "maxVramGbOverride": number \| null }` |
+| `400` | The override was a negative or non-numeric value. | `{ "error": "invalid_max_vram" }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `404` | No node with that id exists, or the node is revoked. | `{ "error": "unknown_node" }` |
+
+**Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-vram-override)
+
 ### POST /admin/cloudflare/gateway/sync
 
 Creates or reuses the AI Gateway custom-provider dynamic route for the selected Worker origin.

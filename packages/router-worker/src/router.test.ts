@@ -3292,6 +3292,8 @@ describe('control-plane API (/api/v1)', () => {
     expect(listed.map((node) => node.id)).toEqual(['node-live'])
     const api = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(key.token) }))
     expect(((await api.json()) as { nodes: { id: string }[] }).nodes.map((node) => node.id)).toEqual(['node-live'])
+    // The single-node GET treats the tombstone as gone too (404, not the projection).
+    expect((await router(new Request('https://router.test/api/v1/nodes/node-tombstone', { headers: bearer(key.token) }))).status).toBe(404)
   })
 
   it('REQ-API-004 decommission reaps a lingering revoked tombstone row', async () => {
@@ -3307,15 +3309,18 @@ describe('control-plane API (/api/v1)', () => {
     expect(await store.getNode('node-tombstone')).toBeUndefined()
   })
 
-  it('REQ-SEC-002 refuses to reconfigure a revoked tombstone node', async () => {
+  it('REQ-ADM-023 refuses reconfigure and admin config for a revoked node', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     await store.upsertNode(nodeFixture({ id: 'node-tombstone', status: 'online' }))
     await store.revokeNode('node-tombstone', 1_700_000_000_000)
-    // A revoked node is treated as gone: reconfigure refuses it as unknown (matching GET's 404),
-    // even though getNode can still reach it for decommission cleanup.
+    // A revoked node is treated as gone: the reconfigure/config endpoints refuse it as unknown
+    // (matching GET's 404), even though getNode can still reach it for decommission cleanup.
     const res = await router(new Request('https://router.test/api/v1/nodes/node-tombstone/reconfigure', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))
     expect(res.status).toBe(404)
+    // The admin console config path (handleNodeConfig) refuses it identically.
+    const adminConfig = await router(new Request('https://router.test/admin/nodes/node-tombstone/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))
+    expect(adminConfig.status).toBe(404)
   })
 
   it('REQ-ADM-023 reconfigures a node VRAM override through the automation API', async () => {
