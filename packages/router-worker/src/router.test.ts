@@ -3307,6 +3307,17 @@ describe('control-plane API (/api/v1)', () => {
     expect(await store.getNode('node-tombstone')).toBeUndefined()
   })
 
+  it('REQ-SEC-002 refuses to reconfigure a revoked tombstone node', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({ id: 'node-tombstone', status: 'online' }))
+    await store.revokeNode('node-tombstone', 1_700_000_000_000)
+    // A revoked node is treated as gone: reconfigure refuses it as unknown (matching GET's 404),
+    // even though getNode can still reach it for decommission cleanup.
+    const res = await router(new Request('https://router.test/api/v1/nodes/node-tombstone/reconfigure', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))
+    expect(res.status).toBe(404)
+  })
+
   it('REQ-ADM-023 reconfigures a node VRAM override through the automation API', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)

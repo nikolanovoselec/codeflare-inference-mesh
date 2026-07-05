@@ -530,7 +530,7 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 | `200` | A page of node projections. | `{ "nodes": NodeProjection[], "nextCursor": string \| null }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management)
+**Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management), [REQ-SEC-002](../../sdd/spec/security.md)
 
 ### GET /api/v1/nodes/{id}
 
@@ -550,7 +550,7 @@ GET /api/v1/nodes/{id}
 | --- | --- | --- |
 | `200` | The node projection. | `{ "node": NodeProjection }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
-| `404` | No node with that id exists. | `not_found` error body. |
+| `404` | No node with that id exists, or the node is revoked (treated as gone here; only `DELETE` can still reach a tombstone to reap it). | `not_found` error body. |
 
 **Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management)
 

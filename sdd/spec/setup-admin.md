@@ -702,7 +702,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 1. The add-model form carries a Name field; a supplied name becomes the model's display name, and a blank name defaults to the model-file segment. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-027 names a model on creation and defaults the name to the model file) -->
 
-2. The Manage drawer exposes editable Name and "Call it" fields prefilled with the current display name and the model's own callable name (its non-shared alias). <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer listing the nodes serving each alias) -->
+2. The Manage drawer exposes editable Name and Alias fields prefilled with the current display name and the model's own callable name (its non-shared alias). <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer listing the nodes serving each alias) -->
 
 3. Saving a changed name sets the display name, and a changed call name replaces that callable alias while keeping the shared `codeflare-mesh` alias. <!-- @impl: packages/router-worker/src/router.ts::handleProfileConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-027 renames a model display name and call name with collision and reserved-alias guards) -->
 
