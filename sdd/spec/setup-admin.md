@@ -461,7 +461,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Intent:** The Playground's two send paths are server endpoints with distinct guarantees: the gateway path proxies a chosen route through the selected gateway without leaking secrets and never lets a non-admin reach an arbitrary gateway, while the direct path drives the router's own scheduler.
 
-**Applies To:** Admin
+**Applies To:** Admin, User
 
 **Acceptance Criteria:**
 

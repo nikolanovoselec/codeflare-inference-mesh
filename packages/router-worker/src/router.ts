@@ -735,10 +735,9 @@ async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps,
 }
 
 /**
- * REQ-ADM-016: admin-only proxy to the connected AI Gateway. Forwards through
- * the dynamic route (or the custom provider for non-route aliases) and streams
- * the response back behind fresh headers so no upstream gateway header reaches
- * the browser.
+ * REQ-ADM-029: console proxy to the selected AI Gateway. Forwards through that
+ * gateway's dynamic route as `dynamic/<route>` and streams the response back
+ * behind fresh headers so no upstream gateway header reaches the browser.
  */
 /** REQ-ADM-017: lets the console render the admin vs read-only user surface. */
 async function handleWhoami(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
