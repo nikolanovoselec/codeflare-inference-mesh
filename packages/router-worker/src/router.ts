@@ -4,7 +4,7 @@ import { adminUiHtml, type AdminUiState } from './admin-ui'
 import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
-import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
+import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayProvisionStatus, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
 import { InvalidJsonBodyError } from './errors'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
@@ -32,6 +32,7 @@ export interface RouterDeps {
     listZones?(accountId: string): Promise<readonly ZoneRecord[]>
     listGateways?(accountId: string): Promise<readonly GatewayRecord[]>
     listRoutes?(accountId: string, gatewayId: string): Promise<readonly RouteRecord[]>
+    provisionStatus?(accountId: string, gatewayId: string, routeName: string, providerName: string): Promise<GatewayProvisionStatus>
   }
   readonly accessClient?: { provisionAccess(input: AccessProvisionRequest): Promise<AccessProvisionResult> }
   readonly jwksFetcher?: typeof fetch
@@ -87,6 +88,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/setup/complete' && request.method === 'POST') return await handleSetupComplete(request, deps, id, now())
       if (url.pathname === '/admin/cloudflare/zones' && request.method === 'GET') return await handleZones(request, deps, id, now())
       if (url.pathname === '/admin/cloudflare/gateway/options' && request.method === 'GET') return await handleGatewayOptions(request, deps, url, id, now())
+      if (url.pathname === '/admin/cloudflare/gateway/provision-status' && request.method === 'GET') return await handleGatewayProvisionStatus(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/revoke$/) && request.method === 'POST') return await handleNodeRevoke(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/config$/) && request.method === 'POST') return await handleNodeConfig(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
@@ -99,6 +101,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
       if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
       if (url.pathname === '/admin/playground/chat' && request.method === 'POST') return await handlePlaygroundChat(request, deps, id, now())
+      if (url.pathname === '/admin/playground/direct-chat' && request.method === 'POST') return await handlePlaygroundDirect(request, deps, id, now())
       if (url.pathname === '/admin/whoami' && request.method === 'GET') return await handleWhoami(request, deps, id, now())
       if (url.pathname === '/api/v1/keys' && request.method === 'POST') return await handleApiKeyCreate(request, deps, id, now())
       if (url.pathname === '/api/v1/keys' && request.method === 'GET') return await handleApiKeyList(request, deps, id, now())
@@ -146,32 +149,37 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   if (new TextEncoder().encode(bodyText).byteLength > maxBytes) return json({ error: 'request_too_large', requestId }, 413, requestId)
   const body = parseObject(bodyText)
   if (!body || typeof body.model !== 'string') return json({ error: 'invalid_json', requestId }, 400, requestId)
+  return runInference(deps, { body, requestHeaders: request.headers, sessionId: sessionIdFor(request, body, requestId), requestId, now })
+}
 
-  const publicModel = body.model
-  const sessionId = sessionIdFor(request, body, requestId)
-  const result = await deps.scheduler.reserve({ publicModel, sessionId, now })
-  if (!result.reservation || !result.node || !result.profile) return json({ error: result.reason ?? 'no-node', requestId }, result.reason === 'no-profile' ? 404 : 429, requestId)
+// The core reserve -> forward-to-node -> release path shared by the provider `/v1/chat/completions`
+// route and the admin Playground's direct target. The caller has already validated the body and
+// resolved the session; runInference owns scheduling and the mesh round trip.
+async function runInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; sessionId: string; requestId: string; now: number }): Promise<Response> {
+  const publicModel = input.body.model as string
+  const result = await deps.scheduler.reserve({ publicModel, sessionId: input.sessionId, now: input.now })
+  if (!result.reservation || !result.node || !result.profile) return json({ error: result.reason ?? 'no-node', requestId: input.requestId }, result.reason === 'no-profile' ? 404 : 429, input.requestId)
 
   const upstreamToken = await resolveUpstreamToken(deps)
   if (!upstreamToken) {
-    await deps.scheduler.release(result.reservation.reservationId, now)
-    return json({ error: 'upstream_token_missing', requestId }, 503, requestId)
+    await deps.scheduler.release(result.reservation.reservationId, input.now)
+    return json({ error: 'upstream_token_missing', requestId: input.requestId }, 503, input.requestId)
   }
 
-  const rewritten = JSON.stringify({ ...body, model: result.reservation.upstreamModel })
+  const rewritten = JSON.stringify({ ...input.body, model: result.reservation.upstreamModel })
   const currentNow = deps.now ?? Date.now
   let upstream: Response
   try {
     upstream = await deps.mesh.fetch(meshUrl(result.node, '/v1/chat/completions'), {
       method: 'POST',
-      headers: approvedNodeHeaders(request.headers, upstreamToken, requestId),
+      headers: approvedNodeHeaders(input.requestHeaders, upstreamToken, input.requestId),
       body: rewritten
     })
   } catch (error) {
     await deps.scheduler.recordFailure(result.reservation.reservationId, currentNow())
     throw error
   }
-  const headers = responseMetadataHeaders(upstream.headers, requestId, sessionId, result.node.id)
+  const headers = responseMetadataHeaders(upstream.headers, input.requestId, input.sessionId, result.node.id)
   return releaseOnCompletion(
     upstream,
     headers,
@@ -739,29 +747,31 @@ async function handleWhoami(request: Request, deps: RouterDeps, requestId: strin
   return json({ role: viewer.role, actor: viewer.actor }, 200, requestId)
 }
 
+// Playground "gateway" target: send through the AI Gateway compat endpoint of the *selected*
+// gateway with `dynamic/<selected route>`, so an operator can exercise any accessible gateway
+// and any route on it (including hand-made non-`codeflare-mesh` routes), not just the last sync.
 async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readOptionalObject<{ model?: unknown; messages?: unknown }>(request)
+  const body = await readOptionalObject<{ gatewayId?: unknown; route?: unknown; messages?: unknown }>(request)
   const messages = Array.isArray(body?.messages) ? body!.messages : []
-  const gateway = await deps.store.getConfig<GatewaySyncResult>('cloudflare_gateway')
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
-  const accountId = cleanString(storedSettings?.accountId) ?? deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
-  if (!gateway?.gatewayId || !gateway.routeName || !accountId) return json({ error: 'gateway_not_configured', requestId }, 409, requestId)
-  const selected = cleanString(body?.model) ?? gateway.publicModel
-  const wireModel = selected === gateway.publicModel ? `dynamic/${gateway.routeName}` : `${gateway.providerSlug}/${selected}`
-  // The mesh gateway is an Authenticated Gateway, so provider-native requests must
-  // carry an AI Gateway Run token in cf-aig-authorization or the gateway rejects
-  // them; fail fast with an actionable error instead of an opaque upstream 401.
+  const defaults = gatewaySettings({ env: deps.env, ...(storedSettings ? { stored: storedSettings } : {}) })
+  const accountId = defaults.accountId
+  const gatewayId = cleanString(body?.gatewayId) ?? defaults.gatewayId
+  const route = cleanString(body?.route) ?? defaults.routeName
+  if (!accountId || !gatewayId) return json({ error: 'gateway_not_configured', requestId }, 409, requestId)
+  // The mesh gateway is an Authenticated Gateway, so requests must carry an AI Gateway Run token
+  // in cf-aig-authorization or the gateway rejects them; fail fast with an actionable error.
   const gatewayToken = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!gatewayToken) return json({ error: 'gateway_auth_token_missing', requestId }, 503, requestId)
-  const upstream = await (deps.playgroundFetcher ?? fetch)(`https://gateway.ai.cloudflare.com/v1/${accountId}/${gateway.gatewayId}/compat/chat/completions`, {
+  const upstream = await (deps.playgroundFetcher ?? fetch)(`https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/compat/chat/completions`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'cf-aig-authorization': `Bearer ${gatewayToken}`
     },
-    body: JSON.stringify({ model: wireModel, stream: true, messages })
+    body: JSON.stringify({ model: `dynamic/${route}`, stream: true, messages })
   })
   const headers = new Headers({
     'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
@@ -769,6 +779,18 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
     'x-inference-mesh-request-id': requestId
   })
   return new Response(upstream.body, { status: upstream.status, headers })
+}
+
+// Playground "direct" target: bypass the gateway and drive the router's own scheduler straight
+// to a node, so an operator can verify inference even when no AI Gateway is reachable.
+async function handlePlaygroundDirect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const viewer = await requireUser(request, deps, now)
+  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readOptionalObject<{ model?: unknown; messages?: unknown }>(request)
+  const model = cleanString(body?.model)
+  if (!model) return json({ error: 'model_required', requestId }, 400, requestId)
+  const messages = Array.isArray(body?.messages) ? body!.messages : []
+  return runInference(deps, { body: { model, messages, stream: true }, requestHeaders: request.headers, sessionId: `playground-${requestId}`, requestId, now })
 }
 
 interface GatewaySettings {
@@ -914,6 +936,23 @@ async function handleGatewayOptions(request: Request, deps: RouterDeps, url: URL
   const selectedGateway = cleanString(url.searchParams.get('gateway')) ?? defaults.gatewayId
   const routes = gateways.some((gateway) => gateway.id === selectedGateway) ? await client.listRoutes(accountId, selectedGateway) : []
   return json({ gateways, routes, defaults }, 200, requestId)
+}
+
+// Live-verify whether the *selected* gateway carries the mesh route + canonical provider,
+// so the Routing chip reflects that gateway's true state rather than the last-synced one.
+async function handleGatewayProvisionStatus(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
+  const defaults = gatewaySettings({ env: deps.env, ...(storedSettings ? { stored: storedSettings } : {}) })
+  const accountId = defaults.accountId
+  const gatewayId = cleanString(url.searchParams.get('gateway')) ?? defaults.gatewayId
+  const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
+  if (!accountId || (!token && !deps.cloudflareClient?.provisionStatus)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
+  if (!client.provisionStatus) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
+  const status = await client.provisionStatus(accountId, gatewayId, defaults.routeName, defaults.providerName)
+  return json({ gatewayId, ...status }, 200, requestId)
 }
 
 interface HostGate {

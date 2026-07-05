@@ -72,6 +72,8 @@ Rate limits are per Cloudflare location per 60s (Cloudflare requires the period 
 
 Each inference node must run Cloudflare One Client / WARP enrolled into the same account network as the Worker VPC binding. The node agent detects the WARP adapter by name (`CloudflareWARP`) and by the WARP CGNAT range `100.96.0.0/12`, so a headless `warp-cli` enrollment on a server is detected the same way as desktop WARP, and it advertises that WARP IP plus its Mesh-facing inference port. The router stores that `IP:PORT` and calls it through `env.MESH.fetch(...)`; it does not call public node URLs. ([REQ-NODE-001](../../sdd/spec/node-agent.md)) ([REQ-NODE-008](../../sdd/spec/node-agent.md)) ([REQ-RTR-004](../../sdd/spec/router-worker.md))
 
+The agent provisions the inbound mesh firewall rule itself at startup, after WARP is up: on Linux it runs `ufw allow in on <WARP-interface> to any port <inferencePort> proto tcp` (only when ufw is present), and on Windows it creates an idempotent inbound `New-NetFirewallRule` for the port. This is best-effort and never blocks startup — on macOS, on a host without ufw, or when the WARP interface cannot be named, the agent logs that the rule was not provisioned and the operator must allow inbound TCP on the mesh port over the WARP interface by hand. Two Zero Trust settings are also mandatory: the network policy must permit WARP-to-WARP reachability (the *Allow all Cloudflare One traffic to reach enrolled devices* toggle), and any split-tunnel Exclude list must not exclude the WARP CGNAT range `100.96.0.0/12`. ([REQ-NODE-010](../../sdd/spec/node-agent.md))
+
 ## Node agent config
 
 | Variable | Default | Required | Consumed by | Implements |

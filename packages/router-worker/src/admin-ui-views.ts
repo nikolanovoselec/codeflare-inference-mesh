@@ -95,14 +95,14 @@ ${output({ id: 'wizard-access-output', kind: 'setup-access', pre: true })}
     step: 'gateway',
     title: 'Connect AI Gateway',
     description: 'Choose your AI Gateway (or create one) and name the provider. The dynamic route your clients call is created for you. You can also do this later under Routing.',
-    body: `<div class="wizard-actions" id="wizard-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Create gateway + route', variant: 'primary', out: 'wiz-gateway-output' })}</div>
+    body: `<div class="wizard-actions" id="wizard-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Provision Configuration', variant: 'primary', out: 'wiz-gateway-output' })}</div>
 <div class="form-grid" id="wizard-gateway-selects">
 ${field({ id: 'wiz-gateway-select', label: 'Gateway', control: '<span class="slot" id="wiz-gateway-slot"><select id="wiz-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
 ${field({ id: 'wiz-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'wiz-gateway-provider-name', name: 'providerName', value: 'Codeflare Inference Mesh' }), hint: 'The name of the provider created on your AI Gateway.' })}
 </div>
 <div class="form-grid"><div id="wiz-gateway-new-wrap" hidden>${field({ id: 'wiz-gateway-new', label: 'New gateway name', control: textInput({ id: 'wiz-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
 <p class="field-hint">The dynamic route <code>codeflare-mesh</code> is created for you; you never choose a route or model.</p>
-<div class="wizard-actions">${button({ action: 'gateway-sync', label: 'Connect AI Gateway', variant: 'primary', out: 'wiz-gateway-output', prefix: 'wiz-' })}</div>
+<div class="wizard-actions">${button({ action: 'gateway-sync', label: 'Provision Configuration', variant: 'primary', out: 'wiz-gateway-output', prefix: 'wiz-' })}</div>
 ${output({ id: 'wiz-gateway-output', kind: 'gateway-sync', pre: true })}
 <div class="wizard-actions"><button class="btn btn-ghost" type="button" data-wizard-back>Back</button><button class="btn" type="button" data-wizard-next>Continue</button></div>`
   })
@@ -203,14 +203,14 @@ function routingSection(): string {
     body: `<div class="subpanel"><h3>AI Gateway</h3>
 <div class="state-card is-empty" id="gateway-current"><span class="state-label">Connected gateway</span><span class="state-value">Not connected yet</span></div>
 <p class="field-hint">Pick one of your existing gateways, or create a new one. The dynamic route <code>codeflare-mesh</code> is created for you.</p>
-<div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Create gateway + route', variant: 'primary', out: 'gateway-output' })}</div>
+<div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Provision Configuration', variant: 'primary', out: 'gateway-output' })}</div>
 <div class="form-grid" id="rt-gateway-selects">
 ${field({ id: 'rt-gateway-select', label: 'Gateway', control: '<span class="slot" id="rt-gateway-slot"><select id="rt-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
 ${field({ id: 'rt-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'rt-gateway-provider-name', name: 'providerName', value: 'Codeflare Inference Mesh' }), hint: 'The provider created on your AI Gateway. Copy its API key below into the provider API Key field.' })}
 </div>
-<p class="route-status"><span class="route-chip" id="rt-route-chip"><span class="route-dot"></span>route <code>codeflare-mesh</code> on this gateway · <span id="rt-route-state">not connected</span></span></p>
+<p class="route-status"><span class="route-chip" id="rt-route-chip" hidden><span class="route-dot"></span>route <code>codeflare-mesh</code> on this gateway · <span id="rt-route-state">not connected</span></span></p>
 <div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
-<div class="form-actions">${button({ action: 'gateway-sync', label: 'Connect gateway', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
+<div class="form-actions">${button({ action: 'gateway-sync', label: 'Provision Configuration', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
 ${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}</div>
 <div class="subpanel"><h3>Custom domain</h3>
 <div class="state-card is-empty" id="custom-domain-current"><span class="state-label">Custom domain</span><span class="state-value">Not set yet</span></div>
@@ -228,7 +228,8 @@ function playgroundSection(): string {
     title: 'Playground',
     description: 'Send a test prompt to your models and watch the answer stream back.',
     body: `<div class="form-grid">
-${field({ id: ADMIN_UI_PLAYGROUND.selectId, label: 'Model', control: emptySlotSelect(ADMIN_UI_PLAYGROUND.slotId, ADMIN_UI_PLAYGROUND.selectId, 'playgroundModel', 'data-playground-model-select="true"'), hint: 'Only models that are switched on appear here. Your prompt takes the same path your apps use.' })}
+${field({ id: ADMIN_UI_PLAYGROUND.targetSelectId, label: 'Target', control: emptySlotSelect(ADMIN_UI_PLAYGROUND.targetSlotId, ADMIN_UI_PLAYGROUND.targetSelectId, 'playgroundTarget', 'data-playground-target-select="true"'), hint: 'Where to send the test: the router directly, or one of your AI Gateways.' })}
+${field({ id: ADMIN_UI_PLAYGROUND.selectId, label: 'Model or route', control: emptySlotSelect(ADMIN_UI_PLAYGROUND.slotId, ADMIN_UI_PLAYGROUND.selectId, 'playgroundModel', 'data-playground-model-select="true"'), hint: 'The direct target lists your switched-on models; a gateway target lists the dynamic routes on that gateway.' })}
 </div>
 ${field({ id: ADMIN_UI_PLAYGROUND.promptId, label: 'Prompt', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.promptId}" name="prompt" rows="4" placeholder="Ask the mesh something to verify the full path."></textarea>` })}
 <div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}</div>

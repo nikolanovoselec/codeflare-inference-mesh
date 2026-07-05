@@ -180,6 +180,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 3. Each navigation entry resolves to a rendered dashboard section, and mobile viewports reach every section through a bottom tab bar. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation) -->
 4. Every text, number, and select control carries a visible label, with inline hints and per-action feedback in predictable placement. <!-- @impl: packages/router-worker/src/admin-ui-components.ts::ADMIN_UI_FIELD_ANCHOR --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-007 labels every dashboard control visibly) -->
 5. Destructive actions arm into an explicit same-control confirm step that auto-disarms before submitting. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-007 arms destructive controls and auto-disarms before submitting) -->
+6. The Overview stats strip presents only the non-redundant tiles: it omits the active-model count and connected-gateway stats and keeps the desired-agent-version tile. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-007 overview tiles omit the redundant Active-models and Gateway stats and keep the version tile) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -411,7 +412,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Overview section renders a topology visual with the router hub and one selectable element per node, styled by node status, with each connector sized to its node so nothing renders outside the canvas. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 sizes each topology spoke to stay within the 2:1 canvas (no vertical overflow)) -->
+1. The Overview section renders a topology visual with the router hub and one selectable element per node, styled by node status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
 2. The topology caption reports node and serving counts derived from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
 3. Selecting a node opens a detail drawer showing status, hardware, throughput, models, and reported-versus-desired agent version. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a node drawer with metrics, version drift, and an armed revoke control) -->
 4. Selecting a model opens a detail drawer showing its alias, availability, and serving nodes. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer listing the nodes serving each alias) -->
@@ -433,24 +434,25 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ### REQ-ADM-016: Operator playground
 
-**Intent:** Operators need a one-screen way to verify end-to-end inference through the same path real clients use, without copying tokens into external tools.
+**Intent:** Operators need a one-screen way to verify end-to-end inference — either straight through the router or through any accessible AI Gateway — without copying tokens into external tools.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. The Playground section offers one model option per model that is on, valued by the model's own callable name the gateway resolves and labeled with that callable name paired with the model name, populated from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 lists one playground option per model on, valued by callable name and labeled with the model name) -->
-2. Sending a prompt submits it through the admin playground endpoint and renders the streamed response incrementally. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 streams the playground response incrementally as chunks arrive) -->
-3. The playground endpoint forwards prompts through the configured AI Gateway route and streams the response back. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 forwards playground prompts through the configured gateway route and strips upstream secrets) -->
-4. The playground endpoint requires a valid console role (admin or read-only user) and never exposes gateway credentials to the browser. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 rejects unauthenticated playground requests) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 REQ-ADM-017 lets the read-only user role reach the playground endpoint) -->
-
-5. Failed playground requests append a status-specific actionable next step (provider key, Gateway connection, missing node or profile, or re-sync) instead of a bare status code. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 appends a status-specific actionable hint when a playground request fails) -->
+1. The direct target offers one option per model that is on, valued by the model's own callable name and labeled with that callable name paired with the model name, from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 lists one playground option per model on, valued by callable name and labeled with the model name) -->
+2. A gateway target lists that gateway's dynamic routes in the dependent selector and sends the chosen route to the gateway playground endpoint. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::updatePlaygroundModels --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint) -->
+3. Sending a prompt renders the streamed response incrementally as chunks arrive. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 streams the direct-target playground response incrementally as chunks arrive) -->
+4. The gateway playground endpoint forwards the chosen route as `dynamic/<route>` to the selected gateway's compat endpoint and never leaks upstream secrets, reporting `gateway_not_configured` when no gateway resolves. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 forwards playground prompts through the configured gateway route and strips upstream secrets) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 playground gateway target forwards dynamic/<route> to the selected gateway compat endpoint) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 returns gateway_not_configured until a gateway is connected) -->
+5. The direct playground endpoint reserves a node and forwards the internal model straight to it, bypassing the gateway. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundDirect --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 playground direct target reserves a node and forwards the internal model straight to it) -->
+6. Both playground endpoints require a valid console role (admin or read-only user) and never expose gateway credentials to the browser. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat --> <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundDirect --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 rejects unauthenticated playground requests) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-016 REQ-ADM-017 lets the read-only user role reach the playground endpoint) -->
+7. Failed playground requests append a status-specific actionable next step (provider key, Gateway connection, missing node or profile, or re-sync) instead of a bare status code. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 appends a status-specific actionable hint when a playground request fails) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P2
 
-**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-ADM-017](#req-adm-017-role-based-console-surface)
+**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-ADM-017](#req-adm-017-role-based-console-surface), [REQ-SCH-002](state-scheduling.md#req-sch-002-node-reservations)
 
 **Verification:** Automated test
 
@@ -606,25 +608,25 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ### REQ-ADM-024: Routing operational status
 
-**Intent:** The Routing screen shows the stable `codeflare-mesh` dynamic route as an operational status chip and makes the minted provider API key trivially copyable, so an operator knows the wiring is in place and completes the one manual BYOK paste step.
+**Intent:** The Routing screen live-verifies the selected gateway and shows the stable `codeflare-mesh` dynamic route as an operational status chip — hidden when that gateway is not provisioned — and makes the minted provider API key trivially copyable, so an operator sees the true wiring state and completes the one manual BYOK paste step.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. The Routing screen shows a status chip for the dynamic route `codeflare-mesh` that turns green with a flashing indicator when the custom provider and route are provisioned. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 the route chip is operational only when provider and route are provisioned) -->
-2. The operational chip is driven only by provisioning state (custom provider and route present), not by node or serving health. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 the operational chip ignores node and serving health) -->
-3. After Connect, the minted provider API key is revealed with a one-click copy control. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key) -->
-4. A clear instruction tells the operator to paste the key into the AI Gateway provider's API Key field. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 renders the AI Gateway paste instruction with the minted key) -->
-5. The pulsing operational indicator styling is defined centrally in the stylesheet. <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 defines the pulsing operational route-chip indicator centrally in the stylesheet) -->
-6. The route status chip renders with the Gateway selector, after the gateway select and before the Connect button. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 places the route chip with the Gateway selector) -->
+1. The Routing screen renders a `codeflare-mesh` route status chip positioned with the Gateway selector, after the gateway select and before the provision button. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 places the route chip with the Gateway selector) -->
+2. The chip reads operational only when a live check confirms the selected gateway's mesh route and canonical provider exist — provisioning state, not node or serving health. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 the route chip is operational only when the selected gateway is live-provisioned) -->
+3. When the selected gateway is not provisioned, the chip is hidden rather than shown as a stale not-connected state. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 hides the route chip when the selected gateway is not provisioned) -->
+4. After Connect, the minted provider API key is revealed with a one-click copy control. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key) -->
+5. A clear instruction tells the operator to paste the key into the AI Gateway provider's API Key field. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 renders the AI Gateway paste instruction with the minted key) -->
+6. The pulsing operational indicator styling is defined centrally in the stylesheet. <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 defines the pulsing operational route-chip indicator centrally in the stylesheet) -->
 7. The connected gateway reads as a prominent state card carrying the gateway id. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStateCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 reads the connected gateway as a state card) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning)
+**Dependencies:** [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning), [REQ-GWY-008](gateway.md#req-gwy-008-live-gateway-provision-verification)
 
 **Verification:** Automated test
 
@@ -717,6 +719,28 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Priority:** P2
 
 **Dependencies:** [REQ-ADM-025](#req-adm-025-add-a-model-console-control), [REQ-ADM-021](#req-adm-021-model-serving-configuration), [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-028: Topology connector bounds
+
+**Intent:** Topology connectors must stay inside the canvas so the diagram never draws a line outside its frame, regardless of how many nodes are placed or at what angle.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Each node connector is sized to its node's position so no spoke renders outside the 2:1 topology canvas. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 sizes each topology spoke to stay within the 2:1 canvas (no vertical overflow)) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-015](#req-adm-015-mesh-visualization)
 
 **Verification:** Automated test
 

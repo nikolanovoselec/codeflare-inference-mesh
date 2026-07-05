@@ -125,6 +125,27 @@ func DetectHostMeshIP() (string, bool) {
 	return DetectMeshIP(addrs)
 }
 
+// DetectWARPInterfaceName returns the name of the up WARP adapter (Linux and
+// Windows name it, e.g. `CloudflareWARP`), used to scope the inbound mesh
+// firewall rule to WARP traffic. It returns false when no named WARP interface
+// is up (macOS routes WARP over an unnamed utun; the app-scoped firewall path
+// does not need the name there).
+func DetectWARPInterfaceName() (string, bool) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", false
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if warpInterfaceHint(iface.Name) {
+			return iface.Name, true
+		}
+	}
+	return "", false
+}
+
 // detectWARPInterfaceIP enumerates the up interfaces so WARP detection can match
 // the Cloudflare WARP adapter by name, not only by address range.
 func detectWARPInterfaceIP() (string, bool) {

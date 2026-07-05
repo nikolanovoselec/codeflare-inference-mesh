@@ -530,11 +530,12 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(label).toContain('Qwen3.6 35B')
   })
 
-  it('REQ-ADM-016 streams the playground response incrementally as chunks arrive', async () => {
+  it('REQ-ADM-016 streams the direct-target playground response incrementally as chunks arrive', async () => {
     let controller!: ReadableStreamDefaultController<Uint8Array>
     const stream = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+    // Default target is the direct router, so the send hits the direct-chat endpoint with an internal model.
     const harness = await dashboardHarness({
-      respond: (path) => path === '/admin/playground/chat' ? new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }) : undefined
+      respond: (path) => path === '/admin/playground/direct-chat' ? new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }) : undefined
     })
     harness.byId(ADMIN_UI_PLAYGROUND.promptId).value = 'hello mesh'
     const send = harness.clickAction(ADMIN_UI_PLAYGROUND.sendAction, { out: ADMIN_UI_PLAYGROUND.outputId })
@@ -550,15 +551,45 @@ describe('dashboard throughput trace and playground contracts', () => {
     await send
 
     expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toBe('Hello mesh')
-    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/chat')
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/direct-chat')
     expect(call?.init?.method).toBe('POST')
     expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'qwen3.6:35b-a3b', messages: [{ role: 'user', content: 'hello mesh' }] })
+  })
+
+  it('REQ-ADM-016 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint', async () => {
+    const harness = await dashboardHarness({
+      respond: (path) => {
+        if (path.startsWith('/admin/cloudflare/gateway/options')) return Response.json({ gateways: [{ id: 'gw-a' }], routes: [{ id: 'r1', name: 'codeflare-mesh' }, { id: 'r2', name: 'custom-route' }], defaults: { gatewayId: 'gw-a', providerName: 'Codeflare Inference Mesh' } })
+        if (path === '/admin/playground/chat') return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
+        return undefined
+      }
+    })
+    // Opening the Playground lists the direct router plus the discovered gateway as targets.
+    await harness.click(harness.query('[data-nav="playground"]'))
+    await harness.flush(10)
+    const target = harness.byId(ADMIN_UI_PLAYGROUND.targetSelectId)
+    expect(target.children.map((option) => option.value)).toEqual(['direct', 'gw-a'])
+
+    // Switching to the gateway target fills the model/route select from that gateway's routes.
+    target.value = 'gw-a'
+    await harness.change(target)
+    await harness.flush(10)
+    expect(harness.byId(ADMIN_UI_PLAYGROUND.selectId).children.map((option) => option.value)).toEqual(['codeflare-mesh', 'custom-route'])
+
+    harness.byId(ADMIN_UI_PLAYGROUND.selectId).value = 'custom-route'
+    harness.byId(ADMIN_UI_PLAYGROUND.promptId).value = 'hi'
+    const send = harness.clickAction(ADMIN_UI_PLAYGROUND.sendAction, { out: ADMIN_UI_PLAYGROUND.outputId })
+    await harness.flush(10)
+    await send
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/chat')
+    expect(call?.init?.method).toBe('POST')
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ gatewayId: 'gw-a', route: 'custom-route', messages: [{ role: 'user', content: 'hi' }] })
   })
 
   it('REQ-ADM-016 appends a status-specific actionable hint when a playground request fails', async () => {
     const bareLen = (status: number) => ('Playground request failed (' + status + ').').length
     const outputFor = async (status: number): Promise<string> => {
-      const harness = await dashboardHarness({ respond: (path) => path === '/admin/playground/chat' ? new Response('{"error":"x"}', { status }) : undefined })
+      const harness = await dashboardHarness({ respond: (path) => path === '/admin/playground/direct-chat' ? new Response('{"error":"x"}', { status }) : undefined })
       harness.byId(ADMIN_UI_PLAYGROUND.promptId).value = 'hi'
       const send = harness.clickAction(ADMIN_UI_PLAYGROUND.sendAction, { out: ADMIN_UI_PLAYGROUND.outputId })
       await harness.flush(10)
@@ -690,25 +721,31 @@ describe('read-only user console contracts', () => {
 })
 
 describe('dashboard routing contracts', () => {
-  it('REQ-ADM-024 the route chip is operational only when provider and route are provisioned', async () => {
-    // Operational = the custom provider and dynamic route are provisioned (providerId + routeId), not node health.
-    const operational = await dashboardHarness({ status: statusFixture({ gateway: { providerId: 'p', routeId: 'r' } }) })
-    expect(operational.byId('rt-route-chip').classList.contains('operational')).toBe(true)
-    expect(operational.byId('rt-route-state').textContent).not.toBe('not connected')
+  const routingRespond = (provisioned: boolean) => (path: string) => {
+    if (path.startsWith('/admin/cloudflare/gateway/options')) return Response.json({ gateways: [{ id: 'inference-mesh' }], routes: [], defaults: { gatewayId: 'inference-mesh', providerName: 'Codeflare Inference Mesh' } })
+    if (path.startsWith('/admin/cloudflare/gateway/provision-status')) return Response.json({ gatewayId: 'inference-mesh', provisioned, routeEnabled: provisioned, ...(provisioned ? { routeId: 'r', providerId: 'p' } : {}) })
+    return undefined
+  }
 
-    const pending = await dashboardHarness({ status: statusFixture({ gateway: {} }) })
-    expect(pending.byId('rt-route-chip').classList.contains('operational')).toBe(false)
-    expect(pending.byId('rt-route-state').textContent).toBe('not connected')
+  it('REQ-ADM-024 the route chip is operational only when the selected gateway is live-provisioned', async () => {
+    // Provisioned per the live check but zero nodes online: the chip is driven by provisioning
+    // state (route + provider), not node or serving health, so it still reads operational.
+    const harness = await dashboardHarness({ status: statusFixture({ nodes: [] }), respond: routingRespond(true) })
+    await harness.click(harness.query('[data-nav="routing"]'))
+    await harness.flush(6)
+    expect(harness.byId('rt-route-chip').hidden).toBe(false)
+    expect(harness.byId('rt-route-chip').classList.contains('operational')).toBe(true)
+    expect(harness.byId('rt-route-state').textContent).not.toBe('not connected')
   })
 
-  it('REQ-ADM-024 the operational chip ignores node and serving health', async () => {
-    // Gateway provisioned (providerId + routeId) but zero nodes online: the chip is still operational.
-    const provisionedNoNodes = await dashboardHarness({ status: statusFixture({ gateway: { providerId: 'p', routeId: 'r' }, nodes: [] }) })
-    expect(provisionedNoNodes.byId('rt-route-chip').classList.contains('operational')).toBe(true)
-
-    // Default fixture nodes are online and serving, but the gateway is unprovisioned: the chip stays not-operational.
-    const healthyNodesNoGateway = await dashboardHarness({ status: statusFixture({ gateway: {} }) })
-    expect(healthyNodesNoGateway.byId('rt-route-chip').classList.contains('operational')).toBe(false)
+  it('REQ-ADM-024 hides the route chip when the selected gateway is not provisioned', async () => {
+    // Default fixture nodes are online and serving, but the live check reports the selected
+    // gateway is not provisioned: the chip is hidden, never shown as a stale "not connected".
+    const harness = await dashboardHarness({ respond: routingRespond(false) })
+    await harness.click(harness.query('[data-nav="routing"]'))
+    await harness.flush(6)
+    expect(harness.byId('rt-route-chip').hidden).toBe(true)
+    expect(harness.byId('rt-route-chip').classList.contains('operational')).toBe(false)
   })
 
   it('REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key', async () => {

@@ -14,7 +14,7 @@ Any admin route can also return `500` with body `{ "error": "internal_error", "r
 
 Admin routes are also rate-limited: `RL_AUTH` covers `/admin/login`, `/admin/setup`, `/admin/recovery/reset`, and `/admin/setup-tokens`; every other admin route falls to `RL_PUBLIC`. An over-limit request receives `429` with body `{ "error": "rate_limited", "requestId": string }` before its handler runs, and the per-route Response tables below omit this shared `429` the same way they omit the shared `500`. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
-An admin route that reads a JSON body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. The three optional-body routes — `POST /admin/cloudflare/gateway/sync`, `POST /admin/mesh/rotate`, and `POST /admin/playground/chat` — still accept a request with no body and apply their defaults; only a present, unparseable body is rejected. ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
+An admin route that reads a JSON body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. The optional-body routes — `POST /admin/cloudflare/gateway/sync`, `POST /admin/mesh/rotate`, `POST /admin/playground/chat`, and `POST /admin/playground/direct-chat` — still accept a request with no body (applying route defaults, or returning that route's own required-field error); only a present, unparseable body is rejected. ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
 
 ## Endpoints
 
@@ -183,7 +183,7 @@ GET /admin/whoami
 
 ### POST /admin/playground/chat
 
-Proxies a chat completion through the live AI Gateway dynamic route so operators can verify inference end to end. The request never carries a provider key: the Worker attaches the stored gateway credential server-side and streams the upstream response back.
+Proxies a chat completion through the selected AI Gateway's dynamic route (sent as `dynamic/<route>`) so operators can verify inference end to end. The request never carries a provider key: the Worker attaches the AI Gateway credential server-side and streams the upstream response back.
 
 ```http
 POST /admin/playground/chat
@@ -193,7 +193,7 @@ POST /admin/playground/chat
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `model` (public alias) and `messages` (chat message array). The body is optional — an absent body falls back to defaults (empty `messages`, the gateway's public model) — but a present, malformed body is rejected with the shared `400` `invalid_json`.
+**Request body:** JSON body with `gatewayId` (the target gateway) and `route` (the dynamic route to forward as `dynamic/<route>`), plus `messages` (chat message array). The body is optional — absent fields fall back to the resolved gateway defaults — but a present, malformed body is rejected with the shared `400` `invalid_json`.
 
 **Response**
 
@@ -201,7 +201,34 @@ POST /admin/playground/chat
 | --- | --- | --- |
 | `200` | Upstream response streamed back to the caller. | Event-stream / JSON pass-through from the AI Gateway route. |
 | `401` | No valid console role resolved for the caller. | Error object. |
-| `409` | The AI Gateway route is not configured yet. | `{ "error": "gateway_not_configured", "requestId": string }` |
+| `409` | No account or gateway resolved to send through. | `{ "error": "gateway_not_configured", "requestId": string }` |
+| `503` | The AI Gateway Run token is not configured. | `{ "error": "gateway_auth_token_missing", "requestId": string }` |
+
+**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+
+### POST /admin/playground/direct-chat
+
+Runs a chat completion straight through the router's scheduler to a serving node, bypassing the AI Gateway, so operators can verify inference even when no gateway is reachable.
+
+```http
+POST /admin/playground/direct-chat
+```
+
+**Authentication:** any console role (admin or read-only user)
+
+**Origin check:** n/a
+
+**Request body:** JSON body with `model` (an internal callable model) and `messages`. `model` is required; a present, malformed body is rejected with the shared `400` `invalid_json`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Node response streamed back to the caller. | Event-stream / JSON pass-through from the serving node. |
+| `400` | The request omitted a model. | `{ "error": "model_required", "requestId": string }` |
+| `401` | No valid console role resolved for the caller. | Error object. |
+| `404` / `429` | No profile matched the model, or no node had capacity. | `{ "error": "no-profile" \| "no-node", "requestId": string }` |
+| `503` | The node upstream token is not configured. | `{ "error": "upstream_token_missing", "requestId": string }` |
 
 **Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
@@ -483,6 +510,30 @@ GET /admin/cloudflare/gateway/options?gateway=<id>
 | `503` | Runtime Cloudflare account or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
 **Implements:** [REQ-GWY-005](../../sdd/spec/gateway.md)
+
+### GET /admin/cloudflare/gateway/provision-status
+
+Live-verifies whether the selected gateway carries the mesh route and canonical provider, so the Routing chip reflects that gateway's true state rather than the last-synced one.
+
+```http
+GET /admin/cloudflare/gateway/provision-status?gateway=<id>
+```
+
+**Authentication:** admin authentication
+
+**Origin check:** n/a
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Live provision status for the selected gateway. | `{ "gatewayId": string, "provisioned": boolean, "routeEnabled": boolean, "routeId"?: string, "providerId"?: string }` — `provisioned` is `true` only when the `codeflare-mesh` route is enabled and the name-derived canonical provider exists. |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+| `503` | Runtime Cloudflare account or token configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
+
+**Implements:** [REQ-GWY-008](../../sdd/spec/gateway.md), [REQ-ADM-024](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/profiles/rollout
 

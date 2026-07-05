@@ -123,6 +123,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (sheet) sheet.hidden = true;
     // Opening Routing discovers the operator's gateways from the runtime token.
     if (name === 'routing') loadGatewayOptions('', 'routing').catch(() => undefined);
+    // Opening the Playground lists inference targets (the direct router plus any gateways).
+    if (name === 'playground') loadPlaygroundTargets().catch(() => undefined);
   };
   let appliedRole;
   const userAllowedSections = ['overview', 'playground'];
@@ -771,16 +773,21 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (present && parts.sub) { const sub = document.createElement('span'); sub.className = 'state-sub'; sub.textContent = parts.sub; el.appendChild(sub); }
     if (present && parts.chip) el.appendChild(chipEl(parts.chipTone || 'ok', parts.chip));
   }
-  function renderPlaygroundSelect(profiles) {
-    const slot = byId(config.playground.slotId);
-    if (!slot) return;
-    // One option per model that is on: send and show the model's own callable name,
-    // with the human model name in brackets — e.g. mesh-smoke (Qwen2.5 Coder 1.5B).
+  // Dropdown B options for the direct router: one option per switched-on model, sending and
+  // showing the model's own callable name with the human model name in brackets — e.g.
+  // mesh-smoke (Qwen2.5 Coder 1.5B).
+  function playgroundModelOptions() {
+    const profiles = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
     const options = [];
     profiles.filter((profile) => profile.active).forEach((profile) => {
       const callable = callName(profile);
       if (callable && !options.some((opt) => opt.value === callable)) options.push({ value: callable, label: callable + ' (' + modelName(profile) + ')' });
     });
+    return options;
+  }
+  function setPlaygroundModelSelect(options) {
+    const slot = byId(config.playground.slotId);
+    if (!slot) return;
     slot.textContent = '';
     const select = document.createElement('select');
     select.id = config.playground.selectId;
@@ -796,6 +803,55 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     select.disabled = options.length === 0;
     if (options.length) select.value = options[0].value;
     slot.appendChild(select);
+  }
+  // Dropdown B is owned by the gateway target when one is selected; the periodic status poll
+  // only refreshes it while the direct router is the target, so it can't clobber a route list.
+  function renderPlaygroundSelect() {
+    const target = byId(config.playground.targetSelectId);
+    if (target && target.value && target.value !== config.playground.directValue) return;
+    setPlaygroundModelSelect(playgroundModelOptions());
+  }
+  // Dropdown A: the direct router plus every accessible AI Gateway. Falls back to direct-only
+  // when gateways cannot be listed (e.g. the read-only user role cannot call gateway options).
+  async function loadPlaygroundTargets() {
+    const slot = byId(config.playground.targetSlotId);
+    if (!slot) return;
+    let gateways = [];
+    try {
+      const body = await request('/admin/cloudflare/gateway/options', { headers: headers(false) });
+      gateways = (body.gateways || []).map((gateway) => gateway.id);
+    } catch (error) { gateways = []; }
+    slot.textContent = '';
+    const select = document.createElement('select');
+    select.id = config.playground.targetSelectId;
+    select.name = 'playgroundTarget';
+    select.setAttribute('data-playground-target-select', 'true');
+    const direct = document.createElement('option');
+    direct.value = config.playground.directValue;
+    direct.textContent = 'Codeflare Inference Router (direct)';
+    select.appendChild(direct);
+    gateways.forEach((id) => {
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = id;
+      select.appendChild(option);
+    });
+    select.value = config.playground.directValue;
+    slot.appendChild(select);
+    await updatePlaygroundModels();
+  }
+  // Repopulate Dropdown B when the target changes: switched-on models for the direct router,
+  // or the selected gateway's dynamic routes.
+  async function updatePlaygroundModels() {
+    const target = byId(config.playground.targetSelectId);
+    const value = target && target.value ? target.value : config.playground.directValue;
+    if (value === config.playground.directValue) { setPlaygroundModelSelect(playgroundModelOptions()); return; }
+    let routes = [];
+    try {
+      const body = await request('/admin/cloudflare/gateway/options?gateway=' + encodeURIComponent(value), { headers: headers(false) });
+      routes = (body.routes || []).map((route) => route.name).filter(Boolean);
+    } catch (error) { routes = []; }
+    setPlaygroundModelSelect(routes.map((name) => ({ value: name, label: name })));
   }
   function modelName(profile) { return (profile.displayName && String(profile.displayName)) || profile.id; }
   function servingCount(profile) {
@@ -1010,16 +1066,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         sub: gateway.gatewayId ? ('route ' + (gateway.routeName || STABLE_PUBLIC_MODEL)) : ''
       });
     }
-    const routeChip = byId('rt-route-chip');
-    if (routeChip) {
-      // Operational = wiring exists (custom provider + dynamic route provisioned),
-      // not gated on node or serving health.
-      const gateway = status.gateway || {};
-      const operational = Boolean(gateway.providerId && gateway.routeId);
-      routeChip.classList.toggle('operational', operational);
-      const routeState = byId('rt-route-state');
-      if (routeState) routeState.textContent = operational ? 'operational' : 'not connected';
-    }
     const domainCurrent = byId('custom-domain-current');
     if (domainCurrent) {
       const domain = status.customDomain || {};
@@ -1034,7 +1080,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     lastStatus = status;
     renderNodesTable(nodes, status.desiredAgentVersion);
     renderProfiles(profiles, readiness);
-    renderPlaygroundSelect(profiles);
+    renderPlaygroundSelect();
     // Mesh detail now lives per-model in the Manage drawer; here we only keep the
     // global mesh-secret-missing banner (shown on the Models section) in sync.
     const meshBanner = byId(config.meshHealth.bannerId);
@@ -1241,11 +1287,30 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const defaults = body.defaults || {};
     emptyPanel.hidden = gateways.length > 0;
     selects.hidden = gateways.length === 0;
-    if (!gateways.length) return;
+    if (!gateways.length) { if (scope === 'routing') refreshProvisionChip('').catch(() => undefined); return; }
     const wantedGateway = gatewayId || defaults.gatewayId;
     const gatewayValue = gateways.indexOf(wantedGateway) >= 0 ? wantedGateway : '__new__';
     fillChoiceSelect(ids.gwSlot, ids.gwSelect, 'gatewayId', 'data-gateway-select', gateways, gatewayValue, 'Create new gateway\u2026');
     toggleNewField(ids.gwNew, gatewayValue === '__new__');
+    if (scope === 'routing') refreshProvisionChip(gatewayValue).catch(() => undefined);
+  }
+  // The Routing chip reflects the *selected* gateway's live provisioning (mesh route +
+  // canonical provider), verified server-side. It stays hidden unless that gateway is
+  // actually provisioned, so it can never imply a connection that is not there.
+  async function refreshProvisionChip(gatewayId) {
+    const chip = byId('rt-route-chip');
+    if (!chip) return;
+    const state = byId('rt-route-state');
+    const target = gatewayId && gatewayId !== '__new__' ? gatewayId : '';
+    if (!target) { chip.hidden = true; return; }
+    try {
+      const status = await request('/admin/cloudflare/gateway/provision-status?gateway=' + encodeURIComponent(target), { headers: headers(false) });
+      chip.hidden = !status.provisioned;
+      chip.classList.toggle('operational', Boolean(status.provisioned));
+      if (state) state.textContent = status.provisioned ? 'provisioned' : 'not connected';
+    } catch (error) {
+      chip.hidden = true;
+    }
   }
   // Read the chosen (or newly named) gateway and the provider name from a
   // discovery scope's ids. The account id, worker url, route, and public model
@@ -1383,6 +1448,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'gateway-provision-default') {
       revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
       await loadGatewayOptions('').catch(() => undefined);
+      await loadGatewayOptions('', 'routing').catch(() => undefined);
     } else if (action === 'nodes-sort') {
       const key = button.dataset.sort || 'id';
       nodeSort = { key: key, dir: nodeSort.key === key ? -nodeSort.dir : -1 };
@@ -1414,6 +1480,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       await loadInstaller(prefix);
     } else if (action === 'gateway-sync') {
       revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify(gatewayPayload(prefix)) }));
+      await loadGatewayOptions('', 'routing').catch(() => undefined);
     } else if (action === 'custom-domain-validate') {
       // Hostname only; the owning zone is matched server-side from the runtime token.
       setOutput(out, await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('custom-domain') }) }));
@@ -1501,10 +1568,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       await refreshStatus().catch(() => undefined);
       toast('Model added');
     } else if (action === config.playground.sendAction) {
+      const target = byId(config.playground.targetSelectId);
+      const targetValue = target && target.value ? target.value : config.playground.directValue;
       const select = byId(config.playground.selectId);
+      const choice = select ? select.value : '';
       const prompt = readInput(config.playground.promptId);
       if (!prompt) { setOutput(out, 'Enter a prompt to send.', true); return; }
-      const response = await fetch('/admin/playground/chat', { method: 'POST', headers: headers(true), body: JSON.stringify({ model: select ? select.value : '', messages: [{ role: 'user', content: prompt }] }) });
+      const messages = [{ role: 'user', content: prompt }];
+      // Direct target -> router scheduler with an internal model; gateway target -> that gateway's
+      // compat endpoint with the selected dynamic route.
+      const direct = targetValue === config.playground.directValue;
+      const path = direct ? config.playground.directPath : config.playground.gatewayPath;
+      const payload = direct ? { model: choice, messages: messages } : { gatewayId: targetValue, route: choice, messages: messages };
+      const response = await fetch(path, { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
       if (!response.ok || !response.body) { setOutput(out, 'Playground request failed (' + response.status + ').' + playgroundHint(response.status), true); return; }
       setOutput(out, '');
       const outputEl = byId(out);
@@ -1606,6 +1682,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       if (liveToken || onCustomDomain) loadInstaller(prefix).catch((error) => setOutput(prefix + 'installer-output', friendlyError('installer-generate', error), true));
       return;
     }
+    const targetSelect = event.target.closest('[data-playground-target-select]');
+    if (targetSelect) { updatePlaygroundModels().catch(() => undefined); return; }
     const gatewaySelect = event.target.closest('[data-gateway-select]');
     if (gatewaySelect) {
       const scope = gatewaySelect.id === 'rt-gateway-select' ? 'routing' : 'wizard';

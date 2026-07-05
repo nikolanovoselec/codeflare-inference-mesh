@@ -96,6 +96,13 @@ func runService(args []string) error {
 	if err := agent.RequireMeshIP(cfg); err != nil {
 		return err
 	}
+	// WARP is up and the mesh port is known here, so provision the inbound firewall
+	// rule best-effort: a default-deny host firewall would otherwise silently drop
+	// the router's requests (the original handshake-timeout symptom). Never fatal.
+	warpIface, _ := agent.DetectWARPInterfaceName()
+	if err := agent.EnsureInboundRule(serviceCtx, execCommandRunner, runtime.GOOS, warpIface, cfg.InferencePort); err != nil {
+		fmt.Fprintf(os.Stderr, "mesh inbound firewall rule not provisioned (allow inbound TCP %d on the WARP interface manually): %v\n", cfg.InferencePort, err)
+	}
 	var claimBootstrap *agent.MeshBootstrap
 	if cfg.SetupToken != "" && cfg.NodeToken == "" {
 		claimClient := agent.Client{RouterURL: cfg.RouterURL}
@@ -323,6 +330,12 @@ func (s *serviceLoop) tick(ctx context.Context) {
 
 // collect runs the once-per-tick MeshLLM poll and assembles the heartbeat
 // metrics and identity: mesh id and invite token are resent every tick.
+// execCommandRunner is the production agent.CommandRunner: it shells out to the
+// host GPU tool. Tests inject a fake runner instead.
+func execCommandRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, name, args...).Output()
+}
+
 func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.NodeMetrics, agent.HeartbeatIdentity) {
 	identity := agent.HeartbeatIdentity{AgentVersion: s.agentVersion}
 	metrics := runtimeMetrics(s.manager, s.loadState, current, s.activeRequests.Value(), s.installError)
@@ -332,6 +345,18 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 		metrics = applyMeshStatusMetrics(metrics, profile, status, consoleReady, s.manager.APIReady(), s.manager.ReadyModels())
 		identity.MeshID = s.manager.CurrentMeshID()
 		identity.MeshToken = s.manager.CurrentToken()
+	}
+	// The MeshLLM console does not always report GPU memory; when total VRAM is
+	// still unknown, fall back to the host GPU tool so the dashboard shows real
+	// VRAM instead of 0. Used VRAM legitimately stays 0 on an idle GPU.
+	if metrics.GPUMemoryTotalMiB == 0 {
+		if gpu := agent.GPUFallbackMetrics(ctx, runtime.GOOS, execCommandRunner); gpu.GPUMemoryTotalMiB > 0 {
+			if metrics.GPUName == "" {
+				metrics.GPUName = gpu.GPUName
+			}
+			metrics.GPUMemoryUsedMiB = gpu.GPUMemoryUsedMiB
+			metrics.GPUMemoryTotalMiB = gpu.GPUMemoryTotalMiB
+		}
 	}
 	s.telemetry.Store(metrics)
 	metrics.LastError = s.foldUpdateError(metrics.LastError)
@@ -554,6 +579,21 @@ func applyMeshStatusMetrics(metrics agent.NodeMetrics, profile agent.ModelProfil
 	metrics.MeshLLMVersion = status.Version
 	if status.TokPerSec > 0 {
 		metrics.TokensPerSecond = status.TokPerSec
+	}
+	// Prefer MeshLLM's structured per-GPU rated memory over the bogus top-level
+	// my_vram_gb; the nvidia-smi/system_profiler fallback in collect() fills in
+	// when the console reports no GPUs at all.
+	if len(status.GPUs) > 0 {
+		gpu := status.GPUs[0]
+		if gpu.Name != "" {
+			metrics.GPUName = gpu.Name
+		}
+		if gpu.RatedVRAMGB > 0 {
+			metrics.GPUMemoryTotalMiB = int(gpu.RatedVRAMGB * 1024)
+		}
+		if gpu.UsedVRAMGB > 0 {
+			metrics.GPUMemoryUsedMiB = int(gpu.UsedVRAMGB * 1024)
+		}
 	}
 	return metrics
 }

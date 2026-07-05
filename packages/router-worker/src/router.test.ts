@@ -159,6 +159,7 @@ describe('router worker behavioral contracts', () => {
       'setup-complete',
       'zones-refresh',
       'gateway-options',
+      'gateway-provision-status',
       'status-refresh',
       'setup-token-create',
       'installer-linux',
@@ -174,7 +175,8 @@ describe('router worker behavioral contracts', () => {
       'agent-version-set',
       'settings-save',
       'mesh-rotate',
-      'playground-chat'
+      'playground-chat',
+      'playground-direct'
     ])
     expect(config.actions.filter((action) => action.auth === 'admin').map((action) => action.path)).toEqual([
       '/admin/login',
@@ -183,6 +185,7 @@ describe('router worker behavioral contracts', () => {
       '/admin/setup/complete',
       '/admin/cloudflare/zones',
       '/admin/cloudflare/gateway/options',
+      '/admin/cloudflare/gateway/provision-status',
       '/admin/status',
       '/admin/setup-tokens',
       '/admin/installers/linux',
@@ -198,7 +201,8 @@ describe('router worker behavioral contracts', () => {
       '/admin/agent-version',
       '/admin/settings',
       '/admin/mesh/rotate',
-      '/admin/playground/chat'
+      '/admin/playground/chat',
+      '/admin/playground/direct-chat'
     ])
     expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 1, minTouchTargetPx: 44 })
     expect(config.views).toEqual({ modes: ['setup', 'dashboard'], attribute: 'data-view' })
@@ -1641,6 +1645,50 @@ describe('router worker behavioral contracts', () => {
     expect(calls.some((call) => call.method === 'PATCH' && call.path.includes('/custom-providers/'))).toBe(true)
   })
 
+  it('REQ-GWY-008 exposes live provision status for the selected gateway to admins only', async () => {
+    const calls: Array<{ accountId: string; gatewayId: string; routeName: string; providerName: string }> = []
+    const { router } = routerFixture({
+      env: { CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', CLOUDFLARE_ACCOUNT_ID: 'account-a' },
+      cloudflareClient: {
+        syncCustomProvider: async () => { throw new Error('unused') },
+        provisionCustomDomain: async () => { throw new Error('unused') },
+        provisionStatus: async (accountId, gatewayId, routeName, providerName) => {
+          calls.push({ accountId, gatewayId, routeName, providerName })
+          return { provisioned: true, routeEnabled: true, routeId: 'route-a', providerId: 'provider-a' }
+        }
+      }
+    })
+    // Unauthenticated callers get 401; the live check never runs for them.
+    expect((await router(new Request('https://router.test/admin/cloudflare/gateway/provision-status?gateway=gw-2'))).status).toBe(401)
+    const res = await router(new Request('https://router.test/admin/cloudflare/gateway/provision-status?gateway=gw-2', { headers: bearer('admin-secret') }))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ gatewayId: 'gw-2', provisioned: true, routeEnabled: true, routeId: 'route-a', providerId: 'provider-a' })
+    // The pinned route/provider names are resolved server-side for the requested gateway.
+    expect(calls).toEqual([{ accountId: 'account-a', gatewayId: 'gw-2', routeName: 'codeflare-mesh', providerName: 'Codeflare Inference Mesh' }])
+  })
+
+  it('REQ-GWY-008 reports a gateway provisioned only when the mesh route is enabled and the canonical provider exists', async () => {
+    const scenario = (routes: unknown[], providers: unknown[]) => {
+      const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input))
+        const method = init?.method ?? 'GET'
+        if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: providers })
+        if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, data: { routes } })
+        throw new Error(`unexpected ${method} ${url.pathname}`)
+      }) as typeof fetch
+      return new CloudflareGatewayClient('runtime-token', fetcher).provisionStatus('account-a', 'gateway-a', 'codeflare-mesh', 'Codeflare Inference Mesh')
+    }
+    const provider = { id: 'provider-a', slug: 'codeflare-inference-mesh', name: 'Codeflare Inference Mesh', base_url: 'https://mesh.example.com' }
+    // Route enabled + canonical (name-derived) provider present -> provisioned.
+    expect(await scenario([{ id: 'route-a', name: 'codeflare-mesh', enabled: true }], [provider])).toEqual({ provisioned: true, routeEnabled: true, routeId: 'route-a', providerId: 'provider-a' })
+    // No matching route -> not provisioned.
+    expect((await scenario([], [provider])).provisioned).toBe(false)
+    // Route present but disabled -> not provisioned even though the provider exists.
+    expect(await scenario([{ id: 'route-a', name: 'codeflare-mesh', enabled: false }], [provider])).toMatchObject({ provisioned: false, routeEnabled: false, routeId: 'route-a' })
+    // Route enabled but the canonical provider is absent -> not provisioned.
+    expect(await scenario([{ id: 'route-a', name: 'codeflare-mesh', enabled: true }], [])).toMatchObject({ provisioned: false, routeEnabled: true })
+  })
+
   it('REQ-GWY-003 re-sync reuses the existing dynamic route (data + route envelopes) instead of re-creating it', async () => {
     const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
     const workerUrl = 'https://router.example.workers.dev/v1/chat/completions'
@@ -2647,6 +2695,40 @@ describe('Access-first setup and host gating contracts', () => {
     // A user role clears the requireUser gate (a rejected role would be 401); here it reaches the gateway-config check.
     expect(response.status).not.toBe(401)
     expect(await response.json()).toMatchObject({ error: 'gateway_not_configured' })
+  })
+
+  it('REQ-ADM-016 playground gateway target forwards dynamic/<route> to the selected gateway compat endpoint', async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = []
+    const playgroundFetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: JSON.parse(String(init!.body)) as Record<string, unknown>, headers: Object.fromEntries(new Headers(init!.headers).entries()) })
+      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }) as typeof fetch
+    const { router } = routerFixture({ env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-token' }, playgroundFetcher })
+    const res = await router(new Request('https://router.test/admin/playground/chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ gatewayId: 'gw-x', route: 'custom-route', messages: [{ role: 'user', content: 'hi' }] }) }))
+    expect(res.status).toBe(200)
+    expect(calls).toHaveLength(1)
+    // The selected gateway id builds the compat URL, and the selected route is sent as dynamic/<route>.
+    expect(calls[0]!.url).toBe('https://gateway.ai.cloudflare.com/v1/account-a/gw-x/compat/chat/completions')
+    expect(calls[0]!.body).toMatchObject({ model: 'dynamic/custom-route', stream: true, messages: [{ role: 'user', content: 'hi' }] })
+    expect(calls[0]!.headers['cf-aig-authorization']).toBe('Bearer aig-token')
+  })
+
+  it('REQ-ADM-016 playground direct target reserves a node and forwards the internal model straight to it', async () => {
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture) })
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+    // Unauthenticated -> 401; a missing model -> 400 before any scheduling.
+    expect((await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', body: JSON.stringify({ model: 'codeflare-mesh', messages: [] }) }))).status).toBe(401)
+    const noModel = await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ messages: [] }) }))
+    expect(noModel.status).toBe(400)
+    expect(await noModel.json()).toMatchObject({ error: 'model_required' })
+    // With a serving node, the direct target reserves and forwards the resolved upstream model to the node.
+    const response = await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hi' }] }) }))
+    await response.text()
+    expect(response.status).toBe(200)
+    expect(capture.request!.url).toBe('http://100.64.1.10:8080/v1/chat/completions')
+    expect((await capture.request!.json() as { model: string }).model).toBe(SMOKE_UPSTREAM)
   })
 
   it('REQ-ADM-005 REQ-ADM-011 provisions the domain step and advances the setup phase', async () => {

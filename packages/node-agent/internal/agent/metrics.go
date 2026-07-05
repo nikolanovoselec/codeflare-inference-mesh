@@ -76,6 +76,15 @@ func MeshStatusWithModels(st MeshLLMStatus, modelIDs []string) MeshLLMStatus {
 // absent MeshLLM signals stay absent instead of being fabricated.
 func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	merged := base
+	if extra.GPUName != "" {
+		merged.GPUName = extra.GPUName
+	}
+	if extra.GPUMemoryUsedMiB != 0 {
+		merged.GPUMemoryUsedMiB = extra.GPUMemoryUsedMiB
+	}
+	if extra.GPUMemoryTotalMiB != 0 {
+		merged.GPUMemoryTotalMiB = extra.GPUMemoryTotalMiB
+	}
 	if extra.TokensPerSecond != 0 {
 		merged.TokensPerSecond = extra.TokensPerSecond
 	}

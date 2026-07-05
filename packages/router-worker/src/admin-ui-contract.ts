@@ -20,6 +20,7 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'setup-complete', method: 'POST', path: '/admin/setup/complete', auth: 'admin' },
   { id: 'zones-refresh', method: 'GET', path: '/admin/cloudflare/zones', auth: 'admin' },
   { id: 'gateway-options', method: 'GET', path: '/admin/cloudflare/gateway/options', auth: 'admin' },
+  { id: 'gateway-provision-status', method: 'GET', path: '/admin/cloudflare/gateway/provision-status', auth: 'admin' },
   { id: 'status-refresh', method: 'GET', path: '/admin/status', auth: 'admin' },
   { id: 'setup-token-create', method: 'POST', path: '/admin/setup-tokens', auth: 'admin' },
   { id: 'installer-linux', method: 'GET', path: '/admin/installers/linux', auth: 'admin' },
@@ -35,7 +36,8 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'agent-version-set', method: 'POST', path: '/admin/agent-version', auth: 'admin' },
   { id: 'settings-save', method: 'POST', path: '/admin/settings', auth: 'admin' },
   { id: 'mesh-rotate', method: 'POST', path: '/admin/mesh/rotate', auth: 'admin' },
-  { id: 'playground-chat', method: 'POST', path: '/admin/playground/chat', auth: 'admin' }
+  { id: 'playground-chat', method: 'POST', path: '/admin/playground/chat', auth: 'admin' },
+  { id: 'playground-direct', method: 'POST', path: '/admin/playground/direct-chat', auth: 'admin' }
 ] as const
 
 export const ADMIN_UI_RESPONSIVE = {
@@ -123,13 +125,22 @@ export const ADMIN_UI_NODES_TABLE = {
   columns: ['id', 'status', 'toks', 'vram', 'models', 'version']
 } as const
 
-/** Operator playground: model select from live status, streamed response pane. */
+/**
+ * Operator playground: a Target select (the direct router or an accessible AI Gateway) drives a
+ * dependent Model/Route select, streamed into the response pane. Direct sends hit `directPath`
+ * with an internal model; gateway sends hit `gatewayPath` with the selected route.
+ */
 export const ADMIN_UI_PLAYGROUND = {
+  targetSelectId: 'playground-target',
+  targetSlotId: 'playground-target-slot',
   selectId: 'playground-model',
   slotId: 'playground-model-slot',
   promptId: 'playground-prompt',
   outputId: 'playground-output',
-  sendAction: 'playground-send'
+  sendAction: 'playground-send',
+  directValue: 'direct',
+  directPath: '/admin/playground/direct-chat',
+  gatewayPath: '/admin/playground/chat'
 } as const
 
 /** Client-smoothed throughput sparkline over a rolling window of poll samples. */

@@ -239,6 +239,30 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ---
 
+### REQ-NODE-010: Inbound mesh firewall provisioning
+
+**Intent:** A node behind a default-deny host firewall must still accept the router's inbound mesh requests, so the agent provisions the inbound rule itself at startup rather than leaving an operator to debug a silent handshake timeout.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. On Linux the agent adds a ufw rule allowing inbound TCP on the mesh port scoped to the WARP interface, acting only when ufw is present. <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
+2. On Windows the agent creates the inbound mesh-port allow rule only when an identically named rule is absent, so repeated starts do not duplicate it. <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
+3. Provisioning runs best-effort after WARP detection at startup and never fails startup: a missing tool, an unknown WARP interface, or a macOS host is logged or a no-op rather than fatal. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
+
+**Constraints:** [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-001](#req-node-001-cross-platform-service), [REQ-NODE-008](#req-node-008-mesh-ip-detection)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)

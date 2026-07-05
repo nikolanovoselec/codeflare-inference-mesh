@@ -771,6 +771,54 @@ func TestREQOBS009BestEffortHardwareMetrics(t *testing.T) {
 	})
 }
 
+func TestREQOBS009GPUFallbackPerOSAndMerge(t *testing.T) {
+	t.Run("REQ-OBS-009", func(t *testing.T) {
+		ctx := context.Background()
+		// Linux and Windows probe nvidia-smi (with the .exe suffix on Windows).
+		linux := func(_ context.Context, name string, _ ...string) ([]byte, error) {
+			if name != "nvidia-smi" {
+				t.Fatalf("linux fallback must call nvidia-smi, got %q", name)
+			}
+			return []byte("RTX 4090, 8000, 24576"), nil
+		}
+		if got := GPUFallbackMetrics(ctx, "linux", linux); got.GPUName != "RTX 4090" || got.GPUMemoryUsedMiB != 8000 || got.GPUMemoryTotalMiB != 24576 {
+			t.Fatalf("linux nvidia-smi fallback: %#v", got)
+		}
+		windows := func(_ context.Context, name string, _ ...string) ([]byte, error) {
+			if name != "nvidia-smi.exe" {
+				t.Fatalf("windows fallback must call nvidia-smi.exe, got %q", name)
+			}
+			return []byte("RTX 4080, 1000, 16384"), nil
+		}
+		if got := GPUFallbackMetrics(ctx, "windows", windows); got.GPUMemoryTotalMiB != 16384 {
+			t.Fatalf("windows nvidia-smi.exe fallback: %#v", got)
+		}
+		// macOS parses system_profiler; VRAM (Total) in GB converts to MiB.
+		mac := func(_ context.Context, name string, _ ...string) ([]byte, error) {
+			if name != "system_profiler" {
+				t.Fatalf("darwin fallback must call system_profiler, got %q", name)
+			}
+			return []byte("Graphics/Displays:\n    Apple M3 Max:\n      Chipset Model: Apple M3 Max\n      VRAM (Total): 48 GB\n"), nil
+		}
+		if got := GPUFallbackMetrics(ctx, "darwin", mac); got.GPUName != "Apple M3 Max" || got.GPUMemoryTotalMiB != 48*1024 {
+			t.Fatalf("darwin system_profiler fallback: %#v", got)
+		}
+		// A failed probe yields zero GPU fields (unknown), never an error.
+		failing := func(_ context.Context, _ string, _ ...string) ([]byte, error) { return nil, errors.New("not found") }
+		if got := GPUFallbackMetrics(ctx, "linux", failing); got.GPUMemoryTotalMiB != 0 || got.GPUName != "" {
+			t.Fatalf("failed probe must yield zero VRAM, got %#v", got)
+		}
+		// MergeRuntimeMetrics carries GPU fields, and a zero extra never clears the base.
+		merged := MergeRuntimeMetrics(NodeMetrics{RuntimeState: "ready"}, NodeMetrics{GPUName: "RTX 4090", GPUMemoryUsedMiB: 8000, GPUMemoryTotalMiB: 24576})
+		if merged.GPUName != "RTX 4090" || merged.GPUMemoryUsedMiB != 8000 || merged.GPUMemoryTotalMiB != 24576 {
+			t.Fatalf("merge must carry GPU fields: %#v", merged)
+		}
+		if kept := MergeRuntimeMetrics(NodeMetrics{GPUMemoryTotalMiB: 24576}, NodeMetrics{}); kept.GPUMemoryTotalMiB != 24576 {
+			t.Fatalf("zero extra must not clear base GPU total, got %#v", kept)
+		}
+	})
+}
+
 func TestREQNODE005StagesSelfUpdateOnlyWhenChecksumMatches(t *testing.T) {
 	t.Run("REQ-NODE-005", func(t *testing.T) {
 		data := []byte("agent-binary")

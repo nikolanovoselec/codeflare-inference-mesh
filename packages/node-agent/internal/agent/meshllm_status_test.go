@@ -68,6 +68,11 @@ func TestREQOBS003ParsesMeshLLMStatus(t *testing.T) {
 			want: MeshLLMStatus{NodeID: "node-1", NodeState: "standby"},
 		},
 		{
+			name: "gpus array decodes rated and used VRAM",
+			body: `{"node_id":"n","gpus":[{"name":"RTX 4090","rated_vram_gb":24,"used_vram_gb":8}]}`,
+			want: MeshLLMStatus{NodeID: "n", GPUs: []GPUStatus{{Name: "RTX 4090", RatedVRAMGB: 24, UsedVRAMGB: 8}}},
+		},
+		{
 			name:    "truncated JSON errors",
 			body:    `{"node_state":`,
 			wantErr: true,

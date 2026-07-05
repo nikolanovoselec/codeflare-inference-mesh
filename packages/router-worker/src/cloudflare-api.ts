@@ -63,6 +63,12 @@ export interface RouteRecord {
 export interface ZoneRecord { readonly id: string; readonly name: string }
 interface DnsRecord { readonly id: string; readonly type: string; readonly name: string; readonly content: string; readonly proxied?: boolean }
 interface WorkerRouteRecord { readonly id: string; readonly pattern: string; readonly script?: string }
+export interface GatewayProvisionStatus {
+  readonly provisioned: boolean
+  readonly routeEnabled: boolean
+  readonly routeId?: string
+  readonly providerId?: string
+}
 
 export class CloudflareGatewayClient {
   constructor(private readonly token: string, private readonly fetcher: typeof fetch = fetch) {}
@@ -167,6 +173,27 @@ export class CloudflareGatewayClient {
       workerUrl: originOnly(input.workerUrl),
       manualProviderKeyRequired: true,
       providerTokenInstructions: input.providerTokenInstructions
+    }
+  }
+
+  // Live check for the Routing chip: is this gateway actually provisioned for the mesh?
+  // Provisioned = the pinned route exists and is enabled AND the canonical name-derived
+  // provider exists. The slug is derived the same way as syncCustomProvider so the check
+  // matches what a sync would reconcile, independent of the worker origin.
+  async provisionStatus(accountId: string, gatewayId: string, routeName: string, providerName: string): Promise<GatewayProvisionStatus> {
+    const providerSlug = slugify(providerName)
+    const [routes, providers] = await Promise.all([
+      this.listRoutes(accountId, gatewayId),
+      this.listProviders(accountId)
+    ])
+    const route = routes.find((entry) => entry.name === routeName)
+    const provider = this.findBySlug(providers, providerSlug)
+    const routeEnabled = Boolean(route && route.enabled !== false)
+    return {
+      provisioned: routeEnabled && Boolean(provider),
+      routeEnabled,
+      ...(route?.id ? { routeId: route.id } : {}),
+      ...(provider?.id ? { providerId: provider.id } : {})
     }
   }
 

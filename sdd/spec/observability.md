@@ -108,16 +108,17 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 ### REQ-OBS-009: Hardware and throughput metrics
 
-**Intent:** Error, hardware, and throughput signals must be real measurements: best-effort platform probes and MeshLLM-reported throughput are used when available and stay absent rather than fabricated when not.
+**Intent:** Error, hardware, and throughput signals must be real measurements: MeshLLM-reported values are preferred, a host probe fills GPU gaps, and every signal stays absent rather than fabricated when unavailable.
 
 **Applies To:** Node Agent
 
 **Acceptance Criteria:**
 
 1. Heartbeat metrics include the last runtime error when the runtime manager reports one. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS009ReportsLastRuntimeError) -->
-2. GPU metrics are best-effort from platform tools first and absent rather than fabricated when unavailable. <!-- @impl: packages/node-agent/internal/agent/metrics.go::ParseNvidiaSMI --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS009BestEffortHardwareMetrics) -->
-3. Token-throughput metrics are read from the MeshLLM console status `tok_per_sec` value when the console exposes it. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
-4. Prompt-versus-generation throughput splits are absent rather than fabricated when the MeshLLM status does not expose them. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
+2. GPU memory metrics come from MeshLLM's structured per-GPU rated (total) and used VRAM when the console reports it, never the bogus top-level `my_vram_gb`. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::applyMeshStatusMetrics --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQOBS009MeshStatusGPUMetrics) --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
+3. When the console reports no GPU memory, the agent falls back to the host GPU tool per OS (nvidia-smi on Linux and Windows, system_profiler on macOS) and stays absent when that also fails. <!-- @impl: packages/node-agent/internal/agent/gpu.go::GPUFallbackMetrics --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::execCommandRunner --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS009GPUFallbackPerOSAndMerge) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQOBS009BestEffortHardwareMetrics) -->
+4. Token-throughput metrics are read from the MeshLLM console status `tok_per_sec` value when the console exposes it. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
+5. Prompt-versus-generation throughput splits are absent rather than fabricated when the MeshLLM status does not expose them. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
 
 **Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
@@ -242,7 +243,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 **Acceptance Criteria:**
 
-1. The Overview stats strip reports node counts, active model count, total mesh VRAM, and aggregate generation throughput from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 computes the stats strip aggregates from admin status) -->
+1. The Overview stats strip reports node counts, total mesh VRAM, and aggregate generation throughput from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 computes the stats strip aggregates from admin status) -->
 2. The dashboard refreshes status on an approximately five-second cadence while the page is visible. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_POLLING.intervalMs = 5000 --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 refreshes admin status on the poll interval) -->
 3. Status polling pauses while the page is hidden and resumes when it becomes visible. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 pauses polling while the tab is hidden and resumes with a fresh read) -->
 4. A live indicator reflects whether the latest poll succeeded within the freshness window. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 flips the live badge when a poll fails and recovers on the next success) -->

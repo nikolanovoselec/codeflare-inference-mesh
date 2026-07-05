@@ -368,6 +368,25 @@ func TestREQNODE007HeartbeatMetricsCarryMeshState(t *testing.T) {
 	})
 }
 
+func TestREQOBS009MeshStatusGPUMetrics(t *testing.T) {
+	t.Run("REQ-OBS-009", func(t *testing.T) {
+		profile := agent.ModelProfile{ID: "p", UpstreamModel: "model-x", MeshLLM: agent.MeshLLMSettings{ModelRef: "model-x"}}
+		base := agent.NodeMetrics{RuntimeState: "ready", LoadedModel: "model-x"}
+		status := agent.MeshLLMStatus{NodeID: "node-1", GPUs: []agent.GPUStatus{{Name: "RTX 4090", RatedVRAMGB: 24, UsedVRAMGB: 8}}}
+
+		got := applyMeshStatusMetrics(base, profile, status, true, true, []string{"model-x"})
+		if got.GPUName != "RTX 4090" || got.GPUMemoryTotalMiB != 24*1024 || got.GPUMemoryUsedMiB != 8*1024 {
+			t.Fatalf("gpus[] rated/used VRAM must populate GPU metrics, got %#v", got)
+		}
+
+		// No gpus[] reported -> GPU fields stay zero so the collect() host fallback can fill them.
+		none := applyMeshStatusMetrics(base, profile, agent.MeshLLMStatus{NodeID: "node-1"}, true, true, []string{"model-x"})
+		if none.GPUMemoryTotalMiB != 0 || none.GPUMemoryUsedMiB != 0 || none.GPUName != "" {
+			t.Fatalf("absent gpus[] must leave GPU metrics zero, got %#v", none)
+		}
+	})
+}
+
 // --- heartbeat loop wiring ---------------------------------------------------
 
 func TestREQRUN006HeartbeatLoopSendsMeshIdentityEveryTick(t *testing.T) {

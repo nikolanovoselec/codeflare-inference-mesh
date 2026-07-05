@@ -22,6 +22,17 @@ type MeshLLMStatus struct {
 	ServingModels    []string
 	TokPerSec        float64
 	InflightRequests int
+	GPUs             []GPUStatus
+}
+
+// GPUStatus is the tolerant subset of a MeshLLM `gpus[]` entry the agent reads.
+// Rated VRAM is the card's total; used VRAM is optional. The bogus top-level
+// `my_vram_gb` field is deliberately ignored — only structured per-GPU rated
+// memory is trusted.
+type GPUStatus struct {
+	Name        string
+	RatedVRAMGB float64
+	UsedVRAMGB  float64
 }
 
 // ParseMeshLLMStatus decodes a console status body into the tolerant
@@ -43,6 +54,11 @@ func ParseMeshLLMStatus(body []byte) (MeshLLMStatus, error) {
 		ServingModels    []string          `json:"serving_models"`
 		TokPerSec        float64           `json:"tok_per_sec"`
 		InflightRequests int               `json:"inflight_requests"`
+		GPUs             []struct {
+			Name        string  `json:"name"`
+			RatedVRAMGB float64 `json:"rated_vram_gb"`
+			UsedVRAMGB  float64 `json:"used_vram_gb"`
+		} `json:"gpus"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return MeshLLMStatus{}, fmt.Errorf("parse meshllm status: %w", err)
@@ -58,6 +74,9 @@ func ParseMeshLLMStatus(body []byte) (MeshLLMStatus, error) {
 		ServingModels:    payload.ServingModels,
 		TokPerSec:        payload.TokPerSec,
 		InflightRequests: payload.InflightRequests,
+	}
+	for _, gpu := range payload.GPUs {
+		status.GPUs = append(status.GPUs, GPUStatus{Name: gpu.Name, RatedVRAMGB: gpu.RatedVRAMGB, UsedVRAMGB: gpu.UsedVRAMGB})
 	}
 	if len(payload.Runtime.Stages) > 0 {
 		var stage struct {
