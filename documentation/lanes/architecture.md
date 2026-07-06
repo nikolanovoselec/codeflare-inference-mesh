@@ -30,7 +30,7 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## Data plane lifecycle
 
-1. Client calls AI Gateway using `dynamic/<route-name>`. ([REQ-GWY-003](../../sdd/spec/gateway.md))
+1. Client calls AI Gateway using `dynamic/<route-name>`. The provisioned route retries a failed model call up to 3 times with a 120s timeout each, so a hung upstream can take a few minutes to surface as an error. ([REQ-GWY-003](../../sdd/spec/gateway.md))
 2. AI Gateway forwards to the custom provider URL on the router Worker. ([REQ-GWY-001](../../sdd/spec/gateway.md))
 3. Worker verifies provider credentials and validates the chat body. ([REQ-GWY-002](../../sdd/spec/gateway.md)) ([REQ-RTR-002](../../sdd/spec/router-worker.md))
 4. Worker maps the stable public model id `codeflare-mesh` to the single active model profile via `getProfileByPublicModel`, since every profile carries the same shared alias and the single-active invariant leaves exactly one owner. ([REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model))

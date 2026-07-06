@@ -798,10 +798,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-batch', label: 'Prefill batch', value: meshllm.batch, placeholder: '2048', hint: 'Tokens processed per prefill step. Higher (e.g. 8192) speeds long-prompt ingestion but uses more memory. Blank = default.' }));
     bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-ubatch', label: 'Micro-batch', value: meshllm.ubatch, placeholder: '512', hint: 'Physical sub-batch of the prefill batch. Higher (e.g. 4096) speeds ingestion at higher memory. Blank = default.' }));
     bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-flash', label: 'Flash attention', value: flashValue, options: onOffOptions, hint: 'Memory-efficient attention; also required for quantized KV. Leave On unless the model is incompatible.' }));
-    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-maxout', label: 'Max output tokens', value: meshllm.maxOutputTokens, placeholder: '4096', hint: 'Cap on tokens generated per response. Bounds runaway answers. Blank = default.' }));
+    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-maxout', label: 'Max output tokens', value: meshllm.maxOutputTokens, placeholder: '8192', hint: 'Cap on tokens generated per response, including reasoning tokens. Bounds runaway answers. Keep it above the reasoning budget so the model has room to answer. Blank = default.' }));
     bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'Enables the model thinking phase (reasoning-capable models only).' }));
     bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'Reasoning output format tag. Usually deepseek.' }));
-    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers.' }));
+    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers. Part of the output budget, so keep it below Max output tokens (a 2:1 split, e.g. 8192 / 4096, leaves room to answer).' }));
     const save = document.createElement('button');
     save.type = 'button';
     save.className = 'btn btn-primary';

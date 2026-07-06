@@ -83,7 +83,7 @@
 
 **Symptom:** Every request re-processes the whole prompt (`usage.prompt_tokens_details.cached_tokens` stays `0` and prefill is slow), even for requests that share a large system/context prefix.
 
-**Cause:** The model's parallel lanes resolved to a single lane, so `mesh-llm`'s resident prefix cache (`kv_unified`) never engages. Pinning a small context window is the usual trigger: a small `ctx_size` on a large model, or leaving lanes at `1`, collapses the lane count.
+**Cause:** The model's parallel lanes resolved to a single lane, so `mesh-llm`'s resident prefix cache never engages (it needs a shared multi-lane KV pool). Pinning a small context window is the usual trigger: a small `ctx_size` on a large model, or leaving lanes at `1`, collapses the lane count.
 
 **Fix:** In the model's Manage drawer (Advanced runtime), set **Parallel lanes** to `2` or more, and leave **Context window** on Auto (or pin the model's real limit with **KV cache type** `q4_0`/`q8_0` so the large context still fits GPU memory). See [Model runtime tunables](configuration.md#model-runtime-tunables) for the full table and a proven high-throughput profile. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration))
 

@@ -760,7 +760,12 @@ function resolveMeshllmTunables(existing: ModelProfile['meshllm'], body: Meshllm
     else {
       const reasoning = resolveReasoning(body.reasoning)
       if ('error' in reasoning) return reasoning
-      next.reasoning = reasoning.value
+      // Layer a partial reasoning update onto the existing block, like the scalar
+      // tunables, so a machine-API caller sending only one sub-field (e.g. budget)
+      // does not drop the others; an all-empty result clears it rather than storing {}.
+      const merged = { ...(existing.reasoning ?? {}), ...reasoning.value }
+      if (Object.keys(merged).length === 0) delete next.reasoning
+      else next.reasoning = merged
     }
   }
   return { meshllm: next as ModelProfile['meshllm'] }

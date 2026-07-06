@@ -87,7 +87,10 @@ export const MESHLLM_TUNABLE_DEFAULTS = {
   batch: 2048,
   ubatch: 512,
   flashAttn: true,
-  maxOutputTokens: 4096,
+  // Reasoning tokens count toward the output, so max output must exceed the reasoning
+  // budget or the model can spend its whole allowance thinking with none left to answer.
+  // The 8192 / 4096 (2:1) split matches the proven single-GPU unit.
+  maxOutputTokens: 8192,
   reasoning: { enabled: true, format: 'deepseek', budget: 4096 }
 } as const
 

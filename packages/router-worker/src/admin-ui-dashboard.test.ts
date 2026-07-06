@@ -356,6 +356,8 @@ describe('dashboard overview contracts', () => {
     expect(harness.byId('model-edit-context').value).toBe('')
     expect(harness.byId('model-edit-parallel').value).toBe('4')
     expect(harness.byId('model-edit-cache-k').value).toBe('q8_0')
+    // Each field carries plain-language help; assert the hint affordance renders (structure, not copy).
+    expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).some((node) => node.className === 'drawer-hint')).toBe(true)
     // Editing lanes / KV / max-output and saving posts the tunables to the validated endpoint;
     // a blank context window is sent as 0 (Auto).
     harness.byId('model-edit-parallel').value = '2'
@@ -663,6 +665,19 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(textNodes).toHaveLength(1)
     expect(textNodes[0]).toBe(firstNode)
     expect(outputEl.textContent).toBe('Hello')
+  })
+
+  it('REQ-ADM-016 the status poll preserves the chosen playground model', async () => {
+    const profiles = [
+      { id: 'model-a', displayName: 'Model A', publicAliases: ['codeflare-mesh', 'model-a'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-b', displayName: 'Model B', publicAliases: ['codeflare-mesh', 'model-b'], active: true, rolloutPercent: 100, meshllm: { split: false } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
+    expect(harness.byId(ADMIN_UI_PLAYGROUND.selectId).children.map((option) => option.value)).toEqual(['model-a', 'model-b'])
+    // Operator picks the second model, then a periodic status poll re-renders the select.
+    harness.byId(ADMIN_UI_PLAYGROUND.selectId).value = 'model-b'
+    await harness.clickAction('status-refresh')
+    expect(harness.byId(ADMIN_UI_PLAYGROUND.selectId).value).toBe('model-b')
   })
 
   it('REQ-ADM-016 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint', async () => {

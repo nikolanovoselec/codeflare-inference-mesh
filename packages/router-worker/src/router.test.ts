@@ -2133,6 +2133,11 @@ describe('router worker behavioral contracts', () => {
     expect(m.maxOutputTokens).toBe(8192)
     expect(m.reasoning).toEqual({ enabled: true, format: 'deepseek', budget: 4096 })
 
+    // A partial reasoning update layers onto the existing block instead of replacing it,
+    // so sending only the budget keeps the enabled flag and format.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', reasoning: { budget: 2048 } })).status).toBe(200)
+    expect((await meshllm()).reasoning).toEqual({ enabled: true, format: 'deepseek', budget: 2048 })
+
     // Clearing a field back to Auto removes the key entirely, so JSON.stringify never
     // leaves a stale undefined; untouched fields persist.
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, reasoning: null })).status).toBe(200)
@@ -2775,6 +2780,12 @@ describe('Access-first setup and host gating contracts', () => {
     expect(response.status).toBe(200)
     expect(capture.request!.url).toBe('http://100.64.1.10:8080/v1/chat/completions')
     expect((await capture.request!.json() as { model: string }).model).toBe(SMOKE_UPSTREAM)
+    // Tools and a max-token cap ride the direct path through to the node (max_tokens).
+    const withTools = await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'function', function: { name: 'get_weather' } }], maxTokens: 256 }) }))
+    await withTools.text()
+    const forwarded = await capture.request!.json() as { tools?: unknown; max_tokens?: number }
+    expect(forwarded.tools).toEqual([{ type: 'function', function: { name: 'get_weather' } }])
+    expect(forwarded.max_tokens).toBe(256)
   })
 
   it('REQ-GWY-008 restricts live provision status to admins', async () => {

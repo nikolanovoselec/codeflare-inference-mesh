@@ -91,11 +91,9 @@ Set these in **Settings → Secrets and variables → Actions**. Use scoped API 
 | Token | Minimum scopes |
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN_DEPLOY` | `Workers Scripts: Edit`, `D1: Edit`, `Account Settings: Read` |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | `AI Gateway: Edit`, `Access: Apps and Policies Edit`, `Access: Organizations, Identity Providers, and Groups Edit`, `Account Settings: Read`; add `Workers Routes: Edit` and target-zone DNS permissions for custom-domain provisioning |
+| `CLOUDFLARE_API_TOKEN_RUNTIME` | `AI Gateway: Edit`, `AI Gateway: Run`, `Access: Apps and Policies Edit`, `Access: Organizations, Identity Providers, and Groups Edit`, `Account Settings: Read`; add `Workers Routes: Edit` and target-zone DNS permissions for custom-domain provisioning. `AI Gateway: Run` lets the Worker execute the console playground through the authenticated gateway (it presents this token as `cf-aig-authorization`); `Edit` alone syncs the gateway but cannot run inference through it. |
 
-**Consumer token scope.** Applications that call the mesh through the AI Gateway dynamic route present an AI Gateway token in `cf-aig-authorization`. That token must carry the `AI Gateway: Run` scope. A token that authenticates but lacks `Run` is refused at route execution and surfaces as the generic `Model execution failed` error, even though the console playground (which uses the runtime token) works. See [troubleshooting.md](documentation/lanes/troubleshooting.md).
-
-Do not store the provider, admin, setup, node, or upstream tokens as GitHub secrets. First-run setup mints those, and each surfaces only where it is used.
+Do not store the provider, admin, setup, node, or upstream tokens as GitHub secrets. First-run setup mints those, and each surfaces only where it is used. **Consumer clients** that call the mesh through the dynamic route present their own AI Gateway token carrying the `AI Gateway: Run` scope in `cf-aig-authorization` (a client credential, not a deploy secret); see [security.md](documentation/lanes/security.md) and [troubleshooting.md](documentation/lanes/troubleshooting.md).
 
 Deploy tags: `vX.Y.Z-dev.N` for integration, `vX.Y.Z` for production.
 
