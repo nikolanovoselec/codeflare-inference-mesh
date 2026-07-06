@@ -476,7 +476,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Priority:** P2
 
-**Dependencies:** [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-SCH-002](state-scheduling.md#req-sch-002-node-reservations), [REQ-ADM-017](#req-adm-017-role-based-console-surface)
+**Dependencies:** [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation), [REQ-SCH-002](state-scheduling.md#req-sch-002-stateless-entry-node-forwarding), [REQ-ADM-017](#req-adm-017-role-based-console-surface)
 
 **Verification:** Automated test
 
@@ -765,6 +765,31 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Priority:** P2
 
 **Dependencies:** [REQ-ADM-015](#req-adm-015-mesh-visualization)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-030: Node deactivation and activation
+
+**Intent:** An operator can deactivate a node from the console (and via the admin API) to keep it enrolled and heartbeating while it runs no model and is never selected for inference, then reactivate it. Deactivation is a reversible taint, distinct from the one-way revoke decommission, and a deactivated node reads as tainted (orange) rather than healthy.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. `POST /admin/nodes/{nodeId}/deactivate` and `POST /admin/nodes/{nodeId}/activate` require an admin credential, set and clear the node's `deactivated` flag, and record a `node_deactivated` / `node_activated` audit event. <!-- @impl: packages/router-worker/src/router.ts::setNodeDeactivated --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-030 deactivates and reactivates a node from the admin console with audit) -->
+2. A deactivated node stays enrolled and heartbeating but is excluded from inference selection, and its heartbeat is answered with an empty desired-profile set and the deactivated signal. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/scheduler.test.ts (REQ-ADM-030 isEligible excludes a deactivated node even when it is otherwise ready) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-030 REQ-NODE-011 a deactivated node heartbeat gets no desired profiles and the flag survives) -->
+3. The Nodes table renders a right-aligned Manage button opening a node drawer that offers Revoke plus Deactivate when active or Activate when deactivated; a deactivated node reads with a warn (orange) status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-030 a deactivated node reads as tainted (warn tone) and its drawer offers Activate) -->
+4. The deactivated taint survives heartbeats that do not carry it, and clearing it re-admits the node to selection. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-030 REQ-NODE-011 a deactivated node heartbeat gets no desired profiles and the flag survives) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-SCH-002](state-scheduling.md#req-sch-002-stateless-entry-node-forwarding), [REQ-NODE-011](node-agent.md#req-node-011-deactivated-nodes-run-no-model)
 
 **Verification:** Automated test
 

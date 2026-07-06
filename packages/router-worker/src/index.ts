@@ -1,6 +1,6 @@
 import { RegistryDO } from './durable'
 import { createRouter } from './router'
-import { DurableSchedulerClient } from './scheduler'
+import { StoreScheduler } from './scheduler'
 import { D1Store } from './store'
 import type { RouterEnv } from './types'
 
@@ -10,7 +10,7 @@ export default {
   async fetch(request: Request, env: RouterEnv): Promise<Response> {
     const router = createRouter({
       store: new D1Store(env.DB),
-      scheduler: new DurableSchedulerClient(env.REGISTRY),
+      scheduler: new StoreScheduler(new D1Store(env.DB)),
       mesh: env.MESH,
       env
     })

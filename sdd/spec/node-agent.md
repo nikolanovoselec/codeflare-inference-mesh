@@ -263,6 +263,30 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ---
 
+### REQ-NODE-011: Deactivated nodes run no model
+
+**Intent:** An operator can deactivate a node to keep it enrolled in the fleet without running a model on it. A deactivated node keeps heartbeating and self-updating but never initializes mesh-llm, so it holds its place in the mesh while consuming no GPU; re-activation resumes normal launch.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. When the router's heartbeat response marks the node deactivated, the agent tears down a running mesh-llm runtime and does not relaunch it while the taint holds. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE011DeactivatedNodeStopsRuntimeAndReactivationRelaunches) -->
+2. A deactivated node keeps heartbeating and applying router-driven self-updates; only mesh-llm launch is suppressed. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE011DeactivatedNodeStopsRuntimeAndReactivationRelaunches) -->
+3. Clearing the taint relaunches the selected profile even when the desired profile set is unchanged. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE011DeactivatedNodeStopsRuntimeAndReactivationRelaunches) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat), [REQ-ADM-030](setup-admin.md#req-adm-030-node-deactivation-and-activation)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)

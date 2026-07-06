@@ -13,14 +13,15 @@
 
 ## Overview
 
-Codeflare Inference Mesh exposes private local inference nodes through one Cloudflare AI Gateway custom provider. The public Worker validates Gateway traffic, consults durable state and a Durable Object scheduler, forwards requests through Workers VPC to a Mesh IP, and streams the local runtime response back. ([REQ-GWY-001](../../sdd/spec/gateway.md)) ([REQ-RTR-002](../../sdd/spec/router-worker.md))
+Codeflare Inference Mesh exposes private local inference nodes through one Cloudflare AI Gateway custom provider. The public Worker validates Gateway traffic, selects an eligible node from durable state, forwards the request through Workers VPC to its Mesh IP, and streams the local runtime response back; `mesh-llm` owns concurrency and KV-aware routing across the mesh, so the router holds no per-request reservation state. ([REQ-GWY-001](../../sdd/spec/gateway.md)) ([REQ-RTR-002](../../sdd/spec/router-worker.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
 
 ## Component map
 
 | Component | Responsibility | Source | Implements |
 | --- | --- | --- | --- |
 | Router Worker | HTTP entry point, auth gates, setup/admin UI, Gateway provider endpoints. | `packages/router-worker/src/` | [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-RTR-002](../../sdd/spec/router-worker.md) |
-| RegistryDO | Durable Object entry point for reservation, release, and mesh seed election requests; scheduler logic handles leases, scoring, and session affinity. | `packages/router-worker/src/durable.ts`, `packages/router-worker/src/scheduler.ts` | [REQ-SCH-002](../../sdd/spec/state-scheduling.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md) |
+| RegistryDO | Durable Object entry point for mesh seed election only; the inference request path is stateless. | `packages/router-worker/src/durable.ts` | [REQ-RUN-008](../../sdd/spec/runtime-profiles.md) |
+| Entry-node selection | Stateless per-request selection of an eligible node from D1; applies no reservation or capacity gate. | `packages/router-worker/src/scheduler.ts` | [REQ-SCH-002](../../sdd/spec/state-scheduling.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | D1 migrations | Durable schema for config, nodes, sessions, profiles, and audit. | `packages/router-worker/migrations/` | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
 | Mesh state | Router-owned mesh membership: seed election, encrypted invite-token set, rotation counter, mesh health. | `packages/router-worker/src/mesh-state.ts`, `packages/router-worker/src/mesh-crypto.ts` | [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md) |
 | Agent versions | GitHub release-tag cache and fleet-wide desired agent version distribution. | `packages/router-worker/src/agent-versions.ts` | [REQ-ADM-008](../../sdd/spec/setup-admin.md) |
@@ -33,9 +34,9 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 2. AI Gateway forwards to the custom provider URL on the router Worker. ([REQ-GWY-001](../../sdd/spec/gateway.md))
 3. Worker verifies provider credentials and validates the chat body. ([REQ-GWY-002](../../sdd/spec/gateway.md)) ([REQ-RTR-002](../../sdd/spec/router-worker.md))
 4. Worker maps the stable public model id `codeflare-mesh` to the single active model profile via `getProfileByPublicModel`, since every profile carries the same shared alias and the single-active invariant leaves exactly one owner. ([REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model))
-5. Worker asks the Durable Object scheduler for a reservation. ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
-6. Worker forwards through the `env.MESH.fetch` Workers VPC binding to the validated node Mesh IP and port on the WARP CGNAT range (`100.96.0.0/12`). ([REQ-RTR-004](../../sdd/spec/router-worker.md))
-7. Node agent validates upstream token and proxies to the local `mesh-llm` OpenAI API (default `127.0.0.1:9337`); `mesh-llm` routes internally across the mesh when another member serves the model. ([REQ-NODE-003](../../sdd/spec/node-agent.md))
+5. Worker selects an eligible node directly from durable state (least-loaded ready node; no reservation, lease, or capacity gate) and rewrites the body to the profile's upstream model. ([REQ-SCH-002](../../sdd/spec/state-scheduling.md)) ([REQ-SCH-003](../../sdd/spec/state-scheduling.md))
+6. Worker forwards through the `env.MESH.fetch` Workers VPC binding to the validated node Mesh IP and port on the WARP CGNAT range (`100.96.0.0/12`); an unreachable node surfaces as `502 node_unreachable`. ([REQ-RTR-004](../../sdd/spec/router-worker.md))
+7. Node agent validates upstream token and proxies to the local `mesh-llm` OpenAI API (default `127.0.0.1:9337`); `mesh-llm` owns concurrency and KV-aware routing, dispatching internally across the mesh when another member is cache-warm for the request. ([REQ-NODE-003](../../sdd/spec/node-agent.md))
 8. Runtime response streams back through node, Worker, Gateway, and client. ([REQ-RTR-003](../../sdd/spec/router-worker.md))
 
 ## Control plane lifecycle
@@ -56,14 +57,14 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## State flow
 
-D1 is durable truth for records that must survive restarts. RegistryDO is hot state for serialized reservations, leases, and session affinity. The scheduler rebuilds from D1 after isolate restart and writes durable changes back when state must survive. Per-profile mesh state — rotation counter, seed, mesh id, and the invite-token set — is AES-GCM-encrypted under the `MESH_STATE_KEY` Worker secret before it is written to `router_config`, and seed election is serialized through RegistryDO so only one node is ever told to create a mesh. ([REQ-SCH-001](../../sdd/spec/state-scheduling.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-008](../../sdd/spec/runtime-profiles.md)) ([REQ-SEC-006](../../sdd/spec/security.md))
+D1 is durable truth for records that must survive restarts. The inference request path holds no hot state: it reads eligible nodes directly from D1 and forwards, so an isolate restart loses nothing to rebuild. RegistryDO serializes only mesh seed election, so exactly one node is ever told to create a mesh. Per-profile mesh state — rotation counter, seed, mesh id, and the invite-token set — is AES-GCM-encrypted under the `MESH_STATE_KEY` Worker secret before it is written to `router_config`. ([REQ-SCH-001](../../sdd/spec/state-scheduling.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-008](../../sdd/spec/runtime-profiles.md)) ([REQ-SEC-006](../../sdd/spec/security.md))
 
 ## Runtime flow
 
 The claimed node stores desired profiles, resolves the active profile, and supervises the MeshLLM runtime:
 
 - It installs the pinned `mesh-llm` binary when it is missing (SHA-256-verified download; install failure reports `dependency-missing`). ([REQ-NODE-006](../../sdd/spec/node-agent.md))
-- It runs exactly one `mesh-llm serve` process rendered from the profile (`--mesh-name`, `--bind-ip`, `--bind-port`, headless, mdns discovery, `--split` for layer packages, one `--join <token>` per invite token). ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md))
+- It runs exactly one `mesh-llm serve` process rendered from the profile (`--mesh-name`, `--bind-ip`, `--bind-port`, headless, `--mesh-discovery-mode nostr` with `--disable-iroh-relays` so encrypted data stays on the WARP overlay, `--split` for layer packages, one `--join <token>` per invite token). A node an operator has deactivated keeps heartbeating but never launches this process. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-011](../../sdd/spec/node-agent.md))
 - Readiness combines the `mesh-llm` console `GET /api/status` with a parse of the node's own OpenAI `GET /v1/models`; while the console reports `loading`, the readiness deadline extends instead of failing the runtime. ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-OBS-008](../../sdd/spec/observability.md))
 - The console API (default `127.0.0.1:3131`) is localhost-only on the node and is never exposed through the router or the mesh; the agent proxies Worker traffic only to the OpenAI API (default `127.0.0.1:9337`). ([REQ-RUN-010](../../sdd/spec/runtime-profiles.md))
 - Heartbeat `meshBootstrap` responses drive drain-then-restart triggers: rotation bump, foreign mesh id with join tokens present, or `create` while a mesh is running. ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md))

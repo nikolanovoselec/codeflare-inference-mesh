@@ -28,6 +28,7 @@ type Config struct {
 	MeshLLMConsolePort   int            `json:"meshllmConsolePort"`
 	MeshLLMFlavor        string         `json:"meshllmFlavor,omitempty"`
 	MeshLLMAllowUnpinned bool           `json:"meshllmAllowUnpinned,omitempty"`
+	NostrRelays          []string       `json:"nostrRelays,omitempty"`
 	RuntimeModel         string         `json:"runtimeModel"`
 	PublicModels         []string       `json:"publicModels"`
 	ActiveProfileIDs     []string       `json:"activeProfileIds"`

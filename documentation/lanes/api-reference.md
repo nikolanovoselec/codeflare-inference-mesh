@@ -10,7 +10,7 @@
 
 All API responses that represent errors use an OpenAI-style `error` object when they are visible to AI Gateway or OpenAI-compatible clients. Provider routes require the provider token; node routes require setup or node credentials; installer routes contain no permanent secrets. ([REQ-RTR-001](../../sdd/spec/router-worker.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
-Public endpoints are rate-limited per route class. A request over its bucket's limit receives `429` with body `{ "error": "rate_limited", "requestId": string }` and a `Retry-After` header, returned before the route handler runs; the per-route Response tables below omit this shared rate-limit `429`. This is distinct from the `429` `no-node` response on `POST /v1/chat/completions`, which means no node is available rather than a rate limit. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
+Public endpoints are rate-limited per route class. A request over its bucket's limit receives `429` with body `{ "error": "rate_limited", "requestId": string }` and a `Retry-After` header, returned before the route handler runs; the per-route Response tables below omit this shared rate-limit `429`. A scheduler miss on `POST /v1/chat/completions` is never a `429`; no eligible node returns `503 no_healthy_node`. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
 An endpoint that reads a JSON request body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. This covers the `/node` and `/api/v1` routes documented here; `POST /v1/chat/completions` performs the same rejection through its own validation (see its Response table). ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
 
@@ -84,9 +84,8 @@ POST /v1/chat/completions
 | `401` | Provider token is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | Public model alias has no configured profile. | `{ "error": "no-profile", "requestId": string }` |
 | `413` | Request body exceeds `MAX_REQUEST_BYTES`. | `{ "error": "request_too_large", "requestId": string }` |
-| `429` | No eligible node is available; current handler does not emit `Retry-After`. | `{ "error": "no-node", "requestId": string }` |
-| `503` | No upstream token is available after reservation. | `{ "error": "upstream_token_missing", "requestId": string }` |
-| `5xx` | Upstream forwarding failed after releasing any reservation and recording a node failure signal. | Gateway-style error. |
+| `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
+| `503` | No eligible node is ready to serve, or no upstream token is available. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
 
 **Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-005](../../sdd/spec/state-scheduling.md)
 
@@ -600,6 +599,50 @@ POST /api/v1/nodes/{id}/reconfigure
 | `404` | No node with that id exists, or the node is revoked (a revoked tombstone is treated as gone). | `unknown_node` error body. |
 
 **Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-vram-override)
+
+### POST /api/v1/nodes/{id}/deactivate
+
+Deactivates a node: it stays a mesh participant and keeps heartbeating, but is told to run no model and is excluded from inference selection. Reversible with `activate`. Requires an automation key.
+
+```http
+POST /api/v1/nodes/{id}/deactivate
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The node is marked `deactivated`; its next heartbeat receives an empty desired-profile set and the `deactivated` signal, so the agent stops (and never relaunches) `mesh-llm`. | `{ "ok": true, "node": NodeProjection }` (the projection includes `deactivated: true`). |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No node with that id exists, or the node is revoked. | `unknown_node` error body. |
+
+**Implements:** [REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation), [REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model)
+
+### POST /api/v1/nodes/{id}/activate
+
+Clears a node's deactivation so it resumes serving: its next heartbeat carries the active desired profiles again and the agent relaunches `mesh-llm`. Requires an automation key.
+
+```http
+POST /api/v1/nodes/{id}/activate
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The `deactivated` flag is cleared and the node becomes eligible again. | `{ "ok": true, "node": NodeProjection }` (the projection includes `deactivated: false`). |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No node with that id exists, or the node is revoked. | `unknown_node` error body. |
+
+**Implements:** [REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation), [REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model)
 
 ### GET /api/v1/models
 

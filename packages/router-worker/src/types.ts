@@ -78,26 +78,8 @@ export interface NodeRecord {
   readonly metrics?: NodeMetrics
   /** Per-node VRAM budget in GB that overrides the model's global maxVramGb for this node (0 = uncapped on this node). */
   readonly maxVramGbOverride?: number
-}
-
-export interface SessionRecord {
-  readonly sessionId: string
-  readonly nodeId: string
-  readonly publicModel: string
-  readonly profileId: string
-  readonly upstreamModel: string
-  readonly expiresAt: number
-}
-
-export interface ReservationRecord {
-  readonly reservationId: string
-  readonly nodeId: string
-  readonly sessionId: string
-  readonly publicModel: string
-  readonly profileId: string
-  readonly upstreamModel: string
-  readonly expiresAt: number
-  readonly releasedAt?: number
+  /** Operator taint (REQ-ADM-030): a deactivated node stays enrolled and heartbeating but runs no model and is never selected for inference. */
+  readonly deactivated?: boolean
 }
 
 export interface AuditEvent {
@@ -158,16 +140,16 @@ export interface HeartbeatResponse {
   readonly desiredProfiles: readonly ModelProfile[]
   readonly meshBootstrap?: MeshBootstrap
   readonly desiredAgentVersion?: string
+  /** When true the node is deactivated: it must tear down / not launch mesh-llm. REQ-ADM-030. */
+  readonly deactivated?: boolean
 }
 
-export interface ReservationRequest {
+export interface EntrySelectionRequest {
   readonly publicModel: string
-  readonly sessionId: string
   readonly now: number
 }
 
-export interface ReservationResult {
-  readonly reservation?: ReservationRecord
+export interface EntrySelection {
   readonly node?: NodeRecord
   readonly profile?: ModelProfile
   readonly reason?: 'no-profile' | 'no-node'
@@ -186,12 +168,6 @@ export interface Store {
   updateNodeHeartbeat(node: NodeRecord): Promise<void>
   revokeNode(nodeId: string, now: number): Promise<void>
   deleteNode(nodeId: string): Promise<void>
-  getSession(sessionId: string): Promise<SessionRecord | undefined>
-  putSession(session: SessionRecord): Promise<void>
-  putReservation(reservation: ReservationRecord): Promise<void>
-  getReservation(reservationId: string): Promise<ReservationRecord | undefined>
-  releaseReservation(reservationId: string, now: number): Promise<void>
-  listOpenExpiredReservations(now: number): Promise<readonly ReservationRecord[]>
   getToken(kind: CredentialKind, id: string): Promise<TokenRecord | undefined>
   putToken(token: TokenRecord): Promise<void>
   revokeToken(kind: CredentialKind, id: string, now: number): Promise<void>
@@ -204,9 +180,7 @@ export interface Store {
 }
 
 export interface Scheduler {
-  reserve(request: ReservationRequest): Promise<ReservationResult>
-  release(reservationId: string, now: number): Promise<void>
-  recordFailure(reservationId: string, now: number): Promise<void>
+  selectEntryNode(request: EntrySelectionRequest): Promise<EntrySelection>
 }
 
 /**

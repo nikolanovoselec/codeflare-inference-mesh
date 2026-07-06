@@ -29,6 +29,8 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'gateway-sync', method: 'POST', path: '/admin/cloudflare/gateway/sync', auth: 'admin' },
   { id: 'custom-domain-validate', method: 'POST', path: '/admin/custom-domain/validate', auth: 'admin' },
   { id: 'node-revoke', method: 'POST', path: '/admin/nodes/{nodeId}/revoke', auth: 'admin' },
+  { id: 'node-deactivate', method: 'POST', path: '/admin/nodes/{nodeId}/deactivate', auth: 'admin' },
+  { id: 'node-activate', method: 'POST', path: '/admin/nodes/{nodeId}/activate', auth: 'admin' },
   { id: 'profile-rollout', method: 'POST', path: '/admin/profiles/rollout', auth: 'admin' },
   { id: 'profile-activate', method: 'POST', path: '/admin/profiles/activate', auth: 'admin' },
   { id: 'profile-config', method: 'POST', path: '/admin/profiles/config', auth: 'admin' },

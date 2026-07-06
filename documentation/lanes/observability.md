@@ -12,7 +12,7 @@
 
 ## Response metadata
 
-Provider responses include request ID, session ID when present, and selected node identity when policy permits. Error responses include request ID so operators can correlate failures with audit and node logs. ([REQ-OBS-001](../../sdd/spec/observability.md))
+Provider responses include request ID and selected node identity when policy permits. Error responses include request ID so operators can correlate failures with audit and node logs. ([REQ-OBS-001](../../sdd/spec/observability.md))
 
 ## Admin status
 
@@ -75,8 +75,8 @@ Audit history records setup completion, provider route provisioning, setup-token
 | --- | --- | --- |
 | Missed heartbeat | Lease expires and node becomes ineligible. | [REQ-OBS-004](../../sdd/spec/observability.md) |
 | Unsafe Mesh target | Node is ineligible for scheduler selection. | [REQ-OBS-004](../../sdd/spec/observability.md) |
-| Scheduler miss | Router returns `429` for `no-node` scheduler misses and `404` for `no-profile`; nodes with non-ready runtimes or stale loaded models are treated as ineligible. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-005](../../sdd/spec/state-scheduling.md) |
-| Mid-stream crash | Reservation releases and failure score increases. | [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-OBS-004](../../sdd/spec/observability.md) |
+| Scheduler miss | Router returns `503 no_healthy_node` when no eligible node is ready, `404 no-profile` when the model has no profile, and `502 node_unreachable` when the node transport fails; nodes with non-ready runtimes, stale loaded models, or an operator deactivation are ineligible. | [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-005](../../sdd/spec/state-scheduling.md) |
+| Mid-stream crash | The streamed response ends; the router holds no reservation state to release, and mesh-llm owns failure back-off across the mesh. | [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-OBS-004](../../sdd/spec/observability.md) |
 | Invalid Mesh data | Node record is rejected or ineligible. | [REQ-RTR-004](../../sdd/spec/router-worker.md) |
 
 ## Source anchors and specification backlinks

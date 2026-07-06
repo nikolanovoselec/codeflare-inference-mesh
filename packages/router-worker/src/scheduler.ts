@@ -1,104 +1,20 @@
-import type { ModelProfile, NodeRecord, ReservationRecord, ReservationRequest, ReservationResult, Scheduler, Store } from './types'
+import type { EntrySelection, EntrySelectionRequest, ModelProfile, NodeRecord, Scheduler, Store } from './types'
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000
-const RESERVATION_TTL_MS = 30 * 60 * 1000
 const HEARTBEAT_TTL_MS = 45_000
-const FAILURE_PENALTY_MS = 30_000
 
 export class StoreScheduler implements Scheduler {
-  constructor(private readonly store: Store, private readonly requestId: () => string = randomId) {}
+  constructor(private readonly store: Store) {}
 
-  async reserve(request: ReservationRequest): Promise<ReservationResult> {
+  // The router holds no live reservation state. It selects an eligible node and
+  // forwards; mesh-llm owns dispatch, per-node concurrency, and KV-aware routing
+  // across the peered mesh. REQ-SCH-002.
+  async selectEntryNode(request: EntrySelectionRequest): Promise<EntrySelection> {
     const profile = await this.store.getProfileByPublicModel(request.publicModel)
     if (!profile) return { reason: 'no-profile' }
-
-    // Reclaim in-flight from reservations whose TTL lapsed without an explicit
-    // release (e.g. a client that abandoned the response stream) before making a
-    // scheduling decision, so a leaked reservation can never wedge a node at
-    // capacity. REQ-SCH-002 AC5.
-    for (const expired of await this.store.listOpenExpiredReservations(request.now)) {
-      await this.finishReservation(expired.reservationId, request.now)
-    }
-
-    const sticky = await this.store.getSession(request.sessionId)
-    const stickyNode = sticky && sticky.expiresAt > request.now ? await this.store.getNode(sticky.nodeId) : undefined
     const nodes = await this.store.listNodes(request.now)
-    const eligible = eligibleNodes(nodes, profile, request.now)
-    const selected = stickyNode && isEligible(stickyNode, profile, request.now) ? stickyNode : selectNode(eligible)
+    const selected = selectNode(eligibleNodes(nodes, profile, request.now))
     if (!selected) return { reason: 'no-node' }
-
-    const reservation: ReservationRecord = {
-      reservationId: this.requestId(),
-      nodeId: selected.id,
-      sessionId: request.sessionId,
-      publicModel: request.publicModel,
-      profileId: profile.id,
-      upstreamModel: profile.upstreamModel,
-      expiresAt: request.now + RESERVATION_TTL_MS
-    }
-    await this.store.putReservation(reservation)
-    await this.store.putSession({
-      sessionId: request.sessionId,
-      nodeId: selected.id,
-      publicModel: request.publicModel,
-      profileId: profile.id,
-      upstreamModel: profile.upstreamModel,
-      expiresAt: request.now + SESSION_TTL_MS
-    })
-    await this.store.upsertNode({ ...selected, inFlight: selected.inFlight + 1 })
-    return { reservation, node: selected, profile }
-  }
-
-  async release(reservationId: string, now: number): Promise<void> {
-    await this.finishReservation(reservationId, now)
-  }
-
-  async recordFailure(reservationId: string, now: number): Promise<void> {
-    await this.finishReservation(reservationId, now, FAILURE_PENALTY_MS)
-  }
-
-  private async finishReservation(reservationId: string, now: number, failurePenaltyMs = 0): Promise<void> {
-    const reservation = await this.store.getReservation(reservationId)
-    await this.store.releaseReservation(reservationId, now)
-    if (!reservation || reservation.releasedAt !== undefined) return
-    const node = await this.store.getNode(reservation.nodeId)
-    if (!node) return
-    await this.store.upsertNode({
-      ...node,
-      inFlight: Math.max(0, node.inFlight - 1),
-      ...(failurePenaltyMs > 0 ? { failurePenaltyUntil: now + failurePenaltyMs } : {})
-    })
-  }
-}
-
-export class DurableSchedulerClient implements Scheduler {
-  constructor(private readonly namespace: DurableObjectNamespace) {}
-
-  async reserve(request: ReservationRequest): Promise<ReservationResult> {
-    const stub = this.namespace.get(this.namespace.idFromName('global'))
-    const response = await stub.fetch('https://registry/reserve', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(request)
-    })
-    return await response.json() as ReservationResult
-  }
-
-  async release(reservationId: string, now: number): Promise<void> {
-    await this.postReservationUpdate('/release', reservationId, now)
-  }
-
-  async recordFailure(reservationId: string, now: number): Promise<void> {
-    await this.postReservationUpdate('/failure', reservationId, now)
-  }
-
-  private async postReservationUpdate(path: string, reservationId: string, now: number): Promise<void> {
-    const stub = this.namespace.get(this.namespace.idFromName('global'))
-    await stub.fetch(`https://registry${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ reservationId, now })
-    })
+    return { node: selected, profile }
   }
 }
 
@@ -108,8 +24,8 @@ export function eligibleNodes(nodes: readonly NodeRecord[], profile: ModelProfil
 
 export function isEligible(node: NodeRecord, profile: ModelProfile, now: number): boolean {
   if (node.status !== 'online') return false
+  if (node.deactivated === true) return false
   if (now - node.lastSeenAt > HEARTBEAT_TTL_MS) return false
-  if (node.failurePenaltyUntil !== undefined && node.failurePenaltyUntil > now) return false
   if ((node.runtime as string) !== 'meshllm') return false
   if (!node.publicModels.some((model) => profile.publicAliases.includes(model))) return false
   if (!node.activeProfileIds.includes(profile.id)) return false
@@ -117,16 +33,17 @@ export function isEligible(node: NodeRecord, profile: ModelProfile, now: number)
   if (runtimeState !== 'ready' && runtimeState !== 'running') return false
   if (node.metrics?.apiReady !== true) return false
   if (node.metrics?.readyModels?.includes(profile.upstreamModel) !== true) return false
-  if (node.inFlight >= node.capacity) return false
   if (!isSafeMeshTarget(node.meshIp, node.inferencePort)) return false
   return true
 }
 
 export function selectNode(nodes: readonly NodeRecord[]): NodeRecord | undefined {
+  // Spread the entry pick toward the least busy ready node using the node-reported
+  // active-request count; mesh-llm still owns cross-node dispatch once forwarded. REQ-SCH-002.
   return [...nodes].sort((left, right) => {
-    const leftScore = left.inFlight / Math.max(left.capacity, 1)
-    const rightScore = right.inFlight / Math.max(right.capacity, 1)
-    if (leftScore !== rightScore) return leftScore - rightScore
+    const leftActive = left.metrics?.activeRequests ?? 0
+    const rightActive = right.metrics?.activeRequests ?? 0
+    if (leftActive !== rightActive) return leftActive - rightActive
     return right.lastSeenAt - left.lastSeenAt
   })[0]
 }
@@ -146,15 +63,8 @@ export function meshUrl(node: NodeRecord, path: string): string {
   return `http://${node.meshIp}:${node.inferencePort}${path}`
 }
 
-function randomId(): string {
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
 export const SCHEDULER_ANCHORS = {
   REQ_SCH_002: 'REQ-SCH-002',
   REQ_SCH_003: 'REQ-SCH-003',
-  REQ_SCH_004: 'REQ-SCH-004',
   REQ_RTR_004: 'REQ-RTR-004'
 } as const

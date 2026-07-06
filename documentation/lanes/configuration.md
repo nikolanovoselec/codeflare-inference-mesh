@@ -49,7 +49,7 @@
 | Binding | Purpose | REQs |
 | --- | --- | --- |
 | `DB` | D1 database for durable router state. | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
-| `REGISTRY` | Durable Object namespace for scheduling and reservations. | [REQ-SCH-002](../../sdd/spec/state-scheduling.md) |
+| `REGISTRY` | Durable Object namespace for mesh seed election; the inference request path is stateless and does not use it. | [REQ-RUN-008](../../sdd/spec/runtime-profiles.md) |
 | `MESH` | Workers VPC Network binding using `network_id = "cf1:network"` and `remote = true` for the Worker-to-private-node `fetch()` path. | [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-004](../../sdd/spec/router-worker.md) |
 | `RL_INFERENCE` | Rate limit for credentialed `/v1` inference (the AI Gateway path), keyed by a hash of the provider token; 100000 per location per 60s. | [REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting) |
 | `RL_HEARTBEAT` | Rate limit for `/node/heartbeat`, keyed by a hash of the node token; 120 per location per 60s. | [REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting) |
@@ -95,6 +95,7 @@ Two Zero Trust settings are also mandatory for mesh reachability: the network po
 | `meshllmConsolePort` | `3131` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs`, `packages/node-agent/internal/agent/meshllm_manager.go::PollStatus` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md), [REQ-RUN-005](../../sdd/spec/runtime-profiles.md) |
 | `meshllmFlavor` | auto-detected on `nvidia-smi` hosts by CUDA runtime major (`cuda-13` on Linux with CUDA 13 libraries, else `cuda-12`), `metal` on darwin/arm64, else `cpu`; override with any of `cpu`, `cuda-12`, `cuda-13`, `metal` | no | `packages/node-agent/internal/agent/meshllm_install.go::DetectMeshLLMFlavor`, `packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM` | [REQ-NODE-006](../../sdd/spec/node-agent.md) |
 | `meshllmAllowUnpinned` | `false` | no | `packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM` | [REQ-NODE-006](../../sdd/spec/node-agent.md) |
+| `nostrRelays` | empty (mesh-llm's built-in public relay defaults) | no | `packages/node-agent/internal/agent/config.go::Config`, `packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs` | [REQ-SEC-004](../../sdd/spec/security.md) |
 | `runtimeModel` | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetrics` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `publicModels` | `["codeflare-mesh"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
 | `activeProfileIds` | `["mesh-default-qwen36-35b"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
@@ -103,6 +104,8 @@ Two Zero Trust settings are also mandatory for mesh reachability: the network po
 | `capacity` | `1` | no | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `dataDir` | `.inference-mesh` (installers set a system dir: Linux `/var/lib/inference-mesh`, macOS `/usr/local/var/inference-mesh`, Windows `%ProgramData%\InferenceMesh`) | no | `packages/node-agent/cmd/inference-mesh-agent/main.go::defaultDataDir` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `allowAllInterfaces` | `false` | no | `packages/node-agent/internal/agent/config.go::ListenerAddress` | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-SEC-004](../../sdd/spec/security.md) |
+
+`nostrRelays` sets the Nostr rendezvous relays `mesh-llm` uses to discover peers over the WARP overlay; leaving it empty uses `mesh-llm`'s built-in public relay defaults, and it is the hook for pointing the fleet at a private relay. Relays exchange peer identity and WARP Mesh IP only, never inference; the encrypted iroh data transport stays pinned to the WARP overlay ([security.md](security.md)). `capacity` is reported on every heartbeat but is advisory only: entry-node selection applies no capacity gate, since `mesh-llm` owns concurrency across the mesh. ([REQ-SEC-004](../../sdd/spec/security.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
 
 Legacy config loads persist a generated `dashboardToken` before dashboard controls are served. ([REQ-SEC-005](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
 

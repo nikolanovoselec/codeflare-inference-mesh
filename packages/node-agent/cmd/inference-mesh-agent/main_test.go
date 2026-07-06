@@ -526,6 +526,82 @@ func TestREQRUN007VersionBumpRestartsEverySplitServingNode(t *testing.T) {
 	})
 }
 
+func TestREQNODE011DeactivatedNodeStopsRuntimeAndReactivationRelaunches(t *testing.T) {
+	has := func(events []string, target string) bool {
+		for _, event := range events {
+			if event == target {
+				return true
+			}
+		}
+		return false
+	}
+	count := func(events []string, target string) int {
+		n := 0
+		for _, event := range events {
+			if event == target {
+				n++
+			}
+		}
+		return n
+	}
+	counter := &agent.ActiveCounter{}
+	fake := newFakeMeshRuntime(counter)
+	profile := agent.ModelProfile{
+		ID:             "smoke-prof",
+		PublicAliases:  []string{"codeflare-mesh"},
+		UpstreamModel:  "unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M",
+		SourceMode:     "meshllm-ref",
+		Runtime:        "meshllm",
+		MeshLLM:        agent.MeshLLMSettings{ModelRef: "unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M", BindPort: 4300},
+		Version:        1,
+		RolloutPercent: 100,
+		Active:         true,
+	}
+	cfg := agent.Config{
+		NodeToken:          "node-token",
+		MeshIP:             "100.64.1.10",
+		MeshLLMAPIPort:     9337,
+		MeshLLMConsolePort: 3131,
+		Profiles:           []agent.ModelProfile{profile},
+		ActiveProfileIDs:   []string{"smoke-prof"},
+		PublicModels:       []string{"codeflare-mesh"},
+		RuntimeModel:       profile.UpstreamModel,
+		Capacity:           1,
+	}
+	loop := newLoopForTest(t, cfg, counter, fake, nil, nil)
+	loop.loadState.Set(profile)
+
+	// A deactivated heartbeat tears the running runtime down and holds it down (no relaunch).
+	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, Deactivated: true})
+	if !loop.deactivated {
+		t.Fatal("a deactivated heartbeat must mark the loop deactivated")
+	}
+	events := fake.eventLog()
+	if !has(events, "stop") || !has(events, "state:deactivated") {
+		t.Fatalf("deactivation must stop the runtime and mark it deactivated, events=%v", events)
+	}
+	if fake.restartCount() != 0 {
+		t.Fatalf("a deactivated node must never relaunch mesh-llm, restarts=%d", fake.restartCount())
+	}
+
+	// Repeat deactivated heartbeats are idempotent: the runtime is not stopped again.
+	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, Deactivated: true})
+	if stops := count(fake.eventLog(), "stop"); stops != 1 {
+		t.Fatalf("a repeat deactivated heartbeat must not stop again, stops=%d", stops)
+	}
+
+	// Clearing the taint relaunches the selected profile even though the desired set is unchanged.
+	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, DesiredProfiles: []agent.ModelProfile{profile}})
+	if loop.deactivated {
+		t.Fatal("clearing the taint must mark the loop active again")
+	}
+	select {
+	case <-fake.restarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reactivation never relaunched the runtime")
+	}
+}
+
 func TestREQNODE005HeartbeatDesiredVersionDrivesSelfUpdate(t *testing.T) {
 	t.Run("REQ-NODE-005", func(t *testing.T) {
 		t.Run("applied update stops the runtime and exits for service restart", func(t *testing.T) {

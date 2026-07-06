@@ -3,7 +3,7 @@ import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { StoreScheduler } from './scheduler'
 import { D1Store } from './store'
 import { nodeFixture } from './test-helpers'
-import type { AuditEvent, ReservationRecord, SessionRecord, TokenRecord } from './types'
+import type { AuditEvent, TokenRecord } from './types'
 
 type Row = Record<string, unknown>
 
@@ -13,8 +13,6 @@ class FakeD1Database {
   readonly tokens = new Map<string, Row>()
   readonly profiles = new Map<string, Row>()
   readonly nodes = new Map<string, Row>()
-  readonly sessions = new Map<string, Row>()
-  readonly reservations = new Map<string, Row>()
   audit: readonly Row[] = []
 
   prepare(query: string): FakeD1Statement {
@@ -75,20 +73,6 @@ class FakeD1Statement {
       this.db.nodes.set(id, { node_json: text(values[0]), status: text(values[1]), mesh_ip: text(values[2]), inference_port: number(values[3]), capacity: number(values[4]), last_seen_at: number(values[5]), updated_at: number(values[6]), in_flight: inFlight })
       return ok()
     }
-    if (q.startsWith('INSERT OR REPLACE INTO sessions')) {
-      this.db.sessions.set(text(values[0]), { node_id: text(values[1]), public_model: text(values[2]), profile_id: text(values[3]), upstream_model: text(values[4]), expires_at: number(values[5]) })
-      return ok()
-    }
-    if (q.startsWith('INSERT OR REPLACE INTO reservations')) {
-      this.db.reservations.set(text(values[0]), { reservation_id: text(values[0]), node_id: text(values[1]), session_id: text(values[2]), public_model: text(values[3]), profile_id: text(values[4]), upstream_model: text(values[5]), expires_at: number(values[6]), released_at: nullableNumber(values[7]) })
-      return ok()
-    }
-    if (q.startsWith('UPDATE reservations SET released_at')) {
-      const key = text(values[1])
-      const row = this.db.reservations.get(key)
-      if (row) this.db.reservations.set(key, { ...row, released_at: row.released_at ?? number(values[0]) })
-      return ok()
-    }
     if (q.startsWith('INSERT INTO audit_events')) {
       this.db.audit = [...this.db.audit, { id: text(values[0]), event_json: text(values[1]), type: text(values[2]), at: number(values[3]), actor: text(values[4]), target: nullableText(values[5]) }]
       return ok()
@@ -138,15 +122,6 @@ class FakeD1Statement {
     if (q === 'SELECT node_json, in_flight FROM nodes WHERE id = ?') {
       return maybe(this.db.nodes.get(text(values[0])), ['node_json', 'in_flight'])
     }
-    if (q === 'SELECT node_id, public_model, profile_id, upstream_model, expires_at FROM sessions WHERE session_id = ?') {
-      return maybe(this.db.sessions.get(text(values[0])))
-    }
-    if (q === 'SELECT reservation_id, node_id, session_id, public_model, profile_id, upstream_model, expires_at, released_at FROM reservations WHERE reservation_id = ?') {
-      return maybe(this.db.reservations.get(text(values[0])))
-    }
-    if (q === 'SELECT reservation_id, node_id, session_id, public_model, profile_id, upstream_model, expires_at, released_at FROM reservations WHERE released_at IS NULL AND expires_at <= ?') {
-      return [...this.db.reservations.values()].filter((row) => row.released_at === null && number(row.expires_at) <= number(values[0]))
-    }
     if (q === 'SELECT event_json FROM audit_events ORDER BY at DESC LIMIT ?') {
       return [...this.db.audit].sort(desc('at')).slice(0, number(values[0])).map((row) => pick(row, ['event_json']))
     }
@@ -192,7 +167,7 @@ function desc(key: string): (left: Row, right: Row) => number {
 }
 
 describe('D1 store behavioral contracts', () => {
-  it('REQ-SCH-001 persists durable router state and reloads scheduler state from D1', async () => {
+  it('REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1', async () => {
     const db = new FakeD1Database()
     const writer = new D1Store(db as unknown as D1Database, () => 1_700_000_000_000)
     // Index 2 is the smoke profile: the single active default, so it is the one
@@ -203,8 +178,6 @@ describe('D1 store behavioral contracts', () => {
     const providerToken: TokenRecord = { kind: 'provider', id: 'provider-a', verifier: 'sha256:provider', active: true, createdAt: 1_700_000_000_001 }
     const adminToken: TokenRecord = { kind: 'admin', id: 'admin-a', verifier: 'sha256:admin', active: true, createdAt: 1_700_000_000_002 }
     const setupToken: TokenRecord = { kind: 'setup', id: 'setup-a', verifier: 'sha256:setup', active: true, nodeId: 'node-a', createdAt: 1_700_000_000_003, expiresAt: 1_700_000_060_000 }
-    const session: SessionRecord = { sessionId: 'session-a', nodeId: 'node-a', publicModel: 'codeflare-mesh', profileId: profile.id, upstreamModel: profile.upstreamModel, expiresAt: 1_700_086_400_000 }
-    const reservation: ReservationRecord = { reservationId: 'reservation-a', nodeId: 'node-a', sessionId: 'session-a', publicModel: 'codeflare-mesh', profileId: profile.id, upstreamModel: profile.upstreamModel, expiresAt: 1_700_001_800_000 }
     const audit: AuditEvent = { id: 'audit-a', type: 'setup.completed', at: 1_700_000_000_010, actor: 'admin', target: 'router', detail: { workerName: 'router-a' } }
 
     await writer.putConfig('setup', config)
@@ -213,13 +186,11 @@ describe('D1 store behavioral contracts', () => {
     await writer.putToken(setupToken)
     await writer.setProfile(profile)
     await writer.upsertNode(node)
-    await writer.putSession(session)
-    await writer.putReservation(reservation)
     await writer.appendAudit(audit)
 
     const reader = new D1Store(db as unknown as D1Database, () => 1_700_000_000_020)
-    const scheduler = new StoreScheduler(reader, () => 'reservation-b')
-    const rebuilt = await scheduler.reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-a', now: 1_700_000_000_020 })
+    // A fresh scheduler over the same D1 reloads state and reselects the persisted, eligible node.
+    const selection = await new StoreScheduler(reader).selectEntryNode({ publicModel: 'codeflare-mesh', now: 1_700_000_000_020 })
 
     expect(await reader.getConfig('setup')).toEqual(config)
     expect(await reader.getToken('provider', 'provider-a')).toEqual(providerToken)
@@ -227,27 +198,10 @@ describe('D1 store behavioral contracts', () => {
     expect(await reader.getToken('setup', 'setup-a')).toEqual(setupToken)
     expect(await reader.getProfileByPublicModel('codeflare-mesh')).toEqual(profile)
     expect(await reader.listProfiles()).toEqual([profile])
-    expect(await reader.getNode('node-a')).toEqual({ ...node, inFlight: 1 })
-    expect(await reader.getSession('session-a')).toEqual({ ...session, expiresAt: 1_700_086_400_020 })
-    expect(await reader.getReservation('reservation-a')).toEqual(reservation)
+    expect(await reader.getNode('node-a')).toEqual(node)
     expect(await reader.listAudit(1)).toEqual([audit])
-    expect(rebuilt.reservation).toMatchObject({ reservationId: 'reservation-b', nodeId: 'node-a', publicModel: 'codeflare-mesh', profileId: profile.id })
-  })
-
-  it('REQ-SCH-002 lists only unreleased reservations past their TTL over D1', async () => {
-    const db = new FakeD1Database()
-    const store = new D1Store(db as unknown as D1Database, () => 1_700_000_000_000)
-    const rec = (id: string, expiresAt: number, releasedAt?: number): ReservationRecord => ({ reservationId: id, nodeId: 'node-a', sessionId: 'session-' + id, publicModel: 'codeflare-mesh', profileId: 'profile-a', upstreamModel: 'upstream-a', expiresAt, ...(releasedAt !== undefined ? { releasedAt } : {}) })
-    await store.putReservation(rec('open-expired', 1_000))
-    await store.putReservation(rec('open-fresh', 9_000))
-    await store.putReservation(rec('released-expired', 1_000, 500))
-    await store.putReservation(rec('released-fresh', 9_000, 500))
-
-    const open = await store.listOpenExpiredReservations(2_000)
-
-    expect(open.map((reservation) => reservation.reservationId)).toEqual(['open-expired'])
-    expect(open[0]).toMatchObject({ reservationId: 'open-expired', nodeId: 'node-a', expiresAt: 1_000 })
-    expect(open[0]!.releasedAt).toBeUndefined()
+    expect(selection.node?.id).toBe('node-a')
+    expect(selection.profile?.upstreamModel).toBe(profile.upstreamModel)
   })
 
   it('REQ-SEC-002 listNodes excludes revoked tombstone rows that getNode can still reach', async () => {

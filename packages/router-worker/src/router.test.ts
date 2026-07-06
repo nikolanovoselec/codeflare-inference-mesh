@@ -26,7 +26,7 @@ function makeMesh(capture: { request?: Request } = {}): Fetcher {
 
 function routerFixture(overrides: Partial<Parameters<typeof createRouter>[0]> = {}) {
   const store = overrides.store ?? new MemoryStore()
-  const scheduler = overrides.scheduler ?? new StoreScheduler(store, () => 'reservation-a')
+  const scheduler = overrides.scheduler ?? new StoreScheduler(store)
   const mesh = overrides.mesh ?? makeMesh()
   return {
     store: store as MemoryStore,
@@ -168,6 +168,8 @@ describe('router worker behavioral contracts', () => {
       'gateway-sync',
       'custom-domain-validate',
       'node-revoke',
+      'node-deactivate',
+      'node-activate',
       'profile-rollout',
       'profile-activate',
       'profile-config',
@@ -194,6 +196,8 @@ describe('router worker behavioral contracts', () => {
       '/admin/cloudflare/gateway/sync',
       '/admin/custom-domain/validate',
       '/admin/nodes/{nodeId}/revoke',
+      '/admin/nodes/{nodeId}/deactivate',
+      '/admin/nodes/{nodeId}/activate',
       '/admin/profiles/rollout',
       '/admin/profiles/activate',
       '/admin/profiles/config',
@@ -883,7 +887,7 @@ describe('router worker behavioral contracts', () => {
     }
   })
 
-  it('REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations', async () => {
+  it('REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture) })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
@@ -891,12 +895,11 @@ describe('router worker behavioral contracts', () => {
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
-      headers: { ...bearer('provider-secret'), 'content-type': 'application/json', 'x-inference-mesh-session': 'session-a' },
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
       body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hello' }] })
     }))
     await response.text()
     const forwarded = await capture.request!.json() as { model: string }
-    const reservation = [...store.reservations.values()][0]!
 
     expect(response.status).toBe(200)
     expect(capture.request!.url).toBe('http://100.64.1.10:8080/v1/chat/completions')
@@ -904,8 +907,9 @@ describe('router worker behavioral contracts', () => {
     expect(forwarded.model).toBe(SMOKE_UPSTREAM)
     expect(capture.request!.headers.get('authorization')).toBe('Bearer upstream-secret')
     expect(response.headers.get('x-inference-mesh-request-id')).toBe('request-a')
-    expect(response.headers.get('x-inference-mesh-session')).toBe('session-a')
-    expect(reservation.releasedAt).toBe(1_700_000_000_000)
+    expect(response.headers.get('x-inference-mesh-node')).toBe('node-a')
+    // Forwarding is stateless: selecting the node never mutates its in-flight count.
+    expect((await store.getNode('node-a'))?.inFlight).toBe(0)
   })
 
   it('REQ-RTR-002 REQ-SEC-001 reuses generated upstream token when no env secret exists', async () => {
@@ -914,7 +918,7 @@ describe('router worker behavioral contracts', () => {
     const store = new MemoryStore()
     const router = createRouter({
       store,
-      scheduler: new StoreScheduler(store, () => 'reservation-generated'),
+      scheduler: new StoreScheduler(store),
       mesh: makeMesh(capture),
       now: () => 1_700_000_000_000,
       requestId: () => 'request-generated',
@@ -946,14 +950,14 @@ describe('router worker behavioral contracts', () => {
     expect(capture.request!.headers.get('authorization')).toBe(`Bearer ${claimed.upstreamToken}`)
   })
 
-  it('REQ-RTR-002 releases a reservation when Mesh fetch throws', async () => {
+  it('REQ-RTR-002 REQ-SCH-005 returns 502 node_unreachable when the mesh fetch throws', async () => {
     const mesh = {
       fetch: async () => { throw new Error('mesh unavailable') },
       connect() { throw new Error('connect is not used by inference forwarding') }
     } as Fetcher
     const { router, store } = routerFixture({ mesh })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ capacity: 1 }))
+    await store.upsertNode(nodeFixture())
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
@@ -961,12 +965,10 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
     }))
 
-    const node = await store.getNode('node-a')
-
-    expect(response.status).toBe(500)
-    expect([...store.reservations.values()][0]?.releasedAt).toBe(1_700_000_000_000)
-    expect(node?.inFlight).toBe(0)
-    expect(node?.failurePenaltyUntil).toBeGreaterThan(1_700_000_000_000)
+    expect(response.status).toBe(502)
+    expect(await response.json()).toMatchObject({ error: 'node_unreachable', requestId: 'request-a' })
+    // A transport failure leaves no reservation/in-flight residue: forwarding is stateless.
+    expect((await store.getNode('node-a'))?.inFlight).toBe(0)
   })
 
   it('REQ-RTR-003 streams upstream bodies without buffering them first', async () => {
@@ -995,34 +997,6 @@ describe('router worker behavioral contracts', () => {
     expect(await response.text()).toBe('data: one\n\ndata: two\n\n')
   })
 
-  it('REQ-RTR-003 releases and penalizes stream failures', async () => {
-    const times = [1_700_000_000_000, 1_700_000_120_000]
-    let timeIndex = 0
-    const nextNow = () => times[Math.min(timeIndex++, times.length - 1)]!
-    const stream = new ReadableStream({
-      pull() {
-        throw new Error('stream failed')
-      }
-    })
-    const mesh = {
-      fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
-      connect() { throw new Error('connect is not used by inference forwarding') }
-    } as Fetcher
-    const { router, store } = routerFixture({ mesh, now: nextNow })
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture())
-
-    const response = await router(new Request('https://router.test/v1/chat/completions', {
-      method: 'POST',
-      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'codeflare-mesh', stream: true, messages: [] })
-    }))
-
-    await expect(response.text()).rejects.toThrow('stream failed')
-    expect([...store.reservations.values()][0]?.releasedAt).toBe(1_700_000_120_000)
-    expect((await store.getNode('node-a'))?.failurePenaltyUntil).toBeGreaterThan(1_700_000_120_000)
-  })
-
   it('REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs', () => {
     expect(isSafeMeshTarget('100.64.1.10', 8080)).toBe(true)
     expect(isSafeMeshTarget('10.0.0.5', 8080)).toBe(true)
@@ -1030,10 +1004,11 @@ describe('router worker behavioral contracts', () => {
     expect(isSafeMeshTarget('8.8.8.8', 8080)).toBe(false)
   })
 
-  it('REQ-SCH-005 returns no-node when no eligible node has capacity', async () => {
+  it('REQ-SCH-005 returns 503 no_healthy_node when no eligible node is ready', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ capacity: 1, inFlight: 1 }))
+    // The node is up but its runtime is not ready, so no node is eligible to serve.
+    await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'starting', activeRequests: 0, apiReady: false, readyModels: [] } }))
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
@@ -1041,36 +1016,8 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
     }))
 
-    expect(response.status).toBe(429)
-    expect(await response.json()).toMatchObject({ error: 'no-node', requestId: 'request-a' })
-  })
-
-  it('REQ-SCH-002 reclaims expired unreleased reservations before scheduling', async () => {
-    const store = new MemoryStore()
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ capacity: 1, inFlight: 0 }))
-    const base = 1_700_000_000_000
-
-    // A reservation that is never released leaks in-flight capacity.
-    const leaked = await new StoreScheduler(store, () => 'reservation-leak').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-leak', now: base })
-    expect(leaked.reservation?.reservationId).toBe('reservation-leak')
-    expect((await store.getNode('node-a'))?.inFlight).toBe(1)
-
-    // Before the reservation TTL, the capacity-1 node stays wedged at no-node.
-    const wedged = await new StoreScheduler(store, () => 'reservation-wedged').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-wedged', now: base + 1 })
-    expect(wedged.reason).toBe('no-node')
-    expect(wedged.reservation).toBeUndefined()
-
-    // The node keeps heartbeating across the reservation's lifetime so its lease stays fresh;
-    // updateNodeHeartbeat preserves the leaked in-flight count exactly as production does.
-    await store.updateNodeHeartbeat(nodeFixture({ capacity: 1, lastSeenAt: base + 30 * 60 * 1000 }))
-
-    // Once the TTL lapses, the next reserve reclaims the leaked count and schedules again.
-    const reclaimed = await new StoreScheduler(store, () => 'reservation-fresh').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-fresh', now: base + 30 * 60 * 1000 + 1 })
-    expect(reclaimed.reservation?.reservationId).toBe('reservation-fresh')
-    expect(reclaimed.reservation?.nodeId).toBe('node-a')
-    expect((await store.getReservation('reservation-leak'))?.releasedAt).toBeDefined()
-    expect((await store.getNode('node-a'))?.inFlight).toBe(1)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: 'no_healthy_node', requestId: 'request-a' })
   })
 
   it('REQ-SCH-005 returns no-profile when the public model has no configured profile', async () => {
@@ -1087,15 +1034,13 @@ describe('router worker behavioral contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'no-profile', requestId: 'request-a' })
   })
 
-  it('REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from scheduling', async () => {
+  it('REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from selection', async () => {
     const now = 1_700_000_000_000
     const ineligibleNodes = [
       nodeFixture({ id: 'expired', lastSeenAt: now - 45_001 }),
       nodeFixture({ id: 'offline', status: 'offline' }),
       nodeFixture({ id: 'unsupported-model', publicModels: ['other-alias'] }),
       nodeFixture({ id: 'unloaded-profile', activeProfileIds: [] }),
-      nodeFixture({ id: 'penalized', failurePenaltyUntil: now + 1_000 }),
-      nodeFixture({ id: 'over-capacity', capacity: 1, inFlight: 1 }),
       nodeFixture({ id: 'runtime-failed', metrics: { runtimeState: 'failed', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] } }),
       nodeFixture({ id: 'stale-ready-models', metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: ['other-model'] } }),
       nodeFixture({ id: 'unsafe-mesh', meshIp: '8.8.8.8' })
@@ -1105,10 +1050,10 @@ describe('router worker behavioral contracts', () => {
       const store = new MemoryStore()
       await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
       await store.upsertNode(node)
-      const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: `session-${node.id}`, now })
+      const result = await new StoreScheduler(store).selectEntryNode({ publicModel: 'codeflare-mesh', now })
 
       expect(result.reason).toBe('no-node')
-      expect(result.reservation).toBeUndefined()
+      expect(result.node).toBeUndefined()
     }
   })
 
@@ -1117,10 +1062,10 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode({ ...nodeFixture(), runtime: 'legacy-runtime' } as unknown as NodeRecord)
 
-    const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-runtime', now: 1_700_000_000_000 })
+    const result = await new StoreScheduler(store).selectEntryNode({ publicModel: 'codeflare-mesh', now: 1_700_000_000_000 })
 
     expect(result.reason).toBe('no-node')
-    expect(result.reservation).toBeUndefined()
+    expect(result.node).toBeUndefined()
   })
 
   it('REQ-SCH-003 excludes nodes whose MeshLLM API is not ready from scheduling', async () => {
@@ -1128,10 +1073,10 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: false, readyModels: [SMOKE_UPSTREAM] } }))
 
-    const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-api-ready', now: 1_700_000_000_000 })
+    const result = await new StoreScheduler(store).selectEntryNode({ publicModel: 'codeflare-mesh', now: 1_700_000_000_000 })
 
     expect(result.reason).toBe('no-node')
-    expect(result.reservation).toBeUndefined()
+    expect(result.node).toBeUndefined()
   })
 
   it('REQ-SCH-003 excludes nodes whose ready models omit the requested upstream model', async () => {
@@ -1139,64 +1084,24 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [QWEN_UPSTREAM] } }))
 
-    const result = await new StoreScheduler(store).reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-ready-models', now: 1_700_000_000_000 })
+    const result = await new StoreScheduler(store).selectEntryNode({ publicModel: 'codeflare-mesh', now: 1_700_000_000_000 })
 
     expect(result.reason).toBe('no-node')
-    expect(result.reservation).toBeUndefined()
+    expect(result.node).toBeUndefined()
   })
 
   it('REQ-SCH-003 keeps standby nodes unschedulable even when ready models list the requested model', async () => {
     const store = new MemoryStore()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'starting', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] } }))
-    const standby = await new StoreScheduler(store, () => 'reservation-standby').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-standby', now: 1_700_000_000_000 })
+    const standby = await new StoreScheduler(store).selectEntryNode({ publicModel: 'codeflare-mesh', now: 1_700_000_000_000 })
 
     await store.upsertNode(nodeFixture({ metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] } }))
-    const ready = await new StoreScheduler(store, () => 'reservation-ready').reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-standby-ready', now: 1_700_000_000_000 })
+    const ready = await new StoreScheduler(store).selectEntryNode({ publicModel: 'codeflare-mesh', now: 1_700_000_000_000 })
 
     expect(standby.reason).toBe('no-node')
-    expect(standby.reservation).toBeUndefined()
-    expect(ready.reservation?.nodeId).toBe('node-a')
-  })
-
-  it('REQ-SCH-004 uses another eligible node when the sticky node is ineligible', async () => {
-    const store = new MemoryStore()
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 1, capacity: 1 }))
-    await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 0 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-a', publicModel: 'codeflare-mesh', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_700_000_100_000 })
-    const scheduler = new StoreScheduler(store, () => 'reservation-c')
-
-    const result = await scheduler.reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-a', now: 1_700_000_000_000 })
-
-    expect(result.reservation?.nodeId).toBe('node-b')
-  })
-
-  it('REQ-SCH-004 preserves session affinity when the sticky node remains eligible', async () => {
-    const store = new MemoryStore()
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 0 }))
-    await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 0 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'codeflare-mesh', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_700_000_100_000 })
-    const scheduler = new StoreScheduler(store, () => 'reservation-b')
-
-    const result = await scheduler.reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-a', now: 1_700_000_000_000 })
-
-    expect(result.reservation?.nodeId).toBe('node-b')
-  })
-
-  it('REQ-SCH-004 ignores expired session mappings when choosing an eligible node', async () => {
-    const store = new MemoryStore()
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.upsertNode(nodeFixture({ id: 'node-a', inFlight: 0, capacity: 2 }))
-    await store.upsertNode(nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', inFlight: 1, capacity: 2 }))
-    await store.putSession({ sessionId: 'session-a', nodeId: 'node-b', publicModel: 'codeflare-mesh', profileId: 'mesh-default-qwen36-35b', upstreamModel: QWEN_UPSTREAM, expiresAt: 1_699_999_999_999 })
-    const scheduler = new StoreScheduler(store, () => 'reservation-expired')
-
-    const result = await scheduler.reserve({ publicModel: 'codeflare-mesh', sessionId: 'session-a', now: 1_700_000_000_000 })
-
-    expect(result.reservation?.nodeId).toBe('node-a')
-    expect(store.sessions.get('session-a')?.nodeId).toBe('node-a')
+    expect(standby.node).toBeUndefined()
+    expect(ready.node?.id).toBe('node-a')
   })
 
   it('REQ-ADM-001 REQ-ADM-003 consumes setup tokens during node claim', async () => {
@@ -1384,31 +1289,88 @@ describe('router worker behavioral contracts', () => {
     expect(store.audit.map((event) => event.type)).toEqual(expect.arrayContaining(['first_setup', 'node_claimed', 'node_unregistered', 'node_revoked', 'gateway_sync', 'profile_rollout']))
   })
 
-  it('REQ-SCH-002 REQ-NODE-002 keeps scheduler reservation counts authoritative over heartbeats', async () => {
+  it('REQ-NODE-002 a heartbeat refreshes the node-reported active-request metric that drives selection', async () => {
     const { router, store } = routerFixture()
-    await store.upsertNode({ ...nodeFixture({ capacity: 1, inFlight: 0 }), nodeTokenVerifier: await hashToken('node-secret') })
+    await store.upsertNode({ ...nodeFixture({ capacity: 1 }), nodeTokenVerifier: await hashToken('node-secret') })
 
-    const staleHigh = await router(new Request('https://router.test/node/heartbeat', {
+    const busy = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 1, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 1 } })
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 3 } })
     }))
-    const afterStaleHigh = await store.getNode('node-a')
-    await store.upsertNode({ ...afterStaleHigh!, inFlight: 1 })
+    const afterBusy = await store.getNode('node-a')
 
-    const staleZero = await router(new Request('https://router.test/node/heartbeat', {
+    const idle = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
       body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 1, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 0 } })
     }))
-    const afterStaleZero = await store.getNode('node-a')
+    const afterIdle = await store.getNode('node-a')
 
-    expect(staleHigh.status).toBe(200)
-    expect(afterStaleHigh?.inFlight).toBe(0)
-    expect(afterStaleHigh?.metrics?.activeRequests).toBe(1)
-    expect(staleZero.status).toBe(200)
-    expect(afterStaleZero?.inFlight).toBe(1)
-    expect(afterStaleZero?.metrics?.activeRequests).toBe(0)
+    // activeRequests is the node-reported load signal selectNode orders on; each heartbeat must persist it.
+    expect(busy.status).toBe(200)
+    expect(afterBusy?.metrics?.activeRequests).toBe(3)
+    expect(idle.status).toBe(200)
+    expect(afterIdle?.metrics?.activeRequests).toBe(0)
+  })
+
+  it('REQ-ADM-030 deactivates and reactivates a node from the admin console with audit', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+
+    const off = await router(new Request('https://router.test/admin/nodes/node-a/deactivate', { method: 'POST', headers: bearer('admin-secret') }))
+    expect(off.status).toBe(200)
+    expect(await off.json()).toMatchObject({ ok: true, deactivated: true })
+    expect((await store.getNode('node-a'))?.deactivated).toBe(true)
+    expect(store.audit.some((event) => event.type === 'node_deactivated' && event.target === 'node-a')).toBe(true)
+
+    const on = await router(new Request('https://router.test/admin/nodes/node-a/activate', { method: 'POST', headers: bearer('admin-secret') }))
+    expect(on.status).toBe(200)
+    expect(await on.json()).toMatchObject({ ok: true, deactivated: false })
+    expect((await store.getNode('node-a'))?.deactivated).toBe(false)
+    expect(store.audit.some((event) => event.type === 'node_activated' && event.target === 'node-a')).toBe(true)
+  })
+
+  it('REQ-ADM-030 deactivate requires an admin credential and leaves the node untouched otherwise', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode(nodeFixture())
+    expect((await router(new Request('https://router.test/admin/nodes/node-a/deactivate', { method: 'POST', headers: bearer('provider-secret') }))).status).toBe(401)
+    expect((await store.getNode('node-a'))?.deactivated).toBeUndefined()
+  })
+
+  it('REQ-ADM-030 REQ-NODE-011 a deactivated node heartbeat gets no desired profiles and the flag survives', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode({ ...nodeFixture({ deactivated: true }), nodeTokenVerifier: await hashToken('node-secret') })
+
+    const res = await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-smoke-qwen25-1.5b'], capacity: 2, inFlight: 0, runtime: 'meshllm', metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [SMOKE_UPSTREAM] } })
+    }))
+    const body = await res.json() as { ok: boolean; desiredProfiles: unknown[]; deactivated?: boolean; meshBootstrap?: unknown }
+
+    expect(res.status).toBe(200)
+    expect(body.deactivated).toBe(true)
+    expect(body.desiredProfiles).toEqual([])
+    expect(body.meshBootstrap).toBeUndefined()
+    // The heartbeat body never carries the operator flag; the router carries it forward across the write.
+    expect((await store.getNode('node-a'))?.deactivated).toBe(true)
+  })
+
+  it('REQ-ADM-030 a deactivated node is excluded from inference selection', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture({ deactivated: true }))
+
+    const res = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
+    }))
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ error: 'no_healthy_node' })
   })
 
   it('REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status and REQ-RUN-004 reports profile readiness in admin status', async () => {
@@ -2713,7 +2675,7 @@ describe('Access-first setup and host gating contracts', () => {
     expect(calls[0]!.headers['cf-aig-authorization']).toBe('Bearer aig-token')
   })
 
-  it('REQ-ADM-029 playground direct target reserves a node and forwards the internal model straight to it', async () => {
+  it('REQ-ADM-029 playground direct target selects a node and forwards the internal model straight to it', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture) })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
@@ -2723,7 +2685,7 @@ describe('Access-first setup and host gating contracts', () => {
     const noModel = await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ messages: [] }) }))
     expect(noModel.status).toBe(400)
     expect(await noModel.json()).toMatchObject({ error: 'model_required' })
-    // With a serving node, the direct target reserves and forwards the resolved upstream model to the node.
+    // With a serving node, the direct target selects and forwards the resolved upstream model to the node.
     const response = await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hi' }] }) }))
     await response.text()
     expect(response.status).toBe(200)
@@ -3330,6 +3292,24 @@ describe('control-plane API (/api/v1)', () => {
     // Seeded default profiles are visible to the snapshot.
     expect(body.models.total).toBeGreaterThan(0)
     expect(typeof body.models.active).toBe('number')
+  })
+
+  it('REQ-API-002 REQ-ADM-030 deactivates and reactivates a node over the automation API', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode(nodeFixture())
+    const key = await mintKey(router)
+
+    const off = await router(new Request('https://router.test/api/v1/nodes/node-a/deactivate', { method: 'POST', headers: bearer(key.token) }))
+    expect(off.status).toBe(200)
+    expect((await off.json() as { node: { deactivated: boolean } }).node.deactivated).toBe(true)
+    // The machine-facing node projection surfaces the taint so fleet tooling can read it back.
+    const got = await router(new Request('https://router.test/api/v1/nodes/node-a', { headers: bearer(key.token) }))
+    expect((await got.json() as { node: { deactivated: boolean } }).node.deactivated).toBe(true)
+
+    const on = await router(new Request('https://router.test/api/v1/nodes/node-a/activate', { method: 'POST', headers: bearer(key.token) }))
+    expect(on.status).toBe(200)
+    expect((await on.json() as { node: { deactivated: boolean } }).node.deactivated).toBe(false)
+    expect(store.audit.some((event) => event.type === 'node_activated' && event.target === 'node-a')).toBe(true)
   })
 
   it('REQ-API-002 rejects an api request without a valid automation key', async () => {

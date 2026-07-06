@@ -87,7 +87,8 @@ func TestREQRUN003RendererContract(t *testing.T) {
 				"serve",
 				"--model", "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
 				"--headless",
-				"--mesh-discovery-mode", "mdns",
+				"--mesh-discovery-mode", "nostr",
+				"--disable-iroh-relays",
 				"--mesh-name", "codeflare-mesh-default-qwen36-35b-r0",
 				"--bind-ip", "100.96.0.5",
 				"--bind-port", "4300",
@@ -103,7 +104,8 @@ func TestREQRUN003RendererContract(t *testing.T) {
 				"serve",
 				"--model", "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
 				"--headless",
-				"--mesh-discovery-mode", "mdns",
+				"--mesh-discovery-mode", "nostr",
+				"--disable-iroh-relays",
 				"--mesh-name", "codeflare-mesh-default-qwen36-35b-r3",
 				"--bind-ip", "100.96.0.5",
 				"--bind-port", "4300",
@@ -124,7 +126,8 @@ func TestREQRUN003RendererContract(t *testing.T) {
 				"serve",
 				"--model", "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
 				"--headless",
-				"--mesh-discovery-mode", "mdns",
+				"--mesh-discovery-mode", "nostr",
+				"--disable-iroh-relays",
 				"--mesh-name", "codeflare-mesh-default-qwen36-35b-r7",
 				"--bind-ip", "100.96.0.5",
 				"--bind-port", "4300",
@@ -159,7 +162,8 @@ func TestREQRUN007SplitProfilesRenderModelAndSplitOnEveryNode(t *testing.T) {
 				"--model", "hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@f00dfeed",
 				"--split",
 				"--headless",
-				"--mesh-discovery-mode", "mdns",
+				"--mesh-discovery-mode", "nostr",
+				"--disable-iroh-relays",
 				"--mesh-name", "codeflare-mesh-split-qwen36-35b-r1",
 				"--bind-ip", "100.96.0.7",
 				"--bind-port", "4310",
@@ -176,7 +180,8 @@ func TestREQRUN007SplitProfilesRenderModelAndSplitOnEveryNode(t *testing.T) {
 				"--model", "hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@f00dfeed",
 				"--split",
 				"--headless",
-				"--mesh-discovery-mode", "mdns",
+				"--mesh-discovery-mode", "nostr",
+				"--disable-iroh-relays",
 				"--mesh-name", "codeflare-mesh-split-qwen36-35b-r1",
 				"--bind-ip", "100.96.0.7",
 				"--bind-port", "4310",
@@ -205,14 +210,20 @@ func TestREQRUN007SplitProfilesRenderModelAndSplitOnEveryNode(t *testing.T) {
 
 func assertNoForbiddenFlags(t *testing.T, form string, args []string) {
 	t.Helper()
-	forbidden := []string{"--publish", "--listen-all", "--auto", "--discover", "nostr"}
+	// Public exposure/relay flags stay forbidden. Discovery is nostr (metadata-only rendezvous) while
+	// iroh's data transport is pinned private with --disable-iroh-relays (no public relay/STUN fallback),
+	// so inference data stays on the Cloudflare WARP overlay.
+	forbidden := []string{"--publish", "--listen-all", "--auto", "--discover"}
 	for _, arg := range args {
 		if slices.Contains(forbidden, arg) {
 			t.Fatalf("form %s rendered forbidden argv element %q: %v", form, arg, args)
 		}
 	}
-	if mode := argvValue(t, args, "--mesh-discovery-mode"); mode != "mdns" {
-		t.Fatalf("form %s rendered discovery mode %q, want mdns", form, mode)
+	if mode := argvValue(t, args, "--mesh-discovery-mode"); mode != "nostr" {
+		t.Fatalf("form %s rendered discovery mode %q, want nostr", form, mode)
+	}
+	if !slices.Contains(args, "--disable-iroh-relays") {
+		t.Fatalf("form %s rendered without --disable-iroh-relays (iroh data must stay WARP-private): %v", form, args)
 	}
 }
 
@@ -247,8 +258,26 @@ func TestREQRUN006BindsMeshIPSoTokensEmbedDialableAddresses(t *testing.T) {
 	if got := argvValue(t, args, "--bind-port"); got != "4300" {
 		t.Fatalf("--bind-port = %q, want the profile bind port 4300", got)
 	}
-	if got := argvValue(t, args, "--mesh-discovery-mode"); got != "mdns" {
-		t.Fatalf("--mesh-discovery-mode = %q, want mdns", got)
+	if got := argvValue(t, args, "--mesh-discovery-mode"); got != "nostr" {
+		t.Fatalf("--mesh-discovery-mode = %q, want nostr", got)
+	}
+}
+
+func TestREQSEC004NostrRelaysAppendWhenConfiguredOnly(t *testing.T) {
+	if args := RenderMeshLLMArgs(renderInputSeed()); slices.Contains(args, "--nostr-relay") {
+		t.Fatalf("no configured relays must not render --nostr-relay (mesh-llm public defaults apply): %v", args)
+	}
+	in := renderInputSeed()
+	in.NostrRelays = []string{"wss://relay.example.one", "wss://relay.example.two"}
+	args := RenderMeshLLMArgs(in)
+	var relays []string
+	for index, arg := range args {
+		if arg == "--nostr-relay" && index+1 < len(args) {
+			relays = append(relays, args[index+1])
+		}
+	}
+	if !slices.Equal(relays, []string{"wss://relay.example.one", "wss://relay.example.two"}) {
+		t.Fatalf("configured relays must render one --nostr-relay each in order, got %v in %v", relays, args)
 	}
 }
 

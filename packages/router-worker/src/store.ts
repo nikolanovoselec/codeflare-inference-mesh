@@ -1,4 +1,4 @@
-import type { AuditEvent, CredentialKind, ModelProfile, NodeRecord, ReservationRecord, SessionRecord, Store, TokenRecord } from './types'
+import type { AuditEvent, CredentialKind, ModelProfile, NodeRecord, Store, TokenRecord } from './types'
 
 // The host gate reads these two config keys on every request; cache them
 // per D1 binding with a short TTL so the hot path avoids two D1 round-trips.
@@ -99,42 +99,6 @@ export class D1Store implements Store {
     await this.db.prepare('DELETE FROM nodes WHERE id = ?').bind(nodeId).run()
   }
 
-  async getSession(sessionId: string): Promise<SessionRecord | undefined> {
-    const row = await this.db.prepare('SELECT node_id, public_model, profile_id, upstream_model, expires_at FROM sessions WHERE session_id = ?').bind(sessionId).first<{ node_id: string; public_model: string; profile_id: string; upstream_model: string; expires_at: number }>()
-    if (!row) return undefined
-    return { sessionId, nodeId: row.node_id, publicModel: row.public_model, profileId: row.profile_id, upstreamModel: row.upstream_model, expiresAt: row.expires_at }
-  }
-
-  async putSession(session: SessionRecord): Promise<void> {
-    await this.db.prepare('INSERT OR REPLACE INTO sessions (session_id, node_id, public_model, profile_id, upstream_model, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(session.sessionId, session.nodeId, session.publicModel, session.profileId, session.upstreamModel, session.expiresAt)
-      .run()
-  }
-
-  async putReservation(reservation: ReservationRecord): Promise<void> {
-    await this.db.prepare('INSERT OR REPLACE INTO reservations (reservation_id, node_id, session_id, public_model, profile_id, upstream_model, expires_at, released_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(reservation.reservationId, reservation.nodeId, reservation.sessionId, reservation.publicModel, reservation.profileId, reservation.upstreamModel, reservation.expiresAt, reservation.releasedAt ?? null)
-      .run()
-  }
-
-  async getReservation(reservationId: string): Promise<ReservationRecord | undefined> {
-    const row = await this.db.prepare('SELECT reservation_id, node_id, session_id, public_model, profile_id, upstream_model, expires_at, released_at FROM reservations WHERE reservation_id = ?')
-      .bind(reservationId)
-      .first<ReservationRow>()
-    return row ? reservationFromRow(row) : undefined
-  }
-
-  async releaseReservation(reservationId: string, now: number): Promise<void> {
-    await this.db.prepare('UPDATE reservations SET released_at = COALESCE(released_at, ?) WHERE reservation_id = ?').bind(now, reservationId).run()
-  }
-
-  async listOpenExpiredReservations(now: number): Promise<readonly ReservationRecord[]> {
-    const rows = await this.db.prepare('SELECT reservation_id, node_id, session_id, public_model, profile_id, upstream_model, expires_at, released_at FROM reservations WHERE released_at IS NULL AND expires_at <= ?')
-      .bind(now)
-      .all<ReservationRow>()
-    return (rows.results ?? []).map(reservationFromRow)
-  }
-
   async getToken(kind: CredentialKind, id: string): Promise<TokenRecord | undefined> {
     const row = await this.db.prepare('SELECT id, kind, verifier, active, node_id, created_at, expires_at FROM tokens WHERE kind = ? AND id = ?').bind(kind, id).first<TokenRow>()
     return row ? tokenFromRow(row) : undefined
@@ -214,17 +178,6 @@ interface NodeRow {
   readonly in_flight: number
 }
 
-interface ReservationRow {
-  readonly reservation_id: string
-  readonly node_id: string
-  readonly session_id: string
-  readonly public_model: string
-  readonly profile_id: string
-  readonly upstream_model: string
-  readonly expires_at: number
-  readonly released_at: number | null
-}
-
 interface TokenRow {
   readonly id: string
   readonly kind: CredentialKind
@@ -233,19 +186,6 @@ interface TokenRow {
   readonly node_id: string | null
   readonly created_at: number
   readonly expires_at: number | null
-}
-
-function reservationFromRow(row: ReservationRow): ReservationRecord {
-  return {
-    reservationId: row.reservation_id,
-    nodeId: row.node_id,
-    sessionId: row.session_id,
-    publicModel: row.public_model,
-    profileId: row.profile_id,
-    upstreamModel: row.upstream_model,
-    expiresAt: row.expires_at,
-    ...(row.released_at !== null ? { releasedAt: row.released_at } : {})
-  }
 }
 
 function tokenFromRow(row: TokenRow): TokenRecord {
@@ -304,6 +244,5 @@ function parseJson<T>(text: string): T {
 
 export const STORE_ANCHORS = {
   REQ_SCH_001: 'REQ-SCH-001',
-  REQ_SCH_004: 'REQ-SCH-004',
   REQ_RUN_002: 'REQ-RUN-002'
 } as const

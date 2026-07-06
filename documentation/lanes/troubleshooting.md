@@ -6,7 +6,8 @@
 - [Worker cannot reach node](#worker-cannot-reach-node)
 - [Node service crash-loops after install](#node-service-crash-loops-after-install)
 - [Node cannot determine its Mesh IP](#node-cannot-determine-its-mesh-ip)
-- [Requests return no-node](#requests-return-no-node)
+- [Requests return 503 no_healthy_node](#requests-return-503-no_healthy_node)
+- [Node stays orange and serves nothing](#node-stays-orange-and-serves-nothing)
 - [Session latency suddenly increases](#session-latency-suddenly-increases)
 - [Installer cannot verify artifact](#installer-cannot-verify-artifact)
 - [Node reports dependency-missing](#node-reports-dependency-missing)
@@ -53,21 +54,29 @@
 
 **Fix:** Connect WARP (desktop client or a headless `warp-cli` enrollment) so the node has a `100.96.0.0/12` address on the `CloudflareWARP` adapter, or set `meshIp` explicitly in the agent config to the node's WARP address. ([REQ-NODE-008](../../sdd/spec/node-agent.md))
 
-## Requests return no-node
+## Requests return 503 no_healthy_node
 
-**Symptom:** Client receives `429` with `no-node` plus a request ID.
+**Symptom:** Client receives `503` with `no_healthy_node` plus a request ID. (A `502 node_unreachable` is different: a node was selected but its Mesh transport failed.)
 
-**Cause:** No eligible node can currently serve the requested public model, or a prior request reserved the node but its release never landed — for example an AI Gateway retry abandoned the response stream — leaving the node's in-flight count elevated (on a capacity-1 node this reads as a persistent `no-node` even though the node is healthy and idle).
+**Cause:** No eligible node can currently serve the requested public model: every candidate is offline, still downloading or starting, reporting an unsafe Mesh target, or has been deactivated by an operator. The router holds no reservation state, so a healthy idle node is never wedged out of selection by a leaked reservation.
 
-**Fix:** Use the request ID to inspect admin status, free an in-flight request, start another compatible node, or switch the public alias to a ready fallback profile. A stale reservation needs no action: the scheduler reclaims it once its 30-minute TTL lapses, on the next scheduling decision, so the node becomes schedulable again automatically. ([REQ-SCH-005](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
+**Fix:** Use the request ID to inspect admin status, then start another compatible node, reactivate a deactivated one (see [Node stays orange and serves nothing](#node-stays-orange-and-serves-nothing)), or switch the public alias to a ready fallback profile. A `502 node_unreachable` instead points at WARP reachability — see [Worker cannot reach node](#worker-cannot-reach-node). ([REQ-SCH-005](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
+
+## Node stays orange and serves nothing
+
+**Symptom:** A node shows online and heartbeats normally, but its status reads deactivated (orange/yellow), it runs no `mesh-llm` process, and it is never selected for inference.
+
+**Cause:** An operator deactivated the node, using the node detail drawer's Deactivate control or `POST /api/v1/nodes/{id}/deactivate`. A deactivated node stays enrolled and keeps heartbeating so it can be reactivated instantly, but the router answers its heartbeats with an empty desired-profile set, the agent never launches the runtime, and the node is excluded from selection.
+
+**Fix:** This is expected while deactivation is intentional. To bring the node back into service, activate it from the node detail drawer or `POST /api/v1/nodes/{id}/activate`; its next heartbeat carries the active profiles again and the agent relaunches `mesh-llm`. ([REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation)) ([REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model))
 
 ## Session latency suddenly increases
 
 **Symptom:** A coding session that was fast starts spending time on long prefill.
 
-**Cause:** The session moved nodes, a lease expired, or the runtime cache was cleared during restart/profile switch.
+**Cause:** The cache-warm peer changed (a node drained, a lease expired, or the runtime cache was cleared during a restart or profile switch), so `mesh-llm`'s KV-aware routing had to rebuild the prefix cache on another peer.
 
-**Fix:** Check node eligibility, recent failures, runtime restarts, and audit events; confirm another eligible node is available before moving the session. ([REQ-SCH-004](../../sdd/spec/state-scheduling.md)) ([REQ-OBS-004](../../sdd/spec/observability.md))
+**Fix:** Check node eligibility, recent failures, runtime restarts, and audit events; confirm enough eligible peers stay online for `mesh-llm` to keep the prefix cache warm. ([REQ-SCH-002](../../sdd/spec/state-scheduling.md)) ([REQ-OBS-004](../../sdd/spec/observability.md))
 
 ## Installer cannot verify artifact
 
@@ -153,7 +162,7 @@
 
 **Symptom:** A public endpoint returns `429` with body `{ "error": "rate_limited", "requestId": string }` and a `Retry-After` header.
 
-**Cause:** The request exceeded its rate-limit bucket for the current Cloudflare location. Buckets are per route class: credentialed `/v1` inference (the AI Gateway, keyed by provider token) has a high ceiling, while token-less `/v1` and other public routes are keyed by client IP with low limits, and node heartbeat, enrollment, and admin authentication have their own limits. This is distinct from the `429` `no-node` response, which means no node is available rather than a rate limit. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
+**Cause:** The request exceeded its rate-limit bucket for the current Cloudflare location. Buckets are per route class: credentialed `/v1` inference (the AI Gateway, keyed by provider token) has a high ceiling, while token-less `/v1` and other public routes are keyed by client IP with low limits, and node heartbeat, enrollment, and admin authentication have their own limits. A scheduler miss is never a rate limit: when no eligible node is ready the router returns `503 no_healthy_node`, not `429`. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
 **Fix:** Wait the `Retry-After` interval and retry. If legitimate traffic is being limited, raise the affected bucket's `limit` in `wrangler.toml` (values are per Cloudflare location per 60s) and redeploy. Confirm production inference flows through the AI Gateway so it uses the high provider-token bucket rather than the low anonymous one. <!-- @impl: packages/router-worker/src/rate-limit.ts::isRateLimited -->
 
@@ -170,7 +179,7 @@
 | Surface | Specification | Source |
 |---|---|---|
 | Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS`, `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
-| Failure reporting | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::releaseOnCompletion`, `packages/router-worker/src/scheduler.ts::recordFailure` <!-- @impl: packages/router-worker/src/router.ts::releaseOnCompletion --> <!-- @impl: packages/router-worker/src/scheduler.ts::recordFailure --> |
+| Forwarding failure responses | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::runInference` <!-- @impl: packages/router-worker/src/router.ts::runInference --> |
 | Update checksum staging | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::StageUpdate` <!-- @impl: packages/node-agent/internal/agent/update.go::StageUpdate --> |
 | MeshLLM install failures | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM` <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM --> |
 | Mesh state and rotation | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |

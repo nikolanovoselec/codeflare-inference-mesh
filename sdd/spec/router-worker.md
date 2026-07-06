@@ -38,18 +38,17 @@ This domain covers the public Worker that receives provider calls, protects rout
 
 **Acceptance Criteria:**
 
-1. The Worker validates that the chat request body is JSON and within the configured maximum size. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations) -->
-2. The Worker maps the inbound `model` value to the active model profile before reserving a node. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations) -->
-3. The Worker asks the Durable Object scheduler for a reservation before forwarding the request. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations) -->
-4. The forwarded request replaces the public alias with the selected node's upstream runtime model name. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations) -->
-5. The forwarded request is sent with Worker-to-Mesh transport to the selected Mesh IP and port. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations) -->
-6. The Worker releases the reservation when the response body finishes, fails, or is absent. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards rewritten chat requests through Mesh and releases reservations) -->
+1. The Worker validates that the chat request body is JSON and within the configured maximum size. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response) -->
+2. The Worker maps the inbound `model` value to the active model profile before reserving a node. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response) -->
+3. The Worker selects an eligible node before forwarding the request and holds no reservation state. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response) -->
+4. The forwarded request replaces the public alias with the selected node's upstream runtime model name. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response) -->
+5. The forwarded request is sent with Worker-to-Mesh transport to the selected Mesh IP and port, and the node's response streams straight back. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response) -->
 
-**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility), [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation), [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations)
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility), [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation)
 
 **Priority:** P0
 
-**Dependencies:** [REQ-RTR-001](#req-rtr-001-route-family-separation), [REQ-SCH-002](state-scheduling.md#req-sch-002-node-reservations), [REQ-RUN-001](runtime-profiles.md#req-run-001-stable-public-model)
+**Dependencies:** [REQ-RTR-001](#req-rtr-001-route-family-separation), [REQ-SCH-002](state-scheduling.md#req-sch-002-stateless-entry-node-forwarding), [REQ-RUN-001](runtime-profiles.md#req-run-001-stable-public-model)
 
 **Verification:** Automated test
 
@@ -67,12 +66,9 @@ This domain covers the public Worker that receives provider calls, protects rout
 
 1. When the upstream node returns a stream, the Worker returns the same response body stream to AI Gateway. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 streams upstream bodies without buffering them first) -->
 2. The Worker does not buffer a full streaming response before returning it. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 streams upstream bodies without buffering them first) -->
-3. Stream completion releases the scheduler reservation exactly once. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 streams upstream bodies without buffering them first) -->
-4. Stream failure releases the scheduler reservation. <!-- @impl: packages/router-worker/src/router.ts::releaseOnCompletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 releases and penalizes stream failures) -->
-5. Stream failure records the node failure signal. <!-- @impl: packages/router-worker/src/scheduler.ts::recordFailure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 releases and penalizes stream failures) -->
-6. The Worker does not retry after upstream generation has started. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 streams upstream bodies without buffering them first) -->
+3. The Worker does not retry after upstream generation has started. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-003 streams upstream bodies without buffering them first) -->
 
-**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility), [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations)
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
 **Priority:** P0
 

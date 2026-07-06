@@ -10,13 +10,15 @@ const dashboardNodes = [
     id: 'node-big',
     status: 'online',
     agentVersion: 'v1.3.0',
-    metrics: { runtimeState: 'running', readyModels: ['codeflare-mesh', 'qwen3.6:35b-a3b'], gpuMemoryTotalMiB: 24_576, gpuMemoryUsedMiB: 20_000, tokensPerSecond: 42.5, activeRequests: 1 }
+    // readyModels carries upstream model refs (what the runtime loaded), exactly as the scheduler
+    // and the serving-count match on — never the public aliases.
+    metrics: { runtimeState: 'running', readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'], gpuMemoryTotalMiB: 24_576, gpuMemoryUsedMiB: 20_000, tokensPerSecond: 42.5, activeRequests: 1 }
   },
   {
     id: 'node-small',
     status: 'online',
     agentVersion: 'v1.2.0',
-    metrics: { runtimeState: 'ready', readyModels: ['codeflare-mesh'], gpuMemoryTotalMiB: 8_192, gpuMemoryUsedMiB: 4_000, tokensPerSecond: 61.25, activeRequests: 0 }
+    metrics: { runtimeState: 'ready', readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], gpuMemoryTotalMiB: 8_192, gpuMemoryUsedMiB: 4_000, tokensPerSecond: 61.25, activeRequests: 0 }
   },
   {
     id: 'node-down',
@@ -26,8 +28,8 @@ const dashboardNodes = [
 ]
 
 const dashboardProfiles = [
-  { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b'], active: true, rolloutPercent: 100, meshllm: { split: false } },
-  { id: 'mesh-split-qwen36-35b', displayName: 'Qwen3.6 35B (multi-machine)', publicAliases: ['mesh-split'], active: false, rolloutPercent: 100, meshllm: { split: true } }
+  { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b'], upstreamModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', active: true, rolloutPercent: 100, meshllm: { split: false } },
+  { id: 'mesh-split-qwen36-35b', displayName: 'Qwen3.6 35B (multi-machine)', publicAliases: ['mesh-split'], upstreamModel: 'unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers', active: false, rolloutPercent: 100, meshllm: { split: true } }
 ]
 
 function statusFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -282,9 +284,34 @@ describe('dashboard overview contracts', () => {
     expect(revoke).toBeDefined()
     expect(revoke!.dataset.nodeId).toBe('node-small')
     expect(revoke!.dataset.confirm, 'revoke must arm before submitting').toBeTruthy()
+    // An active node's drawer offers Deactivate (the reversible taint) alongside Revoke.
+    const deactivate = fields.find((node) => node.dataset.action === 'node-deactivate')
+    expect(deactivate).toBeDefined()
+    expect(deactivate!.dataset.nodeId).toBe('node-small')
+    expect(deactivate!.textContent).toBe('Deactivate')
 
     await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
     expect(drawer.hidden).toBe(true)
+  })
+
+  it('REQ-ADM-030 a deactivated node reads as tainted (warn tone) and its drawer offers Activate', async () => {
+    const status = statusFixture({ nodes: [{ id: 'node-off', status: 'online', deactivated: true, metrics: { runtimeState: 'ready', readyModels: [], activeRequests: 0, tokensPerSecond: 0, gpuMemoryTotalMiB: 8192 } }] })
+    const harness = await dashboardHarness({ status })
+    const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((node) => node.dataset.nodeRow === 'node-off')!
+    const chip = descendants(row).find((node) => node.className === 'chip')!
+    expect(chip.dataset.tone).toBe('warn')
+    expect(descendants(row).some((node) => node.textContent === 'Deactivated · no model')).toBe(true)
+    // Row action is Manage (opens the drawer), never an inline revoke.
+    expect(descendants(row).some((node) => node.dataset.action === 'node-detail' && node.textContent === 'Manage')).toBe(true)
+    expect(descendants(row).some((node) => node.dataset.action === 'node-revoke')).toBe(false)
+
+    await harness.clickAction('node-detail', { nodeId: 'node-off' })
+    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const activate = fields.find((node) => node.dataset.action === 'node-activate')
+    expect(activate).toBeDefined()
+    expect(activate!.textContent).toBe('Activate')
+    // A deactivated node shows Activate, not Deactivate.
+    expect(fields.some((node) => node.dataset.action === 'node-deactivate')).toBe(false)
   })
 
   it('REQ-ADM-015 opens a model drawer listing the nodes serving each alias', async () => {

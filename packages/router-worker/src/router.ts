@@ -90,6 +90,8 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/cloudflare/gateway/options' && request.method === 'GET') return await handleGatewayOptions(request, deps, url, id, now())
       if (url.pathname === '/admin/cloudflare/gateway/provision-status' && request.method === 'GET') return await handleGatewayProvisionStatus(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/revoke$/) && request.method === 'POST') return await handleNodeRevoke(request, deps, url, id, now())
+      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/deactivate$/) && request.method === 'POST') return await handleNodeDeactivate(request, deps, url, id, now())
+      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/activate$/) && request.method === 'POST') return await handleNodeActivate(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/config$/) && request.method === 'POST') return await handleNodeConfig(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
@@ -112,6 +114,8 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/nodes' && request.method === 'GET') return await handleApiNodeList(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'GET') return await handleApiNodeGet(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/reconfigure$/) && request.method === 'POST') return await handleApiNodeReconfigure(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/deactivate$/) && request.method === 'POST') return await handleApiNodeDeactivate(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/activate$/) && request.method === 'POST') return await handleApiNodeActivate(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'DELETE') return await handleApiNodeDecommission(request, deps, url, id, now())
       if (url.pathname === '/api/v1/models' && request.method === 'GET') return await handleApiModelList(request, deps, id, now())
       if (url.pathname === '/api/v1/models' && request.method === 'POST') return await handleApiModelAdd(request, deps, id, now())
@@ -149,43 +153,39 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   if (new TextEncoder().encode(bodyText).byteLength > maxBytes) return json({ error: 'request_too_large', requestId }, 413, requestId)
   const body = parseObject(bodyText)
   if (!body || typeof body.model !== 'string') return json({ error: 'invalid_json', requestId }, 400, requestId)
-  return runInference(deps, { body, requestHeaders: request.headers, sessionId: sessionIdFor(request, body, requestId), requestId, now })
+  return runInference(deps, { body, requestHeaders: request.headers, requestId, now })
 }
 
-// The core reserve -> forward-to-node -> release path shared by the provider `/v1/chat/completions`
-// route and the admin Playground's direct target. The caller has already validated the body and
-// resolved the session; runInference owns scheduling and the mesh round trip.
-async function runInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; sessionId: string; requestId: string; now: number }): Promise<Response> {
+// The stateless forward path shared by the provider `/v1/chat/completions` route and the admin
+// Playground's direct target. The router selects an eligible node and streams the node's response
+// straight back; mesh-llm owns dispatch, per-node concurrency, and KV-aware routing across the
+// peered mesh, so the router keeps no live reservation state. REQ-SCH-002.
+async function runInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }): Promise<Response> {
   const publicModel = input.body.model as string
-  const result = await deps.scheduler.reserve({ publicModel, sessionId: input.sessionId, now: input.now })
-  if (!result.reservation || !result.node || !result.profile) return json({ error: result.reason ?? 'no-node', requestId: input.requestId }, result.reason === 'no-profile' ? 404 : 429, input.requestId)
-
-  const upstreamToken = await resolveUpstreamToken(deps)
-  if (!upstreamToken) {
-    await deps.scheduler.release(result.reservation.reservationId, input.now)
-    return json({ error: 'upstream_token_missing', requestId: input.requestId }, 503, input.requestId)
+  const selection = await deps.scheduler.selectEntryNode({ publicModel, now: input.now })
+  if (!selection.node || !selection.profile) {
+    if (selection.reason === 'no-profile') return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
+    return json({ error: 'no_healthy_node', requestId: input.requestId }, 503, input.requestId)
   }
 
-  const rewritten = JSON.stringify({ ...input.body, model: result.reservation.upstreamModel })
-  const currentNow = deps.now ?? Date.now
+  const upstreamToken = await resolveUpstreamToken(deps)
+  if (!upstreamToken) return json({ error: 'upstream_token_missing', requestId: input.requestId }, 503, input.requestId)
+
+  const rewritten = JSON.stringify({ ...input.body, model: selection.profile.upstreamModel })
   let upstream: Response
   try {
-    upstream = await deps.mesh.fetch(meshUrl(result.node, '/v1/chat/completions'), {
+    upstream = await deps.mesh.fetch(meshUrl(selection.node, '/v1/chat/completions'), {
       method: 'POST',
       headers: approvedNodeHeaders(input.requestHeaders, upstreamToken, input.requestId),
       body: rewritten
     })
-  } catch (error) {
-    await deps.scheduler.recordFailure(result.reservation.reservationId, currentNow())
-    throw error
+  } catch {
+    return json({ error: 'node_unreachable', requestId: input.requestId }, 502, input.requestId)
   }
-  const headers = responseMetadataHeaders(upstream.headers, input.requestId, input.sessionId, result.node.id)
-  return releaseOnCompletion(
-    upstream,
-    headers,
-    () => deps.scheduler.release(result.reservation!.reservationId, currentNow()),
-    () => deps.scheduler.recordFailure(result.reservation!.reservationId, currentNow())
-  )
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: responseMetadataHeaders(upstream.headers, input.requestId, selection.node.id)
+  })
 }
 
 async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -258,9 +258,19 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   }
   await deps.store.updateNodeHeartbeat(next)
   await applyHeartbeatMeshState(deps.store, deps.env, next, body, now)
+  const desiredVersion = await desiredAgentVersion(deps.store)
+  // A deactivated node is tainted: it keeps heartbeating but must run no model, so it receives no
+  // desired profiles and no mesh bootstrap and is told to stay down. REQ-ADM-030 / REQ-NODE-011.
+  if (next.deactivated === true) {
+    return json({
+      ok: true,
+      desiredProfiles: [],
+      deactivated: true,
+      ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
+    }, 200, requestId)
+  }
   const meshProfile = await selectedMeshProfile(deps.store, next.activeProfileIds)
   const meshBootstrap = meshProfile ? await meshBootstrapFor(deps.store, deps.env, next, meshProfile, now) : undefined
-  const desiredVersion = await desiredAgentVersion(deps.store)
   // A per-node VRAM override caps this node's models below the model's global budget.
   const desiredProfiles = applyNodeVramOverride(await deps.store.listProfiles(), next.maxVramGbOverride)
   return json({
@@ -567,6 +577,29 @@ async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, re
   return json({ ok: true }, 200, requestId)
 }
 
+// Deactivate/activate taint a node without decommissioning it: a deactivated node stays enrolled and
+// keeps heartbeating but runs no model and is excluded from selection (REQ-ADM-030). Both are reversible,
+// so neither is destructive; revoke remains the one-way decommission.
+async function handleNodeDeactivate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return setNodeDeactivated(deps, decodeURIComponent(url.pathname.split('/')[3] ?? ''), true, actor, requestId, now)
+}
+
+async function handleNodeActivate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return setNodeDeactivated(deps, decodeURIComponent(url.pathname.split('/')[3] ?? ''), false, actor, requestId, now)
+}
+
+async function setNodeDeactivated(deps: RouterDeps, nodeId: string, deactivated: boolean, actor: string, requestId: string, now: number): Promise<Response> {
+  const node = await deps.store.getNode(nodeId)
+  if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
+  await deps.store.upsertNode({ ...node, deactivated })
+  await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor, target: nodeId, detail: {} })
+  return json({ ok: true, deactivated }, 200, requestId)
+}
+
 // handleNodeConfig sets or clears a node's per-node VRAM override from the admin console
 // (blank/`null` reverts to the model's global budget; a non-negative number caps this node).
 async function handleNodeConfig(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
@@ -792,7 +825,7 @@ async function handlePlaygroundDirect(request: Request, deps: RouterDeps, reques
   const model = cleanString(body?.model)
   if (!model) return json({ error: 'model_required', requestId }, 400, requestId)
   const messages = Array.isArray(body?.messages) ? body!.messages : []
-  return runInference(deps, { body: { model, messages, stream: true }, requestHeaders: request.headers, sessionId: `playground-${requestId}`, requestId, now })
+  return runInference(deps, { body: { model, messages, stream: true }, requestHeaders: request.headers, requestId, now })
 }
 
 interface GatewaySettings {
@@ -1130,7 +1163,8 @@ function toApiNode(node: NodeRecord) {
     ...(node.runtimeModel !== undefined ? { runtimeModel: node.runtimeModel } : {}),
     ...(node.agentVersion !== undefined ? { agentVersion: node.agentVersion } : {}),
     ...(node.metrics !== undefined ? { metrics: node.metrics } : {}),
-    maxVramGbOverride: node.maxVramGbOverride ?? null
+    maxVramGbOverride: node.maxVramGbOverride ?? null,
+    deactivated: node.deactivated === true
   }
 }
 
@@ -1193,6 +1227,27 @@ async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url
   await deps.store.deleteNode(nodeId)
   await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
   return json({ ok: true, id: nodeId }, 200, requestId)
+}
+
+// Automation twins of the console deactivate/activate: taint or clear a node's taint via the API.
+async function handleApiNodeDeactivate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  return apiSetNodeDeactivated(request, deps, url, true, requestId, now)
+}
+
+async function handleApiNodeActivate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  return apiSetNodeDeactivated(request, deps, url, false, requestId, now)
+}
+
+async function apiSetNodeDeactivated(request: Request, deps: RouterDeps, url: URL, deactivated: boolean, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  const nodeId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
+  const node = await deps.store.getNode(nodeId)
+  if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
+  const updated = { ...node, deactivated }
+  await deps.store.upsertNode(updated)
+  await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
+  return json({ ok: true, node: toApiNode(updated) }, 200, requestId)
 }
 
 /** Machine-facing model projection: identity, the names callers use, and rollout state. */
@@ -1448,52 +1503,11 @@ function parseObject(text: string): Record<string, unknown> | undefined {
   }
 }
 
-function sessionIdFor(request: Request, body: Record<string, unknown>, requestId: string): string {
-  const header = request.headers.get('x-inference-mesh-session')
-  if (header) return header
-  const metadata = body.metadata
-  if (metadata && typeof metadata === 'object') {
-    const record = metadata as Record<string, unknown>
-    if (typeof record.sessionId === 'string') return record.sessionId
-  }
-  return `req-${requestId}`
-}
-
-function responseMetadataHeaders(upstream: Headers, requestId: string, sessionId: string, nodeId: string): Headers {
+function responseMetadataHeaders(upstream: Headers, requestId: string, nodeId: string): Headers {
   const headers = new Headers(upstream)
   headers.set('x-inference-mesh-request-id', requestId)
-  headers.set('x-inference-mesh-session', sessionId)
   headers.set('x-inference-mesh-node', nodeId)
   return headers
-}
-
-function releaseOnCompletion(response: Response, headers: Headers, release: () => Promise<void>, recordFailure: () => Promise<void>): Response {
-  if (!response.body) {
-    void release()
-    return new Response(null, { status: response.status, headers })
-  }
-  const reader = response.body.getReader()
-  const stream = new ReadableStream({
-    async pull(controller) {
-      try {
-        const chunk = await reader.read()
-        if (chunk.done) {
-          controller.close()
-          await release()
-          return
-        }
-        controller.enqueue(chunk.value)
-      } catch (error) {
-        await recordFailure()
-        throw error
-      }
-    },
-    async cancel(reason) {
-      await reader.cancel(reason)
-      await release()
-    }
-  })
-  return new Response(stream, { status: response.status, headers })
 }
 
 function validateClaim(body: ClaimRequest | undefined): string[] {

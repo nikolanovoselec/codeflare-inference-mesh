@@ -230,6 +230,7 @@ func meshRenderInput(profile agent.ModelProfile, cfg agent.Config) agent.MeshLLM
 		APIPort:     cfg.MeshLLMAPIPort,
 		ConsolePort: cfg.MeshLLMConsolePort,
 		Flavor:      meshFlavorFlag(cfg),
+		NostrRelays: cfg.NostrRelays,
 	}
 }
 
@@ -291,6 +292,7 @@ type serviceLoop struct {
 	agentVersion   string
 	installError   string
 	drainTimeout   time.Duration
+	deactivated    bool
 
 	restartMu      sync.Mutex
 	restartPending bool
@@ -364,6 +366,22 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 }
 
 func (s *serviceLoop) handleResponse(ctx context.Context, response agent.HeartbeatResponse) {
+	// A deactivated node is tainted: it keeps heartbeating and self-updating but runs no model.
+	// Tear down a running runtime (idempotent) and hold it down until the taint clears. REQ-NODE-011.
+	if response.Deactivated {
+		if !s.deactivated && s.manager != nil {
+			_ = waitForDrain(ctx, s.activeRequests, s.drainTimeout)
+			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = s.manager.Stop(stopCtx)
+			cancel()
+			s.manager.SetState("deactivated")
+		}
+		s.deactivated = true
+		s.maybeSelfUpdate(ctx, response.DesiredAgentVersion)
+		return
+	}
+	reactivated := s.deactivated
+	s.deactivated = false
 	s.stateMu.Lock()
 	next, _, _, err := agent.ApplyDesiredProfiles(*s.cfg, response.DesiredProfiles, s.configPath)
 	if err == nil {
@@ -372,7 +390,14 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 	s.stateMu.Unlock()
 	if s.manager != nil {
 		s.manager.ApplyBootstrap(response.MeshBootstrap)
-		if err == nil && s.beginProfileRestart(next) {
+		if reactivated {
+			// Taint cleared: relaunch the selected profile even though the desired profiles are
+			// unchanged (ApplyDesiredProfiles reports no restart for an unchanged set). REQ-NODE-011.
+			if profile, ok := agent.SelectedProfile(next); ok && beginRestart(&s.restartMu, &s.restartPending) {
+				s.loadState.SetStarting(profile)
+				go s.finishProfileRestart(ctx, next)
+			}
+		} else if err == nil && s.beginProfileRestart(next) {
 			go s.finishProfileRestart(ctx, next)
 		} else if s.manager.NeedsRestart(response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
 			go s.finishBootstrapRestart(ctx)

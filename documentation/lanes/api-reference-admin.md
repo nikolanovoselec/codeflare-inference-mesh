@@ -227,8 +227,9 @@ POST /admin/playground/direct-chat
 | `200` | Node response streamed back to the caller. | Event-stream / JSON pass-through from the serving node. |
 | `400` | The request omitted a model. | `{ "error": "model_required", "requestId": string }` |
 | `401` | No valid console role resolved for the caller. | Error object. |
-| `404` / `429` | No profile matched the model, or no node had capacity. | `{ "error": "no-profile" \| "no-node", "requestId": string }` |
-| `503` | The node upstream token is not configured. | `{ "error": "upstream_token_missing", "requestId": string }` |
+| `404` | No profile matched the model. | `{ "error": "no-profile", "requestId": string }` |
+| `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
+| `503` | No eligible node is ready to serve, or the node upstream token is not configured. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
 
 **Implements:** [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
@@ -332,6 +333,58 @@ POST /admin/nodes/{nodeId}/config
 | `404` | No node with that id exists, or the node is revoked. | `{ "error": "unknown_node", "requestId": string }` |
 
 **Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-vram-override)
+
+### POST /admin/nodes/:nodeId/deactivate
+
+Deactivates a node from the node detail drawer: it stays a mesh participant and keeps heartbeating, but is told to run no model and is excluded from inference selection. Reversible with `activate`; unlike `revoke` it takes no destructive confirm because it is fully reversible.
+
+```http
+POST /admin/nodes/{nodeId}/deactivate
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Path parameters:** `nodeId` is the URL-encoded node identifier to deactivate.
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The node is marked `deactivated` (`node_deactivated` audit event); its next heartbeat receives an empty desired-profile set and the `deactivated` signal, so the agent stops (and never relaunches) `mesh-llm` while continuing to heartbeat. | `{ "ok": true, "deactivated": true }` |
+| `401` | Admin credential is missing or invalid. | Error object. |
+| `404` | No node with that id exists, or the node is revoked. | `{ "error": "unknown_node", "requestId": string }` |
+
+**Implements:** [REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation), [REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model)
+
+### POST /admin/nodes/:nodeId/activate
+
+Clears a node's deactivation from the node detail drawer so it resumes serving: its next heartbeat carries the active desired profiles again and the agent relaunches `mesh-llm`.
+
+```http
+POST /admin/nodes/{nodeId}/activate
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Path parameters:** `nodeId` is the URL-encoded node identifier to activate.
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The `deactivated` flag is cleared (`node_activated` audit event) and the node becomes eligible for selection again. | `{ "ok": true, "deactivated": false }` |
+| `401` | Admin credential is missing or invalid. | Error object. |
+| `404` | No node with that id exists, or the node is revoked. | `{ "error": "unknown_node", "requestId": string }` |
+
+**Implements:** [REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation), [REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model)
 
 ### POST /admin/cloudflare/gateway/sync
 

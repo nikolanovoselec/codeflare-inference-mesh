@@ -337,6 +337,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const nodeTone = (node) => {
     const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
     if (runtime === 'failed' || node.status === 'offline') return 'danger';
+    if (node.deactivated) return 'warn';
     if (node.status === 'online' && (runtime === 'running' || runtime === 'ready')) return 'ok';
     return 'warn';
   };
@@ -353,6 +354,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // loading — includes failed, which is online-but-not-serving), offline (no heartbeat).
   function nodeCategory(node) {
     if (node.status === 'offline' || node.status === 'revoked') return 'offline';
+    if (node.deactivated) return 'active';
     if (nodeReady(node)) return 'ready';
     return 'active';
   }
@@ -360,6 +362,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (node.status === 'offline') { const age = nodeRelAge(node); return 'Offline' + (age ? ' · last seen ' + age : ''); }
     if (node.status === 'revoked') return 'Removed';
     if (node.status === 'draining') return 'Draining';
+    if (node.deactivated) return 'Deactivated · no model';
     const rt = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : '';
     if (rt === 'failed') return 'Failed';
     if (nodeReady(node)) return 'Ready';
@@ -377,6 +380,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     revoke.dataset.confirm = 'Confirm revoke?';
     revoke.dataset.out = 'node-output';
     return revoke;
+  };
+  // Row action: a right-aligned Manage button that opens the node drawer (Revoke + Deactivate/Activate),
+  // mirroring the model rows. Replaces the inline Revoke button that used to sit mid-row.
+  const manageButton = (nodeId) => {
+    const manage = document.createElement('button');
+    manage.type = 'button';
+    manage.className = 'btn btn-ghost';
+    manage.textContent = 'Manage';
+    manage.dataset.action = 'node-detail';
+    manage.dataset.nodeId = nodeId;
+    return manage;
   };
   const versionCode = (node, desiredVersion) => {
     const reported = node.agentVersion || 'unreported';
@@ -462,7 +476,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
       versionCell.appendChild(versionCode(node, desiredVersion));
-      versionCell.appendChild(revokeButton(node.id));
+      versionCell.appendChild(manageButton(node.id));
       bodyEl.appendChild(row);
     });
   }
@@ -627,6 +641,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     saveVram.dataset.nodeId = node.id;
     saveVram.dataset.out = 'node-output';
     bodyEl.appendChild(saveVram);
+    // Deactivate/Activate is the reversible taint (keeps the node in the mesh, runs no model);
+    // Revoke stays the one-way decommission. REQ-ADM-030.
+    const taint = document.createElement('button');
+    taint.type = 'button';
+    taint.className = 'btn';
+    taint.textContent = node.deactivated ? 'Activate' : 'Deactivate';
+    taint.dataset.action = node.deactivated ? 'node-activate' : 'node-deactivate';
+    taint.dataset.nodeId = node.id;
+    taint.dataset.out = 'node-output';
+    bodyEl.appendChild(taint);
     bodyEl.appendChild(revokeButton(node.id));
   }
   function openModelDrawer(profileId) {
@@ -635,7 +659,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!profile) return;
     const bodyEl = openDrawer(modelName(profile));
     if (!bodyEl) return;
-    const aliases = profile.publicAliases || [];
     bodyEl.appendChild(drawerField('active', 'Status', profile.active ? 'On' : 'Off'));
     // Editable settings, saved through the validated profile-config endpoint. Name is
     // the human label; call name is this model's own public alias. Apps can always
@@ -715,8 +738,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(del);
     }
     bodyEl.appendChild(output2('model-edit-output'));
-    const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
-    const servingNodes = nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.some((model) => aliases.indexOf(model) >= 0));
+    const servingNodes = nodesServingProfile(profile);
     bodyEl.appendChild(drawerField('serving', 'Machines serving it', String(servingNodes.length), String(servingNodes.length)));
     servingNodes.forEach((node) => {
       const item = document.createElement('div');
@@ -854,10 +876,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     setPlaygroundModelSelect(routes.map((name) => ({ value: name, label: name })));
   }
   function modelName(profile) { return (profile.displayName && String(profile.displayName)) || profile.id; }
-  function servingCount(profile) {
+  // A node serves a model when its runtime reports the model's upstream ref ready. readyModels
+  // carries upstream refs (what mesh-llm loaded) exactly as the scheduler/router match on, never
+  // the public aliases, so serving is keyed on profile.upstreamModel.
+  function nodesServingProfile(profile) {
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
-    const aliases = profile.publicAliases || [];
-    return nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.some((model) => aliases.indexOf(model) >= 0)).length;
+    return nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.indexOf(profile.upstreamModel) >= 0);
+  }
+  function servingCount(profile) {
+    return nodesServingProfile(profile).length;
   }
   function renderProfiles(profiles, readiness) {
     const list = byId('profile-list');

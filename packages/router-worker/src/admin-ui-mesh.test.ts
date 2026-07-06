@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_DRAWER, ADMIN_UI_MESH_HEALTH, ADMIN_UI_NODES_TABLE, adminUiHtml } from './admin-ui'
 import type { MeshHealthEntry, MeshUiStatusNode } from './admin-ui'
 import { adminUiHarness, descendants, elementStub, type AdminUiHarness, type StubElement } from './admin-ui-harness'
+import { adminUiCss } from './admin-ui-css'
 import { SETUP_TOKEN_PLACEHOLDER } from './installers'
 
 const meshNodes: readonly MeshUiStatusNode[] = [
@@ -181,9 +182,9 @@ describe('admin UI mesh operations contracts', () => {
     expect(versionOf('node-peer-a').dataset.desiredMatch).toBe('false')
     expect(versionOf('node-peer-a').textContent).toContain('v1.3.0')
     expect(versionOf('node-peer-b').dataset.reported).toBe('unreported')
-    const revokeButtons = rowNodes.filter((node) => node.dataset.action === 'node-revoke')
-    expect(revokeButtons).toHaveLength(meshNodes.length)
-    revokeButtons.forEach((button) => expect(button.dataset.confirm, 'revoke must arm before submitting').toBeTruthy())
+    // Revoke moved into the node drawer (opened via Manage); each row now carries a right-aligned Manage button.
+    const manageButtons = rowNodes.filter((node) => node.dataset.action === 'node-detail' && node.textContent === 'Manage')
+    expect(manageButtons).toHaveLength(meshNodes.length)
   })
 
   it('REQ-SEC-006 surfaces mesh_state_key_missing as an admin status banner', async () => {
@@ -224,6 +225,12 @@ describe('admin UI mesh operations contracts', () => {
     expect(meshField(card, 'peers').textContent).toBe('peers: 2')
     expect(meshField(card, 'coordinator').textContent).toBe('coordinator: node-coord')
     expect(descendants(card).some((node) => node.tagName === 'details')).toBe(true)
+  })
+
+  it('REQ-OBS-007 gives each technical-details field its own line so they never run together', () => {
+    // The fields render as distinct inline <code data-mesh-field> nodes (asserted above); without a
+    // block rule they collapse onto one line. This locks the stylesheet contract that separates them.
+    expect(adminUiCss).toMatch(/code\[data-mesh-field\]\s*\{[^}]*display:\s*block/)
   })
 
   it('REQ-ADM-006 verifies the admin token before storing it', async () => {

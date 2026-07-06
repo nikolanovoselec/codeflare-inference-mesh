@@ -20,15 +20,20 @@ type MeshLLMRenderInput struct {
 	Flavor      string
 	Rotation    int
 	JoinTokens  []string
+	NostrRelays []string
 	ConfigPath  string
 }
 
-// RenderMeshLLMArgs renders the exact `mesh-llm serve` argument list. The
-// order is fixed and by construction the list never contains `--publish`,
-// `--listen-all`, `--auto`, `--discover`, or the `nostr` discovery mode:
-// discovery is hardwired to `mdns`, which only suppresses public relay,
-// STUN, and Nostr egress. The rotation counter is baked into the mesh name
-// so a rotation deterministically demands a different mesh identity.
+// RenderMeshLLMArgs renders the exact `mesh-llm serve` argument list. The order
+// is fixed. Discovery is `nostr`: public relays carry only rendezvous metadata
+// (never inference), so peers on the Cloudflare WARP overlay can find each other
+// without multicast (WARP is unicast, so `mdns` forms only single-node meshes).
+// `--bind-ip <MeshIP>` plus `--disable-iroh-relays` confine iroh's encrypted data
+// transport to the private WARP overlay with no public relay/STUN fallback, so
+// inference data never leaves the mesh. Operator-supplied --nostr-relay entries
+// override mesh-llm's public defaults (the hook for a private relay). The rotation
+// counter is baked into the mesh name so a rotation deterministically demands a
+// different mesh identity.
 func RenderMeshLLMArgs(in MeshLLMRenderInput) []string {
 	args := []string{"serve", "--model", in.ModelRef}
 	if in.Split {
@@ -36,7 +41,8 @@ func RenderMeshLLMArgs(in MeshLLMRenderInput) []string {
 	}
 	args = append(args,
 		"--headless",
-		"--mesh-discovery-mode", "mdns",
+		"--mesh-discovery-mode", "nostr",
+		"--disable-iroh-relays",
 		"--mesh-name", fmt.Sprintf("codeflare-%s-r%d", in.ProfileID, in.Rotation),
 		"--bind-ip", in.MeshIP,
 		"--bind-port", strconv.Itoa(in.BindPort),
@@ -53,6 +59,10 @@ func RenderMeshLLMArgs(in MeshLLMRenderInput) []string {
 		args = append(args, "--config", in.ConfigPath)
 	}
 	args = append(args, "--log-format", "json")
+	// Operator-configured relays override mesh-llm's public defaults; empty keeps the defaults.
+	for _, relay := range in.NostrRelays {
+		args = append(args, "--nostr-relay", relay)
+	}
 	for _, token := range in.JoinTokens {
 		args = append(args, "--join", token)
 	}

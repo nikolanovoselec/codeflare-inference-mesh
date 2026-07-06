@@ -1,11 +1,9 @@
 import { OPERATIONAL_EVENT_CHURN_TYPES } from './store'
-import type { AuditEvent, CredentialKind, ModelProfile, NodeRecord, ReservationRecord, SessionRecord, Store, TokenRecord } from './types'
+import type { AuditEvent, CredentialKind, ModelProfile, NodeRecord, Store, TokenRecord } from './types'
 
 export class MemoryStore implements Store {
   readonly profiles = new Map<string, ModelProfile>()
   readonly nodes = new Map<string, NodeRecord>()
-  readonly sessions = new Map<string, SessionRecord>()
-  readonly reservations = new Map<string, ReservationRecord>()
   readonly tokens: TokenRecord[] = []
   readonly config = new Map<string, unknown>()
   readonly audit: AuditEvent[] = []
@@ -55,7 +53,8 @@ export class MemoryStore implements Store {
 
   async updateNodeHeartbeat(node: NodeRecord): Promise<void> {
     const existing = this.nodes.get(node.id)
-    this.nodes.set(node.id, { ...node, inFlight: existing?.inFlight ?? node.inFlight })
+    // deactivated is operator state the node never reports, so it survives heartbeats (like inFlight).
+    this.nodes.set(node.id, { ...node, inFlight: existing?.inFlight ?? node.inFlight, deactivated: existing?.deactivated ?? node.deactivated })
   }
 
   async revokeNode(nodeId: string, now: number): Promise<void> {
@@ -69,31 +68,6 @@ export class MemoryStore implements Store {
 
   async deleteNode(nodeId: string): Promise<void> {
     this.nodes.delete(nodeId)
-  }
-
-  async getSession(sessionId: string): Promise<SessionRecord | undefined> {
-    return this.sessions.get(sessionId)
-  }
-
-  async putSession(session: SessionRecord): Promise<void> {
-    this.sessions.set(session.sessionId, session)
-  }
-
-  async putReservation(reservation: ReservationRecord): Promise<void> {
-    this.reservations.set(reservation.reservationId, reservation)
-  }
-
-  async getReservation(reservationId: string): Promise<ReservationRecord | undefined> {
-    return this.reservations.get(reservationId)
-  }
-
-  async releaseReservation(reservationId: string, now: number): Promise<void> {
-    const reservation = this.reservations.get(reservationId)
-    if (reservation) this.reservations.set(reservationId, { ...reservation, releasedAt: reservation.releasedAt ?? now })
-  }
-
-  async listOpenExpiredReservations(now: number): Promise<readonly ReservationRecord[]> {
-    return [...this.reservations.values()].filter((reservation) => reservation.releasedAt === undefined && reservation.expiresAt <= now)
   }
 
   async getToken(kind: CredentialKind, id: string): Promise<TokenRecord | undefined> {

@@ -65,6 +65,9 @@ type HeartbeatResponse struct {
 	DesiredProfiles     []ModelProfile `json:"desiredProfiles"`
 	MeshBootstrap       *MeshBootstrap `json:"meshBootstrap,omitempty"`
 	DesiredAgentVersion string         `json:"desiredAgentVersion,omitempty"`
+	// Deactivated tells a tainted node to run no model: it keeps heartbeating but tears down /
+	// never launches mesh-llm until the taint clears. REQ-NODE-011.
+	Deactivated bool `json:"deactivated,omitempty"`
 }
 
 func (c Client) Claim(ctx context.Context, setupToken string, req ClaimRequest) (ClaimResponse, error) {
