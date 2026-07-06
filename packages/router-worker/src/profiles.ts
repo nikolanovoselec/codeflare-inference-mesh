@@ -96,8 +96,20 @@ export const MESHLLM_TUNABLE_DEFAULTS = {
   // The 8192 / 4096 (2:1) split matches the proven single-GPU unit.
   maxOutputTokens: 8192,
   reasoning: { enabled: true, format: 'deepseek', budget: 4096 },
-  prefixCache: { enabled: true, maxEntries: 16 }
+  // payloadMode is set per model in buildCustomProfile (recurrent-hybrid families need
+  // kv-recurrent; dense families are left Auto). shared_* widen the cross-session shared
+  // prefix path a little past mesh-llm's conservative default of 2.
+  prefixCache: { enabled: true, maxEntries: 16, sharedStrideTokens: 128, sharedRecordLimit: 4 }
 } as const
+
+// mesh-llm's Auto prefix-cache payload inference matches the "qwen3" substring and picks
+// resident-kv, which silently no-ops for recurrent-hybrid architectures. Pin kv-recurrent for
+// the families mesh-llm classifies as recurrent (family_policy.rs); dense families stay Auto.
+const MESHLLM_RECURRENT_REF_MARKERS = ['qwen3.5', 'qwen35', 'qwen3.6', 'qwen36', 'qwen3-next', 'qwen3next', 'falcon-h1', 'falcon_h1', 'kimi-linear', 'kimi_linear', 'jamba', 'mamba', 'rwkv', 'nemotron-h', 'nemotron_h']
+export function meshllmPayloadMode(ref: string): string | undefined {
+  const lower = ref.toLowerCase()
+  return MESHLLM_RECURRENT_REF_MARKERS.some((marker) => lower.includes(marker)) ? 'kv-recurrent' : undefined
+}
 
 // The readable last segment of a model reference: the hf:// scheme, the owner
 // prefix, and any @commit pin are dropped so `hf://meshllm/Model-layers@sha`
@@ -158,7 +170,10 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
       flashAttn: MESHLLM_TUNABLE_DEFAULTS.flashAttn,
       maxOutputTokens: MESHLLM_TUNABLE_DEFAULTS.maxOutputTokens,
       reasoning: { ...MESHLLM_TUNABLE_DEFAULTS.reasoning },
-      prefixCache: { ...MESHLLM_TUNABLE_DEFAULTS.prefixCache }
+      prefixCache: {
+        ...MESHLLM_TUNABLE_DEFAULTS.prefixCache,
+        ...(meshllmPayloadMode(ref) ? { payloadMode: meshllmPayloadMode(ref) } : {})
+      }
     },
     version: 1,
     rolloutPercent: 0,

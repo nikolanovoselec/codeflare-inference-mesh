@@ -333,15 +333,15 @@ func TestREQRUN003ContextLimitConfigRendering(t *testing.T) {
 			want:          "[[models]]\nmodel = \"unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S\"\n\n[models.model_fit]\nctx_size = 262144\ncache_type_k = \"q4_0\"\ncache_type_v = \"q4_0\"\n\n[models.throughput]\nparallel = 2\n",
 		},
 		{
-			name:          "prefix cache renders as a model_fit subtable before throughput",
+			name:          "prefix cache renders payload and shared tuning as a model_fit subtable before throughput",
 			modelRef:      "unsloth/Qwen3.5-4B-MTP-GGUF:Q6_K",
 			contextWindow: 0,
 			tunables: MeshLLMSettings{
 				Parallel:    4,
 				Batch:       2048,
-				PrefixCache: &PrefixCacheSettings{Enabled: &on, MaxEntries: 16},
+				PrefixCache: &PrefixCacheSettings{Enabled: &on, MaxEntries: 16, PayloadMode: "kv-recurrent", SharedStrideTokens: 128, SharedRecordLimit: 4},
 			},
-			want: "[[models]]\nmodel = \"unsloth/Qwen3.5-4B-MTP-GGUF:Q6_K\"\n\n[models.model_fit]\nbatch = 2048\n\n[models.model_fit.prefix_cache]\nenabled = true\nmax_entries = 16\n\n[models.throughput]\nparallel = 4\n",
+			want: "[[models]]\nmodel = \"unsloth/Qwen3.5-4B-MTP-GGUF:Q6_K\"\n\n[models.model_fit]\nbatch = 2048\n\n[models.model_fit.prefix_cache]\nenabled = true\nmax_entries = 16\npayload_mode = \"kv-recurrent\"\nshared_stride_tokens = 128\nshared_record_limit = 4\n\n[models.throughput]\nparallel = 4\n",
 		},
 		{
 			name:          "prefix cache disabled renders enabled false",

@@ -680,7 +680,7 @@ POST /admin/profiles/config
 
 **Request body:** JSON body with `profileId` (required) plus any of `contextWindow` (non-negative integer; `0` = Auto), `modelRef` (non-empty string), `maxVramGb` (number `≥ 0`, `0` = no cap), `name` (display name; non-blank), and `callName` (slugified callable alias; non-empty, not the reserved `codeflare-mesh`, not a collision). A changed call name keeps the shared alias. Each field besides `profileId` is optional; an omitted field is left unchanged.
 
-It also accepts the per-model MeshLLM runtime tunables: `parallel`, `batch`, `ubatch`, `maxOutputTokens` (positive integers), `cacheTypeK` / `cacheTypeV` (`f16` \| `q8_0` \| `q4_0`), `flashAttn` (boolean), `reasoning` (`{ enabled?, format?, budget? }`, layered onto the existing block), and `prefixCache` (`{ enabled?, maxEntries? }`, layered; `maxEntries` is `1`-`128`). A positive integer / allowed string / boolean sets a tunable; `null` / `0` / `""` clears it back to Auto (the field is removed, so MeshLLM auto-plans it).
+It also accepts the per-model MeshLLM runtime tunables: `parallel`, `batch`, `ubatch`, `maxOutputTokens` (positive integers), `cacheTypeK` / `cacheTypeV` (`f16` \| `q8_0` \| `q4_0`), `flashAttn` (boolean), `reasoning` (`{ enabled?, format?, budget? }`, layered onto the existing block), and `prefixCache` (`{ enabled?, payloadMode?, maxEntries?, sharedStrideTokens?, sharedRecordLimit? }`, layered; `payloadMode` is `resident-kv` \| `kv-recurrent` \| `full-state`, `maxEntries` is `1`-`128`). A positive integer / allowed string / boolean sets a tunable; `null` / `0` / `""` clears it back to Auto (the field is removed, so MeshLLM auto-plans it).
 
 **Response**
 

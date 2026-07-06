@@ -45,14 +45,17 @@ export interface ModelProfile {
       readonly format?: string
       readonly budget?: number
     }
-    // Resident prompt-prefix cache. This is what populates
-    // prompt_tokens_details.cached_tokens; it is NOT enabled by parallel. Without an
-    // explicit enable, mesh-llm defers to family auto-detection, which leaves the
-    // cache off for uncertified model families. maxEntries is capped low (16) on
-    // purpose: the uncertified fallback of 128 overruns the unified-KV cell pool.
+    // Prompt-prefix cache. This is what populates prompt_tokens_details.cached_tokens; it
+    // is NOT enabled by parallel. maxEntries is capped low (16): the uncertified fallback of
+    // 128 overruns the KV cell pool. payloadMode is load-bearing for recurrent-hybrid
+    // families (qwen35, qwen3-next, falcon-h1): left Auto, mesh-llm picks resident-kv (the
+    // wrong layout) and the cache silently no-ops, so those must pin `kv-recurrent`.
     readonly prefixCache?: {
       readonly enabled?: boolean
       readonly maxEntries?: number
+      readonly payloadMode?: string
+      readonly sharedStrideTokens?: number
+      readonly sharedRecordLimit?: number
     }
   }
   readonly version: number

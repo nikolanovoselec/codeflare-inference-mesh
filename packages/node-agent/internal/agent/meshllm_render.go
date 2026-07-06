@@ -127,6 +127,18 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 		if t.PrefixCache.MaxEntries > 0 {
 			fmt.Fprintf(&pc, "max_entries = %d\n", t.PrefixCache.MaxEntries)
 		}
+		// payload_mode is load-bearing: left unset, mesh-llm's Auto inference matches the
+		// "qwen3" substring and picks resident-kv, which silently no-ops for recurrent-hybrid
+		// architectures (qwen35, qwen3-next, falcon-h1). Pin kv-recurrent for those.
+		if t.PrefixCache.PayloadMode != "" {
+			fmt.Fprintf(&pc, "payload_mode = %q\n", t.PrefixCache.PayloadMode)
+		}
+		if t.PrefixCache.SharedStrideTokens > 0 {
+			fmt.Fprintf(&pc, "shared_stride_tokens = %d\n", t.PrefixCache.SharedStrideTokens)
+		}
+		if t.PrefixCache.SharedRecordLimit > 0 {
+			fmt.Fprintf(&pc, "shared_record_limit = %d\n", t.PrefixCache.SharedRecordLimit)
+		}
 	}
 
 	var req strings.Builder

@@ -729,20 +729,32 @@ function resolveReasoning(existing: { enabled?: boolean; format?: string; budget
 // clears it (removed, never undefined), an absent field is preserved. maxEntries is
 // bounded to [1, 128] so an operator cannot re-introduce the pool-overrun the low
 // default avoids (REQ-RUN-002 / REQ-RUN-003).
-function resolvePrefixCache(existing: { enabled?: boolean; maxEntries?: number } | undefined, value: unknown): { value: { enabled?: boolean; maxEntries?: number } } | { error: string } {
+type PrefixCacheBlock = { enabled?: boolean; maxEntries?: number; payloadMode?: string; sharedStrideTokens?: number; sharedRecordLimit?: number }
+const MESHLLM_PAYLOAD_MODES = new Set(['resident-kv', 'kv-recurrent', 'full-state'])
+function resolvePrefixCache(existing: PrefixCacheBlock | undefined, value: unknown): { value: PrefixCacheBlock } | { error: string } {
   if (typeof value !== 'object' || value === null) return { error: 'invalid_prefix_cache' }
-  const input = value as { enabled?: unknown; maxEntries?: unknown }
-  const next: { enabled?: boolean; maxEntries?: number } = { ...(existing ?? {}) }
+  const input = value as { enabled?: unknown; maxEntries?: unknown; payloadMode?: unknown; sharedStrideTokens?: unknown; sharedRecordLimit?: unknown }
+  const next: PrefixCacheBlock = { ...(existing ?? {}) }
+  const applyInt = (key: 'maxEntries' | 'sharedStrideTokens' | 'sharedRecordLimit', v: unknown, max: number): boolean => {
+    if (v === undefined) return true
+    if (v === null || v === 0) { delete next[key]; return true }
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= max) { next[key] = v; return true }
+    return false
+  }
   if (input.enabled !== undefined) {
     if (input.enabled === null) delete next.enabled
     else if (typeof input.enabled === 'boolean') next.enabled = input.enabled
     else return { error: 'invalid_prefix_cache' }
   }
-  if (input.maxEntries !== undefined) {
-    if (input.maxEntries === null || input.maxEntries === 0) delete next.maxEntries
-    else if (typeof input.maxEntries === 'number' && Number.isInteger(input.maxEntries) && input.maxEntries >= 1 && input.maxEntries <= 128) next.maxEntries = input.maxEntries
+  if (input.payloadMode !== undefined) {
+    if (input.payloadMode === null || input.payloadMode === '') delete next.payloadMode
+    else if (typeof input.payloadMode === 'string' && MESHLLM_PAYLOAD_MODES.has(input.payloadMode)) next.payloadMode = input.payloadMode
     else return { error: 'invalid_prefix_cache' }
   }
+  // max_entries capped at 128 (mesh-llm's uncertified fallback overruns the KV pool there).
+  if (!applyInt('maxEntries', input.maxEntries, 128)) return { error: 'invalid_prefix_cache' }
+  if (!applyInt('sharedStrideTokens', input.sharedStrideTokens, 4096)) return { error: 'invalid_prefix_cache' }
+  if (!applyInt('sharedRecordLimit', input.sharedRecordLimit, 64)) return { error: 'invalid_prefix_cache' }
   return { value: next }
 }
 

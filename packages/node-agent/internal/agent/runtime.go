@@ -57,8 +57,11 @@ type ReasoningSettings struct {
 // auto-detection, which leaves the cache off for any uncertified model family, so
 // every request re-prefills the whole prompt. Enabled nil means unset (omitted).
 type PrefixCacheSettings struct {
-	Enabled    *bool `json:"enabled,omitempty"`
-	MaxEntries int   `json:"maxEntries,omitempty"`
+	Enabled            *bool  `json:"enabled,omitempty"`
+	MaxEntries         int    `json:"maxEntries,omitempty"`
+	PayloadMode        string `json:"payloadMode,omitempty"`
+	SharedStrideTokens int    `json:"sharedStrideTokens,omitempty"`
+	SharedRecordLimit  int    `json:"sharedRecordLimit,omitempty"`
 }
 
 var ErrRuntimeDependencyMissing = errors.New("runtime dependency missing")
