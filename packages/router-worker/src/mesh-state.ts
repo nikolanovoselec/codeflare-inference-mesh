@@ -194,6 +194,11 @@ export async function electSeedIfAbsent(store: Store, env: MeshStateEnv, profile
 }
 
 function bootstrapFromState(state: MeshStateRecord, nodeId: string): MeshBootstrap {
+  // The elected seed always creates its own mesh, even after its invite token lands in
+  // state.tokens. Checking tokens first would tell the seed to join its own mesh, flipping
+  // its role every heartbeat and making the agent SIGTERM a healthy runtime. Peers that are
+  // not the seed join once live tokens exist. REQ-RUN-008.
+  if (state.seedNodeId === nodeId) return { action: 'create', rotation: state.rotation }
   if (state.tokens.length > 0) {
     return {
       action: 'join',
@@ -202,7 +207,6 @@ function bootstrapFromState(state: MeshStateRecord, nodeId: string): MeshBootstr
       joinTokens: state.tokens.map((entry) => entry.token)
     }
   }
-  if (state.seedNodeId === nodeId) return { action: 'create', rotation: state.rotation }
   return { action: 'wait', rotation: state.rotation }
 }
 

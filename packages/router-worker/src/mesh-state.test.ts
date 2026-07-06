@@ -154,13 +154,8 @@ describe('mesh state core', () => {
     })
 
     await reportToken(store, env, freshB, 'invite-token-node-b', 'mesh-1', NOW + 30_000)
-    const seedJoin = await meshBootstrapFor(store, env, { ...freshA, lastSeenAt: NOW + 30_000 }, profile, NOW + 30_000)
-    expect(seedJoin).toEqual({
-      action: 'join',
-      rotation: 0,
-      meshId: 'mesh-1',
-      joinTokens: ['invite-token-node-a', 'invite-token-node-b']
-    })
+    const seedBootstrap = await meshBootstrapFor(store, env, { ...freshA, lastSeenAt: NOW + 30_000 }, profile, NOW + 30_000)
+    expect(seedBootstrap).toEqual({ action: 'create', rotation: 0 })
 
     await store.upsertNode({ ...freshA, lastSeenAt: NOW + 30_000, metrics: { ...freshA.metrics!, meshRole: 'coordinator' } })
     const entries = await meshHealth(store, env, [profile], await store.listNodes(NOW + 30_000), NOW + 30_000)
@@ -182,7 +177,7 @@ describe('mesh state core', () => {
     expect(JSON.stringify(entries)).not.toContain('invite-token')
   })
 
-  it('REQ-RUN-008 answers create to the seed only until its invite token lands', async () => {
+  it('REQ-RUN-008 answers create to the seed even after its invite token lands', async () => {
     const nodeA = meshNode('node-a')
     const { store, env, profile } = await meshFixture(nodeA)
 
@@ -194,20 +189,10 @@ describe('mesh state core', () => {
     expect(await meshBootstrapFor(store, env, stillLaunching, profile, NOW + 15_000)).toEqual({ action: 'create', rotation: 0 })
 
     const reporting = await reportToken(store, env, stillLaunching, 'invite-token-node-a', 'mesh-1', NOW + 30_000)
-    expect(await meshBootstrapFor(store, env, reporting, profile, NOW + 30_000)).toEqual({
-      action: 'join',
-      rotation: 0,
-      meshId: 'mesh-1',
-      joinTokens: ['invite-token-node-a']
-    })
+    expect(await meshBootstrapFor(store, env, reporting, profile, NOW + 30_000)).toEqual({ action: 'create', rotation: 0 })
 
     const steady = await reportToken(store, env, reporting, 'invite-token-node-a', 'mesh-1', NOW + 45_000)
-    expect(await meshBootstrapFor(store, env, steady, profile, NOW + 45_000)).toEqual({
-      action: 'join',
-      rotation: 0,
-      meshId: 'mesh-1',
-      joinTokens: ['invite-token-node-a']
-    })
+    expect(await meshBootstrapFor(store, env, steady, profile, NOW + 45_000)).toEqual({ action: 'create', rotation: 0 })
   })
 
   it('REQ-RUN-008 upserts reported invite tokens into the profile token set', async () => {

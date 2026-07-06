@@ -371,7 +371,7 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 	// Tear down a running runtime (idempotent) and hold it down until the taint clears. REQ-NODE-011.
 	if response.Deactivated {
 		if !s.deactivated && s.manager != nil {
-			_ = waitForDrain(ctx, s.activeRequests, s.drainTimeout)
+			_ = waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout)
 			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			_ = s.manager.Stop(stopCtx)
 			cancel()
@@ -425,7 +425,7 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 
 func (s *serviceLoop) finishBootstrapRestart(ctx context.Context) {
 	defer finishRestart(&s.restartMu, &s.restartPending)
-	if err := waitForDrain(ctx, s.activeRequests, s.drainTimeout); err != nil {
+	if err := waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout); err != nil {
 		s.manager.SetFailure(err)
 		return
 	}
@@ -450,7 +450,7 @@ func (s *serviceLoop) maybeSelfUpdate(ctx context.Context, desired string) {
 	if !applied {
 		return
 	}
-	_ = waitForDrain(ctx, s.activeRequests, s.drainTimeout)
+	_ = waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout)
 	if s.manager != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		_ = s.manager.Stop(stopCtx)
@@ -520,7 +520,7 @@ func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, man
 		return nil
 	}
 	manager.SetState("downloading")
-	if err := waitForDrain(ctx, activeRequests, drainTimeout); err != nil {
+	if err := waitForDrain(ctx, activeRequests, manager, drainTimeout); err != nil {
 		return err
 	}
 	if err := manager.RestartWithInput(ctx, meshRenderInput(profile, cfg), profile.ContextWindow); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
@@ -699,12 +699,18 @@ func profileKey(profile agent.ModelProfile) string {
 	return fmt.Sprintf("%s:%d", profile.ID, profile.Version)
 }
 
-func waitForDrain(ctx context.Context, activeRequests *agent.ActiveCounter, timeout time.Duration) error {
+func waitForDrain(ctx context.Context, activeRequests *agent.ActiveCounter, manager meshRuntime, timeout time.Duration) error {
 	deadline, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-	for activeRequests.Value() > 0 {
+	// Drain both the local proxy counter and the MeshLLM console's own
+	// inflight_requests. The proxy counter releases a request once it has
+	// relayed the upstream response, but MeshLLM can still be generating for a
+	// request the proxy already let go; waiting on the console count too keeps a
+	// restart or SIGTERM from landing mid-inference. The proxy check short
+	// circuits the console poll while local traffic is still in flight.
+	for activeRequests.Value() > 0 || meshLLMInflight(deadline, manager) > 0 {
 		select {
 		case <-deadline.Done():
 			return deadline.Err()
@@ -712,6 +718,21 @@ func waitForDrain(ctx context.Context, activeRequests *agent.ActiveCounter, time
 		}
 	}
 	return nil
+}
+
+// meshLLMInflight reports the MeshLLM console's current inflight_requests, or 0
+// when the runtime is absent or its console is unreachable. An unobservable
+// console contributes no backpressure so drain still completes on the proxy
+// counter and the outer timeout.
+func meshLLMInflight(ctx context.Context, manager meshRuntime) int {
+	if manager == nil {
+		return 0
+	}
+	status, reachable := manager.PollStatus(ctx)
+	if !reachable {
+		return 0
+	}
+	return status.InflightRequests
 }
 
 func shutdownServer(server *http.Server) {

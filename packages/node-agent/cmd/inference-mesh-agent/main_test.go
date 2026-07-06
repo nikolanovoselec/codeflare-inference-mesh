@@ -459,6 +459,34 @@ func TestREQRUN006BootstrapRestartDrainsBeforeRelaunch(t *testing.T) {
 	})
 }
 
+func TestREQRUN006DrainWaitsForMeshLLMConsoleInflight(t *testing.T) {
+	t.Run("blocks while the console reports inflight even with the proxy counter at zero", func(t *testing.T) {
+		counter := &agent.ActiveCounter{}
+		fake := newFakeMeshRuntime(counter)
+		fake.status = agent.MeshLLMStatus{InflightRequests: 1}
+		if err := waitForDrain(context.Background(), counter, fake, 30*time.Millisecond); err == nil {
+			t.Fatal("drain must not complete while MeshLLM console reports inflight_requests > 0")
+		}
+	})
+	t.Run("completes once both the proxy counter and console inflight reach zero", func(t *testing.T) {
+		counter := &agent.ActiveCounter{}
+		fake := newFakeMeshRuntime(counter)
+		fake.status = agent.MeshLLMStatus{InflightRequests: 0}
+		if err := waitForDrain(context.Background(), counter, fake, time.Second); err != nil {
+			t.Fatalf("drain must complete when nothing is in flight, got %v", err)
+		}
+	})
+	t.Run("an unreachable console contributes no backpressure", func(t *testing.T) {
+		counter := &agent.ActiveCounter{}
+		fake := newFakeMeshRuntime(counter)
+		fake.status = agent.MeshLLMStatus{InflightRequests: 5}
+		fake.consoleOK = false
+		if err := waitForDrain(context.Background(), counter, fake, time.Second); err != nil {
+			t.Fatalf("drain must not block on an unobservable console, got %v", err)
+		}
+	})
+}
+
 func TestREQRUN007VersionBumpRestartsEverySplitServingNode(t *testing.T) {
 	t.Run("REQ-RUN-007", func(t *testing.T) {
 		counter := &agent.ActiveCounter{}
