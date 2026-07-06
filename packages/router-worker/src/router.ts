@@ -694,6 +694,7 @@ interface MeshllmTunablesBody {
   flashAttn?: unknown
   maxOutputTokens?: unknown
   reasoning?: unknown
+  prefixCache?: unknown
 }
 
 // resolveReasoning layers a reasoning update onto the existing block, per sub-field,
@@ -719,6 +720,28 @@ function resolveReasoning(existing: { enabled?: boolean; format?: string; budget
     if (input.budget === null || input.budget === 0) delete next.budget
     else if (typeof input.budget === 'number' && Number.isInteger(input.budget) && input.budget >= 1) next.budget = input.budget
     else return { error: 'invalid_reasoning' }
+  }
+  return { value: next }
+}
+
+// resolvePrefixCache layers a prefix-cache update onto the existing block per
+// sub-field, like resolveReasoning: a present valid value sets it, null / 0 / ""
+// clears it (removed, never undefined), an absent field is preserved. maxEntries is
+// bounded to [1, 128] so an operator cannot re-introduce the pool-overrun the low
+// default avoids (REQ-RUN-002 / REQ-RUN-003).
+function resolvePrefixCache(existing: { enabled?: boolean; maxEntries?: number } | undefined, value: unknown): { value: { enabled?: boolean; maxEntries?: number } } | { error: string } {
+  if (typeof value !== 'object' || value === null) return { error: 'invalid_prefix_cache' }
+  const input = value as { enabled?: unknown; maxEntries?: unknown }
+  const next: { enabled?: boolean; maxEntries?: number } = { ...(existing ?? {}) }
+  if (input.enabled !== undefined) {
+    if (input.enabled === null) delete next.enabled
+    else if (typeof input.enabled === 'boolean') next.enabled = input.enabled
+    else return { error: 'invalid_prefix_cache' }
+  }
+  if (input.maxEntries !== undefined) {
+    if (input.maxEntries === null || input.maxEntries === 0) delete next.maxEntries
+    else if (typeof input.maxEntries === 'number' && Number.isInteger(input.maxEntries) && input.maxEntries >= 1 && input.maxEntries <= 128) next.maxEntries = input.maxEntries
+    else return { error: 'invalid_prefix_cache' }
   }
   return { value: next }
 }
@@ -768,6 +791,15 @@ function resolveMeshllmTunables(existing: ModelProfile['meshllm'], body: Meshllm
       // An all-empty result clears the block rather than storing {}.
       if (Object.keys(reasoning.value).length === 0) delete next.reasoning
       else next.reasoning = reasoning.value
+    }
+  }
+  if (body.prefixCache !== undefined) {
+    if (body.prefixCache === null) delete next.prefixCache
+    else {
+      const prefixCache = resolvePrefixCache(existing.prefixCache, body.prefixCache)
+      if ('error' in prefixCache) return prefixCache
+      if (Object.keys(prefixCache.value).length === 0) delete next.prefixCache
+      else next.prefixCache = prefixCache.value
     }
   }
   return { meshllm: next as ModelProfile['meshllm'] }
@@ -1392,7 +1424,8 @@ function toApiModel(profile: ModelProfile) {
       ubatch: m.ubatch ?? null,
       flashAttn: m.flashAttn ?? null,
       maxOutputTokens: m.maxOutputTokens ?? null,
-      reasoning: m.reasoning ?? null
+      reasoning: m.reasoning ?? null,
+      prefixCache: m.prefixCache ?? null
     }
   }
 }

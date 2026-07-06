@@ -673,6 +673,17 @@ describe('router worker behavioral contracts', () => {
     expect(created?.rolloutPercent).toBe(0)
   })
 
+  it('REQ-RUN-002 a new model ships with input caching enabled and multi-lane by default', async () => {
+    const { router, store } = routerFixture()
+    expect((await addModel(router, CUSTOM_GGUF, 'single')).status).toBe(201)
+    const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === CUSTOM_GGUF)
+    // The resident prefix cache is enabled explicitly (family auto-detection leaves it off
+    // for uncertified families) with a low max_entries, and parallel is set so the cache
+    // runs in unified-KV mode. Both are required for prompt_tokens_details.cached_tokens > 0.
+    expect(created?.meshllm.prefixCache).toEqual({ enabled: true, maxEntries: 16 })
+    expect(created?.meshllm.parallel).toBeGreaterThanOrEqual(2)
+  })
+
   it('REQ-RUN-011 adds a split model as a profile with split enabled', async () => {
     const { router, store } = routerFixture()
     const ref = 'hf://meshllm/Qwen3-14B-UD-Q4_K_XL-layers@abc123'
@@ -2121,7 +2132,7 @@ describe('router worker behavioral contracts', () => {
     }))
     const meshllm = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm
 
-    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 }, prefixCache: { enabled: true, maxEntries: 16 } })
     expect(set.status).toBe(200)
     let m = await meshllm()
     expect(m.parallel).toBe(4)
@@ -2132,6 +2143,12 @@ describe('router worker behavioral contracts', () => {
     expect(m.flashAttn).toBe(true)
     expect(m.maxOutputTokens).toBe(8192)
     expect(m.reasoning).toEqual({ enabled: true, format: 'deepseek', budget: 4096 })
+    expect(m.prefixCache).toEqual({ enabled: true, maxEntries: 16 })
+
+    // A partial prefix-cache update layers onto the existing block: sending only enabled
+    // keeps maxEntries.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', prefixCache: { enabled: false } })).status).toBe(200)
+    expect((await meshllm()).prefixCache).toEqual({ enabled: false, maxEntries: 16 })
 
     // A partial reasoning update layers onto the existing block instead of replacing it,
     // so sending only the budget keeps the enabled flag and format.
@@ -2145,12 +2162,13 @@ describe('router worker behavioral contracts', () => {
 
     // Clearing a field back to Auto removes the key entirely, so JSON.stringify never
     // leaves a stale undefined; untouched fields persist.
-    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, reasoning: null })).status).toBe(200)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, reasoning: null, prefixCache: null })).status).toBe(200)
     m = await meshllm()
     expect('parallel' in m).toBe(false)
     expect('cacheTypeK' in m).toBe(false)
     expect('flashAttn' in m).toBe(false)
     expect('reasoning' in m).toBe(false)
+    expect('prefixCache' in m).toBe(false)
     expect(m.cacheTypeV).toBe('q4_0')
     expect(m.batch).toBe(8192)
 
@@ -2159,6 +2177,9 @@ describe('router worker behavioral contracts', () => {
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', cacheTypeK: 'bogus' })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', batch: -1 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', flashAttn: 'yes' })).status).toBe(400)
+    // maxEntries is capped at 128 so an operator cannot re-introduce the KV-pool overrun.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', prefixCache: { maxEntries: 256 } })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', prefixCache: 'on' })).status).toBe(400)
   })
 
   it('REQ-ADM-027 names a model on creation and defaults the name to the model file', async () => {

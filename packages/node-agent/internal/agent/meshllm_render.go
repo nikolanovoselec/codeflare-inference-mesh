@@ -119,6 +119,16 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 		fmt.Fprintf(&fit, "flash_attention = %q\n", flashAttentionValue(*t.FlashAttn))
 	}
 
+	var pc strings.Builder
+	if t.PrefixCache != nil {
+		if t.PrefixCache.Enabled != nil {
+			fmt.Fprintf(&pc, "enabled = %t\n", *t.PrefixCache.Enabled)
+		}
+		if t.PrefixCache.MaxEntries > 0 {
+			fmt.Fprintf(&pc, "max_entries = %d\n", t.PrefixCache.MaxEntries)
+		}
+	}
+
 	var req strings.Builder
 	if t.MaxOutputTokens > 0 {
 		fmt.Fprintf(&req, "max_tokens = %d\n", t.MaxOutputTokens)
@@ -138,7 +148,7 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 	// Nothing overrides the mesh-llm defaults: render no config file so the
 	// runtime keeps its own auto-planning (backward-compatible with a bare
 	// profile that carried no context limit and no tunables).
-	if fit.Len() == 0 && req.Len() == 0 && t.Parallel <= 0 {
+	if fit.Len() == 0 && pc.Len() == 0 && req.Len() == 0 && t.Parallel <= 0 {
 		return ""
 	}
 
@@ -147,6 +157,12 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 	if fit.Len() > 0 {
 		b.WriteString("\n[models.model_fit]\n")
 		b.WriteString(fit.String())
+	}
+	// prefix_cache is a subtable of model_fit, so it must precede the throughput
+	// table (once [models.throughput] opens, no more [models.model_fit.*] may follow).
+	if pc.Len() > 0 {
+		b.WriteString("\n[models.model_fit.prefix_cache]\n")
+		b.WriteString(pc.String())
 	}
 	if t.Parallel > 0 {
 		fmt.Fprintf(&b, "\n[models.throughput]\nparallel = %d\n", t.Parallel)

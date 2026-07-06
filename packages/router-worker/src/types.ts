@@ -29,9 +29,10 @@ export interface ModelProfile {
     readonly maxVramGb?: number
     // Per-model mesh-llm runtime tunables (REQ-RUN-002 / REQ-RUN-003). Each maps
     // to a mesh-llm config key and is optional: an omitted value means "Auto" and
-    // is not rendered into the node config, so mesh-llm auto-plans it. parallel
-    // omitted lets mesh-llm plan lanes (auto up to 4); 1 disables input caching,
-    // 2 or more enables it.
+    // is not rendered into the node config, so mesh-llm auto-plans it. An omitted
+    // parallel does NOT auto-plan to 4 lanes; mesh-llm may pick a single lane, which
+    // keeps the resident prefix cache out of its unified-KV mode, so 2 or more is
+    // required for input caching to run.
     readonly parallel?: number
     readonly cacheTypeK?: string
     readonly cacheTypeV?: string
@@ -43,6 +44,15 @@ export interface ModelProfile {
       readonly enabled?: boolean
       readonly format?: string
       readonly budget?: number
+    }
+    // Resident prompt-prefix cache. This is what populates
+    // prompt_tokens_details.cached_tokens; it is NOT enabled by parallel. Without an
+    // explicit enable, mesh-llm defers to family auto-detection, which leaves the
+    // cache off for uncertified model families. maxEntries is capped low (16) on
+    // purpose: the uncertified fallback of 128 overruns the unified-KV cell pool.
+    readonly prefixCache?: {
+      readonly enabled?: boolean
+      readonly maxEntries?: number
     }
   }
   readonly version: number

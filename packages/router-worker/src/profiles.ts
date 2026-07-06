@@ -75,13 +75,17 @@ const BIND_PORT_STEP = 10
 
 // Per-model mesh-llm runtime tunable defaults (REQ-RUN-002 / REQ-RUN-003),
 // templated from a proven single-GPU llama.cpp unit but adjusted for mesh-llm.
-// Context window and parallel lanes are deliberately NOT set here: they default
-// to "Auto" (an omitted value) so mesh-llm sizes them to the node's GPU — pinning
-// a small context window is exactly what collapses lanes and disables input
-// caching. The rest carry concrete, quality-safe values. Every value is
-// overridable per model from the console; q8_0 KV balances memory and quality
-// (use q4_0 for the largest contexts).
+// Context window is deliberately left Auto (an omitted value) so mesh-llm sizes it
+// to the node's GPU — pinning a small window collapses lanes and disables caching.
+// parallel and prefixCache are set explicitly, not left to Auto: an omitted parallel
+// lets mesh-llm pick a single lane, and an omitted prefix cache defers to family
+// auto-detection, which leaves the resident cache OFF for uncertified families — the
+// two together are why input caching never engaged. parallel 4 runs the cache in its
+// unified-KV mode; prefixCache is enabled with a low max_entries (the uncertified
+// fallback of 128 overruns the KV cell pool → 502). Every value is overridable per
+// model from the console; q8_0 KV balances memory and quality (q4_0 for huge contexts).
 export const MESHLLM_TUNABLE_DEFAULTS = {
+  parallel: 4,
   cacheTypeK: 'q8_0',
   cacheTypeV: 'q8_0',
   batch: 2048,
@@ -91,7 +95,8 @@ export const MESHLLM_TUNABLE_DEFAULTS = {
   // budget or the model can spend its whole allowance thinking with none left to answer.
   // The 8192 / 4096 (2:1) split matches the proven single-GPU unit.
   maxOutputTokens: 8192,
-  reasoning: { enabled: true, format: 'deepseek', budget: 4096 }
+  reasoning: { enabled: true, format: 'deepseek', budget: 4096 },
+  prefixCache: { enabled: true, maxEntries: 16 }
 } as const
 
 // The readable last segment of a model reference: the hf:// scheme, the owner
@@ -145,13 +150,15 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
       modelRef: ref,
       split: input.split,
       bindPort: highestBindPort + BIND_PORT_STEP,
+      parallel: MESHLLM_TUNABLE_DEFAULTS.parallel,
       cacheTypeK: MESHLLM_TUNABLE_DEFAULTS.cacheTypeK,
       cacheTypeV: MESHLLM_TUNABLE_DEFAULTS.cacheTypeV,
       batch: MESHLLM_TUNABLE_DEFAULTS.batch,
       ubatch: MESHLLM_TUNABLE_DEFAULTS.ubatch,
       flashAttn: MESHLLM_TUNABLE_DEFAULTS.flashAttn,
       maxOutputTokens: MESHLLM_TUNABLE_DEFAULTS.maxOutputTokens,
-      reasoning: { ...MESHLLM_TUNABLE_DEFAULTS.reasoning }
+      reasoning: { ...MESHLLM_TUNABLE_DEFAULTS.reasoning },
+      prefixCache: { ...MESHLLM_TUNABLE_DEFAULTS.prefixCache }
     },
     version: 1,
     rolloutPercent: 0,
