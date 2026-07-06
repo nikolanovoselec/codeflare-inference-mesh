@@ -32,7 +32,7 @@
 
 | Boundary | Credential | Purpose | REQs |
 | --- | --- | --- | --- |
-| Client to AI Gateway | AI Gateway token with the `AI Gateway: Run` scope (`cf-aig-authorization`) | Authenticated Gateway rejects requests without a valid AI Gateway token carrying the `AI Gateway: Run` scope, so the open gateway cannot forward the stored provider key on a stranger's behalf (a token that lacks `Run` surfaces as "Model execution failed" — see troubleshooting). | [REQ-SEC-012](../../sdd/spec/security.md), [REQ-SEC-001](../../sdd/spec/security.md) |
+| Client to AI Gateway | AI Gateway token with the `AI Gateway: Run` scope (`cf-aig-authorization`) | Authenticated Gateway rejects requests without a valid AI Gateway token carrying the `AI Gateway: Run` scope, so the open gateway cannot forward the stored provider key on a stranger's behalf (a token that lacks `Run` surfaces as "Model execution failed"; see [troubleshooting.md](troubleshooting.md#clients-get-model-execution-failed-from-the-dynamic-route-while-the-playground-works)). | [REQ-SEC-012](../../sdd/spec/security.md), [REQ-SEC-001](../../sdd/spec/security.md) |
 | AI Gateway to Worker | Provider token | Lets Gateway call router `/v1/*` routes. | [REQ-GWY-002](../../sdd/spec/gateway.md), [REQ-SEC-001](../../sdd/spec/security.md) |
 | Admin to Worker | Admin token/session | Protects setup and admin routes after first-run setup completes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | Recovery to Worker | Admin recovery token | Replaces a lost admin token only on `POST /admin/recovery/reset`; not accepted for normal admin, provider, node, or setup routes. | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |

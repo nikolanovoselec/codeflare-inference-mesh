@@ -2138,6 +2138,11 @@ describe('router worker behavioral contracts', () => {
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', reasoning: { budget: 2048 } })).status).toBe(200)
     expect((await meshllm()).reasoning).toEqual({ enabled: true, format: 'deepseek', budget: 2048 })
 
+    // An explicit null clears a single reasoning sub-field back to Auto (like the scalar
+    // tunables) while the others survive.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', reasoning: { budget: null } })).status).toBe(200)
+    expect((await meshllm()).reasoning).toEqual({ enabled: true, format: 'deepseek' })
+
     // Clearing a field back to Auto removes the key entirely, so JSON.stringify never
     // leaves a stale undefined; untouched fields persist.
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, reasoning: null })).status).toBe(200)

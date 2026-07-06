@@ -206,7 +206,7 @@ The console Playground's **Stop** button aborts an in-flight stream client-side 
 | `409` | No account or gateway resolved to send through. | `{ "error": "gateway_not_configured", "requestId": string }` |
 | `503` | The AI Gateway Run token is not configured. | `{ "error": "gateway_auth_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/playground/direct-chat
 
@@ -233,7 +233,7 @@ POST /admin/playground/direct-chat
 | `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
 | `503` | No eligible node is ready to serve, or the node upstream token is not configured. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/setup-tokens
 
@@ -687,7 +687,7 @@ It also accepts the per-model MeshLLM runtime tunables: `parallel`, `batch`, `ub
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The updated profile's settings (`displayName`/`callableNames` reflect a changed name or call name); a `profile_configured` audit event records the context window, model reference, and VRAM budget. | `{ "ok": true, "profileId": string, "contextWindow": number, "modelRef": string, "maxVramGb": number, "displayName": string, "callableNames": string[] }` |
-| `400` | `profileId` is missing, or the context window (negative or non-integer), model reference, VRAM budget, display name, call name, or a runtime tunable (a negative or non-integer `parallel`/`batch`/`ubatch`/`maxOutputTokens`, an unknown `cacheTypeK`/`cacheTypeV`, a non-boolean `flashAttn`, or a malformed `reasoning`) was invalid. A tunable value of `0` is not an error; it clears the field to Auto. | `invalid_profile_config` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_reasoning` error body. |
+| `400` | `profileId` is missing, or the context window (negative or non-integer), model reference, VRAM budget, display name, call name, or a runtime tunable (a negative or non-integer `parallel`/`batch`/`ubatch`/`maxOutputTokens`, an unknown `cacheTypeK`/`cacheTypeV`, a non-boolean `flashAttn`, or a malformed `reasoning`) was invalid. | `invalid_profile_config` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_reasoning` error body. |
 | `401` | Admin credential is missing or invalid. | Error object. |
 | `404` | No profile with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |

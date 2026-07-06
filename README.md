@@ -91,9 +91,9 @@ Set these in **Settings → Secrets and variables → Actions**. Use scoped API 
 | Token | Minimum scopes |
 | --- | --- |
 | `CLOUDFLARE_API_TOKEN_DEPLOY` | `Workers Scripts: Edit`, `D1: Edit`, `Account Settings: Read` |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | `AI Gateway: Edit`, `AI Gateway: Run`, `Access: Apps and Policies Edit`, `Access: Organizations, Identity Providers, and Groups Edit`, `Account Settings: Read`; add `Workers Routes: Edit` and target-zone DNS permissions for custom-domain provisioning. `AI Gateway: Run` lets the Worker execute the console playground through the authenticated gateway (it presents this token as `cf-aig-authorization`); `Edit` alone syncs the gateway but cannot run inference through it. |
+| `CLOUDFLARE_API_TOKEN_RUNTIME` | `AI Gateway: Edit`, `AI Gateway: Run`, `Access: Apps and Policies Edit`, `Access: Organizations, Identity Providers, and Groups Edit`, `Account Settings: Read`; add `Workers Routes: Edit` and target-zone DNS permissions for custom-domain provisioning. |
 
-Do not store the provider, admin, setup, node, or upstream tokens as GitHub secrets. First-run setup mints those, and each surfaces only where it is used. **Consumer clients** that call the mesh through the dynamic route present their own AI Gateway token carrying the `AI Gateway: Run` scope in `cf-aig-authorization` (a client credential, not a deploy secret); see [security.md](documentation/lanes/security.md) and [troubleshooting.md](documentation/lanes/troubleshooting.md).
+Do not store the provider, admin, setup, node, or upstream tokens as GitHub secrets. First-run setup mints those, and each surfaces only where it is used. `AI Gateway: Run` on the runtime token lets the Worker execute the console playground through the authenticated gateway (presented as `cf-aig-authorization`); `Edit` alone syncs the gateway but cannot run inference through it. **Consumer clients** that call the mesh through the dynamic route present their own AI Gateway token carrying the `AI Gateway: Run` scope in `cf-aig-authorization` (a client credential, not a deploy secret); see [security.md](documentation/lanes/security.md) and [troubleshooting.md](documentation/lanes/troubleshooting.md).
 
 Deploy tags: `vX.Y.Z-dev.N` for integration, `vX.Y.Z` for production.
 

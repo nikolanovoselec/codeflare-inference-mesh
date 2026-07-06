@@ -696,26 +696,31 @@ interface MeshllmTunablesBody {
   reasoning?: unknown
 }
 
-// resolveReasoning validates the optional reasoning sub-object: enabled is a
-// boolean, format a non-empty string, budget a positive integer. Absent / null /
-// empty sub-fields are omitted so a partial edit never writes an undefined field.
-function resolveReasoning(value: unknown): { value: { enabled?: boolean; format?: string; budget?: number } } | { error: string } {
+// resolveReasoning layers a reasoning update onto the existing block, per sub-field,
+// exactly like the scalar tunables: a present valid value sets it, an explicit null /
+// "" / 0 clears it (removed, never undefined), and an absent field is preserved. This
+// keeps partial updates (one sub-field) from dropping the others while still allowing
+// each sub-field to be cleared back to Auto.
+function resolveReasoning(existing: { enabled?: boolean; format?: string; budget?: number } | undefined, value: unknown): { value: { enabled?: boolean; format?: string; budget?: number } } | { error: string } {
   if (typeof value !== 'object' || value === null) return { error: 'invalid_reasoning' }
   const input = value as { enabled?: unknown; format?: unknown; budget?: unknown }
-  const reasoning: { enabled?: boolean; format?: string; budget?: number } = {}
-  if (input.enabled !== undefined && input.enabled !== null) {
-    if (typeof input.enabled !== 'boolean') return { error: 'invalid_reasoning' }
-    reasoning.enabled = input.enabled
+  const next: { enabled?: boolean; format?: string; budget?: number } = { ...(existing ?? {}) }
+  if (input.enabled !== undefined) {
+    if (input.enabled === null) delete next.enabled
+    else if (typeof input.enabled === 'boolean') next.enabled = input.enabled
+    else return { error: 'invalid_reasoning' }
   }
-  if (input.format !== undefined && input.format !== null && input.format !== '') {
-    if (typeof input.format !== 'string') return { error: 'invalid_reasoning' }
-    reasoning.format = input.format
+  if (input.format !== undefined) {
+    if (input.format === null || input.format === '') delete next.format
+    else if (typeof input.format === 'string') next.format = input.format
+    else return { error: 'invalid_reasoning' }
   }
-  if (input.budget !== undefined && input.budget !== null && input.budget !== 0) {
-    if (typeof input.budget !== 'number' || !Number.isInteger(input.budget) || input.budget < 1) return { error: 'invalid_reasoning' }
-    reasoning.budget = input.budget
+  if (input.budget !== undefined) {
+    if (input.budget === null || input.budget === 0) delete next.budget
+    else if (typeof input.budget === 'number' && Number.isInteger(input.budget) && input.budget >= 1) next.budget = input.budget
+    else return { error: 'invalid_reasoning' }
   }
-  return { value: reasoning }
+  return { value: next }
 }
 
 // resolveMeshllmTunables layers the per-model mesh-llm runtime tunables from a
@@ -758,14 +763,11 @@ function resolveMeshllmTunables(existing: ModelProfile['meshllm'], body: Meshllm
   if (body.reasoning !== undefined) {
     if (body.reasoning === null) delete next.reasoning
     else {
-      const reasoning = resolveReasoning(body.reasoning)
+      const reasoning = resolveReasoning(existing.reasoning, body.reasoning)
       if ('error' in reasoning) return reasoning
-      // Layer a partial reasoning update onto the existing block, like the scalar
-      // tunables, so a machine-API caller sending only one sub-field (e.g. budget)
-      // does not drop the others; an all-empty result clears it rather than storing {}.
-      const merged = { ...(existing.reasoning ?? {}), ...reasoning.value }
-      if (Object.keys(merged).length === 0) delete next.reasoning
-      else next.reasoning = merged
+      // An all-empty result clears the block rather than storing {}.
+      if (Object.keys(reasoning.value).length === 0) delete next.reasoning
+      else next.reasoning = reasoning.value
     }
   }
   return { meshllm: next as ModelProfile['meshllm'] }

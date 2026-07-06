@@ -667,6 +667,42 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(outputEl.textContent).toBe('Hello')
   })
 
+  it('REQ-ADM-016 the stop control aborts an in-flight playground stream', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const stream = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+    let aborted = false
+    const harness = await dashboardHarness({
+      respond: (path, init) => {
+        if (path !== '/admin/playground/direct-chat') return undefined
+        // Faithfully model the browser: aborting the fetch signal errors the response
+        // body, so the in-flight read rejects and the stream ends.
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true
+          try { controller.error(new DOMException('aborted', 'AbortError')) } catch { /* already closed */ }
+        })
+        return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      }
+    })
+    harness.byId(ADMIN_UI_PLAYGROUND.promptId).value = 'hello mesh'
+    const send = harness.clickAction(ADMIN_UI_PLAYGROUND.sendAction, { out: ADMIN_UI_PLAYGROUND.outputId })
+    await harness.flush(10)
+
+    controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n'))
+    await harness.flush(10)
+    expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toBe('Hel')
+
+    // Pressing Stop aborts the fetch signal, which ends the stream.
+    await harness.clickAction(ADMIN_UI_PLAYGROUND.stopAction)
+    await harness.flush(10)
+    expect(aborted, 'stop aborts the in-flight fetch signal').toBe(true)
+
+    // A chunk produced after Stop must not reach the output; the read loop has ended.
+    try { controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"lo"}}]}\n\n')) } catch { /* stream aborted */ }
+    await harness.flush(10)
+    await send
+    expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toBe('Hel')
+  })
+
   it('REQ-ADM-016 the status poll preserves the chosen playground model', async () => {
     const profiles = [
       { id: 'model-a', displayName: 'Model A', publicAliases: ['codeflare-mesh', 'model-a'], active: true, rolloutPercent: 100, meshllm: { split: false } },

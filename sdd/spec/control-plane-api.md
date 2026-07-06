@@ -118,7 +118,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Acceptance Criteria:**
 
-1. `GET /api/v1/models` returns each model as a projection: id, display name, callable names, active flag, rollout percent, context window (`0` = Auto), model reference, split flag, per-model VRAM budget in GB (`0` = no cap), and a `tunables` object whose fields are each `null` when Auto. <!-- @impl: packages/router-worker/src/router.ts::toApiModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists models as projections with callable names) -->
+1. `GET /api/v1/models` returns each model as a projection: id, display name, callable names, active flag, rollout percent, context window (`0` = Auto), model reference, split flag, per-model VRAM budget in GB (`0` = no cap), and a `tunables` object, each field `null` when Auto. <!-- @impl: packages/router-worker/src/router.ts::toApiModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists models as projections with callable names) -->
 2. `POST /api/v1/models/{id}` updates a model's context window, model reference, VRAM budget, and/or tunables; it accepts context `0` (Auto), rejects a negative/non-integer context, empty model reference, negative VRAM, or out-of-range tunable, and returns `404` for an unknown model. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelConfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 configures a model context window and rejects invalid input) -->
 3. `POST /api/v1/models/{id}/enable` switches a model on and switches off any other model that answers to the same callable name. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelEnable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 enables a model and switches off another with the same callable name) -->
 4. `POST /api/v1/models/{id}/disable` drops a model's traffic to zero. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDisable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 disables a model by dropping its traffic to zero) -->
@@ -130,7 +130,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Priority:** P1
 
-**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-ADM-008](setup-admin.md#req-adm-008-agent-version-management)
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-ADM-008](setup-admin.md#req-adm-008-agent-version-management)
 
 **Verification:** Automated test
 

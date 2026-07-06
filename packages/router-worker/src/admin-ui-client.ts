@@ -1681,7 +1681,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       } else {
         const fmtRaw = readInput('model-edit-reasoning-format');
         const budgetRaw = readInput('model-edit-reasoning-budget');
-        payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw || undefined, budget: budgetRaw === '' ? undefined : Number(budgetRaw) };
+        // Blank sub-fields send null (clear to Auto), matching the blank = Auto affordance
+        // the other tunables use; a set value is sent verbatim.
+        payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw === '' ? null : fmtRaw, budget: budgetRaw === '' ? null : Number(budgetRaw) };
       }
       setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       toast('Model settings saved');
