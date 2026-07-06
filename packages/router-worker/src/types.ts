@@ -27,6 +27,23 @@ export interface ModelProfile {
     readonly split: boolean
     readonly bindPort: number
     readonly maxVramGb?: number
+    // Per-model mesh-llm runtime tunables (REQ-RUN-002 / REQ-RUN-003). Each maps
+    // to a mesh-llm config key and is optional: an omitted value means "Auto" and
+    // is not rendered into the node config, so mesh-llm auto-plans it. parallel
+    // omitted lets mesh-llm plan lanes (auto up to 4); 1 disables input caching,
+    // 2 or more enables it.
+    readonly parallel?: number
+    readonly cacheTypeK?: string
+    readonly cacheTypeV?: string
+    readonly batch?: number
+    readonly ubatch?: number
+    readonly flashAttn?: boolean
+    readonly maxOutputTokens?: number
+    readonly reasoning?: {
+      readonly enabled?: boolean
+      readonly format?: string
+      readonly budget?: number
+    }
   }
   readonly version: number
   readonly rolloutPercent: number

@@ -282,10 +282,12 @@ func TestREQSEC004NostrRelaysAppendWhenConfiguredOnly(t *testing.T) {
 }
 
 func TestREQRUN003ContextLimitConfigRendering(t *testing.T) {
+	on := true
 	cases := []struct {
 		name          string
 		modelRef      string
 		contextWindow int
+		tunables      MeshLLMSettings
 		want          string
 	}{
 		{
@@ -295,21 +297,45 @@ func TestREQRUN003ContextLimitConfigRendering(t *testing.T) {
 			want:          "[[models]]\nmodel = \"unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S\"\n\n[models.model_fit]\nctx_size = 262144\n",
 		},
 		{
-			name:          "zero context renders nothing",
+			name:          "zero context and no tunables renders nothing",
 			modelRef:      "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
 			contextWindow: 0,
 			want:          "",
 		},
 		{
-			name:          "negative context renders nothing",
+			name:          "negative context and no tunables renders nothing",
 			modelRef:      "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
 			contextWindow: -1,
 			want:          "",
 		},
+		{
+			name:          "tunables render under model_fit, throughput, and request_defaults when context is auto",
+			modelRef:      "unsloth/Qwen3.5-4B-MTP-GGUF:Q6_K",
+			contextWindow: 0,
+			tunables: MeshLLMSettings{
+				Parallel:        4,
+				CacheTypeK:      "q8_0",
+				CacheTypeV:      "q8_0",
+				Batch:           2048,
+				Ubatch:          512,
+				FlashAttn:       &on,
+				MaxOutputTokens: 4096,
+				Reasoning:       &ReasoningSettings{Enabled: &on, Format: "deepseek", Budget: 4096},
+			},
+			want: "[[models]]\nmodel = \"unsloth/Qwen3.5-4B-MTP-GGUF:Q6_K\"\n\n[models.model_fit]\nbatch = 2048\nubatch = 512\ncache_type_k = \"q8_0\"\ncache_type_v = \"q8_0\"\nflash_attention = \"enabled\"\n\n[models.throughput]\nparallel = 4\n\n[models.request_defaults]\nmax_tokens = 4096\nreasoning_enabled = true\nreasoning_format = \"deepseek\"\nreasoning_budget = 4096\n",
+		},
+		{
+			name:          "pinned context and lanes render together with quantized kv",
+			modelRef:      "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
+			contextWindow: 262144,
+			tunables:      MeshLLMSettings{Parallel: 2, CacheTypeK: "q4_0", CacheTypeV: "q4_0"},
+			want:          "[[models]]\nmodel = \"unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S\"\n\n[models.model_fit]\nctx_size = 262144\ncache_type_k = \"q4_0\"\ncache_type_v = \"q4_0\"\n\n[models.throughput]\nparallel = 2\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := MeshLLMConfigTOML(tc.modelRef, tc.contextWindow); got != tc.want {
+			got := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: tc.modelRef, Tunables: tc.tunables}, tc.contextWindow)
+			if got != tc.want {
 				t.Fatalf("MeshLLMConfigTOML = %q, want %q", got, tc.want)
 			}
 		})

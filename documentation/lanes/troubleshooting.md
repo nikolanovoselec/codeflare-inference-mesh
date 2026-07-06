@@ -9,6 +9,7 @@
 - [Requests return 503 no_healthy_node](#requests-return-503-no_healthy_node)
 - [Node stays orange and serves nothing](#node-stays-orange-and-serves-nothing)
 - [Session latency suddenly increases](#session-latency-suddenly-increases)
+- [Prompt-prefix (input) caching is never reused and every request re-prefills](#prompt-prefix-input-caching-is-never-reused-and-every-request-re-prefills)
 - [Installer cannot verify artifact](#installer-cannot-verify-artifact)
 - [Node reports dependency-missing](#node-reports-dependency-missing)
 - [Peer count stays at one](#peer-count-stays-at-one)
@@ -77,6 +78,14 @@
 **Cause:** The cache-warm peer changed (a node drained, a lease expired, or the runtime cache was cleared during a restart or profile switch), so `mesh-llm`'s KV-aware routing had to rebuild the prefix cache on another peer.
 
 **Fix:** Check node eligibility, recent failures, runtime restarts, and audit events; confirm enough eligible peers stay online for `mesh-llm` to keep the prefix cache warm. ([REQ-SCH-002](../../sdd/spec/state-scheduling.md)) ([REQ-OBS-004](../../sdd/spec/observability.md))
+
+## Prompt-prefix (input) caching is never reused and every request re-prefills
+
+**Symptom:** Every request re-processes the whole prompt (`usage.prompt_tokens_details.cached_tokens` stays `0` and prefill is slow), even for requests that share a large system/context prefix.
+
+**Cause:** The model's parallel lanes resolved to a single lane, so `mesh-llm`'s resident prefix cache (`kv_unified`) never engages. Pinning a small context window is the usual trigger: a small `ctx_size` on a large model, or leaving lanes at `1`, collapses the lane count.
+
+**Fix:** In the model's Manage drawer (Advanced runtime), set **Parallel lanes** to `2` or more, and leave **Context window** on Auto (or pin the model's real limit with **KV cache type** `q4_0`/`q8_0` so the large context still fits GPU memory). See [Model runtime tunables](configuration.md#model-runtime-tunables) for the full table and a proven high-throughput profile. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration))
 
 ## Installer cannot verify artifact
 
@@ -157,6 +166,14 @@
 **Cause:** Gateway sync catches Cloudflare rejections from `syncCustomProvider` (needs `AI Gateway: Edit`, a missing gateway, or a route conflict) locally rather than letting them fall through to the Worker's top-level catch-all; it records a `gateway_sync_failed` audit event with the raw cause and returns `424` with the actionable copy above instead of the generic `internal_error`/`500`. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
 **Fix:** Confirm the AI Gateway named in Routing settings still exists, and add `AI Gateway: Edit` to the runtime Cloudflare token if missing, then re-sync. For the exact Cloudflare rejection, look up the `gateway_sync_failed` audit entry's `reason` field by request ID. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync -->
+
+## Clients get "Model execution failed" from the dynamic route while the playground works
+
+**Symptom:** An external OpenAI-compatible client (for example an agent SDK) calling the AI Gateway dynamic route `dynamic/<route>` fails with `500`/`503` and body `{"state":"Failed","error":"Model execution failed (Error)"}`, while the console playground and a direct custom-provider call against the same gateway and model succeed. Gateway logs show the failed call at `provider=run`, `path=/run` with no underlying provider step.
+
+**Cause:** The AI Gateway token the client presents in `cf-aig-authorization` authenticates against the Authenticated Gateway but lacks the `AI Gateway: Run` scope, so the gateway refuses to execute the dynamic route and returns the generic "Model execution failed" mask before any provider step runs. The console playground and internal probes work because they use tokens that already carry `AI Gateway: Run` (the Worker's `CLOUDFLARE_API_TOKEN_RUNTIME`), so the missing scope is invisible from inside the console. This is a token-scope gap, not a route, provider, or model fault. ([REQ-SEC-012](../../sdd/spec/security.md))
+
+**Fix:** Mint or edit the client's AI Gateway token to include the `AI Gateway: Run` scope and use it for `cf-aig-authorization`. Editing a token's permissions keeps its value, so consuming clients do not need a new token string. Confirm with a chat completion for the public alias `codeflare-mesh` through the dynamic route.
 
 ## Requests return 429 rate_limited
 

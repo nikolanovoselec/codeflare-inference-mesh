@@ -434,7 +434,7 @@ func TestREQRUN003StartWritesContextConfigTOML(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expected context config file at %s: %v", path, err)
 		}
-		if want := MeshLLMConfigTOML("target-model", 4096); string(data) != want || len(data) == 0 {
+		if want := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "target-model"}, 4096); string(data) != want || len(data) == 0 {
 			t.Fatalf("config file content = %q, want rendered MeshLLMConfigTOML output", string(data))
 		}
 

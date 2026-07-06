@@ -93,6 +93,8 @@ Set these in **Settings → Secrets and variables → Actions**. Use scoped API 
 | `CLOUDFLARE_API_TOKEN_DEPLOY` | `Workers Scripts: Edit`, `D1: Edit`, `Account Settings: Read` |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | `AI Gateway: Edit`, `Access: Apps and Policies Edit`, `Access: Organizations, Identity Providers, and Groups Edit`, `Account Settings: Read`; add `Workers Routes: Edit` and target-zone DNS permissions for custom-domain provisioning |
 
+**Consumer token scope.** Applications that call the mesh through the AI Gateway dynamic route present an AI Gateway token in `cf-aig-authorization`. That token must carry the `AI Gateway: Run` scope. A token that authenticates but lacks `Run` is refused at route execution and surfaces as the generic `Model execution failed` error, even though the console playground (which uses the runtime token) works. See [troubleshooting.md](documentation/lanes/troubleshooting.md).
+
 Do not store the provider, admin, setup, node, or upstream tokens as GitHub secrets. First-run setup mints those, and each surfaces only where it is used.
 
 Deploy tags: `vX.Y.Z-dev.N` for integration, `vX.Y.Z` for production.

@@ -402,7 +402,8 @@ func (m *MeshLLMManager) renderInputLocked() MeshLLMRenderInput {
 }
 
 func (m *MeshLLMManager) writeContextConfig(input *MeshLLMRenderInput) error {
-	if m.contextWindow <= 0 {
+	content := MeshLLMConfigTOML(*input, m.contextWindow)
+	if content == "" {
 		input.ConfigPath = ""
 		return nil
 	}
@@ -412,7 +413,7 @@ func (m *MeshLLMManager) writeContextConfig(input *MeshLLMRenderInput) error {
 	if err := os.MkdirAll(filepath.Dir(input.ConfigPath), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(input.ConfigPath, []byte(MeshLLMConfigTOML(input.ModelRef, m.contextWindow)), 0o600)
+	return os.WriteFile(input.ConfigPath, []byte(content), 0o600)
 }
 
 func (m *MeshLLMManager) runningLocked() bool {

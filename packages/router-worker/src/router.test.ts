@@ -1563,7 +1563,7 @@ describe('router worker behavioral contracts', () => {
     expect(calls[3]!.body).toEqual({ name: 'Codeflare Inference Mesh', slug: 'codeflare-inference-mesh', base_url: 'https://router.example.workers.dev', description: 'Codeflare Inference Mesh OpenAI-compatible router', enable: true })
     expect(routeBody.name).toBe('codeflare-mesh')
     expect(routeBody.enabled).toBe(true)
-    expect(modelNode.properties).toEqual({ provider: 'custom-codeflare-inference-mesh', model: 'codeflare-mesh', retries: 1, timeout: 120000 })
+    expect(modelNode.properties).toEqual({ provider: 'custom-codeflare-inference-mesh', model: 'codeflare-mesh', retries: 3, timeout: 120000 })
     expect(result).toMatchObject({ providerId: 'provider-a', providerSlug: 'codeflare-inference-mesh', routeId: 'route-a', routeVersionId: 'version-a', deploymentId: 'deployment-a', gatewayId: 'gateway-a', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', workerUrl: 'https://router.example.workers.dev', manualProviderKeyRequired: true, providerTokenInstructions: 'manual' })
   })
 
@@ -1909,7 +1909,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-GWY-003 reuses existing Cloudflare Gateway resources on repeat sync', async () => {
     const calls: string[] = []
-    const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh', model: 'codeflare-mesh', retries: 1, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
+    const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh', model: 'codeflare-mesh', retries: 3, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
     const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
       const method = init?.method ?? 'GET'
@@ -1928,7 +1928,7 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-GWY-003 re-enables a disabled route even when its routing elements already match', async () => {
-    const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh', model: 'codeflare-mesh', retries: 1, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
+    const elements = [{ id: 'start', type: 'start', outputs: { next: { elementId: 'model' } } }, { id: 'model', type: 'model', properties: { provider: 'custom-codeflare-inference-mesh', model: 'codeflare-mesh', retries: 3, timeout: 120000 }, outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } } }, { id: 'end', type: 'end', outputs: {} }]
     const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
     const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input))
@@ -2098,14 +2098,57 @@ describe('router worker behavioral contracts', () => {
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', maxVramGb: 0 })).status).toBe(200)
     expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm.maxVramGb).toBe(0)
 
-    // Boundary validation: non-positive context, blank model, negative VRAM, unknown profile, and missing admin auth are all rejected.
-    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 0 })).status).toBe(400)
+    // Context window 0 means Auto (mesh-llm sizes it) and is accepted; a negative or
+    // non-integer context, blank model, negative VRAM, unknown profile, and missing
+    // admin auth are all rejected.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 0 })).status).toBe(200)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: -1 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 2.5 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', modelRef: '   ' })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', maxVramGb: -1 })).status).toBe(400)
     expect((await configure({ profileId: 'no-such-profile', contextWindow: 1024 })).status).toBe(404)
     const noAuth = await router(new Request('https://router.test/admin/profiles/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 1024 }) }))
     expect(noAuth.status).toBe(401)
+  })
+
+  it('REQ-RUN-002 persists per-model runtime tunables and clears them back to Auto', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    }))
+    const meshllm = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm
+
+    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    expect(set.status).toBe(200)
+    let m = await meshllm()
+    expect(m.parallel).toBe(4)
+    expect(m.cacheTypeK).toBe('q4_0')
+    expect(m.cacheTypeV).toBe('q4_0')
+    expect(m.batch).toBe(8192)
+    expect(m.ubatch).toBe(4096)
+    expect(m.flashAttn).toBe(true)
+    expect(m.maxOutputTokens).toBe(8192)
+    expect(m.reasoning).toEqual({ enabled: true, format: 'deepseek', budget: 4096 })
+
+    // Clearing a field back to Auto removes the key entirely, so JSON.stringify never
+    // leaves a stale undefined; untouched fields persist.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, reasoning: null })).status).toBe(200)
+    m = await meshllm()
+    expect('parallel' in m).toBe(false)
+    expect('cacheTypeK' in m).toBe(false)
+    expect('flashAttn' in m).toBe(false)
+    expect('reasoning' in m).toBe(false)
+    expect(m.cacheTypeV).toBe('q4_0')
+    expect(m.batch).toBe(8192)
+
+    // Invalid values are rejected at the boundary.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 0.5 })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', cacheTypeK: 'bogus' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', batch: -1 })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', flashAttn: 'yes' })).status).toBe(400)
   })
 
   it('REQ-ADM-027 names a model on creation and defaults the name to the model file', async () => {
@@ -2700,6 +2743,20 @@ describe('Access-first setup and host gating contracts', () => {
     expect(calls[0]!.url).toBe('https://gateway.ai.cloudflare.com/v1/account-a/gw-x/compat/chat/completions')
     expect(calls[0]!.body).toMatchObject({ model: 'dynamic/custom-route', stream: true, messages: [{ role: 'user', content: 'hi' }] })
     expect(calls[0]!.headers['cf-aig-authorization']).toBe('Bearer aig-token')
+  })
+
+  it('REQ-ADM-029 forwards playground tools and a max-token cap to the upstream route when supplied', async () => {
+    const calls: Array<{ body: Record<string, unknown> }> = []
+    const playgroundFetcher = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ body: JSON.parse(String(init!.body)) as Record<string, unknown> })
+      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }) as typeof fetch
+    const { router } = routerFixture({ env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-token' }, playgroundFetcher })
+    const tools = [{ type: 'function', function: { name: 'get_weather', parameters: {} } }]
+    const res = await router(new Request('https://router.test/admin/playground/chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ gatewayId: 'gw-x', route: 'custom-route', messages: [{ role: 'user', content: 'hi' }], tools, maxTokens: 256 }) }))
+    expect(res.status).toBe(200)
+    // The client sends maxTokens; the endpoint forwards OpenAI-native tools and max_tokens.
+    expect(calls[0]!.body).toMatchObject({ model: 'dynamic/custom-route', tools, max_tokens: 256 })
   })
 
   it('REQ-ADM-029 playground direct target selects a node and forwards the internal model straight to it', async () => {
@@ -3744,7 +3801,10 @@ describe('control-plane API (/api/v1)', () => {
     expect((await vram.json() as { model: { maxVramGb: number } }).model.maxVramGb).toBe(16)
     expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-default-qwen36-35b')?.meshllm.maxVramGb).toBe(16)
     expect((await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ maxVramGb: -5 }) }))).status).toBe(400)
-    const bad = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 0 }) }))
+    // Context window 0 = Auto is accepted; a negative context is rejected.
+    const autoCtx = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 0 }) }))
+    expect(autoCtx.status).toBe(200)
+    const bad = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: -1 }) }))
     expect(bad.status).toBe(400)
     const missing = await router(new Request('https://router.test/api/v1/models/ghost', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 8192 }) }))
     expect(missing.status).toBe(404)

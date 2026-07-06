@@ -176,7 +176,7 @@ ${field({ id: 'model-add-name', label: 'Name', control: textInput({ id: 'model-a
 ${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine (full model each)</option><option value="split">Split across machines</option></select></span>' })}
 </div>
 <div class="form-grid">
-${field({ id: 'model-add-ref', label: 'Model reference', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'Paste a model reference, or find one below.' })}
+${field({ id: 'model-add-ref', label: 'Model file', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'The Hugging Face model file to serve, as repo:quant. Paste one, or find one below.' })}
 </div>
 <p class="field-hint">Find a model: <a id="model-add-search-single" href="https://huggingface.co/unsloth?search_models=GGUF" target="_blank" rel="noopener">Unsloth GGUF (single machine)</a> · <a id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">mesh-llm layer packages (split)</a> · <a id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">prepare your own split model</a></p>
 <div class="form-actions">${button({ action: 'model-add', label: 'Add model', variant: 'primary', out: 'model-add-output' })}</div>
@@ -232,7 +232,9 @@ ${field({ id: ADMIN_UI_PLAYGROUND.targetSelectId, label: 'Target', control: empt
 ${field({ id: ADMIN_UI_PLAYGROUND.selectId, label: 'Model or route', control: emptySlotSelect(ADMIN_UI_PLAYGROUND.slotId, ADMIN_UI_PLAYGROUND.selectId, 'playgroundModel', 'data-playground-model-select="true"'), hint: 'The direct target lists your switched-on models; a gateway target lists the dynamic routes on that gateway.' })}
 </div>
 ${field({ id: ADMIN_UI_PLAYGROUND.promptId, label: 'Prompt', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.promptId}" name="prompt" rows="4" placeholder="Ask the mesh something to verify the full path."></textarea>` })}
-<div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}</div>
+${field({ id: ADMIN_UI_PLAYGROUND.toolsId, label: 'Tools (JSON, optional)', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.toolsId}" name="tools" rows="3" placeholder='[{"type":"function","function":{"name":"get_weather","parameters":{}}}]'></textarea>`, hint: 'Paste an OpenAI-format tools array to reproduce an agentic (tool-calling) request on the real route. Leave blank for a plain chat.' })}
+${field({ id: ADMIN_UI_PLAYGROUND.maxTokensId, label: 'Max tokens', control: textInput({ id: ADMIN_UI_PLAYGROUND.maxTokensId, name: 'maxTokens', type: 'number', min: 1, placeholder: '2048' }), hint: 'Cap on the response length so a runaway generation is bounded. Blank uses the model default.' })}
+<div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}${button({ action: ADMIN_UI_PLAYGROUND.stopAction, label: 'Stop', variant: 'ghost', out: ADMIN_UI_PLAYGROUND.outputId })}</div>
 ${output({ id: ADMIN_UI_PLAYGROUND.outputId, kind: 'playground', pre: true })}`
   })
 }

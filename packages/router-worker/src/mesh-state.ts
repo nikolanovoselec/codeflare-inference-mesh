@@ -35,6 +35,11 @@ export interface MeshHealthEntry {
   peerNodeIds: readonly string[]
   readyModels: readonly string[]
   failedNodeIds: readonly string[]
+  /** Member nodes tainted deactivated (REQ-ADM-030): enrolled but running no model. */
+  deactivatedNodeIds: readonly string[]
+  /** The profile's own active state; an inactive profile is never "ready" however
+   *  much stale mesh state it still carries (REQ-OBS-007). */
+  active: boolean
   tokenCount: number
   secretAgeMs?: number
   lastError?: string
@@ -117,7 +122,7 @@ export async function meshHealth(store: Store, env: MeshStateEnv, profiles: read
   const entries: MeshHealthEntry[] = []
   for (const profile of meshProfiles) {
     if (!key) {
-      entries.push({ profileId: profile.id, rotation: 0, peerNodeIds: [], readyModels: [], failedNodeIds: [], tokenCount: 0, lastError: MESH_STATE_KEY_MISSING })
+      entries.push({ profileId: profile.id, rotation: 0, peerNodeIds: [], readyModels: [], failedNodeIds: [], deactivatedNodeIds: [], active: profile.active, tokenCount: 0, lastError: MESH_STATE_KEY_MISSING })
       continue
     }
     const state = sweepMeshState((await loadMeshState(store, key, profile.id)) ?? emptyMeshState(0), now)
@@ -274,6 +279,7 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
   const failedNodeIds = members
     .filter((node) => ['failed', 'dependency-missing', 'stopped'].includes(node.metrics?.runtimeState ?? ''))
     .map((node) => node.id)
+  const deactivatedNodeIds = members.filter((node) => node.deactivated === true).map((node) => node.id)
   const oldestTokenAt = state.tokens.length > 0 ? Math.min(...state.tokens.map((entry) => entry.updatedAt)) : undefined
   return {
     profileId: profile.id,
@@ -281,6 +287,8 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
     peerNodeIds: state.tokens.map((entry) => entry.nodeId),
     readyModels,
     failedNodeIds,
+    deactivatedNodeIds,
+    active: profile.active,
     tokenCount: state.tokens.length,
     ...(state.meshId !== null ? { meshId: state.meshId } : {}),
     ...(state.seedNodeId !== null ? { seedNodeId: state.seedNodeId } : {}),

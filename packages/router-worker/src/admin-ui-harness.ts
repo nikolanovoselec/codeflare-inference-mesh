@@ -39,6 +39,10 @@ export interface StubElement {
   closest: (selector: string) => StubElement | null
   scrollIntoView: (options?: unknown) => void
   focus: (options?: unknown) => void
+  /** DOM node type: 1 for elements, 3 for text nodes (createTextNode). */
+  nodeType?: number
+  /** Text-node data appender; grows the node in place instead of replacing it. */
+  appendData?: (data: string) => void
 }
 
 function matchesSimpleSelector(element: StubElement, selector: string): boolean {
@@ -62,6 +66,7 @@ export function elementStub(overrides: Partial<StubElement> = {}): StubElement {
     id: '',
     tagName: 'div',
     textContent: '',
+    nodeType: 1,
     value: '',
     checked: false,
     selected: false,
@@ -122,10 +127,12 @@ export function elementStub(overrides: Partial<StubElement> = {}): StubElement {
     scrollIntoView: () => undefined,
     focus: () => undefined
   }
-  // Mirror the DOM contract the client relies on: assigning textContent
-  // replaces all children with the given text.
+  // Mirror the DOM contract the client relies on: assigning textContent replaces
+  // all children with the given text. When no own text is set, aggregate any text-node
+  // children (nodeType 3) so appended stream chunks read back like a real element's
+  // textContent — element children are not aggregated, preserving existing behavior.
   Object.defineProperty(base, 'textContent', {
-    get: () => text,
+    get: () => text || base.children.filter((child) => child && child.nodeType === 3).map((child) => child.textContent).join(''),
     set: (value: string) => {
       text = value
       base.children.length = 0
@@ -241,12 +248,20 @@ export function adminUiHarness(html: string, respond: (path: string, init?: Requ
     })
     return element
   }
+  const createTextNode = (data: string): StubElement => {
+    const node = elementStub({ tagName: '#text' })
+    node.nodeType = 3
+    node.textContent = data
+    node.appendData = (more: string) => { node.textContent = String(node.textContent) + more }
+    return node
+  }
   const documentStub = {
     body,
     hidden: false,
     getElementById: (id: string) => getById(id),
     querySelector: (selector: string) => query(selector),
     createElement,
+    createTextNode,
     addEventListener: (name: string, listener: StubListener) => documentListeners.set(name, listener)
   }
 

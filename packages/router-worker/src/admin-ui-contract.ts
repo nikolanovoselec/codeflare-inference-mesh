@@ -138,8 +138,11 @@ export const ADMIN_UI_PLAYGROUND = {
   selectId: 'playground-model',
   slotId: 'playground-model-slot',
   promptId: 'playground-prompt',
+  toolsId: 'playground-tools',
+  maxTokensId: 'playground-max-tokens',
   outputId: 'playground-output',
   sendAction: 'playground-send',
+  stopAction: 'playground-stop',
   directValue: 'direct',
   directPath: '/admin/playground/direct-chat',
   gatewayPath: '/admin/playground/chat'
@@ -179,6 +182,8 @@ export interface MeshHealthEntry {
   readonly peerNodeIds: readonly string[]
   readonly readyModels?: readonly string[]
   readonly failedNodeIds?: readonly string[]
+  readonly deactivatedNodeIds?: readonly string[]
+  readonly active?: boolean
   readonly tokenCount: number
   readonly secretAgeMs?: number
   readonly lastError?: string

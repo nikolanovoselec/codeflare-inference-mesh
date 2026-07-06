@@ -660,7 +660,7 @@ GET /api/v1/models
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The models. | `{ "models": [{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "split": boolean, "maxVramGb": number }] }`. `split` is `true` when the model serves as a layer package across several machines. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). |
+| `200` | The models. | `{ "models": [{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "split": boolean, "maxVramGb": number, "tunables": { "parallel": number\|null, "cacheTypeK": string\|null, "cacheTypeV": string\|null, "batch": number\|null, "ubatch": number\|null, "flashAttn": boolean\|null, "maxOutputTokens": number\|null, "reasoning": object\|null } }] }`. `split` is `true` when the model serves as a layer package across several machines. `contextWindow` `0` means Auto. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). Each `tunables` field is `null` when Auto (unset, MeshLLM auto-plans it). |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
@@ -690,7 +690,7 @@ POST /api/v1/models
 
 ### POST /api/v1/models/{id}
 
-Updates a model's context window, model reference, VRAM budget, display name, and/or callable name.
+Updates a model's context window, model reference, VRAM budget, display name, callable name, and/or MeshLLM runtime tunables.
 
 ```http
 POST /api/v1/models/{id}
@@ -698,14 +698,14 @@ POST /api/v1/models/{id}
 
 **Authentication:** automation key
 
-**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string }` — context window must be a positive integer; model reference must be non-empty; VRAM budget must be a number `≥ 0` (`0` = no cap); `name` sets the display name (must be non-blank); `callName` sets the model's own callable alias (slugified, non-empty, not the reserved `codeflare-mesh`, and not a collision with another model's alias) while keeping the shared `codeflare-mesh` alias. Each field is optional; an omitted field is left unchanged.
+**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "reasoning"?: object }` — context window must be a non-negative integer (`0` = Auto); model reference must be non-empty; VRAM budget must be a number `≥ 0` (`0` = no cap); `name` sets the display name (must be non-blank); `callName` sets the model's own callable alias (slugified, non-empty, not the reserved `codeflare-mesh`, and not a collision with another model's alias) while keeping the shared `codeflare-mesh` alias. The tunables mirror `POST /admin/profiles/config`: `parallel`/`batch`/`ubatch`/`maxOutputTokens` are positive integers, `cacheTypeK`/`cacheTypeV` are one of `f16`/`q8_0`/`q4_0`, `flashAttn` is a boolean, and `reasoning` is `{ enabled?, format?, budget? }`; a `null` / `0` / `""` value clears a tunable back to Auto. Each field is optional; an omitted field is left unchanged.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The updated model projection (`callableNames` reflects a changed call name). | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | The context window, model reference, VRAM budget, display name, or call name was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_model_config` error body. |
+| `400` | The context window (negative or non-integer; `0` is accepted as Auto), model reference, VRAM budget, display name, call name, or a runtime tunable was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_reasoning` / `invalid_model_config` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |

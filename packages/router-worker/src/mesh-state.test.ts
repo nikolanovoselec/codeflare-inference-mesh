@@ -124,6 +124,17 @@ describe('mesh state core', () => {
     expect(staleFixture.store.config.has(STATE_CONFIG_KEY)).toBe(false)
   })
 
+  it('REQ-OBS-007 reflects the profile active state and deactivated member nodes in the health entry', async () => {
+    const { store, env, profile } = await meshFixture(meshNode('node-a', { deactivated: true }))
+    const entries = await meshHealth(store, env, [profile], await store.listNodes(NOW), NOW)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.active).toBe(true)
+    expect(entries[0]!.deactivatedNodeIds).toEqual(['node-a'])
+
+    const off = await meshHealth(store, env, [meshProfile({ active: false })], await store.listNodes(NOW), NOW)
+    expect(off[0]!.active).toBe(false)
+  })
+
   it('REQ-RUN-008 returns create to the seed and wait then join with live tokens to peers', async () => {
     const nodeA = meshNode('node-a')
     const nodeB = meshNode('node-b')
@@ -163,6 +174,8 @@ describe('mesh state core', () => {
       peerNodeIds: ['node-a', 'node-b'],
       readyModels: [UPSTREAM_MODEL],
       failedNodeIds: [],
+      deactivatedNodeIds: [],
+      active: true,
       tokenCount: 2,
       secretAgeMs: 15_000
     })
@@ -344,7 +357,7 @@ describe('mesh state core', () => {
     expect(store.config.size).toBe(0)
 
     const entries = await meshHealth(store, env, [profile], [nodeA], NOW)
-    expect(entries).toEqual([{ profileId: PROFILE_ID, rotation: 0, peerNodeIds: [], readyModels: [], failedNodeIds: [], tokenCount: 0, lastError: 'mesh_state_key_missing' }])
+    expect(entries).toEqual([{ profileId: PROFILE_ID, rotation: 0, peerNodeIds: [], readyModels: [], failedNodeIds: [], deactivatedNodeIds: [], active: true, tokenCount: 0, lastError: 'mesh_state_key_missing' }])
 
     const keyed = await handleMeshRotate(rotateRequest({ profileId: PROFILE_ID }), store, meshEnv(), NOW)
     expect(keyed.status).toBe(200)

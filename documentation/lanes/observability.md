@@ -20,7 +20,7 @@ Provider responses include request ID and selected node identity when policy per
 | --- | --- | --- |
 | Nodes | Node status, public models, active profiles, runtime readiness, token throughput, GPU memory, capacity, in-flight count, and last seen. | [REQ-OBS-002](../../sdd/spec/observability.md) |
 | Profiles | Public aliases, upstream model, source mode, version, rollout percent, active flag, and ready/downloading/failed node counts. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md), [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| Mesh health | One entry per MeshLLM profile: coordinator, peers, ready models, failed nodes, rotation counter, and secret presence/age (see [Mesh health](#mesh-health)). | [REQ-OBS-007](../../sdd/spec/observability.md) |
+| Mesh health | One entry per MeshLLM profile: coordinator, peers, ready models, failed nodes, deactivated nodes, the profile's active state, rotation counter, and secret presence/age (see [Mesh health](#mesh-health)). | [REQ-OBS-007](../../sdd/spec/observability.md) |
 | Audit | Recent setup, claim, unregister, revoke, admin recovery reset, route provisioning, profile switch, profile activation, agent version selection, and mesh lifecycle events. | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-006](../../sdd/spec/observability.md) |
 | Metadata | Status generation timestamp and the caller's resolved console role (`viewerRole`). | [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md) |
 
@@ -61,6 +61,8 @@ Admin status carries one mesh health entry per MeshLLM profile so operators can 
 | `peerNodeIds` | Member nodes currently joined. |
 | `readyModels` | Models the mesh currently serves. |
 | `failedNodeIds` | Member nodes reporting a failed runtime. |
+| `deactivatedNodeIds` | Member nodes tainted deactivated (enrolled and heartbeating but running no model). |
+| `active` | The profile's own active state; the console renders an inactive model as "deactivated" in a neutral tone rather than a green "ready", however much stale mesh state it still carries. |
 | `tokenCount` | Count of stored invite tokens; entries are pruned when their node is revoked or offline for more than 24 hours. |
 | `secretAgeMs` | Age of the stored mesh secret; absent when no secret is stored. |
 | `lastError` | Most recent MeshLLM error reported by a member node; `mesh_state_key_missing` when the `MESH_STATE_KEY` Worker secret is unset. |

@@ -346,6 +346,30 @@ describe('dashboard overview contracts', () => {
     expect(JSON.parse(String(call?.init?.body)).maxVramGb).toBe(12.5)
   })
 
+  it('REQ-RUN-002 loads and saves per-model runtime tunables from the model drawer', async () => {
+    const profiles = [
+      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 0, meshllm: { split: false, modelRef: 'ref-a', parallel: 4, cacheTypeK: 'q8_0' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
+    await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
+    // An Auto (0) context window loads blank; stored tunables prefill their controls.
+    expect(harness.byId('model-edit-context').value).toBe('')
+    expect(harness.byId('model-edit-parallel').value).toBe('4')
+    expect(harness.byId('model-edit-cache-k').value).toBe('q8_0')
+    // Editing lanes / KV / max-output and saving posts the tunables to the validated endpoint;
+    // a blank context window is sent as 0 (Auto).
+    harness.byId('model-edit-parallel').value = '2'
+    harness.byId('model-edit-cache-v').value = 'q4_0'
+    harness.byId('model-edit-maxout').value = '8192'
+    await harness.clickAction('model-save', { profileId: 'mesh-default-qwen36-35b', out: 'model-output' })
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
+    const body = JSON.parse(String(call?.init?.body))
+    expect(body.parallel).toBe(2)
+    expect(body.cacheTypeV).toBe('q4_0')
+    expect(body.maxOutputTokens).toBe(8192)
+    expect(body.contextWindow).toBe(0)
+  })
+
   it('REQ-ADM-026 shows a Delete control only for a custom, switched-off model', async () => {
     const profiles = [
       { id: 'custom-qwen3-14b-gguf-q4-k-m', displayName: 'Qwen3-14B', publicAliases: ['codeflare-mesh', 'q'], active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } },
@@ -583,6 +607,62 @@ describe('dashboard throughput trace and playground contracts', () => {
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/direct-chat')
     expect(call?.init?.method).toBe('POST')
     expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'qwen3.6:35b-a3b', messages: [{ role: 'user', content: 'hello mesh' }] })
+  })
+
+  it('REQ-ADM-016 renders the tools input, max-token cap, and a stop control in the playground', () => {
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    expect(html).toContain('id="' + ADMIN_UI_PLAYGROUND.toolsId + '"')
+    expect(html).toContain('id="' + ADMIN_UI_PLAYGROUND.maxTokensId + '"')
+    expect(html).toContain('data-action="' + ADMIN_UI_PLAYGROUND.stopAction + '"')
+  })
+
+  it('REQ-ADM-029 forwards tools and a max-token cap and surfaces tool calls on the dynamic route', async () => {
+    const harness = await dashboardHarness({
+      respond: (path) => path === '/admin/playground/direct-chat'
+        ? new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"get_weather","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
+        : undefined
+    })
+    harness.byId(ADMIN_UI_PLAYGROUND.promptId).value = 'call a tool'
+    harness.byId(ADMIN_UI_PLAYGROUND.toolsId).value = '[{"type":"function","function":{"name":"get_weather","parameters":{}}}]'
+    harness.byId(ADMIN_UI_PLAYGROUND.maxTokensId).value = '256'
+    const send = harness.clickAction(ADMIN_UI_PLAYGROUND.sendAction, { out: ADMIN_UI_PLAYGROUND.outputId })
+    await harness.flush(10)
+    await send
+
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/direct-chat')
+    const body = JSON.parse(String(call?.init?.body))
+    expect(body.tools).toEqual([{ type: 'function', function: { name: 'get_weather', parameters: {} } }])
+    expect(body.maxTokens).toBe(256)
+    expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toContain('[tool calls] get_weather')
+  })
+
+  it('REQ-ADM-016 appends stream chunks to one text node so a mid-stream selection survives', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const stream = new ReadableStream<Uint8Array>({ start(c) { controller = c } })
+    const harness = await dashboardHarness({
+      respond: (path) => path === '/admin/playground/direct-chat' ? new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }) : undefined
+    })
+    harness.byId(ADMIN_UI_PLAYGROUND.promptId).value = 'hi'
+    const send = harness.clickAction(ADMIN_UI_PLAYGROUND.sendAction, { out: ADMIN_UI_PLAYGROUND.outputId })
+    await harness.flush(10)
+
+    controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n'))
+    await harness.flush(10)
+    const outputEl = harness.byId(ADMIN_UI_PLAYGROUND.outputId)
+    const firstNode = outputEl.children.find((child) => child.nodeType === 3)
+    expect(firstNode, 'the first chunk creates a text node').toBeDefined()
+
+    controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"lo"}}]}\n\ndata: [DONE]\n\n'))
+    controller.close()
+    await harness.flush(10)
+    await send
+
+    // The same text node grew in place instead of being replaced, so a selection inside
+    // it would survive; assert one text-node child, still the original reference.
+    const textNodes = outputEl.children.filter((child) => child.nodeType === 3)
+    expect(textNodes).toHaveLength(1)
+    expect(textNodes[0]).toBe(firstNode)
+    expect(outputEl.textContent).toBe('Hello')
   })
 
   it('REQ-ADM-016 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint', async () => {

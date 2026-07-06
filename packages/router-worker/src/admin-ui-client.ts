@@ -86,6 +86,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     el.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   };
   const readInput = (id) => { const el = byId(id); return el && el.value ? el.value.trim() : ''; };
+  // The in-flight playground stream's abort controller, so the Stop button can end a
+  // runaway generation. Null when no stream is running.
+  let playgroundController = null;
   const setHealth = (state, label) => { const pill = byId('health-pill'); if (!pill) return; pill.dataset.health = state; pill.textContent = label; };
   // Map a failed playground status to an actionable next step. The raw status alone
   // ('failed (401)') tells an operator nothing about what to fix.
@@ -654,6 +657,61 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     bodyEl.appendChild(taint);
     bodyEl.appendChild(revokeButton(node.id));
   }
+  // meshTunableNumberRow / meshTunableSelectRow build one Advanced-runtime row in
+  // the model drawer: the existing drawer-row shape plus a .drawer-hint line that
+  // explains the setting. A blank number or the Auto option means "unset" so
+  // mesh-llm auto-plans that value; the placeholder shows the sensible default.
+  function drawerHint(text) {
+    const hint = document.createElement('span');
+    hint.className = 'drawer-hint';
+    hint.textContent = text;
+    return hint;
+  }
+  function meshTunableNumberRow(opts) {
+    const row = document.createElement('label');
+    row.className = 'drawer-row';
+    row.textContent = opts.label;
+    const input = document.createElement('input');
+    input.id = opts.id;
+    input.type = 'number';
+    input.min = opts.min != null ? String(opts.min) : '1';
+    if (opts.value != null && opts.value !== '') input.value = String(opts.value);
+    if (opts.placeholder) input.placeholder = opts.placeholder;
+    row.appendChild(input);
+    if (opts.hint) row.appendChild(drawerHint(opts.hint));
+    return row;
+  }
+  function meshTunableRowText(opts) {
+    const row = document.createElement('label');
+    row.className = 'drawer-row';
+    row.textContent = opts.label;
+    const input = document.createElement('input');
+    input.id = opts.id;
+    input.type = 'text';
+    if (opts.value != null && opts.value !== '') input.value = String(opts.value);
+    if (opts.placeholder) input.placeholder = opts.placeholder;
+    row.appendChild(input);
+    if (opts.hint) row.appendChild(drawerHint(opts.hint));
+    return row;
+  }
+  function meshTunableSelectRow(opts) {
+    const row = document.createElement('label');
+    row.className = 'drawer-row';
+    row.textContent = opts.label;
+    const select = document.createElement('select');
+    select.id = opts.id;
+    opts.options.forEach((choice) => {
+      const option = document.createElement('option');
+      option.value = choice.value;
+      option.textContent = choice.label;
+      if (choice.value === opts.value) option.selected = true;
+      select.appendChild(option);
+    });
+    select.value = opts.value || '';
+    row.appendChild(select);
+    if (opts.hint) row.appendChild(drawerHint(opts.hint));
+    return row;
+  }
   function openModelDrawer(profileId) {
     const profiles = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
     const profile = profiles.find((candidate) => candidate.id === profileId);
@@ -685,16 +743,21 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     callInput.value = currentCall;
     callInput.dataset.original = currentCall;
     callRow.appendChild(callInput);
+    callRow.appendChild(drawerHint('The stable name callers ask for, auto-derived from the model. Apps can always also use the shared codeflare-mesh name; you rarely need to change this.'));
     bodyEl.appendChild(callRow);
+    const meshllm = profile.meshllm || {};
     const ctxRow = document.createElement('label');
     ctxRow.className = 'drawer-row';
     ctxRow.textContent = 'Context window (tokens)';
     const ctxInput = document.createElement('input');
     ctxInput.id = 'model-edit-context';
     ctxInput.type = 'number';
-    ctxInput.min = '1';
-    ctxInput.value = profile.contextWindow != null ? String(profile.contextWindow) : '';
+    ctxInput.min = '0';
+    ctxInput.placeholder = 'Auto';
+    // 0 = Auto, shown as a blank field: mesh-llm sizes the context to the GPU.
+    ctxInput.value = profile.contextWindow ? String(profile.contextWindow) : '';
     ctxRow.appendChild(ctxInput);
+    ctxRow.appendChild(drawerHint('Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
     bodyEl.appendChild(ctxRow);
     const modelRow = document.createElement('label');
     modelRow.className = 'drawer-row';
@@ -717,6 +780,28 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     vramInput.value = profile.meshllm && profile.meshllm.maxVramGb ? String(profile.meshllm.maxVramGb) : '';
     vramRow.appendChild(vramInput);
     bodyEl.appendChild(vramRow);
+    // Advanced runtime tunables (REQ-RUN-002 / REQ-RUN-003): each maps to a mesh-llm
+    // config key. Blank / Auto leaves mesh-llm to plan the value; placeholders show
+    // the sensible default. Parallel lanes 2 or more is what enables input caching.
+    const advancedHead = document.createElement('div');
+    advancedHead.className = 'drawer-subhead';
+    advancedHead.textContent = 'Advanced runtime';
+    bodyEl.appendChild(advancedHead);
+    const reasoning = meshllm.reasoning || {};
+    const flashValue = meshllm.flashAttn === true ? 'on' : meshllm.flashAttn === false ? 'off' : '';
+    const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
+    const kvOptions = [{ value: '', label: 'Auto' }, { value: 'f16', label: 'f16 (full precision)' }, { value: 'q8_0', label: 'q8_0 (balanced)' }, { value: 'q4_0', label: 'q4_0 (smallest)' }];
+    const onOffOptions = [{ value: '', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
+    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-parallel', label: 'Parallel lanes', value: meshllm.parallel, placeholder: 'Auto', hint: 'Concurrent request slots. 2 or more enables input caching (fast prompt reuse); 1 disables it. Blank = Auto (mesh-llm plans up to 4).' }));
+    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-cache-k', label: 'KV cache type (keys)', value: meshllm.cacheTypeK || '', options: kvOptions, hint: 'Precision of the cached keys. q8_0 halves memory vs f16 with negligible quality loss; q4_0 quarters it to fit very large contexts.' }));
+    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-cache-v', label: 'KV cache type (values)', value: meshllm.cacheTypeV || '', options: kvOptions, hint: 'Precision of the cached values. Match the key type unless you have a reason not to.' }));
+    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-batch', label: 'Prefill batch', value: meshllm.batch, placeholder: '2048', hint: 'Tokens processed per prefill step. Higher (e.g. 8192) speeds long-prompt ingestion but uses more memory. Blank = default.' }));
+    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-ubatch', label: 'Micro-batch', value: meshllm.ubatch, placeholder: '512', hint: 'Physical sub-batch of the prefill batch. Higher (e.g. 4096) speeds ingestion at higher memory. Blank = default.' }));
+    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-flash', label: 'Flash attention', value: flashValue, options: onOffOptions, hint: 'Memory-efficient attention; also required for quantized KV. Leave On unless the model is incompatible.' }));
+    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-maxout', label: 'Max output tokens', value: meshllm.maxOutputTokens, placeholder: '4096', hint: 'Cap on tokens generated per response. Bounds runaway answers. Blank = default.' }));
+    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'Enables the model thinking phase (reasoning-capable models only).' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'Reasoning output format tag. Usually deepseek.' }));
+    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers.' }));
     const save = document.createElement('button');
     save.type = 'button';
     save.className = 'btn btn-primary';
@@ -811,6 +896,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   function setPlaygroundModelSelect(options) {
     const slot = byId(config.playground.slotId);
     if (!slot) return;
+    // Preserve the operator's current choice across the periodic rebuild instead of
+    // snapping back to the first option every poll (#19).
+    const previous = byId(config.playground.selectId);
+    const previousValue = previous ? previous.value : '';
     slot.textContent = '';
     const select = document.createElement('select');
     select.id = config.playground.selectId;
@@ -824,7 +913,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       select.appendChild(option);
     });
     select.disabled = options.length === 0;
-    if (options.length) select.value = options[0].value;
+    if (options.length) select.value = options.some((opt) => opt.value === previousValue) ? previousValue : options[0].value;
     slot.appendChild(select);
   }
   // Dropdown B is owned by the gateway target when one is selected; the periodic status poll
@@ -934,6 +1023,23 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       list.appendChild(row);
     });
   }
+  // meshStatusSuffix reduces a mesh-health entry to a plain-language status suffix
+  // shared by the Mesh-status rollup and the per-model mesh card. A deactivated
+  // (switched-off) model is never "ready" however much stale mesh state it still
+  // carries; a runtime failure or mesh error reads "needs attention".
+  function meshStatusSuffix(entry) {
+    if (entry.active === false) return ' · deactivated';
+    if (entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return ' · needs attention';
+    return entry.tokenCount > 0 ? ' · ready' : ' · forming';
+  }
+  // meshStatusTone maps the same entry to a status-dot tone: grey for a switched-off
+  // model, danger for a failure, ok only when it is active and holds a mesh secret.
+  function meshStatusTone(entry) {
+    if (entry.active === false) return 'idle';
+    if (entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return 'danger';
+    return entry.tokenCount > 0 ? 'ok' : 'idle';
+  }
+
   // buildMeshCard renders one model's mesh detail (a plain summary plus the raw
   // fields behind a disclosure). It lives in that model's Manage drawer, since both
   // single-machine and split models form a mesh.
@@ -953,7 +1059,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const summary = document.createElement('span');
     summary.className = 'mesh-summary';
     summary.textContent = peers > 0
-      ? (peers + ' machine' + (peers === 1 ? '' : 's') + ' in this mesh' + (entry.lastError ? ' · needs attention' : entry.tokenCount > 0 ? ' · ready' : ' · forming'))
+      ? (peers + ' machine' + (peers === 1 ? '' : 's') + ' in this mesh' + meshStatusSuffix(entry))
       : 'One machine in this mesh';
     card.appendChild(summary);
     const details = document.createElement('details');
@@ -1078,9 +1184,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         // Plain summary, same vocabulary as the Model-sharing section; a single-node
         // model reads "not shared yet" in neutral grey, never an alarming "forming".
         const label = shared
-          ? name + ' · ' + peers + ' machine' + (peers === 1 ? '' : 's') + ' sharing' + (entry.lastError ? ' · needs attention' : entry.tokenCount > 0 ? ' · ready' : ' · forming')
+          ? name + ' · ' + peers + ' machine' + (peers === 1 ? '' : 's') + ' sharing' + meshStatusSuffix(entry)
           : name + ' · not shared yet';
-        const tone = entry.lastError ? 'danger' : shared && entry.tokenCount > 0 ? 'ok' : 'idle';
+        const tone = shared ? meshStatusTone(entry) : 'idle';
         rollup.appendChild(statusDot(tone, label));
       });
     }
@@ -1545,7 +1651,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const nameEl = byId('model-edit-name');
       const callEl = byId('model-edit-callname');
       const payload = { profileId: id };
-      if (ctxRaw !== '') payload.contextWindow = Number(ctxRaw);
+      // Blank context window = Auto (0): mesh-llm sizes it to the GPU.
+      payload.contextWindow = ctxRaw === '' ? 0 : Number(ctxRaw);
       if (modelRaw !== '') payload.modelRef = modelRaw;
       // Empty means "leave as-is"; 0 explicitly clears the cap.
       if (vramRaw !== '') payload.maxVramGb = Number(vramRaw);
@@ -1553,6 +1660,29 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       // an unrelated setting never rewrites a default model's extra canonical aliases.
       if (nameEl && nameEl.value.trim() && nameEl.value !== nameEl.dataset.original) payload.name = nameEl.value.trim();
       if (callEl && callEl.value.trim() && callEl.value !== callEl.dataset.original) payload.callName = callEl.value.trim();
+      // Runtime tunables are sent from the current field state (the server merge is
+      // idempotent). A blank number or the Auto option clears the field back to Auto
+      // (null / '') so mesh-llm auto-plans it, rather than pinning a stale value.
+      const parRaw = readInput('model-edit-parallel');
+      payload.parallel = parRaw === '' ? null : Number(parRaw);
+      payload.cacheTypeK = readInput('model-edit-cache-k');
+      payload.cacheTypeV = readInput('model-edit-cache-v');
+      const batchRaw = readInput('model-edit-batch');
+      payload.batch = batchRaw === '' ? null : Number(batchRaw);
+      const ubatchRaw = readInput('model-edit-ubatch');
+      payload.ubatch = ubatchRaw === '' ? null : Number(ubatchRaw);
+      const flashRaw = readInput('model-edit-flash');
+      payload.flashAttn = flashRaw === '' ? null : flashRaw === 'on';
+      const maxOutRaw = readInput('model-edit-maxout');
+      payload.maxOutputTokens = maxOutRaw === '' ? null : Number(maxOutRaw);
+      const reasoningRaw = readInput('model-edit-reasoning');
+      if (reasoningRaw === '') {
+        payload.reasoning = null;
+      } else {
+        const fmtRaw = readInput('model-edit-reasoning-format');
+        const budgetRaw = readInput('model-edit-reasoning-budget');
+        payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw || undefined, budget: budgetRaw === '' ? undefined : Number(budgetRaw) };
+      }
       setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       toast('Model settings saved');
       await refreshStatus().catch(() => undefined);
@@ -1604,38 +1734,100 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const choice = select ? select.value : '';
       const prompt = readInput(config.playground.promptId);
       if (!prompt) { setOutput(out, 'Enter a prompt to send.', true); return; }
+      // Optional tools JSON reproduces an agentic (tool-calling) request on the real route.
+      let tools;
+      const toolsRaw = readInput(config.playground.toolsId);
+      if (toolsRaw) {
+        try {
+          const parsedTools = JSON.parse(toolsRaw);
+          if (Array.isArray(parsedTools) && parsedTools.length) tools = parsedTools;
+          else { setOutput(out, 'Tools must be a non-empty JSON array.', true); return; }
+        } catch (toolsError) { setOutput(out, 'Tools is not valid JSON.', true); return; }
+      }
+      const maxRaw = readInput(config.playground.maxTokensId);
+      const maxTokens = maxRaw === '' ? undefined : Number(maxRaw);
       const messages = [{ role: 'user', content: prompt }];
       // Direct target -> router scheduler with an internal model; gateway target -> that gateway's
       // compat endpoint with the selected dynamic route.
       const direct = targetValue === config.playground.directValue;
       const path = direct ? config.playground.directPath : config.playground.gatewayPath;
       const payload = direct ? { model: choice, messages: messages } : { gatewayId: targetValue, route: choice, messages: messages };
-      const response = await fetch(path, { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
-      if (!response.ok || !response.body) { setOutput(out, 'Playground request failed (' + response.status + ').' + playgroundHint(response.status), true); return; }
+      if (tools) payload.tools = tools;
+      if (maxTokens) payload.maxTokens = maxTokens;
+      // The Stop button aborts this controller; a new send supersedes any running stream.
+      if (playgroundController) playgroundController.abort();
+      playgroundController = new AbortController();
+      const controller = playgroundController;
+      let response;
+      try {
+        response = await fetch(path, { method: 'POST', headers: headers(true), body: JSON.stringify(payload), signal: controller.signal });
+      } catch (fetchError) {
+        if (playgroundController === controller) playgroundController = null;
+        if (controller.signal.aborted) { toast('Playground stopped'); return; }
+        setOutput(out, 'Playground request failed.', true);
+        return;
+      }
+      if (!response.ok || !response.body) {
+        if (playgroundController === controller) playgroundController = null;
+        setOutput(out, 'Playground request failed (' + response.status + ').' + playgroundHint(response.status), true);
+        return;
+      }
       setOutput(out, '');
       const outputEl = byId(out);
+      // Append each streamed delta to one text node so a selection the operator makes
+      // mid-stream survives; reassigning textContent per delta would wipe it (#19).
+      let textNode = null;
+      const appendChunk = (str) => {
+        if (!outputEl || !str) return;
+        if (!textNode) { outputEl.textContent = ''; textNode = document.createTextNode(''); outputEl.appendChild(textNode); }
+        textNode.appendData(str);
+      };
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffered = '';
-      let text = '';
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        buffered += decoder.decode(chunk.value, { stream: true });
-        const lines = buffered.split('\\n');
-        buffered = lines.pop() || '';
-        for (const raw of lines) {
-          const line = raw.trim();
-          if (!line || line.indexOf('data:') !== 0) continue;
-          const payload = line.slice(5).trim();
-          if (payload === '[DONE]') continue;
-          try {
-            const parsed = JSON.parse(payload);
-            const delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta && parsed.choices[0].delta.content;
-            if (delta) { text += delta; if (outputEl) outputEl.textContent = text; }
-          } catch (parseError) { /* ignore keep-alive and non-JSON lines */ }
+      const toolAcc = {};
+      let finishReason = '';
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          buffered += decoder.decode(chunk.value, { stream: true });
+          const lines = buffered.split('\\n');
+          buffered = lines.pop() || '';
+          for (const raw of lines) {
+            const line = raw.trim();
+            if (!line || line.indexOf('data:') !== 0) continue;
+            const data = line.slice(5).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(data);
+              const choice0 = parsed.choices && parsed.choices[0];
+              if (!choice0) continue;
+              const delta = choice0.delta && choice0.delta.content;
+              if (delta) appendChunk(delta);
+              const calls = choice0.delta && choice0.delta.tool_calls;
+              if (Array.isArray(calls)) calls.forEach((call) => {
+                const idx = call.index != null ? call.index : 0;
+                if (!toolAcc[idx]) toolAcc[idx] = { name: '', args: '' };
+                if (call.function && call.function.name) toolAcc[idx].name = call.function.name;
+                if (call.function && call.function.arguments) toolAcc[idx].args += call.function.arguments;
+              });
+              if (choice0.finish_reason) finishReason = choice0.finish_reason;
+            } catch (parseError) { /* ignore keep-alive and non-JSON lines */ }
+          }
         }
+      } catch (streamError) {
+        if (!controller.signal.aborted) appendChunk('\\n\\n[stream error]');
       }
+      // Surface tool calls and a non-stop finish so the operator can confirm the model
+      // actually invoked tools on the dynamic route (#17).
+      const toolKeys = Object.keys(toolAcc);
+      if (toolKeys.length) appendChunk('\\n\\n[tool calls] ' + toolKeys.map((key) => toolAcc[key].name + '(' + toolAcc[key].args + ')').join(', '));
+      if (finishReason && finishReason !== 'stop') appendChunk('\\n\\n[finish_reason: ' + finishReason + ']');
+      if (playgroundController === controller) playgroundController = null;
+    } else if (action === config.playground.stopAction) {
+      if (playgroundController) { playgroundController.abort(); toast('Playground stopped'); }
+      else { toast('Nothing is running'); }
     }
   }
 

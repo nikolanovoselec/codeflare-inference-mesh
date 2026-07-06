@@ -231,6 +231,7 @@ func meshRenderInput(profile agent.ModelProfile, cfg agent.Config) agent.MeshLLM
 		ConsolePort: cfg.MeshLLMConsolePort,
 		Flavor:      meshFlavorFlag(cfg),
 		NostrRelays: cfg.NostrRelays,
+		Tunables:    profile.MeshLLM,
 	}
 }
 

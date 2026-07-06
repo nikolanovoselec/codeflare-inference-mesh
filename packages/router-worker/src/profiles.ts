@@ -70,9 +70,26 @@ export function publicAliasIndex(profiles: readonly ModelProfile[]): Map<string,
   return index
 }
 
-const CUSTOM_PROFILE_CONTEXT_WINDOW = 32768
 const BIND_PORT_BASE = 4300
 const BIND_PORT_STEP = 10
+
+// Per-model mesh-llm runtime tunable defaults (REQ-RUN-002 / REQ-RUN-003),
+// templated from a proven single-GPU llama.cpp unit but adjusted for mesh-llm.
+// Context window and parallel lanes are deliberately NOT set here: they default
+// to "Auto" (an omitted value) so mesh-llm sizes them to the node's GPU — pinning
+// a small context window is exactly what collapses lanes and disables input
+// caching. The rest carry concrete, quality-safe values. Every value is
+// overridable per model from the console; q8_0 KV balances memory and quality
+// (use q4_0 for the largest contexts).
+export const MESHLLM_TUNABLE_DEFAULTS = {
+  cacheTypeK: 'q8_0',
+  cacheTypeV: 'q8_0',
+  batch: 2048,
+  ubatch: 512,
+  flashAttn: true,
+  maxOutputTokens: 4096,
+  reasoning: { enabled: true, format: 'deepseek', budget: 4096 }
+} as const
 
 // The readable last segment of a model reference: the hf:// scheme, the owner
 // prefix, and any @commit pin are dropped so `hf://meshllm/Model-layers@sha`
@@ -103,7 +120,8 @@ export function slugifyModelRef(ref: string): string {
 // display name (the serving-mode badge, not the name, carries single/split); when
 // omitted it falls back to the model reference's last segment. The bind port
 // advances past every existing profile so a later live process never collides on
-// the mesh bind port.
+// the mesh bind port. The profile ships with the MESHLLM_TUNABLE_DEFAULTS runtime
+// tunables and an Auto (0) context window; an operator refines both per model.
 export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string | undefined }): ModelProfile {
   const ref = input.modelRef.trim()
   const slug = slugifyModelRef(ref)
@@ -116,9 +134,22 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
     publicAliases: [STABLE_PUBLIC_MODEL, slug],
     upstreamModel: ref,
     sourceMode: 'meshllm-ref',
-    contextWindow: CUSTOM_PROFILE_CONTEXT_WINDOW,
+    // 0 = Auto: mesh-llm sizes the context to the node's GPU instead of a pinned
+    // small window that would collapse parallel lanes and disable input caching.
+    contextWindow: 0,
     runtime: 'meshllm',
-    meshllm: { modelRef: ref, split: input.split, bindPort: highestBindPort + BIND_PORT_STEP },
+    meshllm: {
+      modelRef: ref,
+      split: input.split,
+      bindPort: highestBindPort + BIND_PORT_STEP,
+      cacheTypeK: MESHLLM_TUNABLE_DEFAULTS.cacheTypeK,
+      cacheTypeV: MESHLLM_TUNABLE_DEFAULTS.cacheTypeV,
+      batch: MESHLLM_TUNABLE_DEFAULTS.batch,
+      ubatch: MESHLLM_TUNABLE_DEFAULTS.ubatch,
+      flashAttn: MESHLLM_TUNABLE_DEFAULTS.flashAttn,
+      maxOutputTokens: MESHLLM_TUNABLE_DEFAULTS.maxOutputTokens,
+      reasoning: { ...MESHLLM_TUNABLE_DEFAULTS.reasoning }
+    },
     version: 1,
     rolloutPercent: 0,
     active: false

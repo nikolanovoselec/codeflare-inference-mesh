@@ -8,6 +8,7 @@
 - [Wrangler environments](#wrangler-environments)
 - [Cloudflare One prerequisite](#cloudflare-one-prerequisite)
 - [Node agent config](#node-agent-config)
+- [Model runtime tunables](#model-runtime-tunables)
 - [GitHub secrets](#github-secrets)
 - [GitHub variables](#github-variables)
 - [SDD config](#sdd-config)
@@ -116,6 +117,24 @@ The `INFERENCE_MESH_CONFIG` environment variable overrides the config path for b
 The router calls `seedDefaultProfiles(DEFAULT_MODEL_PROFILES)` at request entry, so D1 deployments receive and refresh shipped defaults before setup/status/provider/admin reads. Shipped defaults are MeshLLM profiles carrying `runtime: 'meshllm'` with `modelRef`, `split`, and `bindPort`. `seedDefaultProfiles` refreshes changed managed defaults, deactivates every active profile row whose runtime is not `meshllm` regardless of version, and retires stale managed defaults that still own a shipped public alias. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md)) ([REQ-RUN-009](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles -->
 
 `HF_TOKEN` is not stored in router profiles. When a gated Hugging Face model is used, provide `HF_TOKEN` in the node service environment; `MeshLLMEnv` passes the inherited service environment through to the supervised `mesh-llm` process (adding only `MESH_LLM_NO_SELF_UPDATE=1`) so `mesh-llm` can pull the model from Hugging Face without the Worker returning secrets to nodes. ([REQ-RUN-010](../../sdd/spec/runtime-profiles.md)) <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMEnv -->
+
+## Model runtime tunables
+
+Each model carries per-model MeshLLM runtime tunables, edited from the model's Manage drawer (Advanced runtime) or over `POST /admin/profiles/config` / `POST /api/v1/models/{id}`. Every value the operator sets is rendered into the node's per-profile `meshllm-<profileId>.toml` under its MeshLLM subtable; a value left blank (Auto / unset) is omitted so MeshLLM auto-plans it. New custom models are created with the defaults below. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration))
+
+| Setting | MeshLLM config key | Default | What it is / does |
+| --- | --- | --- | --- |
+| Context window | `model_fit.ctx_size` | Auto | Max tokens kept in context. Auto lets MeshLLM size it to the GPU and model. Pin a number (for example `262144`) to fix it; larger uses more GPU memory and can leave room for fewer lanes. |
+| Parallel lanes | `throughput.parallel` | Auto | Concurrent request slots. Auto lets MeshLLM plan up to 4. **2 or more enables input caching (fast prompt-prefix reuse); 1 disables it.** Lanes share one KV pool, so more lanes cost little extra memory. |
+| KV cache type (keys) | `model_fit.cache_type_k` | `q8_0` | Precision of the cached keys. `q8_0` halves memory versus `f16` with negligible quality loss; `q4_0` quarters it to fit very large contexts. |
+| KV cache type (values) | `model_fit.cache_type_v` | `q8_0` | Precision of the cached values; same trade-off as the keys. |
+| Prefill batch | `model_fit.batch` | `2048` | Tokens processed per prefill step. Higher (for example `8192`) speeds long-prompt ingestion but uses more memory. |
+| Micro-batch | `model_fit.ubatch` | `512` | Physical sub-batch of the prefill batch. Higher (for example `4096`) speeds ingestion at higher memory. |
+| Flash attention | `model_fit.flash_attention` | On (`enabled`) | Memory-efficient attention; also required for quantized KV. Leave on unless a model is incompatible. |
+| Max output tokens | `request_defaults.max_tokens` | `4096` | Cap on tokens generated per response. Bounds runaway generations. |
+| Reasoning | `request_defaults.reasoning_*` | On, `deepseek`, budget `4096` | Enables the model's thinking phase (`reasoning_enabled`) and caps its length (`reasoning_budget`) with a format tag (`reasoning_format`). Applies only to reasoning-capable models. |
+
+Context window and parallel lanes default to Auto because a pinned small context on a large model collapses the lane count and disables input caching; leave them Auto and set them per model when a GPU needs a specific ceiling or lane count. To reproduce a proven single-GPU throughput profile (24 GB, a 262K-context MoE at roughly 2000 tok/s prefill), set context window `262144`, parallel lanes `2` or more, KV cache types `q4_0` (which is what lets the large context fit), prefill batch `8192`, micro-batch `4096`, flash attention on, max output tokens `8192`, and reasoning on / `deepseek` / `4096`. Raising the batch sizes and the context both cost GPU memory, so size them to the node.
 
 ## GitHub secrets
 

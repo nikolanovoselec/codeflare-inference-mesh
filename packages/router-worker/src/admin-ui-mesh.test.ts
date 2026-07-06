@@ -214,6 +214,22 @@ describe('admin UI mesh operations contracts', () => {
     expect(meshField(card, 'rotation').textContent).toBe('rotation: r3')
   })
 
+  it('REQ-OBS-007 shows a switched-off model as deactivated, never green ready', async () => {
+    // A deactivated model can still carry stale mesh tokens (peers + a secret). It must
+    // not read the green "ready" it did before active-state was folded into the status.
+    const offStatus = statusFixture({
+      profiles: [{ id: 'mesh-default-qwen36-35b', publicAliases: ['codeflare-mesh'], active: false, rolloutPercent: 0, meshllm: { split: false } }],
+      meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 3, peerNodeIds: ['node-peer-a'], readyModels: ['codeflare-mesh'], failedNodeIds: [], deactivatedNodeIds: [], active: false, tokenCount: 2 }]
+    })
+    const harness = await dashboardHarness(offStatus)
+    await harness.clickAction('status-refresh')
+    const card = await meshCard(harness, 'mesh-default-qwen36-35b')
+    const summary = descendants(card).find((node) => node.className === 'mesh-summary')
+    expect(summary, 'a plain summary is shown').toBeDefined()
+    expect(summary!.textContent).toContain('deactivated')
+    expect(summary!.textContent).not.toContain('ready')
+  })
+
   it('REQ-OBS-007 shows a plain sharing summary while keeping the technical fields behind a disclosure', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')

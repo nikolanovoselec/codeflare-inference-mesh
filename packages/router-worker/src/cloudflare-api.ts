@@ -357,7 +357,7 @@ function routeGraph(provider: string, model: string) {
     {
       id: 'model',
       type: 'model',
-      properties: { provider, model, retries: 1, timeout: 120000 },
+      properties: { provider, model, retries: 3, timeout: 120000 },
       outputs: { success: { elementId: 'end' }, fallback: { elementId: 'end' } }
     },
     { id: 'end', type: 'end', outputs: {} }

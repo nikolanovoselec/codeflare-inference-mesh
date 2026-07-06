@@ -683,21 +683,105 @@ function applyNodeVramOverride(profiles: readonly ModelProfile[], override: numb
   return profiles.map((profile) => ({ ...profile, meshllm: { ...profile.meshllm, maxVramGb: override } }))
 }
 
+const MESHLLM_CACHE_TYPES = new Set(['f16', 'q8_0', 'q4_0'])
+
+interface MeshllmTunablesBody {
+  parallel?: unknown
+  cacheTypeK?: unknown
+  cacheTypeV?: unknown
+  batch?: unknown
+  ubatch?: unknown
+  flashAttn?: unknown
+  maxOutputTokens?: unknown
+  reasoning?: unknown
+}
+
+// resolveReasoning validates the optional reasoning sub-object: enabled is a
+// boolean, format a non-empty string, budget a positive integer. Absent / null /
+// empty sub-fields are omitted so a partial edit never writes an undefined field.
+function resolveReasoning(value: unknown): { value: { enabled?: boolean; format?: string; budget?: number } } | { error: string } {
+  if (typeof value !== 'object' || value === null) return { error: 'invalid_reasoning' }
+  const input = value as { enabled?: unknown; format?: unknown; budget?: unknown }
+  const reasoning: { enabled?: boolean; format?: string; budget?: number } = {}
+  if (input.enabled !== undefined && input.enabled !== null) {
+    if (typeof input.enabled !== 'boolean') return { error: 'invalid_reasoning' }
+    reasoning.enabled = input.enabled
+  }
+  if (input.format !== undefined && input.format !== null && input.format !== '') {
+    if (typeof input.format !== 'string') return { error: 'invalid_reasoning' }
+    reasoning.format = input.format
+  }
+  if (input.budget !== undefined && input.budget !== null && input.budget !== 0) {
+    if (typeof input.budget !== 'number' || !Number.isInteger(input.budget) || input.budget < 1) return { error: 'invalid_reasoning' }
+    reasoning.budget = input.budget
+  }
+  return { value: reasoning }
+}
+
+// resolveMeshllmTunables layers the per-model mesh-llm runtime tunables from a
+// config request onto the existing settings, immutably (REQ-RUN-002 / REQ-ADM-021).
+// A field changes only when present in the body: a positive integer, an allowed
+// cache type, or a boolean sets it; null / 0 / "" clears it back to Auto by removing
+// the key (never assigning undefined, which JSON.stringify would silently strip from
+// the stored blob). An invalid value yields an error code the caller returns as 400.
+function resolveMeshllmTunables(existing: ModelProfile['meshllm'], body: MeshllmTunablesBody): { meshllm: ModelProfile['meshllm'] } | { error: string } {
+  const next: Record<string, unknown> = { ...existing }
+  const applyInt = (key: string, value: unknown, min: number): string | null => {
+    if (value === undefined) return null
+    if (value === null || value === 0) { delete next[key]; return null }
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < min) return `invalid_${key}`
+    next[key] = value
+    return null
+  }
+  const applyCacheType = (key: string, value: unknown): string | null => {
+    if (value === undefined) return null
+    if (value === null || value === '') { delete next[key]; return null }
+    if (typeof value !== 'string' || !MESHLLM_CACHE_TYPES.has(value)) return `invalid_${key}`
+    next[key] = value
+    return null
+  }
+  for (const err of [
+    applyInt('parallel', body.parallel, 1),
+    applyInt('batch', body.batch, 1),
+    applyInt('ubatch', body.ubatch, 1),
+    applyInt('maxOutputTokens', body.maxOutputTokens, 1),
+    applyCacheType('cacheTypeK', body.cacheTypeK),
+    applyCacheType('cacheTypeV', body.cacheTypeV)
+  ]) {
+    if (err) return { error: err }
+  }
+  if (body.flashAttn !== undefined) {
+    if (body.flashAttn === null) delete next.flashAttn
+    else if (typeof body.flashAttn === 'boolean') next.flashAttn = body.flashAttn
+    else return { error: 'invalid_flash_attn' }
+  }
+  if (body.reasoning !== undefined) {
+    if (body.reasoning === null) delete next.reasoning
+    else {
+      const reasoning = resolveReasoning(body.reasoning)
+      if ('error' in reasoning) return reasoning
+      next.reasoning = reasoning.value
+    }
+  }
+  return { meshllm: next as ModelProfile['meshllm'] }
+}
+
 // handleProfileConfig persists a profile's serving settings — the context window,
-// the model ref, and the per-model VRAM budget — through the validated store path
-// so the active column and the profile_json blob stay consistent. contextWindow
-// must be a positive integer; a supplied modelRef is trimmed, must be non-empty,
-// and updates both the mesh runtime ref and the gateway upstream model together.
+// the model ref, the per-model VRAM budget, and the mesh-llm runtime tunables —
+// through the validated store path so the active column and the profile_json blob
+// stay consistent. contextWindow must be a non-negative integer (0 = Auto, so
+// mesh-llm sizes it); a supplied modelRef is trimmed, must be non-empty, and updates
+// both the mesh runtime ref and the gateway upstream model together.
 async function handleProfileConfig(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string }>(request)
+  const body = await readJson<{ profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string } & MeshllmTunablesBody>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
   const profiles = await deps.store.listProfiles()
   const existing = profiles.find((profile) => profile.id === body.profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   const contextWindow = body.contextWindow ?? existing.contextWindow
-  if (!Number.isInteger(contextWindow) || contextWindow <= 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
+  if (!Number.isInteger(contextWindow) || contextWindow < 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
   const maxVram = resolveMaxVram(body.maxVramGb)
   if (maxVram === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
   let meshllm = existing.meshllm
@@ -709,6 +793,9 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
     upstreamModel = modelRef
   }
   if (maxVram !== undefined) meshllm = { ...meshllm, maxVramGb: maxVram }
+  const tunables = resolveMeshllmTunables(meshllm, body)
+  if ('error' in tunables) return json({ error: tunables.error, requestId }, 400, requestId)
+  meshllm = tunables.meshllm
   // Optional rename. The display name is the human label shown in the console; the
   // call name is this model's own public alias, kept alongside the shared
   // codeflare-mesh alias. A call name must slugify to a non-empty token, cannot be
@@ -792,8 +879,10 @@ async function handleWhoami(request: Request, deps: RouterDeps, requestId: strin
 async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readOptionalObject<{ gatewayId?: unknown; route?: unknown; messages?: unknown }>(request)
+  const body = await readOptionalObject<{ gatewayId?: unknown; route?: unknown; messages?: unknown; tools?: unknown; maxTokens?: unknown }>(request)
   const messages = Array.isArray(body?.messages) ? body!.messages : []
+  const tools = playgroundTools(body?.tools)
+  const maxTokens = playgroundMaxTokens(body?.maxTokens)
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
   const defaults = gatewaySettings({ env: deps.env, ...(storedSettings ? { stored: storedSettings } : {}) })
   const accountId = defaults.accountId
@@ -814,7 +903,7 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
       'content-type': 'application/json',
       'cf-aig-authorization': `Bearer ${gatewayToken}`
     },
-    body: JSON.stringify({ model: `dynamic/${route}`, stream: true, messages })
+    body: JSON.stringify({ model: `dynamic/${route}`, stream: true, messages, ...(tools ? { tools } : {}), ...(maxTokens ? { max_tokens: maxTokens } : {}) })
   })
   const headers = new Headers({
     'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
@@ -829,11 +918,25 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
 async function handlePlaygroundDirect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readOptionalObject<{ model?: unknown; messages?: unknown }>(request)
+  const body = await readOptionalObject<{ model?: unknown; messages?: unknown; tools?: unknown; maxTokens?: unknown }>(request)
   const model = cleanString(body?.model)
   if (!model) return json({ error: 'model_required', requestId }, 400, requestId)
   const messages = Array.isArray(body?.messages) ? body!.messages : []
-  return runInference(deps, { body: { model, messages, stream: true }, requestHeaders: request.headers, requestId, now })
+  const tools = playgroundTools(body?.tools)
+  const maxTokens = playgroundMaxTokens(body?.maxTokens)
+  return runInference(deps, { body: { model, messages, stream: true, ...(tools ? { tools } : {}), ...(maxTokens ? { max_tokens: maxTokens } : {}) }, requestHeaders: request.headers, requestId, now })
+}
+
+// playgroundTools passes through an OpenAI-format tool-definitions array so an
+// operator can reproduce an agentic (tool-calling) request on the real dynamic
+// route; a non-array (or absent) value forwards no tools. playgroundMaxTokens
+// accepts a positive integer generation cap so a runaway response is bounded.
+function playgroundTools(value: unknown): unknown[] | undefined {
+  return Array.isArray(value) && value.length > 0 ? value : undefined
+}
+
+function playgroundMaxTokens(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined
 }
 
 interface GatewaySettings {
@@ -1261,16 +1364,29 @@ async function apiSetNodeDeactivated(request: Request, deps: RouterDeps, url: UR
 
 /** Machine-facing model projection: identity, the names callers use, and rollout state. */
 function toApiModel(profile: ModelProfile) {
+  const m = profile.meshllm
   return {
     id: profile.id,
     displayName: profile.displayName,
     callableNames: profile.publicAliases,
     active: profile.active,
     rolloutPercent: profile.rolloutPercent,
+    // 0 = Auto: mesh-llm sizes the context window to the node's GPU.
     contextWindow: profile.contextWindow,
-    modelRef: profile.meshllm.modelRef,
-    split: profile.meshllm.split,
-    maxVramGb: profile.meshllm.maxVramGb ?? 0
+    modelRef: m.modelRef,
+    split: m.split,
+    maxVramGb: m.maxVramGb ?? 0,
+    // Per-model runtime tunables; null means Auto (unset, mesh-llm auto-plans it).
+    tunables: {
+      parallel: m.parallel ?? null,
+      cacheTypeK: m.cacheTypeK ?? null,
+      cacheTypeV: m.cacheTypeV ?? null,
+      batch: m.batch ?? null,
+      ubatch: m.ubatch ?? null,
+      flashAttn: m.flashAttn ?? null,
+      maxOutputTokens: m.maxOutputTokens ?? null,
+      reasoning: m.reasoning ?? null
+    }
   }
 }
 
@@ -1341,13 +1457,13 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
   const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
-  const body = await readJson<{ contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string }>(request)
+  const body = await readJson<{ contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string } & MeshllmTunablesBody>(request)
   if (!body) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   const profiles = await deps.store.listProfiles()
   const existing = profiles.find((profile) => profile.id === profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   const contextWindow = body.contextWindow ?? existing.contextWindow
-  if (!Number.isInteger(contextWindow) || contextWindow <= 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
+  if (!Number.isInteger(contextWindow) || contextWindow < 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
   const maxVram = resolveMaxVram(body.maxVramGb)
   if (maxVram === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
   let meshllm = existing.meshllm
@@ -1359,6 +1475,9 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
     upstreamModel = modelRef
   }
   if (maxVram !== undefined) meshllm = { ...meshllm, maxVramGb: maxVram }
+  const tunables = resolveMeshllmTunables(meshllm, body)
+  if ('error' in tunables) return json({ error: tunables.error, requestId }, 400, requestId)
+  meshllm = tunables.meshllm
   // Rename parity with the console: name sets the display name; callName sets this
   // model's own public alias (kept alongside the shared codeflare-mesh alias), with
   // the same non-empty / not-reserved / no-collision rules.

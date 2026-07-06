@@ -193,7 +193,7 @@ POST /admin/playground/chat
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `gatewayId` (the target gateway) and `route` (the dynamic route to forward as `dynamic/<route>`), plus `messages` (chat message array). The body is optional — absent fields fall back to the resolved gateway defaults — but a present, malformed body is rejected with the shared `400` `invalid_json`. A non-admin (read-only user) caller's `gatewayId` and `route` are ignored and forced to the default gateway and route, so a viewer cannot target an arbitrary gateway.
+**Request body:** JSON body with `gatewayId` (the target gateway) and `route` (the dynamic route to forward as `dynamic/<route>`), plus `messages` (chat message array). Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer generation cap) are forwarded to the upstream route as `tools` and `max_tokens` when supplied, so an agentic (tool-calling) request can be reproduced and a runaway response bounded; when absent, neither is sent. The body is optional — absent fields fall back to the resolved gateway defaults — but a present, malformed body is rejected with the shared `400` `invalid_json`. A non-admin (read-only user) caller's `gatewayId` and `route` are ignored and forced to the default gateway and route, so a viewer cannot target an arbitrary gateway.
 
 **Response**
 
@@ -218,7 +218,7 @@ POST /admin/playground/direct-chat
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `model` (an internal callable model) and `messages`. `model` is required; a present, malformed body is rejected with the shared `400` `invalid_json`.
+**Request body:** JSON body with `model` (an internal callable model) and `messages`. Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer cap, forwarded as `max_tokens`) are passed through when supplied. `model` is required; a present, malformed body is rejected with the shared `400` `invalid_json`.
 
 **Response**
 
@@ -666,7 +666,7 @@ POST /admin/profiles/add
 
 ### POST /admin/profiles/config
 
-Updates a model's serving settings — context window, model reference, VRAM budget, display name, and/or callable name — through the same validated store path the automation API uses, bumping the profile version so a later default re-seed does not overwrite the edit.
+Updates a model's serving settings — context window, model reference, VRAM budget, display name, callable name, and/or the MeshLLM runtime tunables — through the same validated store path the automation API uses, bumping the profile version so a later default re-seed does not overwrite the edit.
 
 ```http
 POST /admin/profiles/config
@@ -676,14 +676,14 @@ POST /admin/profiles/config
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `profileId` (required) plus any of `contextWindow` (positive integer), `modelRef` (non-empty string), `maxVramGb` (number `≥ 0`, `0` = no cap), `name` (display name; must be non-blank), and `callName` (slugified callable alias; non-empty, not the reserved `codeflare-mesh`, not a collision with another model's alias). A changed call name keeps the shared `codeflare-mesh` alias. Each field besides `profileId` is optional; an omitted field is left unchanged.
+**Request body:** JSON body with `profileId` (required) plus any of `contextWindow` (non-negative integer; `0` = Auto), `modelRef` (non-empty string), `maxVramGb` (number `≥ 0`, `0` = no cap), `name` (display name; must be non-blank), and `callName` (slugified callable alias; non-empty, not the reserved `codeflare-mesh`, not a collision with another model's alias). It also accepts the per-model MeshLLM runtime tunables: `parallel` (positive integer lane count), `cacheTypeK` / `cacheTypeV` (`f16` \| `q8_0` \| `q4_0`), `batch`, `ubatch`, `maxOutputTokens` (positive integers), `flashAttn` (boolean), and `reasoning` (`{ enabled?: boolean, format?: string, budget?: number }`). For a tunable, a positive integer / allowed string / boolean sets it, and `null` / `0` / `""` clears it back to Auto (the field is removed, so MeshLLM auto-plans it). A changed call name keeps the shared `codeflare-mesh` alias. Each field besides `profileId` is optional; an omitted field is left unchanged.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The updated profile's settings (`displayName`/`callableNames` reflect a changed name or call name); a `profile_configured` audit event records the context window, model reference, and VRAM budget. | `{ "ok": true, "profileId": string, "contextWindow": number, "modelRef": string, "maxVramGb": number, "displayName": string, "callableNames": string[] }` |
-| `400` | `profileId` is missing, or the context window, model reference, VRAM budget, display name, or call name was invalid. | `invalid_profile_config` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` error body. |
+| `400` | `profileId` is missing, or the context window (negative or non-integer), model reference, VRAM budget, display name, call name, or a runtime tunable (a non-positive `parallel`/`batch`/`ubatch`/`maxOutputTokens`, an unknown `cacheTypeK`/`cacheTypeV`, a non-boolean `flashAttn`, or a malformed `reasoning`) was invalid. | `invalid_profile_config` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_reasoning` error body. |
 | `401` | Admin credential is missing or invalid. | Error object. |
 | `404` | No profile with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |
