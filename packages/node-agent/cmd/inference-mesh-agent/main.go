@@ -478,11 +478,15 @@ func (s *serviceLoop) foldUpdateError(current string) string {
 func beginRuntimeProfileRestart(cfg agent.Config, manager meshRuntime, loadState *runtimeLoadState, restartMu *sync.Mutex, restartPending *bool) (agent.Config, bool) {
 	nextProfile := selectedProfileKey(cfg)
 	runtimeState := manager.State()
-	// Busy blocks a restart only when the in-flight work is for the profile we still
-	// want; a switch to a different profile preempts the stale download/start instead
-	// of waiting for it to finish (which for a large GGUF starves the switch for minutes).
-	busy := (runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping") && loadState.TargetKey() == nextProfile
-	if nextProfile == "" || nextProfile == loadState.Key() || busy || !beginRestart(restartMu, restartPending) {
+	// upForTarget blocks a restart while the runtime is already up for the profile we still
+	// want, whether it is still loading it (starting/downloading/stopping) or already serving
+	// it (ready/running). Start() launches mesh-llm asynchronously and returns before the model
+	// is ready, so the runtime reaches "ready" before loadState is marked loaded; without the
+	// ready/running case here the reconciler would SIGTERM a healthy runtime on every heartbeat.
+	// A switch to a different profile (nextProfile != TargetKey) still preempts the stale start,
+	// and a failed runtime still restarts, since neither is up for the target.
+	upForTarget := (runtimeState == "starting" || runtimeState == "downloading" || runtimeState == "stopping" || runtimeState == "ready" || runtimeState == "running") && loadState.TargetKey() == nextProfile
+	if nextProfile == "" || nextProfile == loadState.Key() || upForTarget || !beginRestart(restartMu, restartPending) {
 		return agent.Config{}, false
 	}
 	manager.SetState("downloading")

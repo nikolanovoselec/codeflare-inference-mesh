@@ -729,3 +729,43 @@ func TestREQRUN010PreemptsDeselectedInflightDownload(t *testing.T) {
 		})
 	})
 }
+
+func TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted(t *testing.T) {
+	t.Run("REQ-RUN-010", func(t *testing.T) {
+		profileA := agent.ModelProfile{ID: "profile-a", UpstreamModel: "upstream-a", Version: 12}
+		profileB := agent.ModelProfile{ID: "profile-b", UpstreamModel: "upstream-b", Version: 1}
+
+		// Start() launches mesh-llm asynchronously and returns before the model is ready, so the
+		// runtime reaches "ready" before loadState is marked loaded. A ready runtime already
+		// serving the selected profile must not be torn down, or the reconciler SIGTERMs a healthy
+		// runtime on every heartbeat and only requests landing in the brief ready window succeed.
+		t.Run("ready runtime serving the selected profile is left alone", func(t *testing.T) {
+			manager := missingBinaryMeshManager(t)
+			manager.SetState("ready")
+			loadState := &runtimeLoadState{}
+			loadState.SetStarting(profileA) // launched, not yet marked loaded
+			cfg := agent.Config{RuntimeModel: profileA.UpstreamModel, ActiveProfileIDs: []string{profileA.ID}, Profiles: []agent.ModelProfile{profileA}}
+			restartMu := &sync.Mutex{}
+			restartPending := false
+
+			if _, started := beginRuntimeProfileRestart(cfg, manager, loadState, restartMu, &restartPending); started {
+				t.Fatal("a ready runtime already serving the selected profile must not be restarted")
+			}
+		})
+
+		// A genuine switch to a different profile must still restart, even from ready.
+		t.Run("ready runtime is restarted when the selected profile changed", func(t *testing.T) {
+			manager := missingBinaryMeshManager(t)
+			manager.SetState("ready")
+			loadState := &runtimeLoadState{}
+			loadState.SetStarting(profileA)
+			cfg := agent.Config{RuntimeModel: profileB.UpstreamModel, ActiveProfileIDs: []string{profileB.ID}, Profiles: []agent.ModelProfile{profileB}}
+			restartMu := &sync.Mutex{}
+			restartPending := false
+
+			if _, started := beginRuntimeProfileRestart(cfg, manager, loadState, restartMu, &restartPending); !started {
+				t.Fatal("a change to a different selected profile must restart the runtime")
+			}
+		})
+	})
+}
