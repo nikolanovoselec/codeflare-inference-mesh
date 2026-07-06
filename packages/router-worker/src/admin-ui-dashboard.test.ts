@@ -572,7 +572,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(bars.length).toBe(ADMIN_UI_TOKS_TRACE.window)
   })
 
-  it('REQ-ADM-016 lists one playground option per model on, valued by callable name and labeled with the model name', async () => {
+  it('REQ-ADM-031 lists one playground option per model on, valued by callable name and labeled with the model name', async () => {
     const harness = await dashboardHarness()
     const select = harness.byId(ADMIN_UI_PLAYGROUND.selectId)
     // One option per model that is on. The value (and the option's data attribute) is the model's
@@ -716,7 +716,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(harness.byId(ADMIN_UI_PLAYGROUND.selectId).value).toBe('model-b')
   })
 
-  it('REQ-ADM-016 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint', async () => {
+  it('REQ-ADM-031 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint', async () => {
     const harness = await dashboardHarness({
       respond: (path) => {
         if (path.startsWith('/admin/cloudflare/gateway/options')) return Response.json({ gateways: [{ id: 'gw-a' }], routes: [{ id: 'r1', name: 'codeflare-mesh' }, { id: 'r2', name: 'custom-route' }], defaults: { gatewayId: 'gw-a', providerName: 'Codeflare Inference Mesh' } })

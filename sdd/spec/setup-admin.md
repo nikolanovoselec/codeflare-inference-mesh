@@ -440,19 +440,18 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The direct target offers one option per model that is on, valued by the model's own callable name and labeled with that callable name paired with the model name, from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 lists one playground option per model on, valued by callable name and labeled with the model name) -->
-2. A gateway target lists that gateway's dynamic routes in the dependent selector and sends the chosen route to the gateway playground endpoint. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::updatePlaygroundModels --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint) -->
-3. Sending a prompt renders the streamed response incrementally as chunks arrive, appending each chunk to a single text node so a selection made while it streams is not wiped. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 streams the direct-target playground response incrementally as chunks arrive) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 appends stream chunks to one text node so a mid-stream selection survives) -->
-4. Failed playground requests append a status-specific actionable next step (provider key, Gateway connection, missing node or profile, or re-sync) instead of a bare status code. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 appends a status-specific actionable hint when a playground request fails) -->
-5. The playground exposes an optional tools-JSON input and a max-token cap, forwards them to the route, and surfaces returned tool calls, so an operator can reproduce and verify an agentic (tool-calling) request on the real route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 renders the tools input, max-token cap, and a stop control in the playground) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-029 forwards tools and a max-token cap and surfaces tool calls on the dynamic route) -->
-6. A Stop control aborts an in-flight stream so no further response content renders after it is pressed. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 renders the tools input, max-token cap, and a stop control in the playground) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 the stop control aborts an in-flight playground stream) -->
-7. The periodic status poll never resets the operator's chosen playground model or route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 the status poll preserves the chosen playground model) -->
+1. Sending a prompt renders the streamed response incrementally as chunks arrive. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 streams the direct-target playground response incrementally as chunks arrive) -->
+2. Streamed response chunks append to a single text node so a selection made while the response streams is not wiped. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 appends stream chunks to one text node so a mid-stream selection survives) -->
+3. Failed playground requests append a status-specific actionable next step (provider key, Gateway connection, missing node or profile, or re-sync) instead of a bare status code. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 appends a status-specific actionable hint when a playground request fails) -->
+4. The playground exposes an optional tools-JSON input and a max-token cap, forwards them to the route, and surfaces returned tool calls, so an operator can reproduce and verify an agentic (tool-calling) request on the real route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 renders the tools input, max-token cap, and a stop control in the playground) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-029 forwards tools and a max-token cap and surfaces tool calls on the dynamic route) -->
+5. A Stop control aborts an in-flight stream so no further response content renders after it is pressed. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 renders the tools input, max-token cap, and a stop control in the playground) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 the stop control aborts an in-flight playground stream) -->
+6. The periodic status poll never resets the operator's chosen playground model or route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-016 the status poll preserves the chosen playground model) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P2
 
-**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-ADM-017](#req-adm-017-role-based-console-surface), [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning), [REQ-ADM-029](#req-adm-029-playground-inference-endpoints)
+**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-ADM-017](#req-adm-017-role-based-console-surface), [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning), [REQ-ADM-029](#req-adm-029-playground-inference-endpoints), [REQ-ADM-031](#req-adm-031-operator-playground-target-selection)
 
 **Verification:** Automated test
 
@@ -797,6 +796,29 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Priority:** P1
 
 **Dependencies:** [REQ-SCH-002](state-scheduling.md#req-sch-002-stateless-entry-node-forwarding), [REQ-NODE-011](node-agent.md#req-node-011-deactivated-nodes-run-no-model)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-031: Operator playground target selection
+
+**Intent:** Before sending a test prompt, an operator chooses where the playground routes it, the direct router or an accessible AI Gateway, and the model or route selector is populated from that target's live options.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The direct target offers one option per model that is on, valued by the model's own callable name and labeled with that callable name paired with the model name, from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 lists one playground option per model on, valued by callable name and labeled with the model name) -->
+2. A gateway target lists that gateway's dynamic routes in the dependent selector and sends the chosen route to the gateway playground endpoint. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::updatePlaygroundModels --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-007](#req-adm-007-operator-dashboard), [REQ-ADM-017](#req-adm-017-role-based-console-surface), [REQ-GWY-005](gateway.md#req-gwy-005-gateway-selection-and-provisioning), [REQ-ADM-029](#req-adm-029-playground-inference-endpoints)
 
 **Verification:** Automated test
 
