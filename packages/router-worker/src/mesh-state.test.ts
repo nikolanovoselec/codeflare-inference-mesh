@@ -283,12 +283,11 @@ describe('mesh state core', () => {
       tokens: [{ nodeId: 'node-a', token: 'invite-token-node-a', updatedAt: NOW }]
     })
 
+    // The node is re-elected to create its own mesh (a create bootstrap carries no joinTokens),
+    // never handed its own token as a join target. Its token stays until it re-reports a fresh
+    // one after the create restart.
     expect(await meshBootstrapFor(store, env, nodeA, profile, NOW + 15_000)).toEqual({ action: 'create', rotation: 2 })
-
-    const state = await storedState(store)
-    expect(state.seedNodeId).toBe('node-a')
-    expect(state.meshId).toBeNull()
-    expect(state.tokens).toEqual([])
+    expect((await storedState(store)).seedNodeId).toBe('node-a')
   })
 
   it('REQ-RUN-008 seed expiry clears the whole rotation including stale mesh id and foreign tokens', async () => {

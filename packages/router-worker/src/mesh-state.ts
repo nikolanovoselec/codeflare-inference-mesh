@@ -183,11 +183,13 @@ export async function electSeedIfAbsent(store: Store, env: MeshStateEnv, profile
     await persistSweep(store, key, profileId, stored, swept, now)
     return { seedNodeId: null, rotation: swept.rotation }
   }
-  // Elect this node and drop any stale meshId or self-token island so it creates a fresh
-  // mesh rather than being replayed a phantom join of its own token. Rotation is preserved.
-  const next: MeshStateRecord = { ...swept, seedNodeId: nodeId, seedElectedAt: now, meshId: null, tokens: [] }
+  // Elect this node as seed. Its own leftover token stays: a seed is never handed its own
+  // token as a join, so it creates its mesh and re-reports a fresh token and mesh id that
+  // overwrite any stale ones. Clearing the token here would drop a token a healthy node just
+  // reported in the same heartbeat, before it is recorded as seed. REQ-RUN-008.
+  const next: MeshStateRecord = { ...swept, seedNodeId: nodeId, seedElectedAt: now }
   await saveMeshState(store, key, profileId, next)
-  if (swept !== stored || swept.meshId !== null || swept.tokens.length > 0) {
+  if (swept !== stored) {
     await appendMeshAudit(store, 'mesh_state_cleared', 'system', profileId, now, {
       profileId,
       rotation: swept.rotation,
@@ -197,7 +199,8 @@ export async function electSeedIfAbsent(store: Store, env: MeshStateEnv, profile
   await appendMeshAudit(store, 'mesh_state_stored', 'system', profileId, now, {
     profileId,
     nodeId,
-    rotation: next.rotation
+    rotation: next.rotation,
+    ...(next.meshId !== null ? { meshId: next.meshId } : {})
   })
   return { seedNodeId: nodeId, rotation: next.rotation }
 }
