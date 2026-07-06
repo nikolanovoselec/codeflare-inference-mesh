@@ -86,6 +86,13 @@ async function storedState(store: MemoryStore, profileId = PROFILE_ID): Promise<
   return await decryptJson<MeshStateRecord>(await importMeshStateKey(MESH_STATE_KEY), envelope!)
 }
 
+// Write raw mesh state directly, bypassing the state machine. Used to reproduce a stale
+// island the old sweep could leave (seed cleared, mesh id + tokens retained) so the heal
+// path can be tested; the current code never writes such a state itself.
+async function seedRawState(store: MemoryStore, state: MeshStateRecord): Promise<void> {
+  await store.putConfig(STATE_CONFIG_KEY, await encryptJson(await importMeshStateKey(MESH_STATE_KEY), state))
+}
+
 function rotateRequest(body: unknown, token = 'admin-secret'): Request {
   return new Request('https://router.example/admin/mesh/rotate', {
     method: 'POST',
@@ -263,6 +270,47 @@ describe('mesh state core', () => {
 
     expect(await meshBootstrapFor(store, env, nodeC, profile, later)).toEqual({ action: 'create', rotation: 1 })
     expect((await storedState(store)).seedNodeId).toBe('node-c')
+  })
+
+  it('REQ-RUN-008 re-elects a node holding only its own token instead of joining it to itself', async () => {
+    const nodeA = meshNode('node-a')
+    const { store, env, profile } = await meshFixture(nodeA)
+    await seedRawState(store, {
+      rotation: 2,
+      meshId: 'mesh-stale',
+      seedNodeId: null,
+      seedElectedAt: null,
+      tokens: [{ nodeId: 'node-a', token: 'invite-token-node-a', updatedAt: NOW }]
+    })
+
+    expect(await meshBootstrapFor(store, env, nodeA, profile, NOW + 15_000)).toEqual({ action: 'create', rotation: 2 })
+
+    const state = await storedState(store)
+    expect(state.seedNodeId).toBe('node-a')
+    expect(state.meshId).toBeNull()
+    expect(state.tokens).toEqual([])
+  })
+
+  it('REQ-RUN-008 seed expiry clears the whole rotation including stale mesh id and foreign tokens', async () => {
+    const nodeA = meshNode('node-a')
+    const { store, env, profile } = await meshFixture(nodeA)
+    await seedRawState(store, {
+      rotation: 3,
+      meshId: 'mesh-ghost',
+      seedNodeId: 'ghost-seed',
+      seedElectedAt: NOW,
+      tokens: [{ nodeId: 'ghost-peer', token: 'ghost-token', updatedAt: NOW }]
+    })
+
+    const afterDeadline = { ...nodeA, lastSeenAt: NOW + 61_000 }
+    await store.upsertNode(afterDeadline)
+    expect(await meshBootstrapFor(store, env, afterDeadline, profile, NOW + 61_000)).toEqual({ action: 'create', rotation: 3 })
+
+    const state = await storedState(store)
+    expect(state.seedNodeId).toBe('node-a')
+    expect(state.meshId).toBeNull()
+    expect(state.tokens).toEqual([])
+    expect(auditTypes(store)).toContain('mesh_state_cleared')
   })
 
   it('REQ-SEC-001 delivers mesh bootstrap only in node-token-authenticated heartbeat responses', async () => {

@@ -157,6 +157,13 @@ func (m *MeshLLMManager) Start(ctx context.Context) error {
 	if len(input.JoinTokens) > 0 {
 		m.launchedAction = "join"
 	}
+	// A freshly launched process has not joined or minted a mesh yet. Clear the mesh identity
+	// captured from the previous process so a stale meshId or token cannot be reported to the
+	// router, nor trip the meshId-diff restart in NeedsRestart, on the next heartbeat.
+	m.token = ""
+	m.meshID = ""
+	m.readyModels = nil
+	m.apiReady = false
 	exited := m.exited
 	go m.wait(proc, m.done, exited)
 	go m.awaitReadiness(proc, exited, input.ModelRef)
@@ -300,9 +307,10 @@ func (m *MeshLLMManager) PollStatus(ctx context.Context) (MeshLLMStatus, bool) {
 		if status.Token != "" {
 			m.token = status.Token
 		}
-		if status.MeshID != "" {
-			m.meshID = status.MeshID
-		}
+		// Mirror the console mesh id exactly, including clearing a stale id when the console
+		// reports it holds no mesh yet (mesh_id=null). Otherwise a mesh id from a previous
+		// process lingers and can trip the meshId-diff restart in NeedsRestart every tick.
+		m.meshID = status.MeshID
 	}
 	if apiReachable {
 		m.readyModels = models

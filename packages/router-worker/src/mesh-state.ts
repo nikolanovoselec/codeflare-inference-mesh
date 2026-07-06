@@ -108,7 +108,11 @@ export async function meshBootstrapFor(store: Store, env: MeshStateEnv, node: No
   if (!key) return undefined
   if (node.status !== 'online' || node.runtime !== 'meshllm' || !profile.active || !node.activeProfileIds.includes(profile.id)) return undefined
   const state = sweepMeshState((await loadMeshState(store, key, profile.id)) ?? emptyMeshState(0), now)
-  if (state.tokens.length === 0 && state.seedNodeId === null && isSeedEligible(node, profile, now)) {
+  // Re-elect when this node has no seed and no OTHER node's token to join. A leftover
+  // self-token (a seed that expired into a token island) must not block election, or the
+  // node is handed its own token as a phantom join forever. REQ-RUN-008.
+  const joinable = state.tokens.filter((entry) => entry.nodeId !== node.id)
+  if (joinable.length === 0 && state.seedNodeId === null && isSeedEligible(node, profile, now)) {
     await runElection(store, env, profile.id, node.id, now)
     const elected = sweepMeshState((await loadMeshState(store, key, profile.id)) ?? emptyMeshState(state.rotation), now)
     return bootstrapFromState(elected, node.id)
@@ -165,7 +169,11 @@ export async function electSeedIfAbsent(store: Store, env: MeshStateEnv, profile
   if (!key) return { seedNodeId: null, rotation: 0 }
   const stored = (await loadMeshState(store, key, profileId)) ?? emptyMeshState(0)
   const swept = sweepMeshState(stored, now)
-  if (swept.seedNodeId !== null || swept.tokens.length > 0) {
+  // A leftover token that belongs to this node is a stale self-island, not a joinable
+  // peer, so it must not block election. Only a live seed or another node's token defers
+  // election here. REQ-RUN-008.
+  const joinable = swept.tokens.filter((entry) => entry.nodeId !== nodeId)
+  if (swept.seedNodeId !== null || joinable.length > 0) {
     await persistSweep(store, key, profileId, stored, swept, now)
     return { seedNodeId: swept.seedNodeId, rotation: swept.rotation }
   }
@@ -175,9 +183,11 @@ export async function electSeedIfAbsent(store: Store, env: MeshStateEnv, profile
     await persistSweep(store, key, profileId, stored, swept, now)
     return { seedNodeId: null, rotation: swept.rotation }
   }
-  const next: MeshStateRecord = { ...swept, seedNodeId: nodeId, seedElectedAt: now }
+  // Elect this node and drop any stale meshId or self-token island so it creates a fresh
+  // mesh rather than being replayed a phantom join of its own token. Rotation is preserved.
+  const next: MeshStateRecord = { ...swept, seedNodeId: nodeId, seedElectedAt: now, meshId: null, tokens: [] }
   await saveMeshState(store, key, profileId, next)
-  if (swept !== stored) {
+  if (swept !== stored || swept.meshId !== null || swept.tokens.length > 0) {
     await appendMeshAudit(store, 'mesh_state_cleared', 'system', profileId, now, {
       profileId,
       rotation: swept.rotation,
@@ -187,8 +197,7 @@ export async function electSeedIfAbsent(store: Store, env: MeshStateEnv, profile
   await appendMeshAudit(store, 'mesh_state_stored', 'system', profileId, now, {
     profileId,
     nodeId,
-    rotation: next.rotation,
-    ...(next.meshId !== null ? { meshId: next.meshId } : {})
+    rotation: next.rotation
   })
   return { seedNodeId: nodeId, rotation: next.rotation }
 }
@@ -196,15 +205,19 @@ export async function electSeedIfAbsent(store: Store, env: MeshStateEnv, profile
 function bootstrapFromState(state: MeshStateRecord, nodeId: string): MeshBootstrap {
   // The elected seed always creates its own mesh, even after its invite token lands in
   // state.tokens. Checking tokens first would tell the seed to join its own mesh, flipping
-  // its role every heartbeat and making the agent SIGTERM a healthy runtime. Peers that are
-  // not the seed join once live tokens exist. REQ-RUN-008.
+  // its role every heartbeat and making the agent SIGTERM a healthy runtime. REQ-RUN-008.
   if (state.seedNodeId === nodeId) return { action: 'create', rotation: state.rotation }
-  if (state.tokens.length > 0) {
+  // A node only ever joins on tokens from OTHER nodes. Never hand a node its own token: a
+  // seed that expired into a leftover token island would otherwise loop the node joining a
+  // mesh only it can see, restarting it every heartbeat. Non-seed peers join once a real
+  // peer token exists; otherwise they wait for election. REQ-RUN-008.
+  const joinTokens = state.tokens.filter((entry) => entry.nodeId !== nodeId).map((entry) => entry.token)
+  if (joinTokens.length > 0) {
     return {
       action: 'join',
       rotation: state.rotation,
       ...(state.meshId !== null ? { meshId: state.meshId } : {}),
-      joinTokens: state.tokens.map((entry) => entry.token)
+      joinTokens
     }
   }
   return { action: 'wait', rotation: state.rotation }
@@ -221,9 +234,13 @@ function seedExpired(state: MeshStateRecord, now: number): boolean {
 }
 
 function sweepMeshState(state: MeshStateRecord, now: number): MeshStateRecord {
-  const cleared = seedExpired(state, now) ? { ...state, seedNodeId: null, seedElectedAt: null } : state
-  if (cleared.tokens.length === 0 && cleared.seedNodeId === null && cleared.meshId !== null) return emptyMeshState(cleared.rotation)
-  return cleared
+  // An expired seed (elected but silent past the token deadline) means the mesh never
+  // formed. Clear the whole rotation, not just the seed, so no stale meshId or token island
+  // survives for the router to replay as a phantom join; the next eligible heartbeat
+  // re-elects. Rotation is preserved so the mesh name keeps advancing. REQ-RUN-008.
+  if (seedExpired(state, now)) return emptyMeshState(state.rotation)
+  if (state.tokens.length === 0 && state.seedNodeId === null && state.meshId !== null) return emptyMeshState(state.rotation)
+  return state
 }
 
 function upsertToken(state: MeshStateRecord, nodeId: string, token: string, now: number): MeshStateRecord {

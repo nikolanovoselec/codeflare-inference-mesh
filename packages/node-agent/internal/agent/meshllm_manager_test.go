@@ -724,6 +724,67 @@ func TestREQRUN006PollStatusCapturesTokenAndMeshID(t *testing.T) {
 	})
 }
 
+func TestREQRUN006PollStatusClearsStaleMeshIDWhenConsoleReportsNone(t *testing.T) {
+	t.Run("REQ-RUN-006", func(t *testing.T) {
+		console := &consoleFixture{status: statusPayload("serving", "mesh-xyz", "tok-abc")}
+		consoleServer := httptest.NewServer(console)
+		defer consoleServer.Close()
+		models := &modelsFixture{ids: []string{"target-model"}}
+		modelsServer := httptest.NewServer(models)
+		defer modelsServer.Close()
+
+		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+			ModelRef:    "target-model",
+			APIPort:     serverPort(t, modelsServer),
+			ConsolePort: serverPort(t, consoleServer),
+		}, 0)
+
+		if _, reachable := fixture.manager.PollStatus(context.Background()); !reachable {
+			t.Fatal("console should be reachable")
+		}
+		if fixture.manager.CurrentMeshID() != "mesh-xyz" {
+			t.Fatalf("CurrentMeshID = %q, want mesh-xyz", fixture.manager.CurrentMeshID())
+		}
+
+		// A fresh mesh-llm process reports it holds no mesh yet: the console mesh_id is null.
+		// The manager must clear the stale id rather than keep replaying mesh-xyz to the router.
+		console.set(statusPayload("loading", "", "tok-abc"))
+		if _, reachable := fixture.manager.PollStatus(context.Background()); !reachable {
+			t.Fatal("console should still be reachable")
+		}
+		if fixture.manager.CurrentMeshID() != "" {
+			t.Fatalf("CurrentMeshID = %q, want empty after the console reports a null mesh id", fixture.manager.CurrentMeshID())
+		}
+	})
+}
+
+func TestREQRUN006StartClearsStaleMeshIdentity(t *testing.T) {
+	t.Run("REQ-RUN-006", func(t *testing.T) {
+		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{ModelRef: "target-model"}, 0)
+		// A prior process left a mesh identity behind. Launching a new process must clear it so
+		// the router is not sent, and NeedsRestart does not trip on, a mesh the runtime dropped.
+		fixture.manager.mu.Lock()
+		fixture.manager.meshID = "stale-mesh"
+		fixture.manager.token = "stale-token"
+		fixture.manager.readyModels = []string{"stale-model"}
+		fixture.manager.apiReady = true
+		fixture.manager.mu.Unlock()
+
+		if err := fixture.manager.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if got := fixture.manager.CurrentMeshID(); got != "" {
+			t.Fatalf("CurrentMeshID = %q, want empty after launching a new process", got)
+		}
+		if got := fixture.manager.CurrentToken(); got != "" {
+			t.Fatalf("CurrentToken = %q, want empty after launching a new process", got)
+		}
+		if fixture.manager.APIReady() {
+			t.Fatal("APIReady must reset to false on a new process launch")
+		}
+	})
+}
+
 func TestREQRUN006SingleProcessSelectsFirstActiveProfile(t *testing.T) {
 	t.Run("REQ-RUN-006", func(t *testing.T) {
 		first := ModelProfile{ID: "p1", UpstreamModel: "model-1", Runtime: "meshllm", Active: true, MeshLLM: MeshLLMSettings{ModelRef: "model-1", BindPort: 4300}}
