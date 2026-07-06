@@ -2382,6 +2382,33 @@ describe('router worker behavioral contracts', () => {
     expect(store.audit.some((event) => event.type === 'mesh_token_removed')).toBe(true)
   })
 
+  it('REQ-ADM-030 REQ-NODE-011 deactivating a node drops its mesh token and later heartbeats do not re-add it', async () => {
+    const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
+    await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
+    await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: heartbeatBody({ meshId: 'mesh-1', meshToken: 'invite-token-value-a' })
+    }))
+    expect(store.config.get('mesh_state:mesh-smoke-qwen25-1.5b')).toBeDefined()
+
+    // Deactivating tears the node's now-dead invite token out of mesh state so peers stop dialing it.
+    const off = await router(new Request('https://router.test/admin/nodes/node-a/deactivate', { method: 'POST', headers: bearer('admin-secret') }))
+    expect(off.status).toBe(200)
+    expect(store.audit.some((event) => event.type === 'mesh_token_removed' && event.target === 'node-a')).toBe(true)
+
+    // A heartbeat from the still-deactivated node must not re-add the token (the mesh-state guard).
+    await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: heartbeatBody({ meshId: 'mesh-1', meshToken: 'invite-token-value-a' })
+    }))
+    const status = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+    const statusBody = await status.json() as { meshHealth?: Array<{ profileId: string; tokenCount?: number }> }
+    const entry = (statusBody.meshHealth ?? []).find((candidate) => candidate.profileId === 'mesh-smoke-qwen25-1.5b')
+    expect(entry?.tokenCount ?? 0).toBe(0)
+  })
+
   it('REQ-OBS-007 reports per-profile mesh coordinator and peers in admin status', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret-a') })

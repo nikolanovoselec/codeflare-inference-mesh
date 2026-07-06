@@ -92,9 +92,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const playgroundHint = (status) => {
     if (status === 400) return ' The Gateway rejected the request. Re-sync the Gateway so its route matches the current model alias.';
     if (status === 401 || status === 403) return ' Paste the router provider token into the AI Gateway custom provider key.';
+    if (status === 404) return ' No serving profile for this model yet. Add and activate a model.';
     if (status === 409) return ' Connect an AI Gateway in Routing first.';
-    if (status === 404 || status === 429) return ' No serving profile or ready node yet. Enroll a node and activate a profile.';
-    if (status === 503) return ' Re-sync the Gateway in Routing.';
+    if (status === 502) return ' The selected node was unreachable over the mesh. Confirm the node is connected on WARP.';
+    if (status === 503) return ' No ready node, or the upstream/Gateway token is not configured. Enroll and activate a node, or re-sync the Gateway.';
     return '';
   };
 

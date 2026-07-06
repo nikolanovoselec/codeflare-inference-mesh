@@ -230,7 +230,7 @@ describe('admin UI mesh operations contracts', () => {
   it('REQ-OBS-007 gives each technical-details field its own line so they never run together', () => {
     // The fields render as distinct inline <code data-mesh-field> nodes (asserted above); without a
     // block rule they collapse onto one line. This locks the stylesheet contract that separates them.
-    expect(adminUiCss).toMatch(/code\[data-mesh-field\]\s*\{[^}]*display:\s*block/)
+    expect(adminUiCss()).toMatch(/code\[data-mesh-field\]\s*\{[^}]*display:\s*block/)
   })
 
   it('REQ-ADM-006 verifies the admin token before storing it', async () => {

@@ -11,7 +11,7 @@ const dashboardNodes = [
     status: 'online',
     agentVersion: 'v1.3.0',
     // readyModels carries upstream model refs (what the runtime loaded), exactly as the scheduler
-    // and the serving-count match on — never the public aliases.
+    // and the serving-count match on, never the public aliases.
     metrics: { runtimeState: 'running', readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'], gpuMemoryTotalMiB: 24_576, gpuMemoryUsedMiB: 20_000, tokensPerSecond: 42.5, activeRequests: 1 }
   },
   {
@@ -279,7 +279,9 @@ describe('dashboard overview contracts', () => {
     expect(field('version')!.dataset.reported).toBe('v1.2.0')
     expect(field('version')!.dataset.desiredMatch).toBe('false')
     const models = fields.filter((node) => node.dataset.drawerModel)
-    expect(models.map((node) => node.dataset.drawerModel)).toEqual(['codeflare-mesh'])
+    // The node drawer lists the node's own ready-model refs verbatim (the upstream refs the runtime
+    // loaded, mirroring production /v1/models), not the public alias.
+    expect(models.map((node) => node.dataset.drawerModel)).toEqual(['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'])
     const revoke = fields.find((node) => node.dataset.action === 'node-revoke')
     expect(revoke).toBeDefined()
     expect(revoke!.dataset.nodeId).toBe('node-small')
@@ -626,6 +628,9 @@ describe('dashboard throughput trace and playground contracts', () => {
     const out400 = await outputFor(400)
     const out401 = await outputFor(401)
     const out409 = await outputFor(409)
+    const out404 = await outputFor(404)
+    const out502 = await outputFor(502)
+    const out503 = await outputFor(503)
     // Behavioral contract (survives without pinning copy): each failure carries the status code plus a
     // hint beyond the bare line, and distinct statuses map to distinct hints. Gut playgroundHint -> all
     // collapse to the bare line and the length + inequality assertions fail.
@@ -635,6 +640,13 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(out409.length).toBeGreaterThan(bareLen(409))
     expect(out400).not.toBe(out401)
     expect(out401).not.toBe(out409)
+    // The thin-forwarder scheduler-miss statuses each carry their own actionable hint: 404 no-profile,
+    // 502 node_unreachable, 503 no ready node. (429 no longer occurs, so it maps to no hint.)
+    expect(out404.length).toBeGreaterThan(bareLen(404))
+    expect(out502.length).toBeGreaterThan(bareLen(502))
+    expect(out503.length).toBeGreaterThan(bareLen(503))
+    expect(out404).not.toBe(out502)
+    expect(out502).not.toBe(out503)
   })
 
   it('REQ-ADM-005 surfaces the currently provisioned custom domain in Routing', async () => {

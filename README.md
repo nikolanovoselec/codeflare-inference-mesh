@@ -21,7 +21,7 @@ Codeflare Inference Mesh is the self-hosted inference layer of the **[Codeflare]
 
 Most enterprises already own thousands of Windows, macOS, and Linux devices. They sit idle for most of the working day: someone reads a wiki, sits in a meeting, or waits between tasks while a capable GPU does nothing. Buying dedicated inference racks to sit next to that idle capacity is the expensive way to solve the problem.
 
-The fabric pools the capacity you have. A request lands on one stable Gateway route, the router picks a ready node, and the node serves the model locally. When local capacity runs short or a task needs a stronger model, the same route fails over to OpenAI, Anthropic, Microsoft, or any other provider you configure. No node exposes a public URL, and no prompt leaves your network unless you route it out on purpose.
+The fabric pools the capacity you have. A request lands on one stable Gateway route, the router picks a ready node, and the node serves the model locally. When local capacity runs short or a task needs a stronger model, you can extend the same route with a native AI Gateway fallback chain to a hosted provider you configure directly in AI Gateway; the router itself does not automate that fallback. No node exposes a public URL, and no prompt leaves your network unless you route it out on purpose.
 
 ## How it works
 
@@ -30,7 +30,7 @@ flowchart LR
     client["OpenAI-compatible<br/>client"]
     subgraph edge["Cloudflare edge (public)"]
         gateway["AI Gateway<br/>one stable alias"]
-        router["Worker router<br/>D1 · DO scheduler"]
+        router["Worker router<br/>D1 · stateless forward"]
     end
     subgraph priv["Your private network (WARP)"]
         node["Ready node"]
@@ -39,11 +39,11 @@ flowchart LR
     provider["External provider<br/>OpenAI · Anthropic · ..."]
 
     client --> gateway --> router --> node --> llm
-    gateway -.->|fails over when local capacity is short| provider
+    gateway -.->|optional AI Gateway fallback you configure| provider
 ```
 
 - Clients call one private model alias called `codeflare-mesh`, and the Gateway route stays fixed as nodes come and go.
-- The Worker is the only public surface. It takes Gateway traffic, reserves a ready node through a Durable Object scheduler, and forwards over Workers VPC to nodes that stay private on Cloudflare WARP.
+- The Worker is the only public surface. It takes Gateway traffic, picks the least-loaded ready node from D1, and forwards over Workers VPC to nodes that stay private on Cloudflare WARP.
 - Each node runs one Go agent. It installs and supervises a pinned, checksum-verified `mesh-llm` binary, reports health on every heartbeat, and proxies requests to it, so there is no separate inference server to babysit.
 - Nodes serving the same profile form a private mesh. The router elects a seed and hands out join tokens through heartbeats; the mesh then serves a model on one node or splits it across several. Mesh secrets are encrypted at rest and rotate on one click.
 
@@ -107,10 +107,10 @@ The Worker configuration lives in [`packages/router-worker/wrangler.toml`](packa
 | Name | Type | Purpose |
 | --- | --- | --- |
 | `DB` | D1 binding | Durable router state. |
-| `REGISTRY` | Durable Object | Serialized scheduling and reservation release. |
+| `REGISTRY` | Durable Object | Serializes mesh seed election only; the inference request path is stateless and does not use it. |
 | `MESH` | Workers VPC Network | Worker-to-private-node `fetch()` path; ships commented and is enabled by the deploy workflow (see [configuration.md](documentation/lanes/configuration.md)). |
 | `MAX_REQUEST_BYTES` | Var | Chat request size limit. |
-| `HEARTBEAT_TTL_SECONDS` | Var | Node freshness window. |
+| `HEARTBEAT_TTL_SECONDS` | Var | Declared for the node freshness window but not consumed; the live TTL is hard-coded to 45s (see [configuration.md](documentation/lanes/configuration.md)). |
 | `AI_GATEWAY_ID` / `AI_GATEWAY_ROUTE_NAME` / `AI_GATEWAY_PROVIDER_NAME` / `AI_GATEWAY_PUBLIC_MODEL` | Var | Gateway defaults for the setup wizard. |
 | `WORKER_NAME` | Var | Worker script name for custom-domain routes and managed Access groups. |
 | `WORKER_BASE_URL` | Var | Optional bootstrap-origin override; setup uses the request origin when unset. |

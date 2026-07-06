@@ -146,7 +146,8 @@ async function handleModels(request: Request, deps: RouterDeps, requestId: strin
 
 async function handleChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'provider', now, deps.env.ROUTER_PROVIDER_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)
-  const maxBytes = Number(deps.env.MAX_REQUEST_BYTES ?? DEFAULT_MAX_BYTES)
+  const parsedMaxBytes = Number(deps.env.MAX_REQUEST_BYTES ?? DEFAULT_MAX_BYTES)
+  const maxBytes = Number.isFinite(parsedMaxBytes) ? parsedMaxBytes : DEFAULT_MAX_BYTES
   const contentLength = Number(request.headers.get('content-length') ?? '0')
   if (contentLength > maxBytes) return json({ error: 'request_too_large', requestId }, 413, requestId)
   const bodyText = await request.text()
@@ -257,7 +258,11 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     ...(body.metrics !== undefined ? { metrics: body.metrics } : {})
   }
   await deps.store.updateNodeHeartbeat(next)
-  await applyHeartbeatMeshState(deps.store, deps.env, next, body, now)
+  // A deactivated node runs no mesh-llm, so its now-dead invite token must not be re-added to mesh
+  // state; skip mesh-state application while it is tainted. REQ-ADM-030 / REQ-NODE-011.
+  if (next.deactivated !== true) {
+    await applyHeartbeatMeshState(deps.store, deps.env, next, body, now)
+  }
   const desiredVersion = await desiredAgentVersion(deps.store)
   // A deactivated node is tainted: it keeps heartbeating but must run no model, so it receives no
   // desired profiles and no mesh bootstrap and is told to stay down. REQ-ADM-030 / REQ-NODE-011.
@@ -596,6 +601,9 @@ async function setNodeDeactivated(deps: RouterDeps, nodeId: string, deactivated:
   const node = await deps.store.getNode(nodeId)
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
   await deps.store.upsertNode({ ...node, deactivated })
+  // Deactivation stops mesh-llm, so drop the node's now-dead invite token from every mesh; on
+  // reactivation the node re-adds its token through heartbeats once mesh-llm relaunches.
+  if (deactivated) await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
   await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor, target: nodeId, detail: {} })
   return json({ ok: true, deactivated }, 200, requestId)
 }
@@ -1246,6 +1254,7 @@ async function apiSetNodeDeactivated(request: Request, deps: RouterDeps, url: UR
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
   const updated = { ...node, deactivated }
   await deps.store.upsertNode(updated)
+  if (deactivated) await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
   await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
   return json({ ok: true, node: toApiNode(updated) }, 200, requestId)
 }

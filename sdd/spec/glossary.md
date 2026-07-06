@@ -21,8 +21,9 @@
 | Model Profile | Router-owned definition of a concrete model source, runtime arguments, context limit, and allowed hardware class. |
 | Stable Public Model | The single Gateway-facing model id (`codeflare-mesh`), carried as a shared alias by every model profile so the single active model always owns it, that always resolves to the currently active serving model so switching models never changes the Gateway route or public model id. |
 | Public Model Alias | Per-profile external model name, such as `qwen3.6-coder`, that the Worker rewrites to that profile's upstream model; distinct from the Stable Public Model the Gateway targets. |
-| Reservation | Scheduler record that assigns one request to one node until the request completes or expires. |
-| Session Affinity | Routing preference that keeps one coding session on the same node to preserve context-cache reuse. |
+| Reservation | Retired scheduler record that once pinned one request to one node; the stateless forwarder no longer creates reservations and the `reservations` D1 table is dead schema. See [REQ-SCH-002](state-scheduling.md#req-sch-002-stateless-entry-node-forwarding). |
+| Session Affinity | Cache-warm routing preference that keeps one coding session on the same node; now owned by mesh-llm's AffinityRouter rather than the router. See [REQ-SCH-002](state-scheduling.md#req-sch-002-stateless-entry-node-forwarding). |
+| Deactivated Node (Taint) | A reversible operator-set flag that keeps a node enrolled and heartbeating while excluding it from inference selection and suppressing its mesh-llm launch; distinct from the one-way Revoke decommission. |
 | Scheduler Miss | Router outcome when a requested alias has no profile or no eligible node can currently serve it. |
 | Setup Token | Short-lived, single-use token that lets one node claim permanent credentials. |
 | Provider Token | Bearer token stored in AI Gateway BYOK/provider-key settings and sent to the router for `/v1/*` calls. |

@@ -60,7 +60,7 @@
 
 **Cause:** No eligible node can currently serve the requested public model: every candidate is offline, still downloading or starting, reporting an unsafe Mesh target, or has been deactivated by an operator. The router holds no reservation state, so a healthy idle node is never wedged out of selection by a leaked reservation.
 
-**Fix:** Use the request ID to inspect admin status, then start another compatible node, reactivate a deactivated one (see [Node stays orange and serves nothing](#node-stays-orange-and-serves-nothing)), or switch the public alias to a ready fallback profile. A `502 node_unreachable` instead points at WARP reachability — see [Worker cannot reach node](#worker-cannot-reach-node). ([REQ-SCH-005](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
+**Fix:** Use the request ID to inspect admin status, then start another compatible node, reactivate a deactivated one (see [Node stays orange and serves nothing](#node-stays-orange-and-serves-nothing)), or switch the public alias to a ready fallback profile. A `502 node_unreachable` instead points at WARP reachability; see [Worker cannot reach node](#worker-cannot-reach-node). ([REQ-SCH-005](../../sdd/spec/state-scheduling.md)) ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
 
 ## Node stays orange and serves nothing
 

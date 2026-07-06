@@ -278,6 +278,7 @@ func RedactedConfig(cfg Config) Config {
 		MeshLLMConsolePort:   cfg.MeshLLMConsolePort,
 		MeshLLMFlavor:        cfg.MeshLLMFlavor,
 		MeshLLMAllowUnpinned: cfg.MeshLLMAllowUnpinned,
+		NostrRelays:          append([]string(nil), cfg.NostrRelays...),
 		RuntimeModel:         cfg.RuntimeModel,
 		PublicModels:         append([]string(nil), cfg.PublicModels...),
 		ActiveProfileIDs:     append([]string(nil), cfg.ActiveProfileIDs...),

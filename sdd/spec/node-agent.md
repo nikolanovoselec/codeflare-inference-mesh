@@ -220,7 +220,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 **Acceptance Criteria:**
 
 1. The agent embeds a pinned MeshLLM release version and a per-platform, per-flavor artifact and SHA-256 checksum map at build time. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::MeshLLMInstallAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE006PinnedVersionAndChecksumMapEmbedded) -->
-2. On an `nvidia-smi` host MeshLLM flavor resolves to the CUDA build matching the host's installed CUDA runtime major (`cuda-13` on Linux carrying CUDA 13 runtime libraries, `cuda-12` otherwise), the Metal asset on darwin/arm64, and `cpu` when no GPU is present, unless a configured flavor override is set. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::MeshLLMInstallAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE006FlavorDetectionAndConfigOverride) -->
+2. On an `nvidia-smi` host MeshLLM flavor resolves to the CUDA build matching the host's CUDA runtime major (`cuda-13` on Linux with CUDA 13 libraries, else `cuda-12`), the Metal asset on darwin/arm64, and `cpu` otherwise, unless a flavor override is set. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::MeshLLMInstallAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE006FlavorDetectionAndConfigOverride) -->
 3. When no acceptable binary is present, the agent downloads the pinned artifact from GitHub releases into the agent data directory's `bin/`, verifies its SHA-256 against the embedded map, and installs it by atomic rename. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::MeshLLMInstallAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE006DownloadVerifyAtomicInstall) -->
 4. A `mesh-llm` binary found on PATH is used only when its `--version` output matches the pinned version, unless a configuration opt-out accepts unpinned binaries. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::MeshLLMInstallAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE006PathBinaryAcceptedOnlyOnPinMatch) -->
 5. A failed download, checksum mismatch, or rejected binary reports dependency-missing status, keeping the node up but never eligible. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::MeshLLMInstallAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE006InstallFailureReportsDependencyMissing) -->
@@ -279,7 +279,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 **Priority:** P1
 
-**Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat), [REQ-ADM-030](setup-admin.md#req-adm-030-node-deactivation-and-activation)
+**Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat)
 
 **Verification:** Automated test
 

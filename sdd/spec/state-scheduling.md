@@ -1,6 +1,6 @@
 # State And Scheduling
 
-This domain covers durable records, hot scheduler state, reservations, leases, session affinity, and scheduler miss behavior.
+This domain covers durable records, hot scheduler state, node eligibility, and scheduler miss behavior.
 
 ---
 
@@ -33,13 +33,13 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 
 ### REQ-SCH-002: Stateless entry-node forwarding
 
-**Intent:** The router holds no live reservation state. It selects an eligible node for the requested public model and forwards the request; mesh-llm owns dispatch, per-node concurrency, and KV-aware routing across the peered mesh. Selection never mutates node state, so a client can never be wedged behind a leaked reservation.
+**Intent:** The router holds no live reservation or session-to-node mapping. It selects an eligible node for the requested public model and forwards the request; mesh-llm owns dispatch, per-node concurrency, and KV-aware cache-warm routing across the peered mesh through its AffinityRouter. Selection never mutates node state, so a client can never be wedged behind a leaked reservation.
 
 **Applies To:** Client
 
 **Acceptance Criteria:**
 
-1. Node selection returns an eligible node for a routable public model and never reads or writes an in-flight reservation count. <!-- @impl: packages/router-worker/src/scheduler.ts::selectEntryNode --> <!-- @test: packages/router-worker/src/scheduler.test.ts (REQ-SCH-002 selectEntryNode selects a node regardless of load and never wedges) -->
+1. Node selection returns an eligible node for a routable public model and never reads or writes an in-flight reservation count or a session-to-node mapping. <!-- @impl: packages/router-worker/src/scheduler.ts::selectEntryNode --> <!-- @test: packages/router-worker/src/scheduler.test.ts (REQ-SCH-002 selectEntryNode selects a node regardless of load and never wedges) -->
 2. Selection applies no capacity or in-flight gate, so back-to-back requests against a busy node both resolve to that node. <!-- @impl: packages/router-worker/src/scheduler.ts::selectEntryNode --> <!-- @test: packages/router-worker/src/scheduler.test.ts (REQ-SCH-002 selectEntryNode selects a node regardless of load and never wedges) -->
 3. Among eligible nodes the router picks the least busy by node-reported active-request count. <!-- @impl: packages/router-worker/src/scheduler.ts::selectNode --> <!-- @test: packages/router-worker/src/scheduler.test.ts (REQ-SCH-002 selectNode picks the least-loaded ready node by active requests) -->
 4. The request forwards to the selected node with the profile's upstream model and the node's response streams straight back. <!-- @impl: packages/router-worker/src/router.ts::runInference --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response) -->
@@ -109,26 +109,6 @@ This domain covers durable records, hot scheduler state, reservations, leases, s
 **Verification:** Automated test
 
 **Status:** Implemented
-
----
-
-### REQ-SCH-004: Session affinity (superseded)
-
-**Intent:** Session affinity was a router-side stickiness bonus that pinned a coding session to one node to reuse local KV cache. It is superseded by REQ-SCH-002: mesh-llm's AffinityRouter now owns KV-aware, prefix-hash, cache-warm routing across the peered mesh, so the router forwards statelessly and keeps no session-to-node mapping.
-
-**Applies To:** Client
-
-**Acceptance Criteria:**
-
-1. The router keeps no session-to-node mapping; KV-aware, cache-warm routing is delegated to mesh-llm's AffinityRouter across the mesh. <!-- @impl: packages/router-worker/src/scheduler.ts::selectEntryNode -->
-
-**Priority:** P1
-
-**Dependencies:** [REQ-SCH-002](#req-sch-002-stateless-entry-node-forwarding)
-
-**Verification:** Superseded
-
-**Status:** Superseded
 
 ---
 

@@ -28,10 +28,6 @@ Mesh state, including invite tokens, is stored only AES-GCM envelope-encrypted v
 
 D1 stores setup state, Cloudflare resource IDs, model profiles, aliases, nodes, sessions, reservations, and audit records. Durable Objects may cache hot state but must rebuild from D1.
 
-## CON-SCHED-001: Serialized live reservations (retired)
-
-Retired with the move to stateless entry-node forwarding ([REQ-SCH-002](state-scheduling.md#req-sch-002-stateless-entry-node-forwarding)): the router no longer holds live reservation, in-flight, or sticky-session state, so there is nothing to serialize. mesh-llm owns per-node concurrency and KV-aware routing across the peered mesh.
-
 ## CON-RUNTIME-001: MeshLLM-only runtime
 
 The only managed runtime is MeshLLM (`mesh-llm`), forming a private mesh over WARP CGNAT unicast. Discovery is `nostr`: public relays carry rendezvous metadata only (peer identity + Mesh IP), never inference. Inference data rides iroh, pinned to the WARP overlay by `--bind-ip <MeshIP>` + `--disable-iroh-relays` (no public relay/STUN fallback), with a Cloudflare Gateway egress policy blocking any non-`100.96.0.0/12` iroh/QUIC flow as the network-layer backstop. Shipped profiles never enable public mesh publishing or inference egress.

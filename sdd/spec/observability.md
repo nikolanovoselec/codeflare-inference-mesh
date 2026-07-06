@@ -49,7 +49,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 **Priority:** P1
 
-**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-SCH-004](state-scheduling.md#req-sch-004-session-affinity)
+**Dependencies:** [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses)
 
 **Verification:** Automated test
 
@@ -69,7 +69,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 2. Heartbeat metrics include mesh ID, mesh role, peer count, split and stage state, MeshLLM API and console readiness, and the MeshLLM version. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 3. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 
-**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
 **Priority:** P1
 
@@ -93,7 +93,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 2. A node reports runtime state ready only while the console reports serving and the selected profile's upstream model is routable in the node's own model list. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS008MapsMeshLLMNodeStates) -->
 3. Console state loading is reported as downloading, standby is reported as starting, and an unreachable console after grace or a process exit is reported as failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS008MapsMeshLLMNodeStates) -->
 
-**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
 **Priority:** P1
 
@@ -119,7 +119,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 4. Token-throughput metrics are read from the MeshLLM console status `tok_per_sec` value when the console exposes it. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
 5. Prompt-versus-generation throughput splits are absent rather than fabricated when the MeshLLM status does not expose them. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
 
-**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 
 **Priority:** P1
 
@@ -193,7 +193,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 1. An authenticated node can unregister itself, marking the node offline and clearing live eligibility. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-005 lets an authenticated node remove itself from scheduling) -->
 
-**Constraints:** [CON-SCHED-001](constraints.md#con-sched-001-serialized-live-reservations), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P1
 
