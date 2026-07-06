@@ -206,7 +206,7 @@ The console Playground's **Stop** button aborts an in-flight stream client-side 
 | `409` | No account or gateway resolved to send through. | `{ "error": "gateway_not_configured", "requestId": string }` |
 | `503` | The AI Gateway Run token is not configured. | `{ "error": "gateway_auth_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-031](../../sdd/spec/setup-admin.md#req-adm-031-operator-playground-target-selection), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/playground/direct-chat
 
@@ -233,7 +233,7 @@ POST /admin/playground/direct-chat
 | `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
 | `503` | No eligible node is ready to serve, or the node upstream token is not configured. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-031](../../sdd/spec/setup-admin.md#req-adm-031-operator-playground-target-selection), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
 ### POST /admin/setup-tokens
 
