@@ -54,7 +54,9 @@ export class MemoryStore implements Store {
   async updateNodeHeartbeat(node: NodeRecord): Promise<void> {
     const existing = this.nodes.get(node.id)
     // deactivated is operator state the node never reports, so it survives heartbeats (like inFlight).
-    this.nodes.set(node.id, { ...node, inFlight: existing?.inFlight ?? node.inFlight, deactivated: existing?.deactivated ?? node.deactivated })
+    // Set the key only when defined so it never lands as an explicit undefined (exactOptionalPropertyTypes).
+    const deactivated = existing?.deactivated ?? node.deactivated
+    this.nodes.set(node.id, { ...node, inFlight: existing?.inFlight ?? node.inFlight, ...(deactivated !== undefined ? { deactivated } : {}) })
   }
 
   async revokeNode(nodeId: string, now: number): Promise<void> {

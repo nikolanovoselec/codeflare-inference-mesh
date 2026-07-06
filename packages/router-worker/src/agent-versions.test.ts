@@ -214,7 +214,7 @@ describe('agent version management behavioral contracts', () => {
     const store = new MemoryStore()
     const router = createRouter({
       store,
-      scheduler: new StoreScheduler(store, () => 'reservation-a'),
+      scheduler: new StoreScheduler(store),
       mesh: { fetch: async (_input: RequestInfo | URL) => new Response('{}', { status: 200 }) } as Fetcher,
       env: {}
     })

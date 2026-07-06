@@ -641,7 +641,8 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(out400).not.toBe(out401)
     expect(out401).not.toBe(out409)
     // The thin-forwarder scheduler-miss statuses each carry their own actionable hint: 404 no-profile,
-    // 502 node_unreachable, 503 no ready node. (429 no longer occurs, so it maps to no hint.)
+    // 502 node_unreachable, 503 no ready node. A scheduler miss no longer returns 429, so 429 maps to no
+    // hint here (a rate-limit 429 from the top-level limiter is a separate path).
     expect(out404.length).toBeGreaterThan(bareLen(404))
     expect(out502.length).toBeGreaterThan(bareLen(502))
     expect(out503.length).toBeGreaterThan(bareLen(503))
