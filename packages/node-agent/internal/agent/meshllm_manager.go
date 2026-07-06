@@ -68,6 +68,7 @@ type MeshLLMManager struct {
 
 	bootstrap        *MeshBootstrap
 	launchedRotation int
+	launchedAction   string
 	token            string
 	meshID           string
 	readyModels      []string
@@ -149,6 +150,13 @@ func (m *MeshLLMManager) Start(ctx context.Context) error {
 	m.done = make(chan error, 1)
 	m.exited = make(chan struct{})
 	m.launchedRotation = input.Rotation
+	// Record whether this process was launched as the mesh creator (a tokenless seed)
+	// or a joiner (join tokens present). NeedsRestart uses it so a steady-state "create"
+	// heartbeat to an already-creating seed does not force a restart every tick.
+	m.launchedAction = "create"
+	if len(input.JoinTokens) > 0 {
+		m.launchedAction = "join"
+	}
 	exited := m.exited
 	go m.wait(proc, m.done, exited)
 	go m.awaitReadiness(proc, exited, input.ModelRef)
@@ -334,7 +342,11 @@ func (m *MeshLLMManager) NeedsRestart(b *MeshBootstrap) bool {
 	if b.MeshID != "" && m.meshID != "" && b.MeshID != m.meshID && len(b.JoinTokens) > 0 {
 		return true
 	}
-	if b.Action == "create" {
+	// The router sends action "create" to the seed on every heartbeat (mesh-state.ts
+	// bootstrapFromState), so restarting on it unconditionally SIGTERMs a healthy seed
+	// every tick. Only restart when the running process is not already the creator, i.e.
+	// a joiner being promoted to seed; a rotation change is already handled above.
+	if b.Action == "create" && m.launchedAction != "create" {
 		return true
 	}
 	return false

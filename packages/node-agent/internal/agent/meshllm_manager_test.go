@@ -622,7 +622,7 @@ func TestREQRUN006RestartTriggersDrainAndRelaunch(t *testing.T) {
 			{"rotation bump", &MeshBootstrap{Action: "join", Rotation: 2, MeshID: "mesh-1", JoinTokens: []string{"tok-1"}}, true},
 			{"foreign mesh id with join tokens", &MeshBootstrap{Action: "join", Rotation: 1, MeshID: "mesh-2", JoinTokens: []string{"tokX"}}, true},
 			{"foreign mesh id without join tokens", &MeshBootstrap{Action: "join", Rotation: 1, MeshID: "mesh-2"}, false},
-			{"create while a mesh is running", &MeshBootstrap{Action: "create", Rotation: 1}, true},
+			{"steady-state create heartbeat to the already-running creator does not restart", &MeshBootstrap{Action: "create", Rotation: 1}, false},
 		}
 		for _, testCase := range cases {
 			if got := fixture.manager.NeedsRestart(testCase.bootstrap); got != testCase.want {
@@ -633,6 +633,25 @@ func TestREQRUN006RestartTriggersDrainAndRelaunch(t *testing.T) {
 		idle := NewMeshLLMManager(MeshLLMRenderInput{ProfileID: "idle", ModelRef: "target-model", Rotation: 1}, 0, t.TempDir(), writeFakeMeshBinary(t))
 		if idle.NeedsRestart(&MeshBootstrap{Action: "join", Rotation: 5, JoinTokens: []string{"tokX"}}) {
 			t.Fatal("NeedsRestart must be false when no runtime is running")
+		}
+
+		// A process launched as a joiner (join tokens present) that is promoted to seed
+		// (action "create") at the same rotation must restart to become the creator; only
+		// the steady-state creator-getting-create case above is a no-op.
+		joiner := newMeshManagerForTest(t, MeshLLMRenderInput{
+			ProfileID:   "prof-joiner",
+			ModelRef:    "target-model",
+			APIPort:     serverPort(t, modelsServer),
+			ConsolePort: serverPort(t, consoleServer),
+			Rotation:    1,
+			JoinTokens:  []string{"tok-1"},
+		}, 0)
+		if err := joiner.manager.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		waitForManagerState(t, joiner.manager, "ready")
+		if !joiner.manager.NeedsRestart(&MeshBootstrap{Action: "create", Rotation: 1}) {
+			t.Fatal("a joiner promoted to create (seed) must restart to become the creator")
 		}
 
 		fixture.manager.ApplyBootstrap(&MeshBootstrap{Action: "join", Rotation: 2, MeshID: "mesh-2", JoinTokens: []string{"tokX"}})
