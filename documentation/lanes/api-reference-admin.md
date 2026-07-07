@@ -388,6 +388,26 @@ POST /admin/nodes/{nodeId}/activate
 
 **Implements:** [REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation), [REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model)
 
+### POST /admin/nodes/:nodeId/reload
+
+Restart the node's `mesh-llm` runtime on demand (Force Reload), to recover a wedged runtime without SSH. The automation twin is `POST /api/v1/nodes/{nodeId}/reload`.
+
+```
+POST /admin/nodes/{nodeId}/reload
+```
+
+**Path parameters:** `nodeId` is the URL-encoded node identifier to reload.
+
+**Responses:**
+
+| Status | Meaning | Body |
+| --- | --- | --- |
+| `200` | A one-shot reload nonce is stamped on the node (`node_reload_requested` audit event) and carried on its next heartbeat; the node drains and restarts `mesh-llm` exactly once, then echoes the nonce back so the directive is retired. | `{ "ok": true, "reloadNonce": "<nonce>" }` |
+| `401` | The caller is not an admin (or, for the API twin, lacks a valid automation key). | `{ "error": "unauthorized" }` |
+| `404` | No such node. | `{ "error": "unknown_node" }` |
+
+**Implements:** [REQ-ADM-032](../../sdd/spec/setup-admin.md#req-adm-032-node-force-reload), [REQ-NODE-012](../../sdd/spec/node-agent.md#req-node-012-on-demand-runtime-reload)
+
 ### POST /admin/cloudflare/gateway/sync
 
 Creates or reuses the AI Gateway custom-provider dynamic route for the selected Worker origin.

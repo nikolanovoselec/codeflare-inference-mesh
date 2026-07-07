@@ -110,6 +110,8 @@ export interface NodeRecord {
   readonly maxVramGbOverride?: number
   /** Operator taint (REQ-ADM-030): a deactivated node stays enrolled and heartbeating but runs no model and is never selected for inference. */
   readonly deactivated?: boolean
+  /** Pending one-shot Force Reload directive (REQ-NODE-012): a nonce stamped when an operator requests a reload, echoed to the node in its heartbeat and retired once the node acks it. */
+  readonly reloadNonce?: string
 }
 
 export interface AuditEvent {
@@ -162,6 +164,8 @@ export interface HeartbeatRequest {
   readonly meshId?: string
   readonly meshToken?: string
   readonly agentVersion?: string
+  /** The Force Reload nonce the node has already applied, echoed back so the router can retire the directive (REQ-NODE-012). */
+  readonly reloadNonce?: string
   readonly metrics?: NodeMetrics
 }
 
@@ -172,6 +176,8 @@ export interface HeartbeatResponse {
   readonly desiredAgentVersion?: string
   /** When true the node is deactivated: it must tear down / not launch mesh-llm. REQ-ADM-030. */
   readonly deactivated?: boolean
+  /** One-shot Force Reload directive: when it differs from the nonce the node last applied, the node restarts mesh-llm once. REQ-NODE-012. */
+  readonly reloadNonce?: string
 }
 
 export interface EntrySelectionRequest {

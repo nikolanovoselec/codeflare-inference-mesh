@@ -331,6 +331,44 @@ func TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall(t *testing.T) {
 	}
 }
 
+func TestREQNODE012ForceReloadRestartsOncePerNonce(t *testing.T) {
+	// A Force Reload directive (a new ReloadNonce in the heartbeat response) drains and restarts
+	// the current runtime exactly once per nonce, records the applied nonce so it is echoed back
+	// for the router to retire, and never re-fires the same nonce. REQ-NODE-012.
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{profile}}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	// Mark the profile already loaded so a profile-change restart does not fire: the reload branch
+	// must be what triggers the restart.
+	loop.loadState.Set(profile)
+
+	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, ReloadNonce: "n1"})
+	select {
+	case <-manager.restarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reload nonce n1 did not restart the runtime")
+	}
+	if loop.lastReloadNonce != "n1" {
+		t.Fatalf("expected applied nonce n1 recorded for ack, got %q", loop.lastReloadNonce)
+	}
+
+	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, ReloadNonce: "n1"})
+	select {
+	case <-manager.restarted:
+		t.Fatal("the same reload nonce must not restart the runtime again")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, ReloadNonce: "n2"})
+	select {
+	case <-manager.restarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a new reload nonce must restart the runtime")
+	}
+}
+
 func missingBinaryMeshManager(t *testing.T) *agent.MeshLLMManager {
 	t.Helper()
 	return agent.NewMeshLLMManager(agent.MeshLLMRenderInput{ProfileID: "test-prof", ModelRef: "test-model", Rotation: 1}, 0, t.TempDir(), "definitely-missing-mesh-llm-for-test")

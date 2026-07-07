@@ -291,6 +291,11 @@ describe('dashboard overview contracts', () => {
     expect(deactivate).toBeDefined()
     expect(deactivate!.dataset.nodeId).toBe('node-small')
     expect(deactivate!.textContent).toBe('Deactivate')
+    // The drawer also offers Force Reload (restart mesh-llm on demand) wired to the reload action. REQ-ADM-032.
+    const reload = fields.find((node) => node.dataset.action === 'node-reload')
+    expect(reload).toBeDefined()
+    expect(reload!.dataset.nodeId).toBe('node-small')
+    expect(reload!.textContent).toBe('Force Reload')
 
     await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
     expect(drawer.hidden).toBe(true)

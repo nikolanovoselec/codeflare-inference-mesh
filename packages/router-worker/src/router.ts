@@ -92,6 +92,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/revoke$/) && request.method === 'POST') return await handleNodeRevoke(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/deactivate$/) && request.method === 'POST') return await handleNodeDeactivate(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/activate$/) && request.method === 'POST') return await handleNodeActivate(request, deps, url, id, now())
+      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/reload$/) && request.method === 'POST') return await handleNodeReload(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/config$/) && request.method === 'POST') return await handleNodeConfig(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
@@ -116,6 +117,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/reconfigure$/) && request.method === 'POST') return await handleApiNodeReconfigure(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/deactivate$/) && request.method === 'POST') return await handleApiNodeDeactivate(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/activate$/) && request.method === 'POST') return await handleApiNodeActivate(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/reload$/) && request.method === 'POST') return await handleApiNodeReload(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'DELETE') return await handleApiNodeDecommission(request, deps, url, id, now())
       if (url.pathname === '/api/v1/models' && request.method === 'GET') return await handleApiModelList(request, deps, id, now())
       if (url.pathname === '/api/v1/models' && request.method === 'POST') return await handleApiModelAdd(request, deps, id, now())
@@ -255,7 +257,9 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     runtime: body.runtime,
     ...(body.runtimeModel !== undefined ? { runtimeModel: body.runtimeModel } : {}),
     ...(body.agentVersion !== undefined ? { agentVersion: body.agentVersion } : {}),
-    ...(body.metrics !== undefined ? { metrics: body.metrics } : {})
+    ...(body.metrics !== undefined ? { metrics: body.metrics } : {}),
+    // Retire the Force Reload directive once the node echoes back the nonce it applied. REQ-NODE-012.
+    ...(body.reloadNonce !== undefined && body.reloadNonce !== '' && body.reloadNonce === node.reloadNonce ? { reloadNonce: '' } : {})
   }
   await deps.store.updateNodeHeartbeat(next)
   // A deactivated node runs no mesh-llm, so its now-dead invite token must not be re-added to mesh
@@ -282,7 +286,8 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     ok: true,
     desiredProfiles,
     ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
-    ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
+    ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {}),
+    ...(next.reloadNonce ? { reloadNonce: next.reloadNonce } : {})
   }, 200, requestId)
 }
 
@@ -606,6 +611,30 @@ async function setNodeDeactivated(deps: RouterDeps, nodeId: string, deactivated:
   if (deactivated) await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
   await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor, target: nodeId, detail: {} })
   return json({ ok: true, deactivated }, 200, requestId)
+}
+
+async function handleNodeReload(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return requestNodeReload(deps, decodeURIComponent(url.pathname.split('/').at(-2) ?? ''), actor, requestId, now)
+}
+
+async function handleApiNodeReload(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return requestNodeReload(deps, decodeURIComponent(url.pathname.split('/').at(-2) ?? ''), `automation:${automation.id}`, requestId, now)
+}
+
+// Force Reload stamps a one-shot nonce on the node. The node applies it once (draining and
+// restarting mesh-llm) and echoes it back on the next heartbeat, when the router retires it. It is
+// reversible (a stale nonce is harmless) and never decommissions the node. REQ-NODE-012.
+async function requestNodeReload(deps: RouterDeps, nodeId: string, actor: string, requestId: string, now: number): Promise<Response> {
+  const node = await deps.store.getNode(nodeId)
+  if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
+  const reloadNonce = String(now)
+  await deps.store.upsertNode({ ...node, reloadNonce })
+  await deps.store.appendAudit({ id: requestId, type: 'node_reload_requested', at: now, actor, target: nodeId, detail: { reloadNonce } })
+  return json({ ok: true, reloadNonce }, 200, requestId)
 }
 
 // handleNodeConfig sets or clears a node's per-node VRAM override from the admin console

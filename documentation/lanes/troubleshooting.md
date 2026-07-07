@@ -125,7 +125,7 @@
 
 **Cause:** A split profile's stages are incomplete — not every serving node needed for the layer split is online — or the model download is still in progress.
 
-**Fix:** Compare `stageCount` in node metrics against the online serving nodes for the profile, and check the agent dashboard for `downloading` state; start the missing nodes or let the download finish. ([REQ-RUN-007](../../sdd/spec/runtime-profiles.md#req-run-007-split-serving-via-layer-packages)) ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting))
+**Fix:** Compare `stageCount` in node metrics against the online serving nodes for the profile, and check the agent dashboard for `downloading` state; start the missing nodes or let the download finish. If a node is wedged in `starting` and will not converge (a stalled load or a split that never completes its stage handshake), restart its runtime with Force Reload from the node's Manage drawer or `POST /api/v1/nodes/{id}/reload` rather than SSHing in to kill `mesh-llm`. ([REQ-RUN-007](../../sdd/spec/runtime-profiles.md#req-run-007-split-serving-via-layer-packages)) ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-ADM-032](../../sdd/spec/setup-admin.md#req-adm-032-node-force-reload))
 
 ## Requests fail briefly after mesh rotation
 

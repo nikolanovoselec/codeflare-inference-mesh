@@ -288,6 +288,30 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ---
 
+### REQ-NODE-012: On-demand runtime reload
+
+**Intent:** An operator can restart a node's mesh-llm runtime on demand from the control plane, so a wedged runtime is recoverable without SSHing into the host. The directive rides the heartbeat the node already polls and is one-shot: it applies exactly once and is then retired, never restarting the runtime on every tick nor re-firing a stale directive after an agent restart.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. When the heartbeat response carries a `reloadNonce` that differs from the nonce the node last applied, the agent drains in-flight requests and restarts mesh-llm exactly once, then records the applied nonce. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE012ForceReloadRestartsOncePerNonce) -->
+2. A repeated (already-applied) nonce does not restart the runtime again. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE012ForceReloadRestartsOncePerNonce) -->
+3. The node echoes the applied nonce back on its next heartbeat so the router can retire the one-shot directive. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::collect --> <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE012ForceReloadRestartsOncePerNonce) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat), [REQ-RUN-010](runtime-profiles.md#req-run-010-meshllm-process-lifecycle), [REQ-ADM-032](setup-admin.md#req-adm-032-node-force-reload)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)

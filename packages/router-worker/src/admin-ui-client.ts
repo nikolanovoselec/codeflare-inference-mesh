@@ -655,6 +655,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     taint.dataset.nodeId = node.id;
     taint.dataset.out = 'node-output';
     bodyEl.appendChild(taint);
+    // Force Reload restarts mesh-llm on this node on demand (drains first); reversible, not a decommission. REQ-ADM-032.
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.className = 'btn';
+    reload.textContent = 'Force Reload';
+    reload.dataset.action = 'node-reload';
+    reload.dataset.nodeId = node.id;
+    reload.dataset.out = 'node-output';
+    bodyEl.appendChild(reload);
     bodyEl.appendChild(revokeButton(node.id));
   }
   // meshTunableNumberRow / meshTunableSelectRow build one Advanced-runtime row in
@@ -1516,6 +1525,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'gateway-sync': 'gateway-output',
     'custom-domain-validate': 'domain-output',
     'node-revoke': 'node-output',
+    'node-reload': 'node-output',
     'model-toggle': 'models-output',
     'model-save': 'model-edit-output',
     'model-delete': 'model-edit-output',
@@ -1623,6 +1633,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'node-revoke') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
       setOutput(out, await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(false) }));
+      await refreshStatus().catch(() => undefined);
+    } else if (action === 'node-reload') {
+      const nodeId = encodeURIComponent(button.dataset.nodeId || '');
+      setOutput(out, await request('/admin/nodes/' + nodeId + '/reload', { method: 'POST', headers: headers(false) }));
       await refreshStatus().catch(() => undefined);
     } else if (action === 'node-config-save') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');

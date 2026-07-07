@@ -1355,6 +1355,42 @@ describe('router worker behavioral contracts', () => {
     expect((await store.getNode('node-a'))?.deactivated).toBeUndefined()
   })
 
+  it('REQ-ADM-032 REQ-NODE-012 force reload stamps a nonce, delivers it once, and retires it on ack', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
+
+    const requested = await router(new Request('https://router.test/admin/nodes/node-a/reload', { method: 'POST', headers: bearer('admin-secret') }))
+    expect(requested.status).toBe(200)
+    const { reloadNonce } = await requested.json() as { reloadNonce: string }
+    expect(reloadNonce).toBeTruthy()
+    expect((await store.getNode('node-a'))?.reloadNonce).toBe(reloadNonce)
+    expect(store.audit.some((event) => event.type === 'node_reload_requested' && event.target === 'node-a')).toBe(true)
+
+    const heartbeat = (ack?: string) => router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-smoke-qwen25-1.5b'], capacity: 2, inFlight: 0, runtime: 'meshllm', ...(ack !== undefined ? { reloadNonce: ack } : {}) })
+    }))
+
+    // The pending directive rides the heartbeat until the node applies it.
+    const first = await (await heartbeat()).json() as { reloadNonce?: string }
+    expect(first.reloadNonce).toBe(reloadNonce)
+
+    // The node echoes the applied nonce → the router retires the directive.
+    expect((await heartbeat(reloadNonce)).status).toBe(200)
+    expect((await store.getNode('node-a'))?.reloadNonce).toBe('')
+    const after = await (await heartbeat(reloadNonce)).json() as { reloadNonce?: string }
+    expect(after.reloadNonce).toBeUndefined()
+  })
+
+  it('REQ-ADM-032 force reload requires an admin credential', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode(nodeFixture())
+    expect((await router(new Request('https://router.test/admin/nodes/node-a/reload', { method: 'POST', headers: bearer('provider-secret') }))).status).toBe(401)
+    expect((await store.getNode('node-a'))?.reloadNonce).toBeUndefined()
+  })
+
   it('REQ-ADM-030 REQ-NODE-011 a deactivated node heartbeat gets no desired profiles and the flag survives', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)

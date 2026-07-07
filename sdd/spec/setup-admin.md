@@ -826,6 +826,30 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-032: Node Force Reload
+
+**Intent:** An operator can restart a node's mesh-llm runtime on demand from the console or the automation API, so a wedged runtime is recovered without SSHing into the host. It is reversible and never decommissions the node.
+
+**Applies To:** Admin, Control Plane API
+
+**Acceptance Criteria:**
+
+1. `POST /admin/nodes/{id}/reload` (admin) and `POST /api/v1/nodes/{id}/reload` (automation twin) stamp a one-shot reload nonce on the node and audit it; each requires its respective credential and returns 404 for an unknown node. <!-- @impl: packages/router-worker/src/router.ts::requestNodeReload --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-032 REQ-NODE-012 force reload stamps a nonce, delivers it once, and retires it on ack) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-032 force reload requires an admin credential) -->
+2. The reload nonce rides the node's heartbeat response until the node echoes it back, when the router retires the directive so it fires exactly once. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-032 REQ-NODE-012 force reload stamps a nonce, delivers it once, and retires it on ack) -->
+3. The node Manage drawer offers a Force Reload control wired to the reload endpoint. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (the drawer offers Force Reload wired to the reload action) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-030](#req-adm-030-node-deactivation-and-activation), [REQ-NODE-012](node-agent.md#req-node-012-on-demand-runtime-reload), [REQ-API-004](control-plane-api.md#req-api-004-programmatic-node-management)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)

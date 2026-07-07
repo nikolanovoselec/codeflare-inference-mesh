@@ -323,6 +323,8 @@ type serviceLoop struct {
 	restartPending bool
 	updateMu       sync.Mutex
 	updateError    string
+
+	lastReloadNonce string
 }
 
 func heartbeatLoop(ctx context.Context, loop *serviceLoop) {
@@ -364,7 +366,7 @@ func execCommandRunner(ctx context.Context, name string, args ...string) ([]byte
 // collect runs the once-per-tick MeshLLM poll and assembles the heartbeat
 // metrics and identity: mesh id and invite token are resent every tick.
 func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.NodeMetrics, agent.HeartbeatIdentity) {
-	identity := agent.HeartbeatIdentity{AgentVersion: s.agentVersion}
+	identity := agent.HeartbeatIdentity{AgentVersion: s.agentVersion, ReloadNonce: s.lastReloadNonce}
 	metrics := runtimeMetrics(s.manager, s.loadState, current, s.activeRequests.Value(), s.installError)
 	if s.manager != nil {
 		status, consoleReady := s.manager.PollStatus(ctx)
@@ -407,6 +409,13 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 	}
 	reactivated := s.deactivated
 	s.deactivated = false
+	// A Force Reload directive is one-shot: apply a new nonce once, echo it back on the next
+	// heartbeat (via collect) so the router retires it, and never re-fire the same nonce nor
+	// re-fire a stale one after an agent restart. REQ-NODE-012.
+	reloadRequested := response.ReloadNonce != "" && response.ReloadNonce != s.lastReloadNonce
+	if reloadRequested {
+		s.lastReloadNonce = response.ReloadNonce
+	}
 	s.stateMu.Lock()
 	next, _, _, err := agent.ApplyDesiredProfiles(*s.cfg, response.DesiredProfiles, s.configPath)
 	if err == nil {
@@ -424,6 +433,9 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 			}
 		} else if err == nil && s.beginProfileRestart(next) {
 			go s.finishProfileRestart(ctx, next)
+		} else if reloadRequested && beginRestart(&s.restartMu, &s.restartPending) {
+			// Force Reload: drain and restart the current profile on operator demand. REQ-NODE-012.
+			go s.finishBootstrapRestart(ctx)
 		} else if s.manager.NeedsRestart(response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
 			go s.finishBootstrapRestart(ctx)
 		}

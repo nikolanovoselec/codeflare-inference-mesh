@@ -57,7 +57,10 @@ type HeartbeatRequest struct {
 	MeshID             string      `json:"meshId,omitempty"`
 	MeshToken          string      `json:"meshToken,omitempty"`
 	AgentVersion       string      `json:"agentVersion,omitempty"`
-	Metrics            NodeMetrics `json:"metrics"`
+	// ReloadNonce echoes the Force Reload directive the node has already applied so the
+	// router can retire the one-shot request (REQ-NODE-012).
+	ReloadNonce string      `json:"reloadNonce,omitempty"`
+	Metrics     NodeMetrics `json:"metrics"`
 }
 
 type HeartbeatResponse struct {
@@ -68,6 +71,10 @@ type HeartbeatResponse struct {
 	// Deactivated tells a tainted node to run no model: it keeps heartbeating but tears down /
 	// never launches mesh-llm until the taint clears. REQ-NODE-011.
 	Deactivated bool `json:"deactivated,omitempty"`
+	// ReloadNonce is a one-shot Force Reload directive: when it differs from the nonce the
+	// node last applied, the node drains and restarts mesh-llm exactly once, then echoes it
+	// back on the next heartbeat so the router can retire it. REQ-NODE-012.
+	ReloadNonce string `json:"reloadNonce,omitempty"`
 }
 
 func (c Client) Claim(ctx context.Context, setupToken string, req ClaimRequest) (ClaimResponse, error) {
@@ -174,6 +181,7 @@ type HeartbeatIdentity struct {
 	MeshID       string
 	MeshToken    string
 	AgentVersion string
+	ReloadNonce  string
 }
 
 func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int, identity HeartbeatIdentity) HeartbeatRequest {
@@ -193,6 +201,7 @@ func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int, identity
 		MeshID:             identity.MeshID,
 		MeshToken:          identity.MeshToken,
 		AgentVersion:       identity.AgentVersion,
+		ReloadNonce:        identity.ReloadNonce,
 		Metrics:            metrics,
 	}
 }
