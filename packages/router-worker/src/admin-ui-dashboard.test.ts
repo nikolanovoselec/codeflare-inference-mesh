@@ -307,7 +307,7 @@ describe('dashboard overview contracts', () => {
     const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((node) => node.dataset.nodeRow === 'node-off')!
     const chip = descendants(row).find((node) => node.className === 'chip')!
     expect(chip.dataset.tone).toBe('warn')
-    expect(descendants(row).some((node) => node.textContent === 'Deactivated · no model')).toBe(true)
+    expect(descendants(row).some((node) => node.textContent === 'Deactivated')).toBe(true)
     // Row action is Manage (opens the drawer), never an inline revoke.
     expect(descendants(row).some((node) => node.dataset.action === 'node-detail' && node.textContent === 'Manage')).toBe(true)
     expect(descendants(row).some((node) => node.dataset.action === 'node-revoke')).toBe(false)

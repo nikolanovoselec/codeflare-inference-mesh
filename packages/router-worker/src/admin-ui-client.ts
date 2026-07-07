@@ -366,7 +366,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (node.status === 'offline') { const age = nodeRelAge(node); return 'Offline' + (age ? ' · last seen ' + age : ''); }
     if (node.status === 'revoked') return 'Removed';
     if (node.status === 'draining') return 'Draining';
-    if (node.deactivated) return 'Deactivated · no model';
+    if (node.deactivated) return 'Deactivated';
     const rt = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : '';
     if (rt === 'failed') return 'Failed';
     if (nodeReady(node)) return 'Ready';
