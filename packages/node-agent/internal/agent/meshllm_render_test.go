@@ -101,8 +101,9 @@ func TestREQRUN003RendererContract(t *testing.T) {
 			name: "joiner renders optional flags and one --join per token in order",
 			in:   renderInputJoiner(),
 			want: []string{
+				// joiner writes a per-profile config, so --model is omitted and the
+				// config-owned [[models]] entry drives the startup load. REQ-RUN-003.
 				"serve",
-				"--model", "unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S",
 				"--headless",
 				"--mesh-discovery-mode", "nostr",
 				"--disable-iroh-relays",
@@ -364,6 +365,15 @@ func TestREQRUN003ContextLimitConfigRendering(t *testing.T) {
 	withConfig.ConfigPath = "/data/meshllm-mesh-default-qwen36-35b.toml"
 	if got := argvValue(t, RenderMeshLLMArgs(withConfig), "--config"); got != "/data/meshllm-mesh-default-qwen36-35b.toml" {
 		t.Fatalf("--config = %q, want the per-profile config path", got)
+	}
+	// A written config owns the startup [[models]] entry; passing --model would make mesh-llm
+	// take the CLI startup path and discard config model_fit (ctx_size, cache_type, batch,
+	// parallel), so it must be absent when ConfigPath is set. REQ-RUN-003.
+	if args := RenderMeshLLMArgs(withConfig); slices.Contains(args, "--model") {
+		t.Fatalf("config-owned startup must not render --model: %v", args)
+	}
+	if args := RenderMeshLLMArgs(renderInputSeed()); !slices.Contains(args, "--model") {
+		t.Fatalf("configless profile must render --model: %v", args)
 	}
 	if args := RenderMeshLLMArgs(renderInputSeed()); slices.Contains(args, "--config") {
 		t.Fatalf("empty config path must not render --config: %v", args)

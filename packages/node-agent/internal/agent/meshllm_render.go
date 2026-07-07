@@ -39,7 +39,16 @@ type MeshLLMRenderInput struct {
 // counter is baked into the mesh name so a rotation deterministically demands a
 // different mesh identity.
 func RenderMeshLLMArgs(in MeshLLMRenderInput) []string {
-	args := []string{"serve", "--model", in.ModelRef}
+	// mesh-llm lets an explicit CLI --model win over config [[models]] at startup
+	// (config_owned=false), which discards the config's model_fit: ctx_size, cache_type_k/v,
+	// batch, ubatch, and parallel are dropped and the model loads at default context with f16
+	// KV (OOMs a large model on a tight GPU). A written per-profile config always carries a
+	// [[models]] entry, so omit --model and let that config-owned entry drive the startup load;
+	// a configless profile still passes --model directly. REQ-RUN-003.
+	args := []string{"serve"}
+	if in.ConfigPath == "" {
+		args = append(args, "--model", in.ModelRef)
+	}
 	if in.Split {
 		args = append(args, "--split")
 	}
