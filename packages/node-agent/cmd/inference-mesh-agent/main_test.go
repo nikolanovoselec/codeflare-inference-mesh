@@ -35,6 +35,7 @@ type fakeMeshRuntime struct {
 	events         []string
 	counter        *agent.ActiveCounter
 	restarted      chan struct{}
+	restartBlock   bool
 }
 
 func newFakeMeshRuntime(counter *agent.ActiveCounter) *fakeMeshRuntime {
@@ -71,6 +72,18 @@ func (f *fakeMeshRuntime) restartCount() int {
 	return f.restarts
 }
 
+func (f *fakeMeshRuntime) setRestartBlock(v bool) {
+	f.mu.Lock()
+	f.restartBlock = v
+	f.mu.Unlock()
+}
+
+func (f *fakeMeshRuntime) blocksRestart() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.restartBlock
+}
+
 func (f *fakeMeshRuntime) Start(context.Context) error { f.record("start"); return nil }
 
 func (f *fakeMeshRuntime) Stop(context.Context) error { f.record("stop"); return nil }
@@ -80,7 +93,11 @@ func (f *fakeMeshRuntime) Restart(context.Context) error {
 	return nil
 }
 
-func (f *fakeMeshRuntime) RestartWithInput(_ context.Context, in agent.MeshLLMRenderInput, _ int) error {
+func (f *fakeMeshRuntime) RestartWithInput(ctx context.Context, in agent.MeshLLMRenderInput, _ int) error {
+	if f.blocksRestart() {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	f.recordRestart(&in)
 	return nil
 }
@@ -239,6 +256,78 @@ func newLoopForTest(t *testing.T, cfg agent.Config, counter *agent.ActiveCounter
 		exit:           exit,
 		agentVersion:   "v1.2.3",
 		drainTimeout:   5 * time.Second,
+	}
+}
+
+func TestREQRUN010RestartLatchReleasedWhenRuntimeHangs(t *testing.T) {
+	// A runtime restart whose Stop blocks (a mesh-llm ignoring SIGTERM) must not strand the
+	// restart-pending latch. The bounded restart timeout unblocks it so a later heartbeat can
+	// retry, instead of the node wedging in a transient state forever. REQ-RUN-003.
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	manager.setRestartBlock(true)
+	profile := agent.ModelProfile{ID: "wedge-profile", UpstreamModel: "wedge-upstream", Version: 1}
+	cfg := agent.Config{RuntimeModel: "wedge-upstream", ActiveProfileIDs: []string{"wedge-profile"}, Profiles: []agent.ModelProfile{profile}}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.restartTimeout = 80 * time.Millisecond
+
+	if !beginRestart(&loop.restartMu, &loop.restartPending) {
+		t.Fatal("precondition: latch should start clear")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		loop.finishProfileRestart(context.Background(), cfg)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("finishProfileRestart never returned: a hung Stop stranded the restart latch")
+	}
+
+	loop.restartMu.Lock()
+	pending := loop.restartPending
+	loop.restartMu.Unlock()
+	if pending {
+		t.Fatal("restartPending not released after bounded restart timeout; node would never retry")
+	}
+	if got := manager.State(); got != "failed" {
+		t.Fatalf("expected runtime marked failed after restart timeout, got %q", got)
+	}
+}
+
+func TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall(t *testing.T) {
+	// Switching to a profile re-provisions the iroh UDP bind-port rule, because the bind-port
+	// moves with the selected model and a default-deny host would drop the mesh-peer handshake
+	// on the new port. REQ-NODE-010.
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1, MeshLLM: agent.MeshLLMSettings{BindPort: 4430}}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{profile}}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+
+	var mu sync.Mutex
+	allow := ""
+	loop.cmdRunner = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(append([]string{name}, args...), " ")
+		mu.Lock()
+		if strings.Contains(joined, "allow") {
+			allow = joined
+		}
+		mu.Unlock()
+		return nil, nil
+	}
+	loop.goos = "linux"
+	loop.warpIface = "CloudflareWARP"
+
+	loop.finishProfileRestart(context.Background(), cfg)
+
+	mu.Lock()
+	got := allow
+	mu.Unlock()
+	if got != "ufw allow in on CloudflareWARP to any port 4430 proto udp" {
+		t.Fatalf("expected udp bind-port rule for the profile, got %q", got)
 	}
 }
 

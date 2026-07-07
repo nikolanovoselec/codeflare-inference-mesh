@@ -241,15 +241,16 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ### REQ-NODE-010: Inbound mesh firewall provisioning
 
-**Intent:** A node behind a default-deny host firewall must still accept the router's inbound mesh requests, so the agent provisions the inbound rule itself at startup rather than leaving an operator to debug a silent handshake timeout.
+**Intent:** A node behind a default-deny host firewall must still accept both the router's inbound mesh requests (the TCP reverse-proxy data plane) and peer nodes' iroh mesh transport (the UDP `--bind-port`), so the agent provisions those inbound rules itself rather than leaving an operator to debug a silent handshake timeout or a split mesh that forms peers yet never serves.
 
 **Applies To:** Node Agent
 
 **Acceptance Criteria:**
 
-1. On Linux the agent adds a ufw rule allowing inbound TCP on the mesh port scoped to the WARP interface, acting only when ufw is present. <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
-2. On Windows the agent creates the inbound mesh-port allow rule only when an identically named rule is absent, so repeated starts do not duplicate it. <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
-3. Provisioning runs best-effort after WARP detection at startup and never fails startup: a missing tool, an unknown WARP interface, or a macOS host is logged or a no-op rather than fatal. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
+1. On Linux the agent adds a ufw rule allowing inbound on the given protocol and mesh port scoped to the WARP interface, acting only when ufw is present. <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
+2. On Windows the agent creates the inbound allow rule only when an identically named rule is absent, so repeated starts do not duplicate it, and the TCP and UDP rules carry distinct names so neither idempotency probe hides the other. <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
+3. Provisioning runs best-effort after WARP detection at startup and never fails startup: a missing tool, an unknown WARP interface, an invalid protocol, or a macOS host is logged or a no-op rather than fatal. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
+4. Beyond the TCP data-plane port, the agent opens the active profile's iroh mesh-peer transport port (the `--bind-port`) for inbound UDP scoped to the WARP interface, at startup and again on every profile switch because the bind-port moves with the selected model, so a default-deny host cannot drop the QUIC stage handshake and strand a multi-node mesh at zero peers. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::provisionMeshPeerFirewall --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall) -->
 
 **Constraints:** [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
 

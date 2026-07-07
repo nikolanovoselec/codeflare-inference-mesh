@@ -100,7 +100,7 @@ func runService(args []string) error {
 	// rule best-effort: a default-deny host firewall would otherwise silently drop
 	// the router's requests (the original handshake-timeout symptom). Never fatal.
 	warpIface, _ := agent.DetectWARPInterfaceName()
-	if err := agent.EnsureInboundRule(serviceCtx, execCommandRunner, runtime.GOOS, warpIface, cfg.InferencePort); err != nil {
+	if err := agent.EnsureInboundRule(serviceCtx, execCommandRunner, runtime.GOOS, warpIface, cfg.InferencePort, "tcp"); err != nil {
 		fmt.Fprintf(os.Stderr, "mesh inbound firewall rule not provisioned (allow inbound TCP %d on the WARP interface manually): %v\n", cfg.InferencePort, err)
 	}
 	var claimBootstrap *agent.MeshBootstrap
@@ -121,6 +121,7 @@ func runService(args []string) error {
 	var manager *agent.MeshLLMManager
 	installError := ""
 	if profile, ok := agent.SelectedProfile(cfg); ok {
+		provisionMeshPeerFirewall(serviceCtx, execCommandRunner, runtime.GOOS, warpIface, profile)
 		loadState.SetStarting(profile)
 		started, startInstallError, err := startMeshRuntime(serviceCtx, cfg, profile, claimBootstrap)
 		if err != nil {
@@ -162,9 +163,13 @@ func runService(args []string) error {
 		exit: func() {
 			os.Exit(0)
 		},
-		agentVersion: version,
-		installError: installError,
-		drainTimeout: 2 * time.Minute,
+		agentVersion:   version,
+		installError:   installError,
+		drainTimeout:   2 * time.Minute,
+		restartTimeout: defaultRestartTimeout,
+		cmdRunner:      execCommandRunner,
+		goos:           runtime.GOOS,
+		warpIface:      warpIface,
 	}
 	go heartbeatLoop(serviceCtx, loop)
 	proxy, err := agent.ProxyHandler(fmt.Sprintf("http://127.0.0.1:%d", cfg.MeshLLMAPIPort), cfg.UpstreamToken, activeRequests)
@@ -213,6 +218,21 @@ func startMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.Model
 		return nil, installError, err
 	}
 	return manager, installError, nil
+}
+
+// provisionMeshPeerFirewall best-effort opens the profile's iroh UDP bind-port for
+// inbound WARP traffic, so a default-deny host firewall cannot drop the QUIC
+// mesh-peer handshake and leave a multi-node mesh stuck at zero peers. It mirrors the
+// TCP data-plane rule opened at startup, is scoped to the active profile's port (which
+// moves with the selected model), and is likewise never fatal. REQ-NODE-010.
+func provisionMeshPeerFirewall(ctx context.Context, run agent.CommandRunner, goos string, iface string, profile agent.ModelProfile) {
+	port := profile.MeshLLM.BindPort
+	if run == nil || port <= 0 {
+		return
+	}
+	if err := agent.EnsureInboundRule(ctx, run, goos, iface, port, "udp"); err != nil {
+		fmt.Fprintf(os.Stderr, "mesh peer firewall rule not provisioned (allow inbound UDP %d on the WARP interface manually): %v\n", port, err)
+	}
 }
 
 // meshRenderInput assembles the deterministic renderer input from the
@@ -293,6 +313,10 @@ type serviceLoop struct {
 	agentVersion   string
 	installError   string
 	drainTimeout   time.Duration
+	restartTimeout time.Duration
+	cmdRunner      agent.CommandRunner
+	goos           string
+	warpIface      string
 	deactivated    bool
 
 	restartMu      sync.Mutex
@@ -407,6 +431,23 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 	s.maybeSelfUpdate(ctx, response.DesiredAgentVersion)
 }
 
+// defaultRestartTimeout bounds a single runtime restart attempt. It must exceed a
+// legitimate drain (drainTimeout) plus mesh-llm's stop grace so a healthy slow restart
+// is never cut short, while still guaranteeing that a Stop hung on a mesh-llm ignoring
+// SIGTERM releases the restart-pending latch, so a later heartbeat retries instead of
+// the node wedging in a transient state until it is relaunched by hand. REQ-RUN-010.
+const defaultRestartTimeout = 3 * time.Minute
+
+// restartCtx derives the bounded context for one restart attempt, falling back to the
+// default when unset so a zero value never yields an already-expired context.
+func (s *serviceLoop) restartCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout := s.restartTimeout
+	if timeout <= 0 {
+		timeout = defaultRestartTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
 func (s *serviceLoop) beginProfileRestart(cfg agent.Config) bool {
 	_, ok := beginRuntimeProfileRestart(cfg, s.manager, s.loadState, &s.restartMu, &s.restartPending)
 	return ok
@@ -414,17 +455,30 @@ func (s *serviceLoop) beginProfileRestart(cfg agent.Config) bool {
 
 func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config) {
 	defer finishRestart(&s.restartMu, &s.restartPending)
+	// Bound the restart so a Stop hung on a mesh-llm ignoring SIGTERM cannot block this
+	// goroutine and strand the restart-pending latch, which would suppress every future
+	// restart on this node until it is relaunched by hand. REQ-RUN-010.
+	ctx, cancel := s.restartCtx(ctx)
+	defer cancel()
+	profile, hasProfile := agent.SelectedProfile(cfg)
+	if hasProfile {
+		// The bind-port moves with the selected model, so re-provision the UDP mesh-peer
+		// rule on every profile switch, not just at startup. REQ-NODE-010.
+		provisionMeshPeerFirewall(ctx, s.cmdRunner, s.goos, s.warpIface, profile)
+	}
 	if err := restartRuntimeForSelectedProfile(ctx, cfg, s.manager, s.activeRequests, s.drainTimeout); err != nil {
 		s.manager.SetFailure(err)
 		return
 	}
-	if profile, ok := agent.SelectedProfile(cfg); ok && s.manager.State() == "ready" {
+	if hasProfile && s.manager.State() == "ready" {
 		s.loadState.Set(profile)
 	}
 }
 
 func (s *serviceLoop) finishBootstrapRestart(ctx context.Context) {
 	defer finishRestart(&s.restartMu, &s.restartPending)
+	ctx, cancel := s.restartCtx(ctx)
+	defer cancel()
 	if err := waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout); err != nil {
 		s.manager.SetFailure(err)
 		return
