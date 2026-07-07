@@ -1526,6 +1526,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'custom-domain-validate': 'domain-output',
     'node-revoke': 'node-output',
     'node-reload': 'node-output',
+    'node-deactivate': 'node-output',
+    'node-activate': 'node-output',
     'model-toggle': 'models-output',
     'model-save': 'model-edit-output',
     'model-delete': 'model-edit-output',
@@ -1637,6 +1639,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'node-reload') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
       setOutput(out, await request('/admin/nodes/' + nodeId + '/reload', { method: 'POST', headers: headers(false) }));
+      await refreshStatus().catch(() => undefined);
+    } else if (action === 'node-deactivate' || action === 'node-activate') {
+      const nodeId = encodeURIComponent(button.dataset.nodeId || '');
+      const verb = action === 'node-deactivate' ? 'deactivate' : 'activate';
+      setOutput(out, await request('/admin/nodes/' + nodeId + '/' + verb, { method: 'POST', headers: headers(false) }));
       await refreshStatus().catch(() => undefined);
     } else if (action === 'node-config-save') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');

@@ -741,7 +741,7 @@ POST /admin/profiles/delete
 
 ### POST /admin/mesh/rotate
 
-Rotates a profile's mesh: increments the rotation counter and clears the stored mesh id, seed, and invite-token set so the fleet reforms a new mesh.
+Rotates a profile's mesh: increments the rotation counter and clears the stored mesh id, seed, and invite-token set so the fleet reforms a new mesh. The automation twin is `POST /api/v1/mesh/rotate`.
 
 ```http
 POST /admin/mesh/rotate
@@ -816,7 +816,7 @@ POST /admin/agent-version
 
 ### POST /admin/settings
 
-Persists operator-tunable fleet settings. Currently accepts the offline-machine prune window.
+Persists operator-tunable fleet settings. Currently accepts the offline-machine prune window. The automation twins are `GET /api/v1/settings` (read) and `PUT /api/v1/settings` (write).
 
 ```http
 POST /admin/settings

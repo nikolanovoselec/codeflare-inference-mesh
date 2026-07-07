@@ -85,6 +85,9 @@ export interface NodeMetrics {
   readonly consoleReady?: boolean
   readonly meshllmVersion?: string
   readonly lastError?: string
+  /** Most recent error-looking line from mesh-llm's own stderr (REQ-OBS-011), and the console's raw node_state, so the console can show why a runtime is wedged. */
+  readonly runtimeDetail?: string
+  readonly nodeState?: string
 }
 
 export interface NodeRecord {

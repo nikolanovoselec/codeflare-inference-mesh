@@ -36,6 +36,7 @@ type fakeMeshRuntime struct {
 	counter        *agent.ActiveCounter
 	restarted      chan struct{}
 	restartBlock   bool
+	runtimeDetail  string
 }
 
 func newFakeMeshRuntime(counter *agent.ActiveCounter) *fakeMeshRuntime {
@@ -159,6 +160,12 @@ func (f *fakeMeshRuntime) LastError() string {
 	return f.lastError
 }
 
+func (f *fakeMeshRuntime) RuntimeErrorDetail() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.runtimeDetail
+}
+
 func (f *fakeMeshRuntime) SetState(state string) {
 	f.mu.Lock()
 	f.state = state
@@ -256,6 +263,26 @@ func newLoopForTest(t *testing.T, cfg agent.Config, counter *agent.ActiveCounter
 		exit:           exit,
 		agentVersion:   "v1.2.3",
 		drainTimeout:   5 * time.Second,
+	}
+}
+
+func TestREQOBS011RuntimeDetailAndNodeStateRideHeartbeat(t *testing.T) {
+	// The captured mesh-llm stderr error line and the console node_state must ride the per-tick
+	// heartbeat metrics, so the console can show why a runtime is wedged without SSH. REQ-OBS-011.
+	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1, MeshLLM: agent.MeshLLMSettings{ModelRef: "u1", BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	manager.status = agent.MeshLLMStatus{NodeState: "loading model", NodeID: "node-1"}
+	manager.runtimeDetail = "cuda out of memory"
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+
+	metrics, _ := loop.collect(context.Background(), cfg)
+	if metrics.RuntimeDetail != "cuda out of memory" {
+		t.Fatalf("captured runtime error must ride the heartbeat metrics, got %q", metrics.RuntimeDetail)
+	}
+	if metrics.NodeState != "loading model" {
+		t.Fatalf("console node_state must ride the heartbeat metrics, got %q", metrics.NodeState)
 	}
 }
 

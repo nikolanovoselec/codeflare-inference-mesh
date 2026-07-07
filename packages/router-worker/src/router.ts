@@ -127,6 +127,9 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'POST') return await handleApiModelConfigure(request, deps, url, id, now())
       if (url.pathname === '/api/v1/agent-versions' && request.method === 'GET') return await handleApiAgentVersions(request, deps, id, now())
       if (url.pathname === '/api/v1/agent-version' && request.method === 'PUT') return await handleApiAgentVersionSet(request, deps, id, now())
+      if (url.pathname === '/api/v1/mesh/rotate' && request.method === 'POST') return await handleApiMeshRotate(request, deps, id, now())
+      if (url.pathname === '/api/v1/settings' && request.method === 'GET') return await handleApiSettingsGet(request, deps, id, now())
+      if (url.pathname === '/api/v1/settings' && request.method === 'PUT') return await handleApiSettingsSet(request, deps, id, now())
       if (url.pathname === '/api/v1/events' && request.method === 'GET') return await handleApiEvents(request, deps, url, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
@@ -370,6 +373,12 @@ async function offlinePruneSeconds(deps: RouterDeps): Promise<number> {
 async function handleAdminSettings(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return applyFleetSettings(request, deps, actor, requestId, now)
+}
+
+// applyFleetSettings is the shared core for the console and automation settings writers, so
+// the two surfaces validate and persist identically and can never diverge.
+async function applyFleetSettings(request: Request, deps: RouterDeps, actor: string, requestId: string, now: number): Promise<Response> {
   const body = await readJson<{ offlinePruneSeconds?: number }>(request)
   if (!body || typeof body.offlinePruneSeconds !== 'number' || !Number.isInteger(body.offlinePruneSeconds) || body.offlinePruneSeconds < 0) {
     return json({ error: 'invalid_settings', requestId }, 400, requestId)
@@ -1440,6 +1449,28 @@ async function apiSetNodeDeactivated(request: Request, deps: RouterDeps, url: UR
   if (deactivated) await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
   await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
   return json({ ok: true, node: toApiNode(updated) }, 200, requestId)
+}
+
+// Automation twin of the console mesh secret rotation (POST /admin/mesh/rotate): rotate
+// the mesh join secret via the API, reusing the same shared rotation core.
+async function handleApiMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleMeshRotate(request, deps.store, deps.env, now, `automation:${automation.id}`)
+}
+
+// Automation twins of the console operator settings (POST /admin/settings): read and write
+// the fleet-tunable settings via the API, reusing the same shared validation core.
+async function handleApiSettingsGet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return json({ offlinePruneSeconds: await offlinePruneSeconds(deps) }, 200, requestId)
+}
+
+async function handleApiSettingsSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return applyFleetSettings(request, deps, `automation:${automation.id}`, requestId, now)
 }
 
 /** Machine-facing model projection: identity, the names callers use, and rollout state. */

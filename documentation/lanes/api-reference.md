@@ -644,6 +644,28 @@ POST /api/v1/nodes/{id}/activate
 
 **Implements:** [REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation), [REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model)
 
+### POST /api/v1/nodes/{id}/reload
+
+Force Reload: restarts the node's `mesh-llm` runtime on demand to recover a wedged runtime without SSH. Reversible and never decommissions the node. The automation twin of the console's Force Reload control. Requires an automation key.
+
+```http
+POST /api/v1/nodes/{id}/reload
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | A one-shot reload nonce is stamped on the node; its next heartbeat carries the nonce, the agent drains and restarts `mesh-llm` exactly once, then echoes the nonce back so the directive retires. | `{ "ok": true, "reloadNonce": string }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No node with that id exists, or the node is revoked. | `unknown_node` error body. |
+
+**Implements:** [REQ-ADM-032](../../sdd/spec/setup-admin.md#req-adm-032-node-force-reload), [REQ-NODE-012](../../sdd/spec/node-agent.md#req-node-012-on-demand-runtime-reload)
+
 ### GET /api/v1/models
 
 Lists the models as machine-facing projections.
@@ -848,6 +870,73 @@ GET /api/v1/events?since={ms}&type={t1,t2}&limit={n}
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-006](../../sdd/spec/control-plane-api.md#req-api-006-operational-events-polling)
+
+### POST /api/v1/mesh/rotate
+
+Rotates a model's mesh join secret: increments the profile's rotation counter and clears stored mesh state so peers re-form under a fresh secret. The automation twin of the console's "Reset sharing key". Requires an automation key.
+
+```http
+POST /api/v1/mesh/rotate
+```
+
+**Authentication:** automation key
+
+**Request body:** `{ "profileId": string }` — the model profile whose mesh secret to rotate.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The profile's rotation counter is incremented and its mesh state cleared; the rotation is audited to the automation caller. | `{ "ok": true, "profileId": string, "rotation": number }`. |
+| `400` | No `profileId` was supplied. | `invalid_rotate` error body. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No model profile with that id exists. | `unknown_profile` error body. |
+| `500` | The `MESH_STATE_KEY` Worker secret is absent, so mesh state cannot be sealed. | `mesh_state_key_missing` error body. |
+
+**Implements:** [REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle)
+
+### GET /api/v1/settings
+
+Reads the fleet-tunable operator settings. The automation twin of the console Settings section. Requires an automation key.
+
+```http
+GET /api/v1/settings
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The current settings. | `{ "offlinePruneSeconds": number }` — a machine offline longer than this is pruned (`0` disables). |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-ADM-020](../../sdd/spec/setup-admin.md#req-adm-020-node-status-clarity-and-filtering)
+
+### PUT /api/v1/settings
+
+Writes the fleet-tunable operator settings through the same validation core as the console. Requires an automation key.
+
+```http
+PUT /api/v1/settings
+```
+
+**Authentication:** automation key
+
+**Request body:** `{ "offlinePruneSeconds": number }` — a non-negative integer number of seconds (`0` disables offline-node pruning).
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The setting is persisted; the write is audited to the automation caller. | `{ "ok": true, "offlinePruneSeconds": number }`. |
+| `400` | The value was negative or not an integer. | `invalid_settings` error body. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-ADM-020](../../sdd/spec/setup-admin.md#req-adm-020-node-status-clarity-and-filtering)
 
 ## Source anchors and specification backlinks
 

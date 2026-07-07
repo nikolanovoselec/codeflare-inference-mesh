@@ -321,6 +321,19 @@ describe('dashboard overview contracts', () => {
     expect(fields.some((node) => node.dataset.action === 'node-deactivate')).toBe(false)
   })
 
+  it('REQ-ADM-030 the drawer Deactivate/Activate control posts to the node taint endpoint', async () => {
+    const harness = await dashboardHarness()
+    // Clicking Deactivate on an active node must POST to the deactivate endpoint (not silently no-op).
+    await harness.clickAction('node-deactivate', { nodeId: 'node-small', out: 'node-output' })
+    const deactivate = harness.fetchCalls.find((entry) => entry.path === '/admin/nodes/node-small/deactivate')
+    expect(deactivate?.init?.method).toBe('POST')
+
+    // Clicking Activate on a deactivated node must POST to the activate endpoint.
+    await harness.clickAction('node-activate', { nodeId: 'node-small', out: 'node-output' })
+    const activate = harness.fetchCalls.find((entry) => entry.path === '/admin/nodes/node-small/activate')
+    expect(activate?.init?.method).toBe('POST')
+  })
+
   it('REQ-ADM-015 opens a model drawer listing the nodes serving each alias', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })

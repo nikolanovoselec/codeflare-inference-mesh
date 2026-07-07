@@ -259,6 +259,29 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 ---
 
+### REQ-OBS-011: Runtime error surface
+
+**Intent:** When mesh-llm fails to become ready, the one line that explains why (an OOM, a CUDA error, a lane that never came up) is written to the runtime's stderr and today only reaches the host journal, so an operator has to SSH in to see it. The node agent must capture that line and ride it — plus the console's raw node_state — on the heartbeat so the reason a runtime is wedged is legible from the control plane.
+
+**Applies To:** Node, Admin
+
+**Acceptance Criteria:**
+
+1. The node agent tees mesh-llm's stderr through a bounded ring that retains the most recent error-looking line, ignoring healthy lines and reassembling a line split across writes. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::runtimeLog --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::launchMeshProcess --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogCapturesLastErrorLine) --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogHandlesSplitWrites) -->
+2. The manager exposes the captured line through `RuntimeErrorDetail`, and the per-tick heartbeat metrics carry it as `runtimeDetail` and the console's raw `node_state` as `nodeState`, with zero values never overwriting a present value on merge. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::RuntimeErrorDetail --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::collect --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::applyMeshStatusMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::MergeRuntimeMetrics --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeErrorDetailReflectsRing) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQOBS011RuntimeDetailAndNodeStateRideHeartbeat) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-OBS-003](#req-obs-003-node-metrics), [REQ-OBS-004](#req-obs-004-failure-reporting)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/observability.md](../../documentation/lanes/observability.md)

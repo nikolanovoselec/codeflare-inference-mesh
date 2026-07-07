@@ -3684,11 +3684,54 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request('https://router.test/api/v1/nodes/node-weak/reconfigure', { method: 'POST', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))).status).toBe(401)
   })
 
+  it('REQ-ADM-032 REQ-API-004 force reloads a node over the automation API', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture())
+    const res = await router(new Request('https://router.test/api/v1/nodes/node-a/reload', { method: 'POST', headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    const { reloadNonce } = await res.json() as { reloadNonce: string }
+    expect(reloadNonce).toBeTruthy()
+    // The directive lands on the node record so the next heartbeat carries it, and the request is audited.
+    expect((await store.getNode('node-a'))?.reloadNonce).toBe(reloadNonce)
+    expect(store.audit.some((event) => event.type === 'node_reload_requested' && event.target === 'node-a' && event.actor.startsWith('automation:'))).toBe(true)
+    // Unknown node is 404; a request without an automation key is 401.
+    expect((await router(new Request('https://router.test/api/v1/nodes/node-ghost/reload', { method: 'POST', headers: bearer(key.token) }))).status).toBe(404)
+    expect((await router(new Request('https://router.test/api/v1/nodes/node-a/reload', { method: 'POST', headers: bearer('nope') }))).status).toBe(401)
+  })
+
   it('REQ-API-004 refuses node access without an automation key', async () => {
     const { router } = routerFixture()
     expect((await router(new Request('https://router.test/api/v1/nodes', { headers: bearer('nope') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/api/v1/nodes/node-a', { headers: bearer('nope') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/api/v1/nodes/node-a', { method: 'DELETE', headers: bearer('nope') }))).status).toBe(401)
+  })
+
+  it('REQ-SEC-006 REQ-API-002 rotates the mesh secret over the automation API', async () => {
+    const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
+    const key = await mintKey(router)
+    const res = await router(new Request('https://router.test/api/v1/mesh/rotate', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'mesh-smoke-qwen25-1.5b' }) }))
+    expect(res.status).toBe(200)
+    expect((await res.json() as { rotation: number }).rotation).toBe(1)
+    expect(store.audit.some((event) => event.type === 'mesh_token_rotated' && event.actor.startsWith('automation:'))).toBe(true)
+    // Unknown profile is 404; a request without an automation key is 401.
+    expect((await router(new Request('https://router.test/api/v1/mesh/rotate', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'ghost' }) }))).status).toBe(404)
+    expect((await router(new Request('https://router.test/api/v1/mesh/rotate', { method: 'POST', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: JSON.stringify({ profileId: 'mesh-smoke-qwen25-1.5b' }) }))).status).toBe(401)
+  })
+
+  it('REQ-ADM-020 REQ-API-002 reads and writes fleet settings over the automation API', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const put = await router(new Request('https://router.test/api/v1/settings', { method: 'PUT', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ offlinePruneSeconds: 3600 }) }))
+    expect(put.status).toBe(200)
+    expect((await put.json() as { offlinePruneSeconds: number }).offlinePruneSeconds).toBe(3600)
+    // The written value reads back through the GET twin and the write is audited to the automation caller.
+    const got = await router(new Request('https://router.test/api/v1/settings', { headers: bearer(key.token) }))
+    expect((await got.json() as { offlinePruneSeconds: number }).offlinePruneSeconds).toBe(3600)
+    expect(store.audit.some((event) => event.type === 'settings_updated' && event.actor.startsWith('automation:'))).toBe(true)
+    // A negative value is rejected; a request without an automation key is 401.
+    expect((await router(new Request('https://router.test/api/v1/settings', { method: 'PUT', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ offlinePruneSeconds: -5 }) }))).status).toBe(400)
+    expect((await router(new Request('https://router.test/api/v1/settings', { headers: bearer('nope') }))).status).toBe(401)
   })
 
   it('REQ-API-005 lists models as projections with callable names', async () => {

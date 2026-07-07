@@ -27,6 +27,10 @@ type NodeMetrics struct {
 	ConsoleReady              bool     `json:"consoleReady,omitempty"`
 	MeshLLMVersion            string   `json:"meshllmVersion,omitempty"`
 	LastError                 string   `json:"lastError,omitempty"`
+	// RuntimeDetail is the most recent error-looking line from mesh-llm's own stderr, so the
+	// console can show why a runtime is wedged; NodeState is the console's raw node_state. REQ-OBS-011.
+	RuntimeDetail string `json:"runtimeDetail,omitempty"`
+	NodeState     string `json:"nodeState,omitempty"`
 }
 
 // ParseNvidiaSMI parses `name,memory.used,memory.total` CSV rows. nvidia-smi emits
@@ -131,6 +135,12 @@ func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	}
 	if extra.MeshLLMVersion != "" {
 		merged.MeshLLMVersion = extra.MeshLLMVersion
+	}
+	if extra.NodeState != "" {
+		merged.NodeState = extra.NodeState
+	}
+	if extra.RuntimeDetail != "" {
+		merged.RuntimeDetail = extra.RuntimeDetail
 	}
 	return merged
 }

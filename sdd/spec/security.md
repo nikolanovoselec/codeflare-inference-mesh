@@ -167,7 +167,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Intent:** Mesh invite tokens admit nodes to the private inference mesh, so the router must own their encrypted storage, distribution, and rotation without exposing token values. Rotation evicts stale-token holders by forcing a new mesh identity, with `--trust-policy allowlist` plus `--owner-key` as the backstop.
 
-**Applies To:** Admin
+**Applies To:** Admin, Automation
 
 **Acceptance Criteria:**
 
@@ -177,6 +177,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 4. Mesh invite tokens are distributed only in heartbeat responses to live, non-revoked nodes assigned to the mesh profile. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 distributes join tokens only to live non-revoked nodes) -->
 5. `POST /admin/mesh/rotate` increments the profile's rotation counter, clears stored mesh state, and appends a `mesh_token_rotated` audit event. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 rotate increments the counter, clears state, and audits) -->
 6. Heartbeat responses issued after a rotation carry the incremented rotation counter and freshly computed mesh bootstrap. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SEC-006 post-rotation heartbeats carry the new rotation and bootstrap) -->
+7. `POST /api/v1/mesh/rotate` is the automation twin of the console rotate: authenticated by an automation key, it rotates the named profile's mesh secret through the same core, returns the new rotation, audits the automation caller, and returns `404` for an unknown profile and `401` without an automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiMeshRotate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SEC-006 REQ-API-002 rotates the mesh secret over the automation API) -->
 
 **Constraints:** [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets), [CON-SEC-003](constraints.md#con-sec-003-mesh-secret-custody-and-rotation)
 

@@ -286,6 +286,7 @@ type meshRuntime interface {
 	APIReady() bool
 	State() string
 	LastError() string
+	RuntimeErrorDetail() string
 	SetState(state string)
 	SetFailure(err error)
 	RestartWithInput(ctx context.Context, in agent.MeshLLMRenderInput, contextWindow int) error
@@ -372,6 +373,9 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 		status, consoleReady := s.manager.PollStatus(ctx)
 		profile, _ := agent.SelectedProfile(current)
 		metrics = applyMeshStatusMetrics(metrics, profile, status, consoleReady, s.manager.APIReady(), s.manager.ReadyModels())
+		if detail := s.manager.RuntimeErrorDetail(); detail != "" {
+			metrics.RuntimeDetail = detail
+		}
 		identity.MeshID = s.manager.CurrentMeshID()
 		identity.MeshToken = s.manager.CurrentToken()
 	}
@@ -673,6 +677,7 @@ func applyMeshStatusMetrics(metrics agent.NodeMetrics, profile agent.ModelProfil
 	metrics.APIReady = apiReady
 	metrics.ConsoleReady = consoleReady
 	metrics.MeshLLMVersion = status.Version
+	metrics.NodeState = status.NodeState
 	if status.TokPerSec > 0 {
 		metrics.TokensPerSecond = status.TokPerSec
 	}

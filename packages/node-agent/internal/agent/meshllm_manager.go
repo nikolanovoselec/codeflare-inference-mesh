@@ -25,7 +25,7 @@ type meshProcess interface {
 // meshLauncher starts the mesh-llm binary and returns a handle to the running
 // process. The context is the process-lifetime context: cancelling it kills
 // the child, and it is never derived from a caller's request context.
-type meshLauncher func(ctx context.Context, binary string, args []string, env []string) (meshProcess, error)
+type meshLauncher func(ctx context.Context, binary string, args []string, env []string, stderr io.Writer) (meshProcess, error)
 
 type execMeshProcess struct {
 	cmd *exec.Cmd
@@ -35,11 +35,11 @@ func (p execMeshProcess) Signal(sig os.Signal) error { return p.cmd.Process.Sign
 func (p execMeshProcess) Kill() error                { return p.cmd.Process.Kill() }
 func (p execMeshProcess) Wait() error                { return p.cmd.Wait() }
 
-func launchMeshProcess(ctx context.Context, binary string, args []string, env []string) (meshProcess, error) {
+func launchMeshProcess(ctx context.Context, binary string, args []string, env []string, stderr io.Writer) (meshProcess, error) {
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = io.MultiWriter(os.Stderr, stderr)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -73,6 +73,7 @@ type MeshLLMManager struct {
 	meshID           string
 	readyModels      []string
 	apiReady         bool
+	stderrLog        *runtimeLog
 
 	// Test seams, mirroring the injection style of the RuntimeManager tests:
 	// constructor defaults, overridable inside the package.
@@ -99,6 +100,7 @@ func NewMeshLLMManager(in MeshLLMRenderInput, contextWindow int, dataDir string,
 		readinessTimeout: 30 * time.Minute,
 		stopGrace:        10 * time.Second,
 		now:              time.Now,
+		stderrLog:        &runtimeLog{},
 	}
 }
 
@@ -137,7 +139,7 @@ func (m *MeshLLMManager) Start(ctx context.Context) error {
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.state = "starting"
 	m.lastError = ""
-	proc, err := m.launch(processCtx, m.binaryPath, args, env)
+	proc, err := m.launch(processCtx, m.binaryPath, args, env, m.stderrLog)
 	if err != nil {
 		cancel()
 		m.state = "failed"
@@ -286,6 +288,13 @@ func (m *MeshLLMManager) LastError() string {
 	defer m.mu.Unlock()
 	m.runningLocked()
 	return m.lastError
+}
+
+// RuntimeErrorDetail returns the most recent error-looking line from the managed runtime's
+// stderr, surfacing why mesh-llm failed (an OOM, a CUDA fault, a stage-lane handshake) in
+// heartbeat metrics rather than only in the host journal. REQ-OBS-011.
+func (m *MeshLLMManager) RuntimeErrorDetail() string {
+	return m.stderrLog.Detail()
 }
 
 // PollStatus performs the per-tick poll: one console /api/status request

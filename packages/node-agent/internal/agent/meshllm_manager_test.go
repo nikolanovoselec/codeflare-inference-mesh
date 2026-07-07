@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -116,7 +117,7 @@ type fakeLaunch struct {
 }
 
 func (f *fakeLaunch) launcher() meshLauncher {
-	return func(_ context.Context, binary string, args []string, env []string) (meshProcess, error) {
+	return func(_ context.Context, binary string, args []string, env []string, _ io.Writer) (meshProcess, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		var proc *fakeMeshProcess
