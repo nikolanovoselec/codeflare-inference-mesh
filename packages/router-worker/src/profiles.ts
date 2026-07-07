@@ -147,6 +147,7 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
   const slug = slugifyModelRef(ref)
   const segment = modelRefSegment(ref)
   const name = input.name?.trim()
+  const payloadMode = meshllmPayloadMode(ref)
   const highestBindPort = input.existing.reduce((max, profile) => Math.max(max, profile.meshllm.bindPort), BIND_PORT_BASE)
   return {
     id: `custom-${slug}${input.split ? '-split' : ''}`,
@@ -172,7 +173,7 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
       reasoning: { ...MESHLLM_TUNABLE_DEFAULTS.reasoning },
       prefixCache: {
         ...MESHLLM_TUNABLE_DEFAULTS.prefixCache,
-        ...(meshllmPayloadMode(ref) ? { payloadMode: meshllmPayloadMode(ref) } : {})
+        ...(payloadMode ? { payloadMode } : {})
       }
     },
     version: 1,
