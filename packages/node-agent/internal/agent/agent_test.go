@@ -609,9 +609,9 @@ func TestREQRUN005RuntimeManagerUsesProcessLifetimeContext(t *testing.T) {
 		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{}, 0)
 		var processCtx context.Context
 		inner := fixture.manager.launch
-		fixture.manager.launch = func(ctx context.Context, binary string, args []string, env []string) (meshProcess, error) {
+		fixture.manager.launch = func(ctx context.Context, binary string, args []string, env []string, stderr io.Writer) (meshProcess, error) {
 			processCtx = ctx
-			return inner(ctx, binary, args, env)
+			return inner(ctx, binary, args, env, stderr)
 		}
 		callerCtx, cancel := context.WithCancel(context.Background())
 		if err := fixture.manager.Start(callerCtx); err != nil {
