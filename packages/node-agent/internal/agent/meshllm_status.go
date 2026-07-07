@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // MeshLLMStatus is the tolerant subset of the MeshLLM console
@@ -124,7 +125,7 @@ func MapMeshLLMState(st MeshLLMStatus, upstreamModel string, processAlive, conso
 		return "downloading"
 	case "serving":
 		for _, model := range st.ServingModels {
-			if model == upstreamModel {
+			if modelRefMatches(model, upstreamModel) {
 				return "ready"
 			}
 		}
@@ -133,6 +134,48 @@ func MapMeshLLMState(st MeshLLMStatus, upstreamModel string, processAlive, conso
 	// console state: the runtime is up but not serving the selected
 	// profile — report starting so the node is never schedulable.
 	return "starting"
+}
+
+// modelRefMatches reports whether a serving-model id reported by the console/API
+// identifies the same model as the profile's expected upstream ref. An exact
+// match always wins. Otherwise, for Hugging Face `owner/repo:quant` refs, the
+// repo must match exactly and the quant tags must be equal or differ only by a
+// leading model-name segment: mesh-llm normalizes a file-name-style quant tag
+// (e.g. "gemmable-4-12b-Q8_0") down to the bare quant it serves ("Q8_0"), which
+// would otherwise leave a correctly-serving node stuck reporting "starting" and
+// never schedulable. The `-`-delimited suffix guard keeps distinct quants such
+// as "IQ4_XS" and "Q4_XS" from colliding, and scheme refs / quant-less refs fall
+// back to exact matching only.
+func modelRefMatches(served, expected string) bool {
+	if served == expected {
+		return true
+	}
+	servedRepo, servedQuant, servedOK := splitHFModelRef(served)
+	expectedRepo, expectedQuant, expectedOK := splitHFModelRef(expected)
+	if !servedOK || !expectedOK || servedRepo != expectedRepo {
+		return false
+	}
+	servedQuant = strings.ToLower(servedQuant)
+	expectedQuant = strings.ToLower(expectedQuant)
+	if servedQuant == expectedQuant {
+		return true
+	}
+	return strings.HasSuffix(servedQuant, "-"+expectedQuant) || strings.HasSuffix(expectedQuant, "-"+servedQuant)
+}
+
+// splitHFModelRef splits an `owner/repo:quant` Hugging Face GGUF ref into its
+// repo and quant parts. Scheme refs (containing "://", e.g. hf:// layer
+// packages) and refs without a trailing quant are rejected so callers fall back
+// to exact matching.
+func splitHFModelRef(ref string) (repo, quant string, ok bool) {
+	if strings.Contains(ref, "://") {
+		return "", "", false
+	}
+	idx := strings.LastIndex(ref, ":")
+	if idx <= 0 || idx == len(ref)-1 {
+		return "", "", false
+	}
+	return ref[:idx], ref[idx+1:], true
 }
 
 // DeriveMeshRole derives the reported mesh role: coordinator exactly when

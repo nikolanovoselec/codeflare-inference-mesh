@@ -245,6 +245,76 @@ func TestREQOBS008MapsMeshLLMNodeStates(t *testing.T) {
 	}
 }
 
+func TestREQOBS008ServingModelRefMatchIsLenient(t *testing.T) {
+	const gemmableLong = "Mia-AiLab/Gemmable-4-12B-MTP-GGUF:gemmable-4-12b-Q8_0"
+	const gemmableShort = "Mia-AiLab/Gemmable-4-12B-MTP-GGUF:Q8_0"
+	cases := []struct {
+		name          string
+		upstream      string
+		servingModels []string
+		want          string
+	}{
+		{
+			name:          "console normalized quant tag still matches the profile file-tag ref",
+			upstream:      gemmableLong,
+			servingModels: []string{"other-model", gemmableShort},
+			want:          "ready",
+		},
+		{
+			name:          "match holds in the reverse direction too",
+			upstream:      gemmableShort,
+			servingModels: []string{gemmableLong},
+			want:          "ready",
+		},
+		{
+			name:          "exact ref still matches",
+			upstream:      gemmableShort,
+			servingModels: []string{gemmableShort},
+			want:          "ready",
+		},
+		{
+			name:          "same repo but a different quant never matches",
+			upstream:      "Mia-AiLab/Gemmable-4-12B-MTP-GGUF:Q8_0",
+			servingModels: []string{"Mia-AiLab/Gemmable-4-12B-MTP-GGUF:Q4_K_M"},
+			want:          "starting",
+		},
+		{
+			name:          "quant suffix without a delimiter does not collide (IQ4_XS vs Q4_XS)",
+			upstream:      "owner/repo-GGUF:IQ4_XS",
+			servingModels: []string{"owner/repo-GGUF:Q4_XS"},
+			want:          "starting",
+		},
+		{
+			name:          "same quant but a different repo never matches",
+			upstream:      "owner/repo-a-GGUF:Q8_0",
+			servingModels: []string{"owner/repo-b-GGUF:Q8_0"},
+			want:          "starting",
+		},
+		{
+			name:          "scheme refs match only exactly, not by quant heuristics",
+			upstream:      "hf://meshllm/Model-UD-Q4_K_XL-layers@abc",
+			servingModels: []string{"hf://meshllm/Model-UD-Q4_K_XL-layers@def"},
+			want:          "starting",
+		},
+		{
+			name:          "exact scheme ref matches",
+			upstream:      "hf://meshllm/Model-UD-Q4_K_XL-layers@abc",
+			servingModels: []string{"hf://meshllm/Model-UD-Q4_K_XL-layers@abc"},
+			want:          "ready",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := MeshLLMStatus{NodeState: "serving", ServingModels: tc.servingModels}
+			got := MapMeshLLMState(st, tc.upstream, true, true)
+			if got != tc.want {
+				t.Fatalf("MapMeshLLMState(serving, upstream=%q, models=%v) = %q, want %q",
+					tc.upstream, tc.servingModels, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestREQRUN007DerivesCoordinatorFromStageZeroOwnership(t *testing.T) {
 	cases := []struct {
 		name            string
