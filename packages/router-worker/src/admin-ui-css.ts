@@ -227,6 +227,8 @@ details summary{cursor:pointer;color:var(--text-2);font-size:var(--fs-sm);font-w
 .drawer-row{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.5rem .75rem;border-bottom:1px solid var(--line);padding:.4rem 0;font-size:var(--fs-sm)}
 .drawer-row strong{color:var(--text-2);font-weight:600}
 .drawer-row code{font-family:var(--font-mono)}
+.drawer-row[data-tone=danger]{border-color:var(--danger-line)}
+.drawer-row[data-tone=danger] code{color:var(--danger-text);word-break:break-word}
 .drawer-subhead{flex-basis:100%;margin-top:.9rem;font-weight:600;color:var(--text-2);font-size:var(--fs-sm)}
 .drawer-hint{flex-basis:100%;color:var(--muted);font-size:var(--fs-xs);margin:.1rem 0 0}
 @media (min-width:${ADMIN_UI_RESPONSIVE.mobileBreakpointPx + 1}px){

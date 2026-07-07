@@ -617,6 +617,20 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     versionRow.setAttribute('data-reported', reported);
     versionRow.setAttribute('data-desired-match', match ? 'true' : 'false');
     bodyEl.appendChild(versionRow);
+    // Diagnostics: surface why a node is in its current state without SSH. The runtime error line is
+    // captured from mesh-llm's own stderr and rides the heartbeat as runtimeDetail; node_state, mesh
+    // role, peers, stages, and reachability come from the same metrics. REQ-OBS-011.
+    if (metrics.runtimeDetail) {
+      const errRow = drawerField('runtime-detail', 'Runtime error', metrics.runtimeDetail);
+      errRow.setAttribute('data-tone', 'danger');
+      bodyEl.appendChild(errRow);
+    }
+    bodyEl.appendChild(drawerField('node-state', 'Node state', metrics.nodeState || '\u2014'));
+    bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', metrics.meshRole || '\u2014'));
+    bodyEl.appendChild(drawerField('peers', 'Peers', String(metrics.peerCount || 0), String(metrics.peerCount || 0)));
+    if (metrics.splitEnabled || metrics.stageCount) bodyEl.appendChild(drawerField('stages', 'Stages', String(metrics.stageCount || 0), String(metrics.stageCount || 0)));
+    bodyEl.appendChild(drawerField('reachability', 'API / console', (metrics.apiReady ? 'ready' : 'down') + ' / ' + (metrics.consoleReady ? 'ready' : 'down')));
+    if (metrics.meshllmVersion) bodyEl.appendChild(drawerField('meshllm', 'mesh-llm', metrics.meshllmVersion));
     const models = Array.isArray(metrics.readyModels) ? metrics.readyModels : [];
     models.forEach((model) => {
       const item = document.createElement('div');

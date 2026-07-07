@@ -334,6 +334,43 @@ describe('dashboard overview contracts', () => {
     expect(activate?.init?.method).toBe('POST')
   })
 
+  it('REQ-OBS-011 the node drawer surfaces the runtime error, node state, and mesh diagnostics', async () => {
+    const nodes = [
+      { id: 'node-wedged', status: 'online', agentVersion: 'v1.3.0', metrics: {
+        runtimeState: 'starting', nodeState: 'loading model', runtimeDetail: 'cuda out of memory',
+        meshRole: 'serving-peer', peerCount: 2, stageCount: 2, splitEnabled: true,
+        apiReady: false, consoleReady: true, meshllmVersion: '0.72.2', activeRequests: 0, readyModels: [] } },
+      { id: 'node-healthy', status: 'online', metrics: {
+        runtimeState: 'ready', nodeState: 'serving', meshRole: 'coordinator', peerCount: 1,
+        apiReady: true, consoleReady: true, meshllmVersion: '0.72.2', activeRequests: 0, readyModels: ['m'] } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    const textOf = (item: StubElement) => descendants(item).map((node) => node.textContent).join(' ')
+
+    await harness.clickAction('node-detail', { nodeId: 'node-wedged' })
+    let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const field = (name: string) => fields.find((node) => node.dataset.drawerField === name)
+    // The captured mesh-llm error line is surfaced as a danger-toned row carrying the exact detail.
+    const err = field('runtime-detail')
+    expect(err).toBeDefined()
+    expect(err!.dataset.tone).toBe('danger')
+    expect(textOf(err!)).toContain('cuda out of memory')
+    expect(textOf(field('node-state')!)).toContain('loading model')
+    expect(textOf(field('mesh-role')!)).toContain('serving-peer')
+    expect(field('peers')!.dataset.value).toBe('2')
+    expect(field('stages')!.dataset.value).toBe('2')
+    expect(textOf(field('reachability')!)).toContain('down / ready')
+    expect(textOf(field('meshllm')!)).toContain('0.72.2')
+
+    // A healthy node shows node state but no runtime-error row and no split-stages row.
+    await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
+    await harness.clickAction('node-detail', { nodeId: 'node-healthy' })
+    fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    expect(field('node-state')).toBeDefined()
+    expect(fields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
+    expect(fields.some((node) => node.dataset.drawerField === 'stages')).toBe(false)
+  })
+
   it('REQ-ADM-015 opens a model drawer listing the nodes serving each alias', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
