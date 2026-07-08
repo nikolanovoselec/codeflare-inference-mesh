@@ -75,7 +75,7 @@ export async function handleRuntimeVersionsSelect(request: Request, store: Store
   if (meshllm === undefined && llamacpp === undefined) return json({ error: 'invalid_runtime_versions' }, 400)
 
   const now = Date.now()
-  const updates: Partial<RuntimeBinaryVersions> = {}
+  const updates: { meshllm?: string; llamacpp?: string } = {}
   if (typeof meshllm === 'string') {
     const tags = await currentTags('meshllm', store, fetcher, now)
     if (!tags.includes(meshllm)) return json({ error: 'unknown_meshllm_version', version: meshllm }, 400)
