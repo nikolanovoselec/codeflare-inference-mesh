@@ -2489,6 +2489,29 @@ describe('router worker behavioral contracts', () => {
     expect(JSON.stringify(body)).not.toContain('invite-token-value-a')
   })
 
+  it('REQ-SCH-006 direct llama.cpp heartbeats never receive mesh bootstrap or write mesh state', async () => {
+    const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
+    const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 3 }
+    await store.setProfile(direct)
+    await store.upsertNode({
+      ...nodeFixture({ runtime: 'llamacpp', activeProfileIds: [direct.id], publicModels: [...direct.publicAliases], runtimeModel: direct.upstreamModel, metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel], cachePrompt: true, cacheReuse: 256 } }),
+      nodeTokenVerifier: await hashToken('node-secret')
+    })
+
+    const heartbeat = await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: heartbeatBody({ runtime: 'llamacpp', runtimeModel: direct.upstreamModel, activeProfileIds: [direct.id], publicModels: [...direct.publicAliases], metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel], cachePrompt: true, cacheReuse: 256 } })
+    }))
+    const body = await heartbeat.json() as { meshBootstrap?: unknown; desiredProfiles: ModelProfile[] }
+
+    expect(heartbeat.status).toBe(200)
+    expect(body.meshBootstrap).toBeUndefined()
+    expect(body.desiredProfiles.some((profile) => profile.id === direct.id && profile.runtime === 'llamacpp')).toBe(true)
+    expect(store.config.get(`mesh_state:${direct.id}`)).toBeUndefined()
+    expect(store.audit.some((event) => event.type.startsWith('mesh_state'))).toBe(false)
+  })
+
   it('REQ-SEC-007 node revoke removes the node mesh tokens from distribution', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
