@@ -119,6 +119,7 @@ jobs:
           MESH_STATE_KEY: ${{ secrets.MESH_STATE_KEY }}
           SESSION_AFFINITY_KEY: ${{ secrets.SESSION_AFFINITY_KEY }}
         run: |
+          set -euo pipefail
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_API_TOKEN_RUNTIME"
