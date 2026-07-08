@@ -340,7 +340,7 @@ POST /api/runtime/restart
 
 The `/api/v1` surface lets fleet managers and MDM systems orchestrate the mesh programmatically. It authenticates with a scoped, revocable **automation key** presented as a bearer token — no Cloudflare Access session — and the `/api/v1/*` paths are covered by the machine Access-bypass, so automation reaches them from anywhere. Every `/api/v1` request is metered by a dedicated `api` rate-limit bucket keyed by a hash of the automation key, so one caller's burst cannot spend another's budget. Over-limit requests receive the shared `429`, and a malformed JSON body the shared `400` `invalid_json`, both described in [Conventions](#conventions). ([REQ-API-001](../../sdd/spec/control-plane-api.md#req-api-001-automation-credentials), [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status))
 
-An admin mints automation keys with `POST /api/v1/keys` (which itself requires the admin credential). The secret is returned once at creation — store it securely, because it is never retrievable again. List active keys with `GET /api/v1/keys`, revoke one with `DELETE /api/v1/keys/{id}` (a revoked key stops authenticating immediately), or rotate one with `POST /api/v1/keys/{id}/rotate` (issues a fresh secret and retires the old key). Admins can also create, rotate, and revoke keys from the console **Settings → API keys** panel under their Access session, rather than calling the API by hand. ([REQ-ADM-022](../../sdd/spec/setup-admin.md#req-adm-022-api-key-management-console))
+An admin mints automation keys with `POST /api/v1/keys` (which itself requires an admin credential). The key-management API accepts either the admin's Access session or the admin bearer credential, so operators can clean up machine keys from automation even after Access is provisioned; other human admin routes still require Access outside break-glass recovery. The secret is returned once at creation — store it securely, because it is never retrievable again. List active keys with `GET /api/v1/keys`, revoke one with `DELETE /api/v1/keys/{id}` (a revoked key stops authenticating immediately), or rotate one with `POST /api/v1/keys/{id}/rotate` (issues a fresh secret and retires the old key). Admins can also create, rotate, and revoke keys from the console **Settings → API keys** panel under their Access session, rather than calling the API by hand. ([REQ-ADM-022](../../sdd/spec/setup-admin.md#req-adm-022-api-key-management-console))
 
 The full fleet lifecycle is drivable from these endpoints alone. First, bootstrap a fleet — mint a key, read status, enroll machines, and list nodes:
 
@@ -384,13 +384,13 @@ curl -s -X DELETE "$BASE/api/v1/keys/{keyId}" -H "authorization: Bearer $ADMIN_T
 
 ### POST /api/v1/keys
 
-Mints a new automation key. Requires the admin credential; the secret is returned once.
+Mints a new automation key. Requires an admin credential; the secret is returned once.
 
 ```http
 POST /api/v1/keys
 ```
 
-**Authentication:** admin
+**Authentication:** admin Access session or admin bearer credential
 
 **Request body:** None.
 
@@ -405,13 +405,13 @@ POST /api/v1/keys
 
 ### GET /api/v1/keys
 
-Lists the active automation keys. Requires the admin credential; secrets are never returned.
+Lists the active automation keys. Requires an admin credential; secrets are never returned.
 
 ```http
 GET /api/v1/keys
 ```
 
-**Authentication:** admin
+**Authentication:** admin Access session or admin bearer credential
 
 **Request body:** None.
 
@@ -426,13 +426,13 @@ GET /api/v1/keys
 
 ### DELETE /api/v1/keys/{id}
 
-Revokes an automation key by id. Requires the admin credential; the key stops authenticating immediately.
+Revokes an automation key by id. Requires an admin credential; the key stops authenticating immediately.
 
 ```http
 DELETE /api/v1/keys/{id}
 ```
 
-**Authentication:** admin
+**Authentication:** admin Access session or admin bearer credential
 
 **Request body:** None.
 
@@ -448,13 +448,13 @@ DELETE /api/v1/keys/{id}
 
 ### POST /api/v1/keys/{id}/rotate
 
-Rotates an automation key: retires the named key and issues a replacement in one step, so the previous secret stops authenticating immediately. Requires the admin credential. The new secret is returned exactly once.
+Rotates an automation key: retires the named key and issues a replacement in one step, so the previous secret stops authenticating immediately. Requires an admin credential. The new secret is returned exactly once.
 
 ```http
 POST /api/v1/keys/{id}/rotate
 ```
 
-**Authentication:** admin
+**Authentication:** admin Access session or admin bearer credential
 
 **Request body:** None.
 

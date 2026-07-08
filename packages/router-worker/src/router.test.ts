@@ -3798,6 +3798,26 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request(`https://router.test/api/v1/keys/${rotated.id}/rotate`, { method: 'POST', headers: bearer('not-admin') }))).status).toBe(401)
   })
 
+  it('REQ-API-001 accepts the admin bearer credential for key cleanup after Access is provisioned', async () => {
+    const store = new MemoryStore()
+    await store.putConfig('access_config', { teamDomain: 'example-team.cloudflareaccess.com', audience: 'aud-mesh-admin', appId: 'app-1', bypassAppId: 'app-2', adminEmails: ['operator@example.com'] })
+    const tempKey = await createTokenRecord('automation', 'automation-temp-secret', 1_700_000_000_000)
+    await store.putToken(tempKey)
+    const { router } = routerFixture({ store })
+
+    const list = await router(new Request('https://router.test/api/v1/keys', { headers: bearer('admin-secret') }))
+    expect(list.status).toBe(200)
+    const listed = await list.json() as { keys: Array<{ id: string }> }
+    expect(listed.keys.map((key) => key.id)).toContain(tempKey.id)
+
+    const del = await router(new Request(`https://router.test/api/v1/keys/${tempKey.id}`, { method: 'DELETE', headers: bearer('admin-secret') }))
+    expect(del.status).toBe(200)
+    expect((await router(new Request('https://router.test/api/v1/status', { headers: bearer('automation-temp-secret') }))).status).toBe(401)
+
+    const consoleAdmin = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+    expect(consoleAdmin.status).toBe(401)
+  })
+
   it('REQ-API-001 refuses automation-key management without an admin credential', async () => {
     const { router } = routerFixture()
     expect((await router(new Request('https://router.test/api/v1/keys', { method: 'POST', headers: bearer('not-admin') }))).status).toBe(401)

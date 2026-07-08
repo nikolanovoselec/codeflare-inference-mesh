@@ -1,4 +1,4 @@
-import { fetchIdentityGroups, verifyAccessRequest } from './access'
+import { extractAccessJwt, fetchIdentityGroups, verifyAccessRequest } from './access'
 import { CloudflareAccessClient, type AccessProvisionRequest, type AccessProvisionResult } from './access-provisioning'
 import { adminUiHtml, type AdminUiState } from './admin-ui'
 import { consoleMovedHtml } from './admin-ui-views'
@@ -1565,8 +1565,15 @@ async function requireAutomation(request: Request, deps: RouterDeps, now: number
   return await authenticateAnyStoredToken(request, deps.store, 'automation', now)
 }
 
-async function handleApiKeyCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+async function requireKeyAdmin(request: Request, deps: RouterDeps, now: number): Promise<string | undefined> {
   const actor = await requireAdmin(request, deps, now)
+  if (actor) return actor
+  if ((await accessConfig(deps.store)) && extractAccessJwt(request)) return undefined
+  return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? 'admin-api' : undefined
+}
+
+async function handleApiKeyCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireKeyAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const token = generateBearerToken('automation')
   const record = await createTokenRecord('automation', token, now)
@@ -1576,7 +1583,7 @@ async function handleApiKeyCreate(request: Request, deps: RouterDeps, requestId:
 }
 
 async function handleApiKeyList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
+  const actor = await requireKeyAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const keys = (await deps.store.listTokens('automation'))
     .filter((token) => token.active)
@@ -1585,7 +1592,7 @@ async function handleApiKeyList(request: Request, deps: RouterDeps, requestId: s
 }
 
 async function handleApiKeyRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
+  const actor = await requireKeyAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const keyId = decodeURIComponent(url.pathname.split('/').pop() ?? '')
   const existing = await deps.store.getToken('automation', keyId)
@@ -1598,7 +1605,7 @@ async function handleApiKeyRevoke(request: Request, deps: RouterDeps, url: URL, 
 // handleApiKeyRotate retires a key and issues a fresh secret in one step so the previous
 // secret stops authenticating immediately; the new secret is returned exactly once.
 async function handleApiKeyRotate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
+  const actor = await requireKeyAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const keyId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
   const existing = await deps.store.getToken('automation', keyId)
