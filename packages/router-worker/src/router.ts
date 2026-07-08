@@ -1364,7 +1364,7 @@ function directSessionPart(value: unknown): string | undefined {
 }
 
 function providerDefaultDirectSession(headers: Headers): string | undefined {
-  return bearerToken(headers) ? 'user:ai-gateway|session:provider-default' : undefined
+  return headers.get('authorization') ? 'user:ai-gateway|session:provider-default' : undefined
 }
 
 function directAffinitySecret(env: Partial<RouterEnv>): string | undefined {
