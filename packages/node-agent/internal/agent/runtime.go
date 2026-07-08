@@ -24,17 +24,23 @@ type ModelProfile struct {
 }
 
 type LlamaCppSettings struct {
-	ModelRef      string             `json:"modelRef"`
-	HFRepo        string             `json:"hfRepo"`
-	HFFile        string             `json:"hfFile,omitempty"`
-	Quant         string             `json:"quant,omitempty"`
-	BindPort      int                `json:"bindPort"`
-	ContextWindow int                `json:"contextWindow"`
-	Parallel      int                `json:"parallel"`
-	CachePrompt   bool               `json:"cachePrompt"`
-	CacheReuse    int                `json:"cacheReuse"`
-	Alias         string             `json:"alias"`
-	Reasoning     *ReasoningSettings `json:"reasoning,omitempty"`
+	ModelRef        string             `json:"modelRef"`
+	HFRepo          string             `json:"hfRepo"`
+	HFFile          string             `json:"hfFile,omitempty"`
+	Quant           string             `json:"quant,omitempty"`
+	BindPort        int                `json:"bindPort"`
+	ContextWindow   int                `json:"contextWindow"`
+	Parallel        int                `json:"parallel"`
+	CachePrompt     bool               `json:"cachePrompt"`
+	CacheReuse      int                `json:"cacheReuse"`
+	CacheTypeK      string             `json:"cacheTypeK,omitempty"`
+	CacheTypeV      string             `json:"cacheTypeV,omitempty"`
+	Batch           int                `json:"batch,omitempty"`
+	Ubatch          int                `json:"ubatch,omitempty"`
+	FlashAttn       *bool              `json:"flashAttn,omitempty"`
+	MaxOutputTokens int                `json:"maxOutputTokens,omitempty"`
+	Alias           string             `json:"alias"`
+	Reasoning       *ReasoningSettings `json:"reasoning,omitempty"`
 }
 
 type MeshLLMSettings struct {

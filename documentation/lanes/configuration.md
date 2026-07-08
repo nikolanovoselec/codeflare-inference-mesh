@@ -147,8 +147,15 @@ Direct llama.cpp profiles use these settings:
 | --- | --- | --- | --- |
 | Context window | `--ctx-size` | `262144` | Direct profiles require a pinned context window (`>= 4096`) so coding-session KV reuse has a stable cache budget. |
 | Parallel slots | `--parallel` | `1` | Number of concurrent llama.cpp slots for the node-local runtime. |
+| KV cache type (keys) | `--cache-type-k` | `q8_0` | Precision of cached keys. Use `q8_0` as the balanced default; `q4_0` can fit larger contexts. |
+| KV cache type (values) | `--cache-type-v` | `q8_0` | Precision of cached values. Match the key type unless testing a specific tradeoff. |
+| Prefill batch | `--batch-size` | `2048` | Logical prefill batch. Raising it can speed long-prompt ingestion if GPU memory allows. |
+| Micro-batch | `--ubatch-size` | `512` | Physical prefill sub-batch. Raise carefully when the node has headroom. |
+| Flash attention | `--flash-attn` | On | Fast/memory-efficient attention for large-context direct serving. |
+| Max output tokens | `--predict` | `8192` | Global generation cap; keep it above the reasoning budget. |
 | Prompt cache | `--cache-prompt` | On | Keeps prompt/KV reuse enabled; leave on for cache-local coding sessions. |
 | Cache reuse | `--cache-reuse` | `256` | llama.cpp reuse window for prompt/KV cache matching. |
+| Reasoning | `--reasoning`, `--reasoning-format`, `--reasoning-budget` | Auto unless set | Thinking-mode controls for reasoning-capable chat templates. |
 | Bind port | `--port` | derived per profile | The node-local llama.cpp API port; reserved mesh/proxy ports are rejected. |
 
 ## GitHub secrets

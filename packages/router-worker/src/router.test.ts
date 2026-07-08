@@ -252,6 +252,9 @@ describe('router worker behavioral contracts', () => {
     expect(html).toMatch(/@media \(max-width:760px\)/)
     expect(html).not.toContain('class="tab-bar"')
     expect(html).toContain('id="mobile-menu-toggle"')
+    expect(html).toContain('aria-label="Open menu"')
+    expect(html).toContain('M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z')
+    expect(html).not.toContain('>Menu</button>')
     expect(html).toContain('id="mobile-menu"')
     // The served behavior script is the pure literal, byte for byte: nothing is
     // serialized from bundled code, so bundler helpers (__name) cannot leak in.
@@ -617,8 +620,17 @@ describe('router worker behavioral contracts', () => {
 
     harness.byId('model-edit-context').value = '131072'
     harness.byId('model-edit-llama-parallel').value = '2'
+    harness.byId('model-edit-llama-cache-k').value = 'q4_0'
+    harness.byId('model-edit-llama-cache-v').value = 'q4_0'
+    harness.byId('model-edit-llama-batch').value = '8192'
+    harness.byId('model-edit-llama-ubatch').value = '2048'
+    harness.byId('model-edit-llama-flash').value = 'on'
+    harness.byId('model-edit-llama-maxout').value = '8192'
     harness.byId('model-edit-llama-cache-prompt').value = 'off'
     harness.byId('model-edit-llama-cache-reuse').value = '512'
+    harness.byId('model-edit-llama-reasoning').value = 'on'
+    harness.byId('model-edit-llama-reasoning-format').value = 'deepseek'
+    harness.byId('model-edit-llama-reasoning-budget').value = '4096'
     await harness.clickAction('model-save', { profileId: 'direct-qwen', runtime: 'llamacpp', out: 'model-edit-output' })
     const configCall = harness.fetchCalls.filter((call) => call.path === '/admin/profiles/config').at(-1)
     expect(JSON.parse(String(configCall?.init?.body))).toEqual({
@@ -626,7 +638,7 @@ describe('router worker behavioral contracts', () => {
       runtime: 'llamacpp',
       contextWindow: 131072,
       modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M',
-      llamacpp: { parallel: 2, cacheReuse: 512, cachePrompt: false }
+      llamacpp: { parallel: 2, cacheReuse: 512, cachePrompt: false, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
     })
 
     await harness.clickAction('node-detail', { nodeId: 'node-direct' })
@@ -800,7 +812,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.status).toBe(201)
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false, rolloutPercent: 0 })
-    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 1 })
+    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 1, cacheTypeK: 'q8_0', cacheTypeV: 'q8_0', batch: 2048, ubatch: 512, flashAttn: true, maxOutputTokens: 8192 })
   })
 
   it('REQ-RUN-011 rejects direct llama.cpp for split models', async () => {
@@ -2436,15 +2448,22 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ profileId, ...body })
     }))
 
-    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
+    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
     const configured = (await store.listProfiles()).find((profile) => profile.id === profileId)!
 
     expect(ok.status).toBe(200)
     expect(configured.runtime).toBe('llamacpp')
     expect(configured.contextWindow).toBe(131072)
-    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    expect((await configure({ llamacpp: { batch: null, flashAttn: null, maxOutputTokens: null, reasoning: null } })).status).toBe(200)
+    const cleared = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(cleared.llamacpp?.batch).toBeUndefined()
+    expect(cleared.llamacpp?.flashAttn).toBeUndefined()
+    expect(cleared.llamacpp?.maxOutputTokens).toBeUndefined()
+    expect(cleared.llamacpp?.reasoning).toBeUndefined()
     expect((await configure({ llamacpp: { contextWindow: 2048 } })).status).toBe(400)
     expect((await configure({ llamacpp: { parallel: 0 } })).status).toBe(400)
+    expect((await configure({ llamacpp: { cacheTypeK: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { bindPort: 9337 } })).status).toBe(400)
   })
 

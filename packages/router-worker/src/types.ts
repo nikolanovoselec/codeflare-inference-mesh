@@ -62,6 +62,12 @@ export interface LlamaCppProfileSettings {
   readonly parallel: number
   readonly cachePrompt: boolean
   readonly cacheReuse: number
+  readonly cacheTypeK?: string
+  readonly cacheTypeV?: string
+  readonly batch?: number
+  readonly ubatch?: number
+  readonly flashAttn?: boolean
+  readonly maxOutputTokens?: number
   readonly alias: string
   readonly reasoning?: {
     readonly enabled?: boolean

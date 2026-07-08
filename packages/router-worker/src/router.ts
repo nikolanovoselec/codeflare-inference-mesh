@@ -794,6 +794,12 @@ interface LlamaCppConfigBody {
   readonly parallel?: unknown
   readonly cachePrompt?: unknown
   readonly cacheReuse?: unknown
+  readonly cacheTypeK?: unknown
+  readonly cacheTypeV?: unknown
+  readonly batch?: unknown
+  readonly ubatch?: unknown
+  readonly flashAttn?: unknown
+  readonly maxOutputTokens?: unknown
   readonly bindPort?: unknown
   readonly hfRepo?: unknown
   readonly hfFile?: unknown
@@ -812,11 +818,30 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
     next[key] = raw
     return null
   }
+  const applyOptionalInt = (key: 'batch' | 'ubatch' | 'maxOutputTokens', raw: unknown, min: number): string | null => {
+    if (raw === undefined) return null
+    if (raw === null || raw === 0) { delete next[key]; return null }
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < min) return `invalid_${key}`
+    next[key] = raw
+    return null
+  }
+  const applyCacheType = (key: 'cacheTypeK' | 'cacheTypeV', raw: unknown): string | null => {
+    if (raw === undefined) return null
+    if (raw === null || raw === '') { delete next[key]; return null }
+    if (typeof raw !== 'string' || !LLAMACPP_CACHE_TYPES.has(raw)) return `invalid_${key}`
+    next[key] = raw
+    return null
+  }
   for (const err of [
     applyInt('contextWindow', body.contextWindow, 4096),
     applyInt('parallel', body.parallel, 1),
     applyInt('cacheReuse', body.cacheReuse, 0),
-    applyInt('bindPort', body.bindPort, 1)
+    applyInt('bindPort', body.bindPort, 1),
+    applyOptionalInt('batch', body.batch, 1),
+    applyOptionalInt('ubatch', body.ubatch, 1),
+    applyOptionalInt('maxOutputTokens', body.maxOutputTokens, 1),
+    applyCacheType('cacheTypeK', body.cacheTypeK),
+    applyCacheType('cacheTypeV', body.cacheTypeV)
   ]) {
     if (err) return { error: err }
   }
@@ -824,6 +849,11 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
   if (body.cachePrompt !== undefined) {
     if (typeof body.cachePrompt !== 'boolean') return { error: 'invalid_cachePrompt' }
     next.cachePrompt = body.cachePrompt
+  }
+  if (body.flashAttn !== undefined) {
+    if (body.flashAttn === null) delete next.flashAttn
+    else if (typeof body.flashAttn === 'boolean') next.flashAttn = body.flashAttn
+    else return { error: 'invalid_flash_attn' }
   }
   for (const key of ['hfRepo', 'hfFile', 'quant'] as const) {
     const raw = body[key]
@@ -865,6 +895,7 @@ function applyNodeVramOverride(profiles: readonly ModelProfile[], override: numb
 }
 
 const MESHLLM_CACHE_TYPES = new Set(['f16', 'q8_0', 'q4_0'])
+const LLAMACPP_CACHE_TYPES = new Set(['f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1'])
 
 interface MeshllmTunablesBody {
   parallel?: unknown
@@ -1005,14 +1036,15 @@ function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly Mod
   const modelRef = body.modelRef !== undefined ? (typeof body.modelRef === 'string' ? body.modelRef.trim() : '') : (existing.llamacpp?.modelRef ?? existing.meshllm?.modelRef ?? existing.upstreamModel)
   if (!modelRef) return { error: 'invalid_model_ref', status: 400 }
   const generated = buildCustomProfile({ modelRef, split: false, runtime: 'llamacpp', existing: profiles }).llamacpp!
+  const existingDirect = existing.runtime === 'llamacpp' ? existing.llamacpp : undefined
+  const baseSource = existingDirect ?? generated
   const base: LlamaCppProfileSettings = {
-    ...generated,
-    bindPort: existing.llamacpp?.bindPort ?? generated.bindPort,
-    contextWindow: existing.llamacpp?.contextWindow ?? generated.contextWindow,
-    parallel: existing.llamacpp?.parallel ?? generated.parallel,
-    cachePrompt: existing.llamacpp?.cachePrompt ?? generated.cachePrompt,
-    cacheReuse: existing.llamacpp?.cacheReuse ?? generated.cacheReuse,
-    ...(existing.llamacpp?.reasoning ? { reasoning: existing.llamacpp.reasoning } : {})
+    ...baseSource,
+    bindPort: baseSource.bindPort ?? generated.bindPort,
+    contextWindow: baseSource.contextWindow ?? generated.contextWindow,
+    parallel: baseSource.parallel ?? generated.parallel,
+    cachePrompt: baseSource.cachePrompt ?? generated.cachePrompt,
+    cacheReuse: baseSource.cacheReuse ?? generated.cacheReuse
   }
   const settingsResult = resolveLlamaCppSettings(base, body.llamacpp)
   if ('error' in settingsResult) return { error: settingsResult.error, status: 400 }

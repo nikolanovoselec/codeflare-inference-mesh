@@ -743,8 +743,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   // meshTunableNumberRow / meshTunableSelectRow build one Advanced-runtime row in
   // the model drawer: the existing drawer-row shape plus a .drawer-hint line that
-  // explains the setting. A blank number or the Auto option means "unset" so
-  // mesh-llm auto-plans that value; the placeholder shows the sensible default.
+  // explains the setting. A blank number or the Auto option means "unset" for
+  // runtime-specific optional fields; the placeholder shows the sensible default.
   function drawerHint(text) {
     const hint = document.createElement('span');
     hint.className = 'drawer-hint';
@@ -873,12 +873,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     advancedHead.className = 'drawer-subhead';
     advancedHead.textContent = 'Advanced runtime';
     bodyEl.appendChild(advancedHead);
+    const kvOptions = [{ value: '', label: 'Auto' }, { value: 'f16', label: 'f16 (full precision)' }, { value: 'q8_0', label: 'q8_0 (balanced)' }, { value: 'q4_0', label: 'q4_0 (smallest)' }];
+    const onOffOptions = [{ value: '', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
     if (!isDirect) {
       const reasoning = meshllm.reasoning || {};
       const flashValue = meshllm.flashAttn === true ? 'on' : meshllm.flashAttn === false ? 'off' : '';
       const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
-      const kvOptions = [{ value: '', label: 'Auto' }, { value: 'f16', label: 'f16 (full precision)' }, { value: 'q8_0', label: 'q8_0 (balanced)' }, { value: 'q4_0', label: 'q4_0 (smallest)' }];
-      const onOffOptions = [{ value: '', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-parallel', label: 'Parallel lanes', value: meshllm.parallel, placeholder: 'Auto', hint: 'Concurrent request slots. 2 or more enables input caching (fast prompt reuse); 1 disables it. Blank = Auto (mesh-llm plans up to 4).' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-cache-k', label: 'KV cache type (keys)', value: meshllm.cacheTypeK || '', options: kvOptions, hint: 'Precision of the cached keys. q8_0 halves memory vs f16 with negligible quality loss; q4_0 quarters it to fit very large contexts.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-cache-v', label: 'KV cache type (values)', value: meshllm.cacheTypeV || '', options: kvOptions, hint: 'Precision of the cached values. Match the key type unless you have a reason not to.' }));
@@ -891,9 +891,21 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers. Part of the output budget, so keep it below Max output tokens (a 2:1 split, e.g. 8192 / 4096, leaves room to answer).' }));
     }
     if (isDirect) {
+      const reasoning = llamacpp.reasoning || {};
+      const flashValue = llamacpp.flashAttn === true ? 'on' : llamacpp.flashAttn === false ? 'off' : '';
+      const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel, placeholder: '1', hint: 'Concurrent direct slots for this node-local llama-server.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-k', label: 'KV cache type (keys)', value: llamacpp.cacheTypeK || '', options: kvOptions, hint: 'llama.cpp --cache-type-k. q8_0 is the usual balance; q4_0 fits larger contexts.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-v', label: 'KV cache type (values)', value: llamacpp.cacheTypeV || '', options: kvOptions, hint: 'llama.cpp --cache-type-v. Match the key type unless you are testing a specific tradeoff.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-batch', label: 'Prefill batch', value: llamacpp.batch, placeholder: '2048', hint: 'llama.cpp --batch-size. Higher values speed long prompt ingestion but use more memory.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-ubatch', label: 'Micro-batch', value: llamacpp.ubatch, placeholder: '512', hint: 'llama.cpp --ubatch-size. Raise carefully when the GPU has memory headroom.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-flash', label: 'Flash attention', value: flashValue, options: onOffOptions, hint: 'llama.cpp --flash-attn. Usually On for fast large-context serving.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-maxout', label: 'Max output tokens', value: llamacpp.maxOutputTokens, placeholder: '8192', hint: 'llama.cpp --predict. Keep above the reasoning budget so the model has room to answer.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-prompt', label: 'Prompt cache', value: llamacpp.cachePrompt === false ? 'off' : 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], hint: 'Keep on for coding-session KV reuse.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-cache-reuse', label: 'Cache reuse', value: llamacpp.cacheReuse, placeholder: '256', min: 0, hint: 'llama.cpp --cache-reuse value for prompt/KV reuse.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'llama.cpp --reasoning for thinking-capable chat templates.' }));
+      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'llama.cpp --reasoning-format. Use deepseek for Qwen/DeepSeek-style thinking output.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'llama.cpp --reasoning-budget. Part of the output budget.' }));
     }
     const save = document.createElement('button');
     save.type = 'button';
@@ -1841,11 +1853,29 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         const llamaParallelRaw = readInput('model-edit-llama-parallel');
         const llamaCacheReuseRaw = readInput('model-edit-llama-cache-reuse');
         const llamaCachePromptRaw = readInput('model-edit-llama-cache-prompt');
+        const llamaBatchRaw = readInput('model-edit-llama-batch');
+        const llamaUbatchRaw = readInput('model-edit-llama-ubatch');
+        const llamaMaxOutRaw = readInput('model-edit-llama-maxout');
+        const llamaFlashRaw = readInput('model-edit-llama-flash');
+        const llamaReasoningRaw = readInput('model-edit-llama-reasoning');
         payload.llamacpp = {
           parallel: llamaParallelRaw === '' ? 1 : Number(llamaParallelRaw),
           cacheReuse: llamaCacheReuseRaw === '' ? 256 : Number(llamaCacheReuseRaw),
-          cachePrompt: llamaCachePromptRaw !== 'off'
+          cachePrompt: llamaCachePromptRaw !== 'off',
+          cacheTypeK: readInput('model-edit-llama-cache-k'),
+          cacheTypeV: readInput('model-edit-llama-cache-v'),
+          batch: llamaBatchRaw === '' ? null : Number(llamaBatchRaw),
+          ubatch: llamaUbatchRaw === '' ? null : Number(llamaUbatchRaw),
+          flashAttn: llamaFlashRaw === '' ? null : llamaFlashRaw === 'on',
+          maxOutputTokens: llamaMaxOutRaw === '' ? null : Number(llamaMaxOutRaw)
         };
+        if (llamaReasoningRaw === '') {
+          payload.llamacpp.reasoning = null;
+        } else {
+          const formatRaw = readInput('model-edit-llama-reasoning-format');
+          const budgetRaw = readInput('model-edit-llama-reasoning-budget');
+          payload.llamacpp.reasoning = { enabled: llamaReasoningRaw === 'on', format: formatRaw === '' ? null : formatRaw, budget: budgetRaw === '' ? null : Number(budgetRaw) };
+        }
       } else {
         // Runtime tunables are sent from the current field state (the server merge is
         // idempotent). A blank number or the Auto option clears the field back to Auto

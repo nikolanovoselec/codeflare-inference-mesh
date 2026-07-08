@@ -101,7 +101,7 @@ export function adminUiHtml(workerOrigin: string, state: AdminUiState): string {
     </a>
     <div class="topbar-side">
       <span class="health-pill" id="health-pill" data-health="unknown">shell</span>
-      <button class="mobile-menu-btn btn btn-ghost" type="button" id="mobile-menu-toggle" data-action="mobile-menu-toggle" aria-controls="mobile-menu" aria-expanded="false"${entryView === 'dashboard' ? '' : ' hidden'}>Menu</button>
+      <button class="mobile-menu-btn btn btn-ghost" type="button" id="mobile-menu-toggle" data-action="mobile-menu-toggle" aria-controls="mobile-menu" aria-expanded="false" aria-label="Open menu"${entryView === 'dashboard' ? '' : ' hidden'}><svg class="mobile-menu-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z"></path></svg></button>
       <button class="btn btn-ghost" type="button" id="sign-out-btn" data-action="sign-out" hidden>Sign out</button>
     </div>
   </header>

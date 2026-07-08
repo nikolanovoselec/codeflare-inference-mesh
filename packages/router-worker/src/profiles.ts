@@ -77,7 +77,13 @@ export const LLAMACPP_PROFILE_DEFAULTS = {
   contextWindow: 262144,
   parallel: 1,
   cachePrompt: true,
-  cacheReuse: 256
+  cacheReuse: 256,
+  cacheTypeK: 'q8_0',
+  cacheTypeV: 'q8_0',
+  batch: 2048,
+  ubatch: 512,
+  flashAttn: true,
+  maxOutputTokens: 8192
 } as const
 
 // Per-model mesh-llm runtime tunable defaults (REQ-RUN-002 / REQ-RUN-003),
@@ -183,6 +189,12 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
         parallel: LLAMACPP_PROFILE_DEFAULTS.parallel,
         cachePrompt: LLAMACPP_PROFILE_DEFAULTS.cachePrompt,
         cacheReuse: LLAMACPP_PROFILE_DEFAULTS.cacheReuse,
+        cacheTypeK: LLAMACPP_PROFILE_DEFAULTS.cacheTypeK,
+        cacheTypeV: LLAMACPP_PROFILE_DEFAULTS.cacheTypeV,
+        batch: LLAMACPP_PROFILE_DEFAULTS.batch,
+        ubatch: LLAMACPP_PROFILE_DEFAULTS.ubatch,
+        flashAttn: LLAMACPP_PROFILE_DEFAULTS.flashAttn,
+        maxOutputTokens: LLAMACPP_PROFILE_DEFAULTS.maxOutputTokens,
         alias: ref
       }
     }

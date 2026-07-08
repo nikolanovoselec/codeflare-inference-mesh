@@ -104,6 +104,7 @@ input:focus-visible,select:focus-visible{border-color:var(--accent)}
 .brand-path{color:var(--muted);font-size:var(--fs-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topbar-side{display:flex;align-items:center;gap:.6rem;min-width:0;flex:none}
 .mobile-menu-btn{display:none}
+.mobile-menu-icon{width:1.25rem;height:1.25rem;fill:currentColor;flex:none}
 .health-pill{display:inline-flex;align-items:center;gap:.4rem;border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);font-size:var(--fs-xs);font-weight:600;padding:.3rem .65rem}
 .health-pill[data-health=ok]{color:var(--ok);border-color:rgb(34 197 94/.35)}
 .health-pill[data-health=error]{color:var(--danger-text);border-color:var(--danger-line)}

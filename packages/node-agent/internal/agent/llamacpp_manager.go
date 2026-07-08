@@ -152,6 +152,28 @@ func RenderLlamaCppArgs(in LlamaCppInput) []string {
 	if settings.HFFile != "" {
 		args = append(args, "--hf-file", settings.HFFile)
 	}
+	if settings.CacheTypeK != "" {
+		args = append(args, "--cache-type-k", settings.CacheTypeK)
+	}
+	if settings.CacheTypeV != "" {
+		args = append(args, "--cache-type-v", settings.CacheTypeV)
+	}
+	if settings.Batch > 0 {
+		args = append(args, "--batch-size", fmt.Sprintf("%d", settings.Batch))
+	}
+	if settings.Ubatch > 0 {
+		args = append(args, "--ubatch-size", fmt.Sprintf("%d", settings.Ubatch))
+	}
+	if settings.FlashAttn != nil {
+		if *settings.FlashAttn {
+			args = append(args, "--flash-attn", "on")
+		} else {
+			args = append(args, "--flash-attn", "off")
+		}
+	}
+	if settings.MaxOutputTokens > 0 {
+		args = append(args, "--predict", fmt.Sprintf("%d", settings.MaxOutputTokens))
+	}
 	if settings.CachePrompt {
 		args = append(args, "--cache-prompt")
 	}
