@@ -1069,11 +1069,12 @@ describe('router worker behavioral contracts', () => {
       runtimeModel: direct.upstreamModel,
       metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] }
     }))
+    const callable = direct.publicAliases.find((alias) => alias !== 'codeflare-mesh') ?? direct.publicAliases[0]!
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: direct.publicAliases[0], messages: [{ role: 'user', content: 'hi' }] })
+      body: JSON.stringify({ model: callable, messages: [{ role: 'user', content: 'hi' }] })
     }))
     await response.text()
     const forwarded = await capture.request!.json() as { user?: string }
@@ -1098,11 +1099,12 @@ describe('router worker behavioral contracts', () => {
       runtimeModel: direct.upstreamModel,
       metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] }
     }))
+    const callable = direct.publicAliases.find((alias) => alias !== 'codeflare-mesh') ?? direct.publicAliases[0]!
 
     const headerResponse = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json', 'cf-aig-metadata': JSON.stringify({ user: 'operator@example.com', ignored: true }) },
-      body: JSON.stringify({ model: direct.publicAliases[0], messages: [{ role: 'user', content: 'hi' }] })
+      body: JSON.stringify({ model: callable, messages: [{ role: 'user', content: 'hi' }] })
     }))
     await headerResponse.text()
     const headerForwarded = await capture.request!.json() as { user?: string }
@@ -1110,7 +1112,7 @@ describe('router worker behavioral contracts', () => {
     const bodyResponse = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: direct.publicAliases[0], metadata: { user: 'body@example.com', session: 'body-session' }, messages: [{ role: 'user', content: 'hi' }] })
+      body: JSON.stringify({ model: callable, metadata: { user: 'body@example.com', session: 'body-session' }, messages: [{ role: 'user', content: 'hi' }] })
     }))
     await bodyResponse.text()
     const bodyForwarded = await capture.request!.json() as { user?: string }

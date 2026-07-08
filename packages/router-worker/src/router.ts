@@ -166,7 +166,7 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   if (new TextEncoder().encode(bodyText).byteLength > maxBytes) return json({ error: 'request_too_large', requestId }, 413, requestId)
   const body = parseObject(bodyText)
   if (!body || typeof body.model !== 'string') return json({ error: 'invalid_json', requestId }, 400, requestId)
-  return runInference(deps, { body: directSessionBody(body, request.headers), requestHeaders: request.headers, requestId, now })
+  return runInference(deps, { body, requestHeaders: request.headers, requestId, now })
 }
 
 // The forward path shared by the provider `/v1/chat/completions` route and the admin
@@ -177,7 +177,7 @@ async function runInference(deps: RouterDeps, input: { body: Record<string, unkn
   const publicModel = input.body.model as string
   const profile = await deps.store.getProfileByPublicModel(publicModel)
   if (!profile) return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
-  if (profile.runtime === 'llamacpp') return runDirectLlamaCppInference(deps, input, publicModel, profile)
+  if (profile.runtime === 'llamacpp') return runDirectLlamaCppInference(deps, { ...input, body: directSessionBody(input.body, input.requestHeaders) }, publicModel, profile)
   return runMeshInference(deps, input)
 }
 
