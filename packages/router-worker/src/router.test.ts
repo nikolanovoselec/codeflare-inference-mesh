@@ -3735,6 +3735,29 @@ describe('control-plane API (/api/v1)', () => {
     expect(JSON.stringify(store.audit)).not.toContain(created.token)
   })
 
+  it('REQ-API-005 syncs the Gateway over the automation API and returns the provider token once', async () => {
+    const gatewayResult = { providerId: 'prov', providerSlug: 'custom-inference-mesh-router-test', routeId: 'route', routeVersionId: 'ver', deploymentId: 'dep', gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', workerUrl: 'https://mesh.example.com', manualProviderKeyRequired: true as const, providerTokenInstructions: 'x' }
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
+      cloudflareClient: {
+        syncCustomProvider: async () => gatewayResult,
+        provisionCustomDomain: async () => { throw new Error('unused') }
+      }
+    })
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+    const key = await mintKey(router)
+
+    const res = await router(new Request('https://router.test/api/v1/gateway/sync', { method: 'POST', headers: bearer(key.token) }))
+    const body = await res.json() as { providerToken?: string; byokInstruction?: string }
+
+    expect(res.status).toBe(200)
+    expect(body.providerToken).toMatch(/^provider_/)
+    expect(body.byokInstruction).toContain('custom-inference-mesh-router-test')
+    expect(store.tokens.filter((token) => token.kind === 'provider' && token.active)).toHaveLength(1)
+    expect(store.audit.some((event) => event.type === 'gateway_sync' && event.actor === `automation:${key.id}`)).toBe(true)
+    expect((await router(new Request('https://router.test/api/v1/gateway/sync', { method: 'POST' }))).status).toBe(401)
+  })
+
   it('REQ-API-002 returns a fleet snapshot to an authenticated automation caller', async () => {
     const { router } = routerFixture()
     const created = await mintKey(router)

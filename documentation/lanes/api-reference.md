@@ -850,6 +850,30 @@ PUT /api/v1/agent-version
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
 
+### POST /api/v1/gateway/sync
+
+Runs the same Gateway sync as the console and rotates the router provider token, returning the new provider token once to the automation caller.
+
+```http
+POST /api/v1/gateway/sync
+```
+
+**Authentication:** automation key
+
+**Request body:** Optional JSON with `accountId`, `gatewayId`, and `providerName`; omitted values fall back to stored settings and environment defaults. Route name and public model stay pinned to `codeflare-mesh`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Gateway resources were reconciled, prior provider tokens were retired, and a fresh provider token was created for the public `/v1/chat/completions` route. | Gateway sync metadata plus `{ "providerToken": string, "byokInstruction": string }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `409` | A custom-domain or Worker URL prerequisite is missing. | `custom_domain_required` / `custom_domain_not_provisioned` error body. |
+| `424` | Cloudflare rejected the sync; the raw cause is recorded to audit only. | Actionable sync failure error body. |
+| `503` | Cloudflare runtime configuration is missing. | `cloudflare_runtime_config_missing` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation)
+
 ### GET /api/v1/runtime-versions
 
 Lists available MeshLLM and llama.cpp runtime binary versions with the current desired selection for each runtime.

@@ -115,6 +115,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+\/rotate$/) && request.method === 'POST') return await handleApiKeyRotate(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+$/) && request.method === 'DELETE') return await handleApiKeyRevoke(request, deps, url, id, now())
       if (url.pathname === '/api/v1/status' && request.method === 'GET') return await handleApiStatus(request, deps, id, now())
+      if (url.pathname === '/api/v1/gateway/sync' && request.method === 'POST') return await handleApiGatewaySync(request, deps, id, now())
       if (url.pathname === '/api/v1/enrollment-tokens' && request.method === 'POST') return await handleApiEnrollmentToken(request, deps, id, now())
       if (url.pathname === '/api/v1/nodes' && request.method === 'GET') return await handleApiNodeList(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'GET') return await handleApiNodeGet(request, deps, url, id, now())
@@ -561,6 +562,16 @@ function handleInstallScript(deps: RouterDeps, platform: InstallerPlatform): Res
 async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return await syncGatewayForActor(request, deps, requestId, now, actor)
+}
+
+async function handleApiGatewaySync(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return await syncGatewayForActor(request, deps, requestId, now, `automation:${automation.id}`)
+}
+
+async function syncGatewayForActor(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readOptionalObject<Partial<GatewaySettings>>(request)
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
   const customDomain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
