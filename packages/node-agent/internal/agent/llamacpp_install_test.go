@@ -34,7 +34,7 @@ func TestREQNODE013LlamaCppReleaseDigestSelectsHostAsset(t *testing.T) {
 
 func TestREQNODE013EnsureLlamaCppInstallsManagedBinary(t *testing.T) {
 	payload := []byte("fake llama-server")
-	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b1234/bin/llama-server", body: payload, mode: 0o755}, {name: "llama-b1234/bin/libllama-server-impl.so", body: []byte("fake shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libllama-common.so.0.0.0", body: []byte("fake versioned shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libllama-common.so.0", linkName: "libllama-common.so.0.0.0", mode: 0o644}, {name: "llama-b1234/bin/ggml.dll", body: []byte("fake dll"), mode: 0o644}})
+	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b1234/bin/llama-server", body: payload, mode: 0o755}, {name: "llama-b1234/bin/libllama-server-impl.so", body: []byte("fake shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libllama-common.so.0.0.0", body: []byte("fake versioned shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libllama-common.so.0", linkName: "libllama-common.so.0.0.0", mode: 0o644}, {name: "llama-b1234/bin/libggml-base.so.0.0.0", body: []byte("fake chained shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libggml-base.so.0", linkName: "libggml-base.so.0.0.0", mode: 0o644}, {name: "llama-b1234/bin/libggml-base.so", linkName: "libggml-base.so.0", mode: 0o644}, {name: "llama-b1234/bin/ggml.dll", body: []byte("fake dll"), mode: 0o644}})
 	dataDir := t.TempDir()
 	path, err := EnsureLlamaCpp(dataDir, "b1234",
 		WithLlamaCppPlatform("linux", "amd64"),
@@ -76,6 +76,13 @@ func TestREQNODE013EnsureLlamaCppInstallsManagedBinary(t *testing.T) {
 	}
 	if string(versionedLib) != "fake versioned shared lib" {
 		t.Fatalf("installed shared library symlink payload = %q", versionedLib)
+	}
+	chainedLib, err := os.ReadFile(filepath.Join(dataDir, "bin", "libggml-base.so"))
+	if err != nil {
+		t.Fatalf("read installed chained shared library link materialization: %v", err)
+	}
+	if string(chainedLib) != "fake chained shared lib" {
+		t.Fatalf("installed chained shared library link payload = %q", chainedLib)
 	}
 	dll, err := os.ReadFile(filepath.Join(dataDir, "bin", "ggml.dll"))
 	if err != nil {

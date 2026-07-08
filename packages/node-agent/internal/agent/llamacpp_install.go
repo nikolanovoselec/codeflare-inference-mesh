@@ -329,14 +329,33 @@ func extractLlamaCppTarGz(archive []byte, binaryName string) (map[string][]byte,
 			links[base] = archiveEntryBase(header.Linkname)
 		}
 	}
-	for link, target := range links {
-		data, ok := files[target]
-		if !ok {
-			return nil, fmt.Errorf("shared library link %s target %s not found in llama.cpp archive", link, target)
+	for link := range links {
+		data, err := resolveLlamaCppRuntimeLink(link, files, links, map[string]bool{})
+		if err != nil {
+			return nil, err
 		}
 		files[link] = data
 	}
 	return files, nil
+}
+
+func resolveLlamaCppRuntimeLink(link string, files map[string][]byte, links map[string]string, seen map[string]bool) ([]byte, error) {
+	if data, ok := files[link]; ok {
+		return data, nil
+	}
+	if seen[link] {
+		return nil, fmt.Errorf("shared library link cycle at %s in llama.cpp archive", link)
+	}
+	seen[link] = true
+	target, ok := links[link]
+	if !ok {
+		return nil, fmt.Errorf("shared library link %s target not found in llama.cpp archive", link)
+	}
+	data, err := resolveLlamaCppRuntimeLink(target, files, links, seen)
+	if err != nil {
+		return nil, fmt.Errorf("shared library link %s target %s not found in llama.cpp archive: %w", link, target, err)
+	}
+	return data, nil
 }
 
 func extractLlamaCppZip(archive []byte, binaryName string) (map[string][]byte, error) {
