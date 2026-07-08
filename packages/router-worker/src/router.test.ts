@@ -3099,12 +3099,36 @@ describe('Access-first setup and host gating contracts', () => {
     expect(response.status).toBe(200)
     expect(capture.request!.url).toBe('http://100.64.1.10:8080/v1/chat/completions')
     expect((await capture.request!.json() as { model: string }).model).toBe(SMOKE_UPSTREAM)
-    // Tools and a max-token cap ride the direct path through to the node (max_tokens).
-    const withTools = await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'function', function: { name: 'get_weather' } }], maxTokens: 256 }) }))
+    // Tools, a max-token cap, and the direct-session user ride the direct path through to the node.
+    const withTools = await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', user: 'user:admin-playground|session:test-session', messages: [{ role: 'user', content: 'hi' }], tools: [{ type: 'function', function: { name: 'get_weather' } }], maxTokens: 256 }) }))
     await withTools.text()
-    const forwarded = await capture.request!.json() as { tools?: unknown; max_tokens?: number }
+    const forwarded = await capture.request!.json() as { user?: string; tools?: unknown; max_tokens?: number }
+    expect(forwarded.user).toBe('user:admin-playground|session:test-session')
     expect(forwarded.tools).toEqual([{ type: 'function', function: { name: 'get_weather' } }])
     expect(forwarded.max_tokens).toBe(256)
+  })
+
+  it('REQ-ADM-029 direct playground forwards the session user required by llama.cpp profiles', async () => {
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
+    const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
+    await store.setProfile(direct)
+    await store.upsertNode(nodeFixture({
+      runtime: 'llamacpp',
+      activeProfileIds: [direct.id],
+      publicModels: [...direct.publicAliases],
+      runtimeModel: direct.upstreamModel,
+      metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] }
+    }))
+    const callable = direct.publicAliases.find((alias) => alias !== 'codeflare-mesh') ?? direct.publicAliases[0]!
+
+    const response = await router(new Request('https://router.test/admin/playground/direct-chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: callable, user: 'user:admin-playground|session:direct-session', messages: [{ role: 'user', content: 'hi' }] }) }))
+    await response.text()
+    const forwarded = await capture.request!.json() as { model: string; user?: string }
+
+    expect(response.status).toBe(200)
+    expect(forwarded.model).toBe(direct.upstreamModel)
+    expect(forwarded.user).toBe('user:admin-playground|session:direct-session')
   })
 
   it('REQ-GWY-008 restricts live provision status to admins', async () => {

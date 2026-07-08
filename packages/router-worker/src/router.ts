@@ -1230,13 +1230,14 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
 async function handlePlaygroundDirect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readOptionalObject<{ model?: unknown; messages?: unknown; tools?: unknown; maxTokens?: unknown }>(request)
+  const body = await readOptionalObject<{ model?: unknown; user?: unknown; messages?: unknown; tools?: unknown; maxTokens?: unknown }>(request)
   const model = cleanString(body?.model)
   if (!model) return json({ error: 'model_required', requestId }, 400, requestId)
+  const user = cleanString(body?.user)
   const messages = Array.isArray(body?.messages) ? body!.messages : []
   const tools = playgroundTools(body?.tools)
   const maxTokens = playgroundMaxTokens(body?.maxTokens)
-  return runInference(deps, { body: { model, messages, stream: true, ...(tools ? { tools } : {}), ...(maxTokens ? { max_tokens: maxTokens } : {}) }, requestHeaders: request.headers, requestId, now })
+  return runInference(deps, { body: { model, ...(user ? { user } : {}), messages, stream: true, ...(tools ? { tools } : {}), ...(maxTokens ? { max_tokens: maxTokens } : {}) }, requestHeaders: request.headers, requestId, now })
 }
 
 // playgroundTools passes through an OpenAI-format tool-definitions array so an
