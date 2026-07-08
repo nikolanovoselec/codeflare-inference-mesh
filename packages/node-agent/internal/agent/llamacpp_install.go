@@ -268,7 +268,9 @@ func downloadLlamaCppAsset(assetURL string) ([]byte, error) {
 func queryLlamaCppVersion(binaryPath string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	output, err := exec.CommandContext(ctx, binaryPath, "--version").CombinedOutput()
+	cmd := exec.CommandContext(ctx, binaryPath, "--version")
+	cmd.Env = llamaCppRuntimeEnv(os.Environ(), binaryPath)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("query llama.cpp version: %w", err)
 	}

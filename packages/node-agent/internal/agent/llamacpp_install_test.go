@@ -72,6 +72,24 @@ func TestREQNODE013EnsureLlamaCppInstallsManagedBinary(t *testing.T) {
 	}
 }
 
+func TestREQNODE013LlamaCppVersionQueryUsesRuntimeLibraryPath(t *testing.T) {
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	binaryPath := filepath.Join(binDir, "llama-server")
+	if err := os.WriteFile(binaryPath, []byte("#!/bin/sh\nprintf '%s' \"$LD_LIBRARY_PATH\"\n"), 0o700); err != nil {
+		t.Fatalf("write fake llama-server: %v", err)
+	}
+	out, err := queryLlamaCppVersion(binaryPath)
+	if err != nil {
+		t.Fatalf("query version: %v", err)
+	}
+	if !strings.HasPrefix(out, binDir) {
+		t.Fatalf("LD_LIBRARY_PATH = %q, want prefix %q", out, binDir)
+	}
+}
+
 func TestREQNODE013EnsureLlamaCppRejectsChecksumMismatch(t *testing.T) {
 	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b1234/bin/llama-server", body: []byte("fake"), mode: 0o755}})
 	dataDir := t.TempDir()
