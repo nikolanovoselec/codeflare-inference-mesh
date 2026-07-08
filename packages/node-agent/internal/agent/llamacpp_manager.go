@@ -196,7 +196,7 @@ func (m *LlamaCppManager) Restart(ctx context.Context) error {
 	return m.Start(ctx)
 }
 
-func (m *LlamaCppManager) RestartWithInput(ctx context.Context, in LlamaCppInput) error {
+func (m *LlamaCppManager) RestartWithLlamaInput(ctx context.Context, in LlamaCppInput) error {
 	if err := m.Stop(ctx); err != nil {
 		return err
 	}
@@ -205,6 +205,22 @@ func (m *LlamaCppManager) RestartWithInput(ctx context.Context, in LlamaCppInput
 	m.mu.Unlock()
 	return m.Start(ctx)
 }
+
+func (m *LlamaCppManager) RestartWithInput(ctx context.Context, _ MeshLLMRenderInput, _ int) error {
+	return m.Restart(ctx)
+}
+
+func (m *LlamaCppManager) PollStatus(_ context.Context) (MeshLLMStatus, bool) {
+	return MeshLLMStatus{}, m.APIReady()
+}
+
+func (m *LlamaCppManager) ApplyBootstrap(_ *MeshBootstrap) {}
+
+func (m *LlamaCppManager) NeedsRestart(_ *MeshBootstrap) bool { return false }
+
+func (m *LlamaCppManager) CurrentToken() string { return "" }
+
+func (m *LlamaCppManager) CurrentMeshID() string { return "" }
 
 func (m *LlamaCppManager) finishStop(proc meshProcess, cancel context.CancelFunc, state string) {
 	m.mu.Lock()

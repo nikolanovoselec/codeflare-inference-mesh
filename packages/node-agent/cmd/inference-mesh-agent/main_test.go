@@ -89,6 +89,10 @@ func (f *fakeMeshRuntime) Start(context.Context) error { f.record("start"); retu
 
 func (f *fakeMeshRuntime) Stop(context.Context) error { f.record("stop"); return nil }
 
+func (f *fakeMeshRuntime) Runtime() string { return "meshllm" }
+
+func (f *fakeMeshRuntime) TargetURL() string { return "http://127.0.0.1:9337" }
+
 func (f *fakeMeshRuntime) Restart(context.Context) error {
 	f.recordRestart(nil)
 	return nil
