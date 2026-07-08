@@ -1374,7 +1374,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         option.textContent = info.desired;
         select.appendChild(option);
       }
-      select.disabled = select.options.length === 0;
+      select.disabled = select.children.length === 0;
       select.value = info.desired || (tags[0] || '');
       return true;
     };
