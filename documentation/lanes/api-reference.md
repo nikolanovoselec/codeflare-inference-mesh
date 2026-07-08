@@ -838,14 +838,14 @@ PUT /api/v1/agent-version
 
 **Authentication:** automation key
 
-**Request body:** `{ "version": string }` — must be one of the available versions.
+**Request body:** `{ "version": string }` — must be one of the available versions; the router refreshes the release list once when the requested tag is missing from the warm cache.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The desired fleet version was set. | `{ "ok": true, "desired": string }`. |
-| `400` | The version was missing or absent from the available list. | `invalid_version` / `unknown_version` error body. |
+| `200` | The desired fleet version was set after release-list validation, including a cache refresh when needed. | `{ "ok": true, "desired": string }`. |
+| `400` | The version was missing or absent from the available list after refresh. | `invalid_version` / `unknown_version` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)

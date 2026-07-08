@@ -792,7 +792,7 @@ GET /admin/agent-versions
 
 ### POST /admin/agent-version
 
-Selects the fleet-wide desired node-agent version from the cached release-tag list.
+Selects the fleet-wide desired node-agent version from the release-tag list, refreshing the cache once when the requested tag is missing.
 
 ```http
 POST /admin/agent-version
@@ -808,8 +808,8 @@ POST /admin/agent-version
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Version is validated against the release-tag list, stored as the single fleet-wide desired agent version, and recorded as an `agent_version_selected` audit event; nodes receive it as `desiredAgentVersion` in subsequent heartbeat responses. | `{ "ok": true, "desired": string }` |
-| `400` | `version` is missing, or the tag is absent from the release-tag list. | `{ "error": "invalid_version" }` or `{ "error": "unknown_version", "version": string }` |
+| `200` | Version is validated against the release-tag list after a cache refresh when needed, stored as the single fleet-wide desired agent version, and recorded as an `agent_version_selected` audit event; nodes receive it as `desiredAgentVersion` in subsequent heartbeat responses. | `{ "ok": true, "desired": string }` |
+| `400` | `version` is missing, or the tag is still absent from the release-tag list after refresh. | `{ "error": "invalid_version" }` or `{ "error": "unknown_version", "version": string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 
 **Implements:** [REQ-ADM-008](../../sdd/spec/setup-admin.md)

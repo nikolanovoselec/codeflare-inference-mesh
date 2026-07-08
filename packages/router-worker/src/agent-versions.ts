@@ -39,7 +39,11 @@ export async function handleAgentVersionSelect(request: Request, store: Store, e
   if (!version) return json({ error: 'invalid_version' }, 400)
   const now = Date.now()
   const cached = await store.getConfig<AgentVersionsCache>(AGENT_VERSIONS_CACHE_KEY)
-  const current = isCacheFresh(cached, now) ? cached : (await refreshCache(store, env, fetcher, now)) ?? cached
+  const cacheFresh = isCacheFresh(cached, now)
+  let current = cacheFresh ? cached : (await refreshCache(store, env, fetcher, now)) ?? cached
+  if (cacheFresh && current && !current.tags.includes(version)) {
+    current = await refreshCache(store, env, fetcher, now) ?? current
+  }
   if (!current || !current.tags.includes(version)) return json({ error: 'unknown_version', version }, 400)
   await store.putConfig(DESIRED_AGENT_VERSION_KEY, version)
   await store.appendAudit({ id: crypto.randomUUID(), type: 'agent_version_selected', at: now, actor, target: version, detail: { version } })

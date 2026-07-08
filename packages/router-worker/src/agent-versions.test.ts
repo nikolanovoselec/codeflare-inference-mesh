@@ -172,7 +172,7 @@ describe('agent version management behavioral contracts', () => {
     expect(((await list.json()) as ListBody).desired).toBe('v1.2.0')
   })
 
-  it('REQ-ADM-008 rejects agent-version selections absent from the cached release list', async () => {
+  it('REQ-ADM-008 refreshes a warm cache before rejecting an unknown agent version', async () => {
     const store = new MemoryStore()
     await store.putConfig(CACHE_KEY, warmCache(['v1.1.0']))
     const calls: FetchCall[] = []
@@ -182,9 +182,23 @@ describe('agent version management behavioral contracts', () => {
 
     expect(unknown.status).toBe(400)
     expect(invalid.status).toBe(400)
-    expect(calls).toHaveLength(0)
+    expect(calls).toHaveLength(1)
     expect(store.config.has(DESIRED_KEY)).toBe(false)
     expect(store.audit.some((event) => event.type === 'agent_version_selected')).toBe(false)
+  })
+
+  it('REQ-ADM-008 accepts a newly published agent version after refreshing the release list', async () => {
+    const store = new MemoryStore()
+    await store.putConfig(CACHE_KEY, warmCache(['v1.1.0']))
+    const calls: FetchCall[] = []
+
+    const response = await handleAgentVersionSelect(selectRequest({ version: 'v1.2.0' }), store, emptyEnv, releasesFetcher(['v1.2.0', 'v1.1.0'], calls))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true, desired: 'v1.2.0' })
+    expect(calls).toHaveLength(1)
+    expect(store.config.get(DESIRED_KEY)).toBe('v1.2.0')
+    expect((store.config.get(CACHE_KEY) as StoredCache).tags).toEqual(['v1.2.0', 'v1.1.0'])
   })
 
   it('REQ-SCH-001 persists the release-tag cache and desired agent version', async () => {
