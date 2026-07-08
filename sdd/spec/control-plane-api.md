@@ -112,7 +112,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ### REQ-API-005: Programmatic model and version management
 
-**Intent:** Fleet managers must configure models, switch them on and off, and set the fleet's node-agent version programmatically, wrapping the same validated levers the console uses so automation and the console never diverge.
+**Intent:** Fleet managers must configure models, switch them on and off, set fleet software/runtime versions, and run Gateway sync programmatically, wrapping the same validated levers the console uses so automation and the console never diverge.
 
 **Applies To:** Automation
 
@@ -123,7 +123,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 3. `POST /api/v1/models/{id}/enable` switches a model on and switches off any other model that answers to the same callable name. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelEnable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 enables a model and switches off another with the same callable name) -->
 4. `POST /api/v1/models/{id}/disable` drops a model's traffic to zero. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDisable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 disables a model by dropping its traffic to zero) -->
 5. `GET /api/v1/agent-versions` lists the available node-agent versions to an automation caller. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists available agent versions to an automation caller) -->
-6. `PUT /api/v1/agent-version` sets the fleet-wide desired node-agent version and rejects a version absent from the available list. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersionSet --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 sets the fleet agent version and rejects an unknown version) -->
+6. `PUT /api/v1/agent-version` sets the fleet-wide desired node-agent version, refreshing the release list once when the requested tag is missing from the warm cache, and rejects a version still absent after refresh. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersionSet --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 sets the fleet agent version and rejects an unknown version) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 accepts a newly published agent version after refreshing the release list) -->
 7. `GET /api/v1/runtime-versions` lists available MeshLLM and llama.cpp runtime versions with current desired selections, and `PUT /api/v1/runtime-versions` sets both desired runtime versions through the same validation core as the console. <!-- @impl: packages/router-worker/src/router.ts::handleApiRuntimeVersions --> <!-- @impl: packages/router-worker/src/router.ts::handleApiRuntimeVersionSet --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-API-005 lets automation list and select runtime versions) -->
 8. `POST /api/v1/gateway/sync` runs the same Gateway sync/provider-token rotation as the console and reveals the new provider token once to the automation caller. <!-- @impl: packages/router-worker/src/router.ts::handleApiGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 syncs the Gateway over the automation API and returns the provider token once) -->
 9. The model and version endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 refuses model and version endpoints without an automation key) -->
@@ -132,7 +132,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Priority:** P1
 
-**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-ADM-008](setup-admin.md#req-adm-008-agent-version-management)
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-ADM-008](setup-admin.md#req-adm-008-agent-version-management), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation)
 
 **Verification:** Automated test
 

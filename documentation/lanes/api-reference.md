@@ -852,7 +852,7 @@ PUT /api/v1/agent-version
 
 ### POST /api/v1/gateway/sync
 
-Runs the same Gateway sync as the console and rotates the router provider token, returning the new provider token once to the automation caller.
+Runs the same Gateway sync as the console and rotates the router provider token, returning the new provider token once to the automation caller. The token is shown only in this response; stored state keeps only its verifier and audit entries never include the secret.
 
 ```http
 POST /api/v1/gateway/sync
