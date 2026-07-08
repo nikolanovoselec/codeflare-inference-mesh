@@ -1057,19 +1057,33 @@ describe('router worker behavioral contracts', () => {
     expect((await store.getNode('node-a'))?.inFlight).toBe(0)
   })
 
-  it('REQ-SCH-004 rejects direct llama.cpp requests without a session user', async () => {
-    const { router, store } = routerFixture({ env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
+  it('REQ-SCH-004 uses a provider-scoped fallback session when Gateway metadata is not forwarded', async () => {
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
     const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
     await store.setProfile(direct)
+    await store.upsertNode(nodeFixture({
+      runtime: 'llamacpp',
+      activeProfileIds: [direct.id],
+      publicModels: [...direct.publicAliases],
+      runtimeModel: direct.upstreamModel,
+      metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] }
+    }))
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
       headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: direct.publicAliases[0], messages: [] })
+      body: JSON.stringify({ model: direct.publicAliases[0], messages: [{ role: 'user', content: 'hi' }] })
     }))
+    await response.text()
+    const forwarded = await capture.request!.json() as { user?: string }
+    const sessions = [...store.directSessions.values()]
 
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ error: 'session_required', requestId: 'request-a' })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-inference-mesh-affinity')).toBe('pinned')
+    expect(forwarded.user).toBe('user:ai-gateway|session:provider-default')
+    expect(sessions).toHaveLength(1)
+    expect(JSON.stringify(sessions[0])).not.toContain('provider-secret')
   })
 
   it('REQ-SCH-004 derives direct llama.cpp session affinity from AI Gateway metadata', async () => {

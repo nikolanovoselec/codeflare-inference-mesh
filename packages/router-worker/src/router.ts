@@ -1332,7 +1332,7 @@ function parseDirectSession(value: unknown): { readonly userId: string; readonly
 
 function directSessionBody(body: Record<string, unknown>, headers: Headers): Record<string, unknown> {
   if (parseDirectSession(body.user)) return body
-  const fallback = gatewayMetadataDirectSession(headers, body.metadata)
+  const fallback = gatewayMetadataDirectSession(headers, body.metadata) ?? providerDefaultDirectSession(headers)
   return fallback ? { ...body, user: fallback } : body
 }
 
@@ -1361,6 +1361,10 @@ function directSessionPart(value: unknown): string | undefined {
   if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return undefined
   const cleaned = String(value).trim().replace(/[|\r\n]/g, '-').slice(0, 256)
   return cleaned || undefined
+}
+
+function providerDefaultDirectSession(headers: Headers): string | undefined {
+  return bearerToken(headers) ? 'user:ai-gateway|session:provider-default' : undefined
 }
 
 function directAffinitySecret(env: Partial<RouterEnv>): string | undefined {

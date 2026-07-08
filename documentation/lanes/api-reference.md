@@ -73,14 +73,14 @@ POST /v1/chat/completions
 
 **Origin check:** n/a
 
-**Request body:** JSON chat completion body with a public model alias. MeshLLM profiles need only `model` and messages. Direct llama.cpp profiles also require a session identity so the router can pin the coding session to one cache-local node without storing raw ids: callers may send OpenAI `user` in the grammar `user:<id>|session:<id>`, or include metadata visible to the router (`cf-aig-metadata` if forwarded, or a JSON `metadata` body object) with `user` and optional `session` values. AI Gateway REST dynamic-route log metadata is observability-only unless the client also sends it in the request body.
+**Request body:** JSON chat completion body with a public model alias. MeshLLM profiles need only `model` and messages. Direct llama.cpp profiles also use a session identity so the router can pin the coding session to one cache-local node without storing raw ids: callers may send OpenAI `user` in the grammar `user:<id>|session:<id>`, include metadata visible to the router (`cf-aig-metadata` if forwarded, or a JSON `metadata` body object) with `user` and optional `session` values, or rely on the provider-scoped fallback `ai-gateway/provider-default` when AI Gateway REST dynamic-route log metadata is observability-only and not forwarded.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Selected node response is returned; streaming responses stay streamed. | Node response body. |
-| `400` | JSON is invalid, `model` is missing, or a direct llama.cpp profile is called without either a valid `user:<id>|session:<id>` value or usable AI Gateway metadata. | `{ "error": "invalid_json" \| "session_required", "requestId": string }` |
+| `400` | JSON is invalid or `model` is missing. | `{ "error": "invalid_json", "requestId": string }` |
 | `401` | Provider token is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | Public model alias has no configured profile. | `{ "error": "no-profile", "requestId": string }` |
 | `413` | Request body exceeds `MAX_REQUEST_BYTES`. | `{ "error": "request_too_large", "requestId": string }` |
