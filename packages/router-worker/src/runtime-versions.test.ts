@@ -74,7 +74,7 @@ describe('runtime binary version management', () => {
     const router = createRouter({
       store,
       scheduler: new StoreScheduler(store),
-      mesh: { fetch: async () => Response.json({}) } as Fetcher,
+      mesh: { fetch: async () => Response.json({}) } as unknown as Fetcher,
       env: {}
     })
 
@@ -96,7 +96,7 @@ describe('runtime binary version management', () => {
     const router = createRouter({
       store,
       scheduler: new StoreScheduler(store),
-      mesh: { fetch: async () => Response.json({}) } as Fetcher,
+      mesh: { fetch: async () => Response.json({}) } as unknown as Fetcher,
       env: {},
       releasesFetcher: releasesFetcher(['v0.73.0', 'b9900'])
     })
