@@ -14,7 +14,7 @@ import { isRateLimited } from './rate-limit'
 import { eligibleDirectNodes, meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { singleActiveActivation } from './store'
-import type { ClaimRequest, CredentialKind, HeartbeatRequest, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store, TokenRecord } from './types'
+import type { ClaimRequest, CredentialKind, HeartbeatRequest, LlamaCppProfileSettings, ModelProfile, NodeRecord, RouterEnv, RuntimeKind, Scheduler, Store, TokenRecord } from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024
@@ -743,6 +743,67 @@ function resolveMaxVram(value: number | undefined): number | undefined | typeof 
   return value
 }
 
+function resolveRuntime(value: unknown): RuntimeKind | 'invalid_runtime' {
+  if (value === undefined || value === null || value === '') return 'meshllm'
+  return value === 'meshllm' || value === 'llamacpp' ? value : 'invalid_runtime'
+}
+
+interface LlamaCppConfigBody {
+  readonly contextWindow?: unknown
+  readonly parallel?: unknown
+  readonly cachePrompt?: unknown
+  readonly cacheReuse?: unknown
+  readonly bindPort?: unknown
+  readonly hfRepo?: unknown
+  readonly hfFile?: unknown
+  readonly quant?: unknown
+  readonly reasoning?: unknown
+}
+
+function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unknown): { settings: LlamaCppProfileSettings } | { error: string } {
+  if (value === undefined) return { settings: existing }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return { error: 'invalid_llamacpp' }
+  const body = value as LlamaCppConfigBody
+  const next: Record<string, unknown> = { ...existing }
+  const applyInt = (key: 'contextWindow' | 'parallel' | 'cacheReuse' | 'bindPort', raw: unknown, min: number): string | null => {
+    if (raw === undefined) return null
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < min) return `invalid_${key}`
+    next[key] = raw
+    return null
+  }
+  for (const err of [
+    applyInt('contextWindow', body.contextWindow, 4096),
+    applyInt('parallel', body.parallel, 1),
+    applyInt('cacheReuse', body.cacheReuse, 0),
+    applyInt('bindPort', body.bindPort, 1)
+  ]) {
+    if (err) return { error: err }
+  }
+  if (typeof next.bindPort === 'number' && (next.bindPort === 9337 || next.bindPort === 3131)) return { error: 'bind_port_conflict' }
+  if (body.cachePrompt !== undefined) {
+    if (typeof body.cachePrompt !== 'boolean') return { error: 'invalid_cachePrompt' }
+    next.cachePrompt = body.cachePrompt
+  }
+  for (const key of ['hfRepo', 'hfFile', 'quant'] as const) {
+    const raw = body[key]
+    if (raw === undefined) continue
+    if (raw === null || raw === '') delete next[key]
+    else if (typeof raw === 'string') next[key] = raw.trim()
+    else return { error: `invalid_${key}` }
+  }
+  if (typeof next.hfRepo !== 'string' || next.hfRepo.length === 0) return { error: 'invalid_hfRepo' }
+  if (body.reasoning !== undefined) {
+    if (body.reasoning === null) delete next.reasoning
+    else {
+      const reasoning = resolveReasoning(existing.reasoning, body.reasoning)
+      if ('error' in reasoning) return reasoning
+      if (Object.keys(reasoning.value).length === 0) delete next.reasoning
+      else next.reasoning = reasoning.value
+    }
+  }
+  return { settings: next as LlamaCppProfileSettings }
+}
+
 // A node's VRAM override replaces the model's global maxVramGb for that node. `null` clears the
 // override (revert to the model default); a finite number >= 0 sets it (0 = uncapped on this node).
 function nodeWithVramOverride(node: NodeRecord, value: number | null | undefined): NodeRecord | typeof INVALID_MAX_VRAM {
@@ -843,6 +904,8 @@ function resolvePrefixCache(existing: PrefixCacheBlock | undefined, value: unkno
 // cache type, or a boolean sets it; null / 0 / "" clears it back to Auto by removing
 // the key (never assigning undefined, which JSON.stringify would silently strip from
 // the stored blob). An invalid value yields an error code the caller returns as 400.
+type ModelConfigBody = { profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string; runtime?: unknown; llamacpp?: unknown } & MeshllmTunablesBody
+
 function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, body: MeshllmTunablesBody): { meshllm: NonNullable<ModelProfile['meshllm']> } | { error: string } {
   const next: Record<string, unknown> = { ...existing }
   const applyInt = (key: string, value: unknown, min: number): string | null => {
@@ -896,6 +959,58 @@ function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, 
   return { meshllm: next as NonNullable<ModelProfile['meshllm']> }
 }
 
+function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly ModelProfile[], body: ModelConfigBody): { profile: ModelProfile; settings: LlamaCppProfileSettings } | { error: string; status: number } {
+  if (existing.meshllm?.split) return { error: 'split_requires_meshllm', status: 400 }
+  const modelRef = body.modelRef !== undefined ? (typeof body.modelRef === 'string' ? body.modelRef.trim() : '') : (existing.llamacpp?.modelRef ?? existing.meshllm?.modelRef ?? existing.upstreamModel)
+  if (!modelRef) return { error: 'invalid_model_ref', status: 400 }
+  const generated = buildCustomProfile({ modelRef, split: false, runtime: 'llamacpp', existing: profiles }).llamacpp!
+  const base: LlamaCppProfileSettings = {
+    ...generated,
+    bindPort: existing.llamacpp?.bindPort ?? generated.bindPort,
+    contextWindow: existing.llamacpp?.contextWindow ?? generated.contextWindow,
+    parallel: existing.llamacpp?.parallel ?? generated.parallel,
+    cachePrompt: existing.llamacpp?.cachePrompt ?? generated.cachePrompt,
+    cacheReuse: existing.llamacpp?.cacheReuse ?? generated.cacheReuse,
+    ...(existing.llamacpp?.reasoning ? { reasoning: existing.llamacpp.reasoning } : {})
+  }
+  const settingsResult = resolveLlamaCppSettings(base, body.llamacpp)
+  if ('error' in settingsResult) return { error: settingsResult.error, status: 400 }
+  let settings = settingsResult.settings
+  const contextWindow = body.contextWindow ?? settings.contextWindow
+  if (!Number.isInteger(contextWindow) || contextWindow < 4096) return { error: 'invalid_context_window', status: 400 }
+  settings = { ...settings, contextWindow, alias: modelRef, modelRef }
+  let displayName = existing.displayName
+  if (body.name !== undefined) {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return { error: 'invalid_display_name', status: 400 }
+    displayName = name
+  }
+  let publicAliases = existing.publicAliases
+  if (body.callName !== undefined) {
+    const alias = slugify(typeof body.callName === 'string' ? body.callName : '')
+    if (!alias) return { error: 'invalid_call_name', status: 400 }
+    if (alias === STABLE_PUBLIC_MODEL) return { error: 'call_name_conflict', status: 409 }
+    if (profiles.some((profile) => profile.id !== existing.id && profile.publicAliases.includes(alias))) return { error: 'call_name_conflict', status: 409 }
+    publicAliases = [STABLE_PUBLIC_MODEL, alias]
+  }
+  const { meshllm: _meshllm, ...withoutMesh } = existing
+  void _meshllm
+  return {
+    settings,
+    profile: {
+      ...withoutMesh,
+      displayName,
+      publicAliases,
+      upstreamModel: settings.alias,
+      sourceMode: 'llamacpp-hf',
+      contextWindow,
+      runtime: 'llamacpp',
+      llamacpp: settings,
+      version: existing.version + 1
+    }
+  }
+}
+
 // handleProfileConfig persists a profile's serving settings — the context window,
 // the model ref, the per-model VRAM budget, and the mesh-llm runtime tunables —
 // through the validated store path so the active column and the profile_json blob
@@ -905,11 +1020,21 @@ function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, 
 async function handleProfileConfig(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string } & MeshllmTunablesBody>(request)
+  const body = await readJson<ModelConfigBody>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
   const profiles = await deps.store.listProfiles()
   const existing = profiles.find((profile) => profile.id === body.profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const runtime = resolveRuntime(body.runtime)
+  if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
+  if (body.llamacpp !== undefined && runtime !== 'llamacpp' && existing.runtime !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  if (runtime === 'llamacpp' || existing.runtime === 'llamacpp') {
+    const direct = configureLlamaCppProfile(existing, profiles, body)
+    if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
+    await deps.store.setProfile(direct.profile)
+    await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
+    return json({ ok: true, profileId: direct.profile.id, contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, displayName: direct.profile.displayName, callableNames: direct.profile.publicAliases, runtime: 'llamacpp', model: toApiModel(direct.profile) }, 200, requestId)
+  }
   const contextWindow = body.contextWindow ?? existing.contextWindow
   if (!Number.isInteger(contextWindow) || contextWindow < 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
   const maxVram = resolveMaxVram(body.maxVramGb)
@@ -962,17 +1087,20 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
 async function handleProfileAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ modelRef?: string; mode?: string; name?: string }>(request)
+  const body = await readJson<{ modelRef?: string; mode?: string; runtime?: unknown; name?: string }>(request)
   const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
   if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
   const split = body?.mode === 'split'
+  const runtime = resolveRuntime(body?.runtime)
+  if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
+  if (split && runtime === 'llamacpp') return json({ error: 'split_requires_meshllm', requestId }, 400, requestId)
   const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
-  const profile = buildCustomProfile({ modelRef, split, existing, name })
+  const profile = buildCustomProfile({ modelRef, split, existing, name, runtime })
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor, target: profile.id, detail: { modelRef, split } })
-  return json({ ok: true, profileId: profile.id, displayName: profile.displayName, split }, 201, requestId)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor, target: profile.id, detail: { modelRef, split, runtime } })
+  return json({ ok: true, profileId: profile.id, displayName: profile.displayName, split, runtime, model: toApiModel(profile) }, 201, requestId)
 }
 
 async function handleAdminMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -1585,16 +1713,19 @@ async function handleApiModelList(request: Request, deps: RouterDeps, requestId:
 async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ modelRef?: string; mode?: string; name?: string }>(request)
+  const body = await readJson<{ modelRef?: string; mode?: string; runtime?: unknown; name?: string }>(request)
   const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
   if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
   const split = body?.mode === 'split'
+  const runtime = resolveRuntime(body?.runtime)
+  if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
+  if (split && runtime === 'llamacpp') return json({ error: 'split_requires_meshllm', requestId }, 400, requestId)
   const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
-  const profile = buildCustomProfile({ modelRef, split, existing, name })
+  const profile = buildCustomProfile({ modelRef, split, existing, name, runtime })
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: `automation:${automation.id}`, target: profile.id, detail: { modelRef, split } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: `automation:${automation.id}`, target: profile.id, detail: { modelRef, split, runtime } })
   return json({ ok: true, model: toApiModel(profile) }, 201, requestId)
 }
 
@@ -1639,11 +1770,21 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
   const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
-  const body = await readJson<{ contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string } & MeshllmTunablesBody>(request)
+  const body = await readJson<ModelConfigBody>(request)
   if (!body) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   const profiles = await deps.store.listProfiles()
   const existing = profiles.find((profile) => profile.id === profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const runtime = resolveRuntime(body.runtime)
+  if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
+  if (body.llamacpp !== undefined && runtime !== 'llamacpp' && existing.runtime !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  if (runtime === 'llamacpp' || existing.runtime === 'llamacpp') {
+    const direct = configureLlamaCppProfile(existing, profiles, body)
+    if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
+    await deps.store.setProfile(direct.profile)
+    await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
+    return json({ ok: true, model: toApiModel(direct.profile) }, 200, requestId)
+  }
   const contextWindow = body.contextWindow ?? existing.contextWindow
   if (!Number.isInteger(contextWindow) || contextWindow < 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
   const maxVram = resolveMaxVram(body.maxVramGb)

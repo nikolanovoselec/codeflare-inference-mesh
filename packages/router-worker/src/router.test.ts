@@ -691,6 +691,33 @@ describe('router worker behavioral contracts', () => {
     expect(recurrent?.meshllm!.prefixCache?.payloadMode).toBe('kv-recurrent')
   })
 
+  it('REQ-RUN-011 adds a direct llama.cpp single model as an inactive profile', async () => {
+    const { router, store } = routerFixture()
+    const response = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: CUSTOM_GGUF, mode: 'single', runtime: 'llamacpp' })
+    }))
+    const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === CUSTOM_GGUF && profile.runtime === 'llamacpp')
+
+    expect(response.status).toBe(201)
+    expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false, rolloutPercent: 0 })
+    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 1 })
+  })
+
+  it('REQ-RUN-011 rejects direct llama.cpp for split models', async () => {
+    const { router, store } = routerFixture()
+    const response = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: CUSTOM_GGUF, mode: 'split', runtime: 'llamacpp' })
+    }))
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: 'split_requires_meshllm' })
+    expect((await store.listProfiles()).some((profile) => profile.runtime === 'llamacpp')).toBe(false)
+  })
+
   it('REQ-RUN-011 adds a split model as a profile with split enabled', async () => {
     const { router, store } = routerFixture()
     const ref = 'hf://meshllm/Qwen3-14B-UD-Q4_K_XL-layers@abc123'
@@ -2239,6 +2266,32 @@ describe('router worker behavioral contracts', () => {
     expect(noAuth.status).toBe(401)
   })
 
+  it('REQ-ADM-021 configures direct llama.cpp settings through the admin profile config path', async () => {
+    const { router, store } = routerFixture()
+    const add = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'single', runtime: 'llamacpp' })
+    }))
+    const profileId = (await add.json() as { profileId: string }).profileId
+    const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId, ...body })
+    }))
+
+    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
+    const configured = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+
+    expect(ok.status).toBe(200)
+    expect(configured.runtime).toBe('llamacpp')
+    expect(configured.contextWindow).toBe(131072)
+    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    expect((await configure({ llamacpp: { contextWindow: 2048 } })).status).toBe(400)
+    expect((await configure({ llamacpp: { parallel: 0 } })).status).toBe(400)
+    expect((await configure({ llamacpp: { bindPort: 9337 } })).status).toBe(400)
+  })
+
   it('REQ-RUN-002 persists per-model runtime tunables and clears them back to Auto', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
@@ -2247,7 +2300,7 @@ describe('router worker behavioral contracts', () => {
       headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
       body: JSON.stringify(body)
     }))
-    const meshllm = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm
+    const meshllm = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm!
 
     const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 }, prefixCache: { enabled: true, maxEntries: 16, payloadMode: 'kv-recurrent', sharedStrideTokens: 128, sharedRecordLimit: 4 } })
     expect(set.status).toBe(200)
@@ -3848,11 +3901,11 @@ describe('control-plane API (/api/v1)', () => {
     expect(model?.split).toBe(false)
   })
 
-  const apiAddModel = (router: (request: Request) => Promise<Response>, token: string | undefined, modelRef: string, mode: string) =>
+  const apiAddModel = (router: (request: Request) => Promise<Response>, token: string | undefined, modelRef: string, mode: string, runtime?: 'meshllm' | 'llamacpp') =>
     router(new Request('https://router.test/api/v1/models', {
       method: 'POST',
       headers: { ...(token ? bearer(token) : {}), 'content-type': 'application/json' },
-      body: JSON.stringify({ modelRef, mode })
+      body: JSON.stringify({ modelRef, mode, ...(runtime ? { runtime } : {}) })
     }))
 
   it('REQ-API-007 adds a single-machine model as an inactive projection', async () => {
@@ -3865,6 +3918,30 @@ describe('control-plane API (/api/v1)', () => {
     expect(body.model.callableNames).toContain('codeflare-mesh')
     expect(body.model.modelRef).toBe('unsloth/Qwen3-14B-GGUF:Q4_K_M')
     expect((await store.listProfiles()).some((profile) => profile.id === body.model.id && !profile.meshllm!.split)).toBe(true)
+  })
+
+  it('REQ-API-007 adds a direct llama.cpp single model as an inactive projection', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single', 'llamacpp')
+    expect(res.status).toBe(201)
+    const body = await res.json() as { model: { id: string; runtime: string; tunables: unknown; llamacpp?: { cachePrompt: boolean; cacheReuse: number; parallel: number } } }
+    const created = (await store.listProfiles()).find((profile) => profile.id === body.model.id)
+
+    expect(body.model.runtime).toBe('llamacpp')
+    expect(body.model.tunables).toBeNull()
+    expect(body.model.llamacpp).toMatchObject({ cachePrompt: true, cacheReuse: 256, parallel: 1 })
+    expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false })
+  })
+
+  it('REQ-API-007 rejects direct llama.cpp split model onboarding', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'split', 'llamacpp')
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'split_requires_meshllm' })
+    expect((await store.listProfiles()).some((profile) => profile.runtime === 'llamacpp')).toBe(false)
   })
 
   it('REQ-API-007 adds a split model with split serving enabled', async () => {
@@ -4030,6 +4107,24 @@ describe('control-plane API (/api/v1)', () => {
     expect(bad.status).toBe(400)
     const missing = await router(new Request('https://router.test/api/v1/models/ghost', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 8192 }) }))
     expect(missing.status).toBe(404)
+  })
+
+  it('REQ-API-005 configures direct llama.cpp settings over the automation API', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const headers = { ...bearer(key.token), 'content-type': 'application/json' }
+    const add = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single', 'llamacpp')
+    const profileId = (await add.json() as { model: { id: string } }).model.id
+
+    const ok = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { contextWindow: 131072, parallel: 2, cacheReuse: 512 } }) }))
+    const body = await ok.json() as { model: { runtime: string; llamacpp?: { contextWindow: number; parallel: number; cacheReuse: number } } }
+    const stored = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+
+    expect(ok.status).toBe(200)
+    expect(body.model.runtime).toBe('llamacpp')
+    expect(body.model.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512 })
+    expect(stored.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512 })
+    expect((await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { cacheReuse: -1 } }) }))).status).toBe(400)
   })
 
   it('REQ-API-005 enables a model and switches off another with the same callable name', async () => {
