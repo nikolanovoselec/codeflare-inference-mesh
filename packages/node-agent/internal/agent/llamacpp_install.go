@@ -138,20 +138,28 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 	if !VerifyBytesSHA256(data, asset.SHA256) {
 		return "", fmt.Errorf("%w: checksum mismatch for %s", ErrRuntimeDependencyMissing, asset.AssetName)
 	}
-	binary, err := extractLlamaCppBinary(data, asset.AssetName, binaryName)
+	runtimeFiles, err := extractLlamaCppRuntime(data, asset.AssetName, binaryName)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrRuntimeDependencyMissing, err)
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+	binDir := filepath.Dir(target)
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
 		return "", fmt.Errorf("%w: create bin dir: %v", ErrRuntimeDependencyMissing, err)
 	}
-	tmp := target + ".tmp"
-	if err := os.WriteFile(tmp, binary, 0o700); err != nil {
-		return "", fmt.Errorf("%w: stage llama.cpp binary: %v", ErrRuntimeDependencyMissing, err)
-	}
-	if err := os.Rename(tmp, target); err != nil {
-		_ = os.Remove(tmp)
-		return "", fmt.Errorf("%w: install llama.cpp binary: %v", ErrRuntimeDependencyMissing, err)
+	for name, file := range runtimeFiles {
+		mode := os.FileMode(0o600)
+		if name == binaryName {
+			mode = 0o700
+		}
+		dest := filepath.Join(binDir, name)
+		tmp := dest + ".tmp"
+		if err := os.WriteFile(tmp, file, mode); err != nil {
+			return "", fmt.Errorf("%w: stage llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, name, err)
+		}
+		if err := os.Rename(tmp, dest); err != nil {
+			_ = os.Remove(tmp)
+			return "", fmt.Errorf("%w: install llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, name, err)
+		}
 	}
 	return target, nil
 }
@@ -267,23 +275,33 @@ func queryLlamaCppVersion(binaryPath string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func extractLlamaCppBinary(archive []byte, assetName, binaryName string) ([]byte, error) {
+func extractLlamaCppRuntime(archive []byte, assetName, binaryName string) (map[string][]byte, error) {
+	var files map[string][]byte
+	var err error
 	switch {
 	case strings.HasSuffix(assetName, ".tar.gz"):
-		return extractLlamaCppTarGz(archive, binaryName)
+		files, err = extractLlamaCppTarGz(archive, binaryName)
 	case strings.HasSuffix(assetName, ".zip"):
-		return extractLlamaCppZip(archive, binaryName)
+		files, err = extractLlamaCppZip(archive, binaryName)
 	default:
 		return nil, fmt.Errorf("unsupported llama.cpp archive type: %s", assetName)
 	}
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := files[binaryName]; !ok {
+		return nil, fmt.Errorf("binary %s not found in llama.cpp archive", binaryName)
+	}
+	return files, nil
 }
 
-func extractLlamaCppTarGz(archive []byte, binaryName string) ([]byte, error) {
+func extractLlamaCppTarGz(archive []byte, binaryName string) (map[string][]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return nil, fmt.Errorf("open llama.cpp archive: %w", err)
 	}
 	defer gz.Close()
+	files := map[string][]byte{}
 	reader := tar.NewReader(gz)
 	for {
 		header, err := reader.Next()
@@ -293,42 +311,53 @@ func extractLlamaCppTarGz(archive []byte, binaryName string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read llama.cpp archive: %w", err)
 		}
-		if header.Typeflag != tar.TypeReg || archiveEntryBase(header.Name) != binaryName {
+		base := archiveEntryBase(header.Name)
+		if header.Typeflag != tar.TypeReg || !isLlamaCppRuntimeFile(base, binaryName) {
 			continue
 		}
 		data, err := io.ReadAll(reader)
 		if err != nil {
-			return nil, fmt.Errorf("read llama.cpp binary entry: %w", err)
+			return nil, fmt.Errorf("read llama.cpp runtime entry %s: %w", base, err)
 		}
-		return data, nil
+		files[base] = data
 	}
-	return nil, fmt.Errorf("binary %s not found in llama.cpp archive", binaryName)
+	return files, nil
 }
 
-func extractLlamaCppZip(archive []byte, binaryName string) ([]byte, error) {
+func extractLlamaCppZip(archive []byte, binaryName string) (map[string][]byte, error) {
 	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
 	if err != nil {
 		return nil, fmt.Errorf("open llama.cpp archive: %w", err)
 	}
+	files := map[string][]byte{}
 	for _, file := range reader.File {
-		if file.FileInfo().IsDir() || path.Base(strings.ReplaceAll(file.Name, `\`, "/")) != binaryName {
+		base := path.Base(strings.ReplaceAll(file.Name, `\`, "/"))
+		if file.FileInfo().IsDir() || !isLlamaCppRuntimeFile(base, binaryName) {
 			continue
 		}
 		entry, err := file.Open()
 		if err != nil {
-			return nil, fmt.Errorf("open llama.cpp binary entry: %w", err)
+			return nil, fmt.Errorf("open llama.cpp runtime entry %s: %w", base, err)
 		}
 		data, err := io.ReadAll(entry)
 		closeErr := entry.Close()
 		if err != nil {
-			return nil, fmt.Errorf("read llama.cpp binary entry: %w", err)
+			return nil, fmt.Errorf("read llama.cpp runtime entry %s: %w", base, err)
 		}
 		if closeErr != nil {
-			return nil, fmt.Errorf("close llama.cpp binary entry: %w", closeErr)
+			return nil, fmt.Errorf("close llama.cpp runtime entry %s: %w", base, closeErr)
 		}
-		return data, nil
+		files[base] = data
 	}
-	return nil, fmt.Errorf("binary %s not found in llama.cpp archive", binaryName)
+	return files, nil
+}
+
+func isLlamaCppRuntimeFile(base, binaryName string) bool {
+	if base == binaryName {
+		return true
+	}
+	lower := strings.ToLower(base)
+	return strings.HasPrefix(lower, "lib") && (strings.Contains(lower, ".so") || strings.HasSuffix(lower, ".dylib") || strings.HasSuffix(lower, ".dll"))
 }
 
 const LlamaCppInstallAnchors = "REQ-NODE-013"

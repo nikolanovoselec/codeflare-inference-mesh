@@ -30,6 +30,17 @@ func TestREQLLAMACPPRenderArgsIncludesCacheAndAlias(t *testing.T) {
 	}
 }
 
+func TestREQNODE013LlamaCppLaunchEnvIncludesRuntimeLibraryPath(t *testing.T) {
+	env := llamaCppRuntimeEnv([]string{"PATH=/usr/bin", "LD_LIBRARY_PATH=/usr/lib"}, "/var/lib/inference-mesh/bin/llama-server")
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "LD_LIBRARY_PATH=/var/lib/inference-mesh/bin") {
+		t.Fatalf("LD_LIBRARY_PATH missing managed runtime dir in %q", joined)
+	}
+	if !strings.Contains(joined, "PATH=/var/lib/inference-mesh/bin") {
+		t.Fatalf("PATH missing managed runtime dir in %q", joined)
+	}
+}
+
 func TestREQNODE003ProxyReadsRuntimeTargetPerRequest(t *testing.T) {
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Header().Set("x-target", "first") }))
 	defer first.Close()

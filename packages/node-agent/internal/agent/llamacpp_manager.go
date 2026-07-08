@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -61,6 +62,33 @@ func NewLlamaCppManager(in LlamaCppInput) *LlamaCppManager {
 
 func (m *LlamaCppManager) Runtime() string { return "llamacpp" }
 
+func llamaCppRuntimeEnv(env []string, binaryPath string) []string {
+	dir := filepath.Dir(binaryPath)
+	if dir == "." || dir == "" {
+		return env
+	}
+	next := upsertPathEnv(env, "LD_LIBRARY_PATH", dir)
+	next = upsertPathEnv(next, "DYLD_LIBRARY_PATH", dir)
+	return upsertPathEnv(next, "PATH", dir)
+}
+
+func upsertPathEnv(env []string, key string, dir string) []string {
+	prefix := key + "="
+	for i, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			current := strings.TrimPrefix(item, prefix)
+			copyEnv := append([]string(nil), env...)
+			if current == "" {
+				copyEnv[i] = prefix + dir
+			} else {
+				copyEnv[i] = prefix + dir + string(os.PathListSeparator) + current
+			}
+			return copyEnv
+		}
+	}
+	return append(append([]string(nil), env...), prefix+dir)
+}
+
 func (m *LlamaCppManager) TargetURL() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -89,7 +117,7 @@ func (m *LlamaCppManager) Start(ctx context.Context) error {
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.state = "starting"
 	m.lastError = ""
-	proc, err := m.launch(processCtx, m.input.BinaryPath, args, os.Environ(), m.stderrLog)
+	proc, err := m.launch(processCtx, m.input.BinaryPath, args, llamaCppRuntimeEnv(os.Environ(), m.input.BinaryPath), m.stderrLog)
 	if err != nil {
 		cancel()
 		m.state = "failed"
