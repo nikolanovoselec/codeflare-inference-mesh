@@ -312,6 +312,31 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ---
 
+### REQ-NODE-013: Runtime binary bootstrap
+
+**Intent:** A one-line node registration should install only the agent; the running agent then bootstraps and manages the operator-selected MeshLLM and llama.cpp runtime binaries from upstream releases without bundling either runtime into the agent artifact.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. Claim and heartbeat responses may carry `desiredRuntimeVersions`, and the agent persists non-empty MeshLLM and llama.cpp selections in its config so the next runtime restart uses them; changing the selected runtime version restarts even when the selected model profile is unchanged. <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredRuntimeVersions --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE013AppliesDesiredRuntimeVersions) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE013RuntimeVersionChangeRestartsSelectedProfile) -->
+2. MeshLLM startup resolves the selected version, downloads the per-platform archive into the agent data directory, verifies SHA-256 (embedded for the default pin, sidecar checksum for operator-selected versions), extracts `mesh-llm`, and never relies on an unverified bundled runtime. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013SelectedMeshLLMVersionDownloadsChecksumSidecar) -->
+3. llama.cpp direct-runtime startup resolves the selected release asset for the host platform, verifies the GitHub release asset digest, extracts `llama-server` into the agent data directory, and uses that managed binary path rather than requiring `llama-server` on PATH. <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::EnsureLlamaCpp --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppInstallsManagedBinary) -->
+4. Checksum mismatch or missing compatible assets leave the node running but ineligible with `dependency-missing`, preserving the current fail-closed scheduling behavior and surfacing the install error in heartbeat metrics. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppRejectsChecksumMismatch) -->
+
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)

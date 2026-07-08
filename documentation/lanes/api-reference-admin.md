@@ -814,6 +814,53 @@ POST /admin/agent-version
 
 **Implements:** [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
+### GET /admin/runtime-versions
+
+Lists MeshLLM and llama.cpp release tags with the current desired runtime binary selections.
+
+```http
+GET /admin/runtime-versions
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Runtime release tags are served from cached GitHub release lists; stale caches are marked when a refresh fails. | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+
+**Implements:** [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+
+### POST /admin/runtime-versions
+
+Selects the fleet-wide desired MeshLLM and llama.cpp runtime binary versions. Nodes receive the desired versions in subsequent claim/heartbeat responses and bootstrap the selected binaries themselves.
+
+```http
+POST /admin/runtime-versions
+```
+
+**Authentication:** admin bearer token
+
+**Origin check:** n/a
+
+**Request body:** JSON body with either or both of `meshllm` and `llamacpp`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Runtime versions are validated against the release-tag lists, stored as desired versions, and recorded as a `runtime_versions_selected` audit event. | `{ "ok": true, "desired": { "meshllm": string, "llamacpp": string } }` |
+| `400` | No version was supplied, a value is invalid, or a tag is absent from the corresponding release list. | `{ "error": "invalid_runtime_versions" }`, `{ "error": "invalid_meshllm_version" }`, `{ "error": "invalid_llamacpp_version" }`, `{ "error": "unknown_meshllm_version", "version": string }`, or `{ "error": "unknown_llamacpp_version", "version": string }` |
+| `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
+
+**Implements:** [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+
 ### POST /admin/settings
 
 Persists operator-tunable fleet settings. Currently accepts the offline-machine prune window. The automation twins are `GET /api/v1/settings` (read) and `PUT /api/v1/settings` (write).

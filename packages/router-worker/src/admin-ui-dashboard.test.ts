@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
 import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
@@ -42,6 +42,7 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
     gateway: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' },
     customDomain: { hostname: 'router.test', status: 'provisioned' },
     desiredAgentVersion: 'v1.3.0',
+    desiredRuntimeVersions: { meshllm: 'v0.72.2', llamacpp: 'b9912' },
     meshHealth: [],
     ...overrides
   }
@@ -65,6 +66,7 @@ async function dashboardHarness(options: DashboardOptions = {}): Promise<AdminUi
       return Response.json(status)
     }
     if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
+    if (path === '/admin/runtime-versions') return Response.json({ meshllm: { tags: [], desired: 'v0.72.2', stale: false }, llamacpp: { tags: [], desired: 'b9912', stale: false } })
     return new Response('command', { status: 200, headers: { 'content-type': 'text/plain' } })
   }, { sessionToken: 'admin-secret' })
   harness.run()
@@ -510,6 +512,55 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('api-key-revoke', { keyId: 'automation_a', out: 'api-key-output' })
     await harness.flush(3)
     expect(harness.fetchCalls.find((entry) => entry.path === '/api/v1/keys/automation_a' && entry.init?.method === 'DELETE')).toBeDefined()
+  })
+
+  it('REQ-ADM-033 renders runtime install status in the node table and drawer', async () => {
+    const nodes = [{
+      id: 'direct-node',
+      status: 'online',
+      runtime: 'llamacpp',
+      activeProfileIds: ['direct-profile'],
+      publicModels: ['codeflare-mesh'],
+      capacity: 1,
+      inFlight: 0,
+      lastSeenAt: 1_700_000_100_000,
+      runtimeInstall: { runtime: 'llamacpp', desiredVersion: 'b9912', installedVersion: null, state: 'failed', error: 'checksum mismatch' },
+      metrics: { runtimeKind: 'llamacpp', runtimeState: 'dependency-missing', activeRequests: 0, lastError: 'checksum mismatch' }
+    }]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+
+    const chip = descendants(harness.byId('nodes-table-body')).find((node) => node.dataset.runtimeInstallChip === 'direct-node')
+    expect(chip?.dataset.runtimeInstallState).toBe('failed')
+    await harness.clickAction('node-detail', { nodeId: 'direct-node' })
+    const installRow = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.dataset.drawerField === 'runtime-install')
+    const errorRow = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.dataset.drawerField === 'runtime-install-error')
+    expect(installRow?.dataset.runtime).toBe('llamacpp')
+    expect(installRow?.dataset.runtimeInstallState).toBe('failed')
+    expect(installRow?.dataset.desiredVersion).toBe('b9912')
+    expect(errorRow?.dataset.tone).toBe('danger')
+  })
+
+  it('REQ-ADM-033 renders and saves MeshLLM and llama.cpp runtime version controls from Settings', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/admin/runtime-versions' && method === 'GET') return Response.json({
+        meshllm: { tags: ['v0.73.0', 'v0.72.2'], desired: 'v0.73.0', stale: false },
+        llamacpp: { tags: ['b9912', 'b9900'], desired: 'b9900', stale: false }
+      })
+      if (path === '/admin/runtime-versions' && method === 'POST') return Response.json({ ok: true, desired: { meshllm: 'v0.72.2', llamacpp: 'b9912' } })
+      return undefined
+    } })
+
+    expect(harness.byId(ADMIN_UI_RUNTIME_VERSION.meshllmSelectId).value).toBe('v0.73.0')
+    expect(harness.byId(ADMIN_UI_RUNTIME_VERSION.llamacppSelectId).value).toBe('b9900')
+    harness.byId(ADMIN_UI_RUNTIME_VERSION.meshllmSelectId).value = 'v0.72.2'
+    harness.byId(ADMIN_UI_RUNTIME_VERSION.llamacppSelectId).value = 'b9912'
+    await harness.clickAction('runtime-versions-set', { out: 'runtime-version-output' })
+    await harness.flush(3)
+
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/runtime-versions' && entry.init?.method === 'POST')
+    expect(call, 'saving runtime versions posts to the admin parity endpoint').toBeDefined()
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
   })
 
   it('REQ-ADM-023 loads and saves a per-node VRAM override from the node drawer', async () => {

@@ -49,7 +49,7 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 					t.Fatalf("missing setup token")
 				}
 				_ = json.NewDecoder(r.Body).Decode(&claimed)
-				_ = json.NewEncoder(w).Encode(ClaimResponse{NodeID: "node-a", NodeToken: "node-token", UpstreamToken: "upstream-token"})
+				_ = json.NewEncoder(w).Encode(ClaimResponse{NodeID: "node-a", NodeToken: "node-token", UpstreamToken: "upstream-token", DesiredRuntimeVersions: RuntimeBinaryVersions{MeshLLM: "v0.73.0", LlamaCpp: "b9912"}})
 				return
 			}
 			if r.URL.Path == "/node/heartbeat" {
@@ -76,11 +76,14 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 		if cfg.NodeToken != "node-token" || cfg.UpstreamToken != "upstream-token" || cfg.SetupToken != "" {
 			t.Fatalf("claim not applied: %#v", cfg)
 		}
+		if cfg.RuntimeVersions.MeshLLM != "v0.73.0" || cfg.RuntimeVersions.LlamaCpp != "b9912" {
+			t.Fatalf("claim not applied: %#v", cfg)
+		}
 		loaded, err := LoadConfig(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if loaded.NodeID != "node-a" {
+		if loaded.NodeID != "node-a" || loaded.RuntimeVersions.MeshLLM != "v0.73.0" || loaded.RuntimeVersions.LlamaCpp != "b9912" {
 			t.Fatalf("config was not saved")
 		}
 		_, err = client.Heartbeat(context.Background(), cfg.NodeToken, HeartbeatFromConfig(cfg, RuntimeMetrics("ready", "codeflare-mesh", 0), 0, HeartbeatIdentity{AgentVersion: "v-test"}))
@@ -97,6 +100,38 @@ func TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(t *testing.T) {
 			t.Fatalf("heartbeat should carry the agent version, got %q", heartbeat.AgentVersion)
 		}
 	})
+}
+
+func TestREQNODE013AppliesDesiredRuntimeVersions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := DefaultConfig(t.TempDir())
+	cfg.RuntimeVersions = RuntimeBinaryVersions{MeshLLM: "v0.72.2"}
+
+	next, changed, err := ApplyDesiredRuntimeVersions(cfg, RuntimeBinaryVersions{MeshLLM: "v0.73.0", LlamaCpp: "b9912"}, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatalf("desired runtime versions should change config")
+	}
+	if next.RuntimeVersions.MeshLLM != "v0.73.0" || next.RuntimeVersions.LlamaCpp != "b9912" {
+		t.Fatalf("runtime versions not applied: %#v", next.RuntimeVersions)
+	}
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.RuntimeVersions != next.RuntimeVersions {
+		t.Fatalf("runtime versions not saved: %#v", loaded.RuntimeVersions)
+	}
+
+	_, changed, err = ApplyDesiredRuntimeVersions(next, RuntimeBinaryVersions{}, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatalf("empty desired versions should not rewrite config")
+	}
 }
 
 func TestREQNODE008DetectsUnambiguousMeshIP(t *testing.T) {

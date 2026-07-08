@@ -177,6 +177,8 @@ describe('router worker behavioral contracts', () => {
       'profile-config',
       'agent-versions-refresh',
       'agent-version-set',
+      'runtime-versions-refresh',
+      'runtime-versions-set',
       'settings-save',
       'mesh-rotate',
       'playground-chat',
@@ -205,6 +207,8 @@ describe('router worker behavioral contracts', () => {
       '/admin/profiles/config',
       '/admin/agent-versions',
       '/admin/agent-version',
+      '/admin/runtime-versions',
+      '/admin/runtime-versions',
       '/admin/settings',
       '/admin/mesh/rotate',
       '/admin/playground/chat',
@@ -223,7 +227,7 @@ describe('router worker behavioral contracts', () => {
     const controls = new Set([...html.matchAll(/data-action="([^"]+)"/g)].map((match) => match[1]))
     // mesh-rotate is no longer a server-rendered control: the sharing-key reset lives in
     // a model's Manage drawer, rendered client-side, so it is not in the initial HTML.
-    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'gateway-sync', 'custom-domain-validate', 'agent-versions-refresh', 'agent-version-set', 'settings-save', 'playground-send', 'sign-out']
+    const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'gateway-sync', 'custom-domain-validate', 'agent-versions-refresh', 'agent-version-set', 'runtime-versions-refresh', 'runtime-versions-set', 'settings-save', 'playground-send', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
@@ -2566,7 +2570,7 @@ describe('router worker behavioral contracts', () => {
     expect(event.detail).toEqual({ deactivated: ['mesh-smoke-qwen25-1.5b'] })
   })
 
-  it('REQ-NODE-002 heartbeat and claim responses carry mesh bootstrap and desired agent version', async () => {
+  it('REQ-NODE-002 heartbeat and claim responses carry mesh bootstrap and desired versions', async () => {
     const { router, store } = routerFixture({
       env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 },
       releasesFetcher: githubReleasesFetcher(['v0.2.0', 'v0.1.0'])
@@ -2585,18 +2589,19 @@ describe('router worker behavioral contracts', () => {
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
       body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-smoke-qwen25-1.5b'], capacity: 2 })
     }))
-    const claimed = await claim.json() as { nodeId: string; nodeToken: string; meshBootstrap?: { action: string }; desiredAgentVersion?: string }
+    const claimed = await claim.json() as { nodeId: string; nodeToken: string; meshBootstrap?: { action: string }; desiredAgentVersion?: string; desiredRuntimeVersions?: { meshllm: string; llamacpp: string } }
     const heartbeat = await router(new Request('https://router.test/node/heartbeat', {
       method: 'POST',
       headers: { ...bearer(claimed.nodeToken), 'content-type': 'application/json' },
       body: heartbeatBody({ nodeId: claimed.nodeId, agentVersion: 'v0.1.0' })
     }))
-    const heartbeatResponse = await heartbeat.json() as { ok: boolean; desiredProfiles: unknown[]; meshBootstrap?: { action: string; rotation: number }; desiredAgentVersion?: string }
+    const heartbeatResponse = await heartbeat.json() as { ok: boolean; desiredProfiles: unknown[]; meshBootstrap?: { action: string; rotation: number }; desiredAgentVersion?: string; desiredRuntimeVersions?: { meshllm: string; llamacpp: string } }
     const node = await store.getNode(claimed.nodeId)
 
     expect(select.ok).toBe(true)
     expect(claim.status).toBe(201)
     expect(claimed.desiredAgentVersion).toBe('v0.2.0')
+    expect(claimed.desiredRuntimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
     expect(claimed.meshBootstrap).toBeDefined()
     expect(['create', 'wait']).toContain(claimed.meshBootstrap!.action)
     expect(heartbeat.status).toBe(200)
@@ -2604,6 +2609,7 @@ describe('router worker behavioral contracts', () => {
     expect(heartbeatResponse.meshBootstrap).toMatchObject({ action: 'create' })
     expect(typeof heartbeatResponse.meshBootstrap!.rotation).toBe('number')
     expect(heartbeatResponse.desiredAgentVersion).toBe('v0.2.0')
+    expect(heartbeatResponse.desiredRuntimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
     expect(node?.agentVersion).toBe('v0.1.0')
   })
 
@@ -3731,13 +3737,34 @@ describe('control-plane API (/api/v1)', () => {
     const created = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/status', { headers: bearer(created.token) }))
     expect(res.status).toBe(200)
-    const body = await res.json() as { generatedAt: number; nodes: { total: number; online: number }; models: { total: number; active: number } }
+    const body = await res.json() as { generatedAt: number; nodes: { total: number; online: number }; models: { total: number; active: number }; runtimeVersions: { meshllm: string; llamacpp: string }; runtimeInstalls: unknown[] }
     expect(body.generatedAt).toBe(1_700_000_000_000)
     expect(typeof body.nodes.total).toBe('number')
     expect(typeof body.nodes.online).toBe('number')
+    expect(body.runtimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
+    expect(body.runtimeInstalls).toEqual([])
     // Seeded default profiles are visible to the snapshot.
     expect(body.models.total).toBeGreaterThan(0)
     expect(typeof body.models.active).toBe('number')
+  })
+
+  it('REQ-API-002 exposes per-node runtime install status to automation callers', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    await store.putConfig('desired_llamacpp_version', 'b9912')
+    await store.upsertNode({
+      ...nodeFixture(),
+      runtime: 'llamacpp',
+      metrics: { runtimeKind: 'llamacpp', runtimeState: 'dependency-missing', activeRequests: 0, lastError: 'llama-server checksum mismatch' }
+    })
+
+    const status = await router(new Request('https://router.test/api/v1/status', { headers: bearer(key.token) }))
+    const nodes = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(key.token) }))
+    const statusBody = await status.json() as { runtimeInstalls: Array<Record<string, unknown>> }
+    const nodesBody = await nodes.json() as { nodes: Array<{ runtimeInstall?: Record<string, unknown> }> }
+
+    expect(statusBody.runtimeInstalls).toContainEqual(expect.objectContaining({ nodeId: 'node-a', runtime: 'llamacpp', desiredVersion: 'b9912', installedVersion: null, state: 'failed', error: 'llama-server checksum mismatch' }))
+    expect(nodesBody.nodes[0]?.runtimeInstall).toMatchObject({ runtime: 'llamacpp', desiredVersion: 'b9912', installedVersion: null, state: 'failed', error: 'llama-server checksum mismatch' })
   })
 
   it('REQ-API-002 REQ-ADM-030 deactivates and reactivates a node over the automation API', async () => {
@@ -4306,6 +4333,8 @@ describe('control-plane API (/api/v1)', () => {
     expect((await router(new Request('https://router.test/api/v1/models/x/enable', { method: 'POST', headers: bearer('nope') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/api/v1/agent-versions', { headers: bearer('nope') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/api/v1/agent-version', { method: 'PUT', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: '{}' }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/runtime-versions', { headers: bearer('nope') }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/api/v1/runtime-versions', { method: 'PUT', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: '{}' }))).status).toBe(401)
   })
 
   // Events tests seed the automation key directly (no mint) so no automation_key_created event pollutes the log.

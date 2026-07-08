@@ -33,12 +33,13 @@ type MeshBootstrap struct {
 }
 
 type ClaimResponse struct {
-	NodeID              string         `json:"nodeId"`
-	NodeToken           string         `json:"nodeToken"`
-	UpstreamToken       string         `json:"upstreamToken"`
-	Profiles            []ModelProfile `json:"profiles"`
-	MeshBootstrap       *MeshBootstrap `json:"meshBootstrap,omitempty"`
-	DesiredAgentVersion string         `json:"desiredAgentVersion,omitempty"`
+	NodeID                 string                `json:"nodeId"`
+	NodeToken              string                `json:"nodeToken"`
+	UpstreamToken          string                `json:"upstreamToken"`
+	Profiles               []ModelProfile        `json:"profiles"`
+	MeshBootstrap          *MeshBootstrap        `json:"meshBootstrap,omitempty"`
+	DesiredAgentVersion    string                `json:"desiredAgentVersion,omitempty"`
+	DesiredRuntimeVersions RuntimeBinaryVersions `json:"desiredRuntimeVersions,omitempty"`
 }
 
 type HeartbeatRequest struct {
@@ -64,10 +65,11 @@ type HeartbeatRequest struct {
 }
 
 type HeartbeatResponse struct {
-	OK                  bool           `json:"ok"`
-	DesiredProfiles     []ModelProfile `json:"desiredProfiles"`
-	MeshBootstrap       *MeshBootstrap `json:"meshBootstrap,omitempty"`
-	DesiredAgentVersion string         `json:"desiredAgentVersion,omitempty"`
+	OK                     bool                  `json:"ok"`
+	DesiredProfiles        []ModelProfile        `json:"desiredProfiles"`
+	MeshBootstrap          *MeshBootstrap        `json:"meshBootstrap,omitempty"`
+	DesiredAgentVersion    string                `json:"desiredAgentVersion,omitempty"`
+	DesiredRuntimeVersions RuntimeBinaryVersions `json:"desiredRuntimeVersions,omitempty"`
 	// Deactivated tells a tainted node to run no model: it keeps heartbeating but tears down /
 	// never launches mesh-llm until the taint clears. REQ-NODE-011.
 	Deactivated bool `json:"deactivated,omitempty"`
@@ -99,6 +101,7 @@ func ApplyClaim(cfg Config, claim ClaimResponse, path string) (Config, error) {
 	next.NodeToken = claim.NodeToken
 	next.UpstreamToken = claim.UpstreamToken
 	next.Profiles = append([]ModelProfile(nil), claim.Profiles...)
+	next.RuntimeVersions = mergeRuntimeVersions(next.RuntimeVersions, claim.DesiredRuntimeVersions)
 	activeProfiles := activeDesiredProfiles(claim.Profiles)
 	if len(activeProfiles) > 0 {
 		next.ActiveProfileIDs = profileIDs(activeProfiles)
@@ -112,6 +115,18 @@ func ApplyClaim(cfg Config, claim ClaimResponse, path string) (Config, error) {
 		return Config{}, err
 	}
 	return next, nil
+}
+
+func ApplyDesiredRuntimeVersions(cfg Config, desired RuntimeBinaryVersions, path string) (Config, bool, error) {
+	next := cfg
+	next.RuntimeVersions = mergeRuntimeVersions(next.RuntimeVersions, desired)
+	if reflect.DeepEqual(cfg.RuntimeVersions, next.RuntimeVersions) {
+		return cfg, false, nil
+	}
+	if err := SaveConfig(path, next); err != nil {
+		return Config{}, false, err
+	}
+	return next, true, nil
 }
 
 func ApplyDesiredProfiles(cfg Config, desired []ModelProfile, path string) (Config, bool, bool, error) {
@@ -139,6 +154,17 @@ func ApplyDesiredProfiles(cfg Config, desired []ModelProfile, path string) (Conf
 	after, hasAfter := SelectedProfile(next)
 	restart := hadBefore != hasAfter || (hadBefore && hasAfter && (before.ID != after.ID || before.Version != after.Version))
 	return next, true, restart, nil
+}
+
+func mergeRuntimeVersions(current RuntimeBinaryVersions, desired RuntimeBinaryVersions) RuntimeBinaryVersions {
+	next := current
+	if desired.MeshLLM != "" {
+		next.MeshLLM = desired.MeshLLM
+	}
+	if desired.LlamaCpp != "" {
+		next.LlamaCpp = desired.LlamaCpp
+	}
+	return next
 }
 
 func activeDesiredProfiles(profiles []ModelProfile) []ModelProfile {

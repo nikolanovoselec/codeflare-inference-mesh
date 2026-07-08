@@ -484,7 +484,7 @@ GET /api/v1/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "agentVersion"?: string }`. |
+| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string }, "runtimeInstalls": RuntimeInstallStatus[], "agentVersion"?: string }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status)
@@ -521,6 +521,8 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 **Authentication:** automation key
 
 **Query parameters:** `status` (exact node status: `online`, `offline`, `draining` — revoked nodes are excluded from every listing, so `revoked` never matches even if a tombstone row survives a mid-revoke failure), `q` (case-insensitive match on node id or display name), `limit` (page size, default 100, max 1000), `cursor` (return nodes with id greater than this value).
+
+`NodeProjection.runtimeInstall` reports the node runtime binary state for automation and UI parity: `{ "runtime": "meshllm" | "llamacpp", "desiredVersion": string, "installedVersion": string | null, "state": "pending" | "installing" | "installed" | "failed", "error": string | null }`.
 
 **Request body:** None.
 
@@ -847,6 +849,49 @@ PUT /api/v1/agent-version
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+
+### GET /api/v1/runtime-versions
+
+Lists available MeshLLM and llama.cpp runtime binary versions with the current desired selection for each runtime.
+
+```http
+GET /api/v1/runtime-versions
+```
+
+**Authentication:** automation key
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Available runtime versions. | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management), [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+
+### PUT /api/v1/runtime-versions
+
+Sets the fleet-wide desired MeshLLM and/or llama.cpp runtime binary versions; nodes pick up changes on heartbeat and bootstrap the selected binary under the agent data directory.
+
+```http
+PUT /api/v1/runtime-versions
+```
+
+**Authentication:** automation key
+
+**Request body:** `{ "meshllm"?: string, "llamacpp"?: string }` — each provided value must be in the corresponding release-tag list.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Desired runtime versions were stored and audited. | `{ "ok": true, "desired": { "meshllm": string, "llamacpp": string } }`. |
+| `400` | No version was provided, a version string was invalid, or a tag is absent from the release-tag list. | `invalid_runtime_versions`, `invalid_meshllm_version`, `invalid_llamacpp_version`, `unknown_meshllm_version`, or `unknown_llamacpp_version` error body. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management), [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
 
 ### GET /api/v1/events
 

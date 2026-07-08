@@ -712,6 +712,30 @@ func TestREQRUN007VersionBumpRestartsEverySplitServingNode(t *testing.T) {
 	})
 }
 
+func TestREQNODE013RuntimeVersionChangeRestartsSelectedProfile(t *testing.T) {
+	counter := &agent.ActiveCounter{}
+	fake := newFakeMeshRuntime(counter)
+	profile := agent.ModelProfile{ID: "mesh-prof", PublicAliases: []string{"codeflare-mesh"}, UpstreamModel: "hf://mesh", SourceMode: "meshllm-ref", Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "hf://mesh", BindPort: 4310}, Version: 1, RolloutPercent: 100, Active: true}
+	cfg := agent.Config{DataDir: t.TempDir(), Profiles: []agent.ModelProfile{profile}, ActiveProfileIDs: []string{"mesh-prof"}, PublicModels: []string{"codeflare-mesh"}, RuntimeModel: profile.UpstreamModel, RuntimeVersions: agent.RuntimeBinaryVersions{MeshLLM: "v0.72.2"}}
+	loop := newLoopForTest(t, cfg, counter, fake, nil, nil)
+	loop.loadState.Set(profile)
+
+	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, DesiredRuntimeVersions: agent.RuntimeBinaryVersions{MeshLLM: "v0.73.0", LlamaCpp: "b9912"}})
+
+	select {
+	case <-fake.restarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("runtime version change never restarted the already-selected profile")
+	}
+	if fake.restartCount() != 1 {
+		t.Fatalf("expected exactly one restart for runtime version change, got %d", fake.restartCount())
+	}
+	current := loop.currentConfig()
+	if current.RuntimeVersions.MeshLLM != "v0.73.0" || current.RuntimeVersions.LlamaCpp != "b9912" {
+		t.Fatalf("runtime versions not persisted: %#v", current.RuntimeVersions)
+	}
+}
+
 func TestREQNODE011DeactivatedNodeStopsRuntimeAndReactivationRelaunches(t *testing.T) {
 	has := func(events []string, target string) bool {
 		for _, event := range events {

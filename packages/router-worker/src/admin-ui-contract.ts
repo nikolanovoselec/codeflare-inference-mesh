@@ -36,6 +36,8 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'profile-config', method: 'POST', path: '/admin/profiles/config', auth: 'admin' },
   { id: 'agent-versions-refresh', method: 'GET', path: '/admin/agent-versions', auth: 'admin' },
   { id: 'agent-version-set', method: 'POST', path: '/admin/agent-version', auth: 'admin' },
+  { id: 'runtime-versions-refresh', method: 'GET', path: '/admin/runtime-versions', auth: 'admin' },
+  { id: 'runtime-versions-set', method: 'POST', path: '/admin/runtime-versions', auth: 'admin' },
   { id: 'settings-save', method: 'POST', path: '/admin/settings', auth: 'admin' },
   { id: 'mesh-rotate', method: 'POST', path: '/admin/mesh/rotate', auth: 'admin' },
   { id: 'playground-chat', method: 'POST', path: '/admin/playground/chat', auth: 'admin' },
@@ -167,6 +169,13 @@ export const ADMIN_UI_AGENT_VERSION = {
   staleAttribute: 'data-stale'
 } as const
 
+export const ADMIN_UI_RUNTIME_VERSION = {
+  meshllmSelectId: 'runtime-meshllm-version-select',
+  llamacppSelectId: 'runtime-llamacpp-version-select',
+  slotId: 'runtime-version-slot',
+  staleAttribute: 'data-stale'
+} as const
+
 export const ADMIN_UI_PROFILE_ACTIVATION = {
   selectId: 'profile-activate-select',
   slotId: 'profile-activate-slot'
@@ -195,6 +204,20 @@ export interface AgentVersionsView {
   readonly fetchedAt?: number
   readonly stale: boolean
   readonly desired?: string
+}
+
+export interface RuntimeVersionOptionView {
+  readonly tags: readonly string[]
+  readonly fetchedAt?: number
+  readonly stale: boolean
+  readonly desired: string
+  readonly error?: string
+}
+
+/** Mirrors the GET /admin/runtime-versions response contract. */
+export interface RuntimeVersionsView {
+  readonly meshllm: RuntimeVersionOptionView
+  readonly llamacpp: RuntimeVersionOptionView
 }
 
 /** Structural subset of an admin-status node used by the client renderers. */

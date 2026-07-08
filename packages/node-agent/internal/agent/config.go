@@ -12,6 +12,11 @@ import (
 	"strings"
 )
 
+type RuntimeBinaryVersions struct {
+	MeshLLM  string `json:"meshllm,omitempty"`
+	LlamaCpp string `json:"llamacpp,omitempty"`
+}
+
 type Config struct {
 	RouterURL            string         `json:"routerUrl"`
 	SetupToken           string         `json:"setupToken,omitempty"`
@@ -27,8 +32,9 @@ type Config struct {
 	MeshLLMAPIPort       int            `json:"meshllmApiPort"`
 	MeshLLMConsolePort   int            `json:"meshllmConsolePort"`
 	MeshLLMFlavor        string         `json:"meshllmFlavor,omitempty"`
-	MeshLLMAllowUnpinned bool           `json:"meshllmAllowUnpinned,omitempty"`
-	NostrRelays          []string       `json:"nostrRelays,omitempty"`
+	MeshLLMAllowUnpinned bool                  `json:"meshllmAllowUnpinned,omitempty"`
+	RuntimeVersions      RuntimeBinaryVersions `json:"runtimeVersions,omitempty"`
+	NostrRelays          []string              `json:"nostrRelays,omitempty"`
 	RuntimeModel         string         `json:"runtimeModel"`
 	PublicModels         []string       `json:"publicModels"`
 	ActiveProfileIDs     []string       `json:"activeProfileIds"`

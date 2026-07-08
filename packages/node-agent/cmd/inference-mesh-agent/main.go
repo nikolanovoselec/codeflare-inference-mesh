@@ -209,21 +209,26 @@ func runService(args []string) error {
 
 func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (meshRuntime, string, error) {
 	if profile.Runtime == "llamacpp" {
-		manager := agent.NewLlamaCppManager(llamaCppInput(profile))
-		if err := manager.Start(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
-			return nil, "", err
+		binaryPath, installErr := agent.EnsureLlamaCpp(cfg.DataDir, cfg.RuntimeVersions.LlamaCpp)
+		installError := ""
+		if installErr != nil {
+			installError = installErr.Error()
 		}
-		return manager, "", nil
+		manager := agent.NewLlamaCppManager(llamaCppInput(profile, binaryPath))
+		if err := manager.Start(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+			return nil, installError, err
+		}
+		return manager, installError, nil
 	}
 	return startMeshRuntime(ctx, cfg, profile, bootstrap)
 }
 
-// startMeshRuntime provisions the pinned mesh-llm binary and starts the
+// startMeshRuntime provisions the selected mesh-llm binary and starts the
 // manager for the selected profile. An install failure keeps the node up but
 // never eligible: the manager reports dependency-missing and the install
 // error rides heartbeat metrics as the last error.
 func startMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (*agent.MeshLLMManager, string, error) {
-	binaryPath, installErr := agent.EnsureMeshLLM(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned)
+	binaryPath, installErr := agent.EnsureMeshLLMVersion(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned, cfg.RuntimeVersions.MeshLLM)
 	installError := ""
 	if installErr != nil {
 		installError = installErr.Error()
@@ -241,8 +246,8 @@ func startMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.Model
 // mesh-peer handshake and leave a multi-node mesh stuck at zero peers. It mirrors the
 // TCP data-plane rule opened at startup, is scoped to the active profile's port (which
 // moves with the selected model), and is likewise never fatal. REQ-NODE-010.
-func llamaCppInput(profile agent.ModelProfile) agent.LlamaCppInput {
-	return agent.LlamaCppInput{ProfileID: profile.ID, ProfileVersion: profile.Version, UpstreamModel: profile.UpstreamModel, Settings: profile.LlamaCpp, BinaryPath: "llama-server"}
+func llamaCppInput(profile agent.ModelProfile, binaryPath string) agent.LlamaCppInput {
+	return agent.LlamaCppInput{ProfileID: profile.ID, ProfileVersion: profile.Version, UpstreamModel: profile.UpstreamModel, Settings: profile.LlamaCpp, BinaryPath: binaryPath}
 }
 
 func provisionMeshPeerFirewall(ctx context.Context, run agent.CommandRunner, goos string, iface string, profile agent.ModelProfile) {
@@ -456,7 +461,11 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 		s.lastReloadNonce = response.ReloadNonce
 	}
 	s.stateMu.Lock()
-	next, _, _, err := agent.ApplyDesiredProfiles(*s.cfg, response.DesiredProfiles, s.configPath)
+	next, runtimeVersionsChanged, versionErr := agent.ApplyDesiredRuntimeVersions(*s.cfg, response.DesiredRuntimeVersions, s.configPath)
+	if versionErr == nil {
+		*s.cfg = next
+	}
+	next, _, profilesRestart, err := agent.ApplyDesiredProfiles(*s.cfg, response.DesiredProfiles, s.configPath)
 	if err == nil {
 		*s.cfg = next
 	}
@@ -470,7 +479,12 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 				s.loadState.SetStarting(profile)
 				go s.finishProfileRestart(ctx, next)
 			}
-		} else if err == nil && s.beginProfileRestart(next) {
+		} else if versionErr == nil && err == nil && profilesRestart && s.beginProfileRestart(next) {
+			go s.finishProfileRestart(ctx, next)
+		} else if versionErr == nil && err == nil && runtimeVersionsChanged && beginRestart(&s.restartMu, &s.restartPending) {
+			if profile, ok := agent.SelectedProfile(next); ok {
+				s.loadState.SetStarting(profile)
+			}
 			go s.finishProfileRestart(ctx, next)
 		} else if reloadRequested && beginRestart(&s.restartMu, &s.restartPending) {
 			// Force Reload: drain and restart the current profile on operator demand. REQ-NODE-012.
@@ -537,7 +551,9 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 		}
 		return
 	}
-	if err := restartRuntimeForSelectedProfile(ctx, cfg, s.manager, s.activeRequests, s.drainTimeout); err != nil {
+	installError, err := restartRuntimeForSelectedProfile(ctx, cfg, s.manager, s.activeRequests, s.drainTimeout)
+	s.installError = installError
+	if err != nil {
 		s.manager.SetFailure(err)
 		return
 	}
@@ -639,27 +655,43 @@ func finishRestart(mu *sync.Mutex, pending *bool) {
 	*pending = false
 }
 
-func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, manager meshRuntime, activeRequests *agent.ActiveCounter, drainTimeout time.Duration) error {
+func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, manager meshRuntime, activeRequests *agent.ActiveCounter, drainTimeout time.Duration) (string, error) {
 	profile, ok := agent.SelectedProfile(cfg)
 	if !ok {
-		return nil
+		return "", nil
 	}
 	manager.SetState("downloading")
 	if err := waitForDrain(ctx, activeRequests, manager, drainTimeout); err != nil {
-		return err
+		return "", err
 	}
 	if profile.Runtime == "llamacpp" {
 		if direct, ok := manager.(*agent.LlamaCppManager); ok {
-			if err := direct.RestartWithLlamaInput(ctx, llamaCppInput(profile)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
-				return err
+			binaryPath, installErr := agent.EnsureLlamaCpp(cfg.DataDir, cfg.RuntimeVersions.LlamaCpp)
+			installError := ""
+			if installErr != nil {
+				installError = installErr.Error()
 			}
-			return nil
+			if err := direct.RestartWithLlamaInput(ctx, llamaCppInput(profile, binaryPath)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+				return installError, err
+			}
+			return installError, nil
 		}
 	}
-	if err := manager.RestartWithInput(ctx, meshRenderInput(profile, cfg), profile.ContextWindow); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
-		return err
+	if mesh, ok := manager.(*agent.MeshLLMManager); ok {
+		binaryPath, installErr := agent.EnsureMeshLLMVersion(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned, cfg.RuntimeVersions.MeshLLM)
+		installError := ""
+		if installErr != nil {
+			installError = installErr.Error()
+		}
+		if err := mesh.RestartWithBinaryInput(ctx, meshRenderInput(profile, cfg), profile.ContextWindow, binaryPath); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+			return installError, err
+		}
+		return installError, nil
 	}
-	return nil
+	if err := manager.RestartWithInput(ctx, meshRenderInput(profile, cfg), profile.ContextWindow); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+		return "", err
+	}
+	return "", nil
 }
 
 // runtimeTelemetry caches the last fully assembled metrics so dashboard reads
@@ -710,11 +742,26 @@ func runtimeMetrics(manager meshRuntime, loadState *runtimeLoadState, cfg agent.
 	}
 	metrics := agent.RuntimeMetricsWithError(state, loadedModel, active, lastError)
 	metrics.RuntimeKind = runtimeKind
+	if state != "downloading" && state != "dependency-missing" && installError == "" {
+		if runtimeKind == "meshllm" {
+			metrics.MeshLLMVersion = runtimeVersionOrDefault(cfg.RuntimeVersions.MeshLLM, agent.MeshLLMPinnedVersion)
+		}
+		if runtimeKind == "llamacpp" {
+			metrics.LlamaCppVersion = runtimeVersionOrDefault(cfg.RuntimeVersions.LlamaCpp, agent.LlamaCppDefaultVersion)
+		}
+	}
 	if loaded {
 		metrics.LoadedProfileID = profile.ID
 		metrics.LoadedProfileVersion = profile.Version
 	}
 	return metrics
+}
+
+func runtimeVersionOrDefault(value string, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
 }
 
 // applyMeshStatusMetrics overlays the per-tick MeshLLM console and API poll

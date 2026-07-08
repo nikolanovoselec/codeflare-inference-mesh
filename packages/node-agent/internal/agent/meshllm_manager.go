@@ -255,12 +255,20 @@ func (m *MeshLLMManager) Restart(ctx context.Context) error {
 // before invoking it; a stored bootstrap keeps overriding rotation and join
 // tokens on the relaunch render.
 func (m *MeshLLMManager) RestartWithInput(ctx context.Context, in MeshLLMRenderInput, contextWindow int) error {
+	m.mu.Lock()
+	binaryPath := m.binaryPath
+	m.mu.Unlock()
+	return m.RestartWithBinaryInput(ctx, in, contextWindow, binaryPath)
+}
+
+func (m *MeshLLMManager) RestartWithBinaryInput(ctx context.Context, in MeshLLMRenderInput, contextWindow int, binaryPath string) error {
 	if err := m.Stop(ctx); err != nil {
 		return err
 	}
 	m.mu.Lock()
 	m.input = in
 	m.contextWindow = contextWindow
+	m.binaryPath = binaryPath
 	m.mu.Unlock()
 	return m.Start(ctx)
 }

@@ -58,6 +58,7 @@ async function dashboardHarness(status: Record<string, unknown> = statusFixture(
   const harness = adminUiHarness(html, async (path) => {
     if (path === '/admin/status') return Response.json(status)
     if (path === '/admin/agent-versions') return Response.json(versions)
+    if (path === '/admin/runtime-versions') return Response.json({ meshllm: { tags: [], desired: 'v0.72.2', stale: false }, llamacpp: { tags: [], desired: 'b9912', stale: false } })
     if (path === '/admin/mesh/rotate') return Response.json({ ok: true, rotation: 4 })
     if (path === '/admin/profiles/activate') return Response.json({ ok: true })
     if (path === '/admin/login') return Response.json({ ok: true, session: 'bearer-token' })
@@ -98,6 +99,10 @@ describe('admin UI mesh operations contracts', () => {
     expect(html).toContain(`id="${ADMIN_UI_AGENT_VERSION.selectId}"`)
     expect(html).toContain('data-action="agent-versions-refresh"')
     expect(html).toContain('data-action="agent-version-set"')
+    expect(html).toContain('data-runtime-version-select="meshllm"')
+    expect(html).toContain('data-runtime-version-select="llamacpp"')
+    expect(html).toContain('data-action="runtime-versions-refresh"')
+    expect(html).toContain('data-action="runtime-versions-set"')
     expect([...html.matchAll(/data-action="status-refresh"/g)].length).toBeGreaterThanOrEqual(2)
   })
 

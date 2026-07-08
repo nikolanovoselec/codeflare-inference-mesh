@@ -185,6 +185,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     setSection(config.nav.sections[0]);
     refreshStatus().catch(() => undefined);
     loadVersions().catch(() => undefined);
+    loadRuntimeVersions().catch(() => undefined);
     loadInstaller('').catch(() => undefined);
     loadApiKeys().catch(() => undefined);
     closeDrawer();
@@ -371,15 +372,35 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (nodeReady(node)) return 'ready';
     return 'active';
   }
+  function runtimeInstallInfo(node) {
+    if (node.runtimeInstall) return node.runtimeInstall;
+    const metrics = node.metrics || {};
+    const runtime = metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp' ? 'llamacpp' : 'meshllm';
+    const desired = lastStatus && lastStatus.desiredRuntimeVersions ? lastStatus.desiredRuntimeVersions[runtime] : '';
+    const installed = runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion;
+    const error = metrics.lastError || metrics.runtimeDetail || '';
+    const state = metrics.runtimeState === 'downloading' ? 'installing' : ((metrics.runtimeState === 'dependency-missing' || (error && !installed)) ? 'failed' : (installed ? 'installed' : 'pending'));
+    return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: state, error: error || null };
+  }
+  const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : 'MeshLLM';
+  const runtimeInstallTone = (info) => info.state === 'failed' ? 'danger' : (info.state === 'installed' ? 'ok' : 'warn');
+  const runtimeInstallText = (node) => {
+    const info = runtimeInstallInfo(node);
+    const desired = info.desiredVersion || 'selected';
+    if (info.state === 'installing') return 'Installing ' + runtimeInstallLabel(info) + ' ' + desired;
+    if (info.state === 'failed') return runtimeInstallLabel(info) + ' install failed';
+    if (info.installedVersion) return runtimeInstallLabel(info) + ' ' + info.installedVersion + (info.installedVersion === desired || !desired ? '' : ' → ' + desired);
+    return runtimeInstallLabel(info) + ' pending ' + desired;
+  };
   function nodeStatusText(node) {
     if (node.status === 'offline') { const age = nodeRelAge(node); return 'Offline' + (age ? ' · last seen ' + age : ''); }
     if (node.status === 'revoked') return 'Removed';
     if (node.status === 'draining') return 'Draining';
     if (node.deactivated) return 'Deactivated';
     const rt = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : '';
-    if (rt === 'failed') return 'Failed';
+    if (rt === 'failed' || rt === 'dependency-missing') return 'Failed';
     if (nodeReady(node)) return 'Ready';
-    if (rt === 'downloading') return 'Starting · downloading model';
+    if (rt === 'downloading') return 'Starting · installing runtime or model';
     if (rt === 'loading' || rt === 'starting') return 'Starting · loading model';
     return 'Starting';
   }
@@ -483,7 +504,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       idButton.dataset.nodeId = node.id;
       idButton.textContent = node.id;
       idCell.appendChild(idButton);
-      cell('status', nodeCategory(node), undefined).appendChild(statusDot(nodeTone(node), nodeStatusText(node)));
+      const statusCell = cell('status', nodeCategory(node), undefined);
+      statusCell.appendChild(statusDot(nodeTone(node), nodeStatusText(node)));
+      const install = runtimeInstallInfo(node);
+      const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));
+      installChip.setAttribute('data-runtime-install-chip', node.id);
+      installChip.setAttribute('data-runtime-install-state', install.state);
+      statusCell.appendChild(installChip);
       cell('toks', String(nodeToks(node)), nodeReady(node) ? round1(nodeToks(node)) : '\u2014');
       cell('vram', String(nodeVramTotal(node)), nodeReady(node) && nodeVramTotal(node) ? Math.round(nodeVramTotal(node) / 1024) + ' GB' : '\u2014');
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
@@ -633,6 +660,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const errRow = drawerField('runtime-detail', 'Runtime error', metrics.runtimeDetail);
       errRow.setAttribute('data-tone', 'danger');
       bodyEl.appendChild(errRow);
+    }
+    const install = runtimeInstallInfo(node);
+    const installRow = drawerField('runtime-install', runtimeInstallLabel(install), runtimeInstallText(node));
+    installRow.setAttribute('data-runtime', install.runtime);
+    installRow.setAttribute('data-runtime-install-state', install.state);
+    if (install.desiredVersion) installRow.setAttribute('data-desired-version', install.desiredVersion);
+    if (install.installedVersion) installRow.setAttribute('data-installed-version', install.installedVersion);
+    installRow.setAttribute('data-tone', runtimeInstallTone(install));
+    bodyEl.appendChild(installRow);
+    if (install.error) {
+      const installError = drawerField('runtime-install-error', 'Runtime install error', install.error);
+      installError.setAttribute('data-tone', 'danger');
+      bodyEl.appendChild(installError);
     }
     bodyEl.appendChild(drawerField('node-state', 'Node state', metrics.nodeState || '\u2014'));
     bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', metrics.meshRole || '\u2014'));
@@ -1310,6 +1350,50 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     select.value = view && view.desired ? view.desired : (tags[0] || '');
     slot.appendChild(select);
   }
+  function renderRuntimeVersions(view) {
+    const slot = byId(config.runtimeVersion.slotId);
+    if (!slot) return;
+    slot.textContent = '';
+    const grid = document.createElement('div');
+    grid.className = 'form-grid';
+    const makeSelect = (kind, label, selectId) => {
+      const info = view && view[kind] ? view[kind] : { tags: [], desired: '', stale: true };
+      const wrap = document.createElement('label');
+      wrap.className = 'field';
+      const text = document.createElement('span');
+      text.textContent = label;
+      const select = document.createElement('select');
+      select.id = selectId;
+      select.name = kind + 'Version';
+      select.setAttribute('data-runtime-version-select', kind);
+      select.setAttribute(config.runtimeVersion.staleAttribute, info.stale ? 'true' : 'false');
+      const tags = info.tags || [];
+      tags.forEach((tag) => {
+        const option = document.createElement('option');
+        option.value = tag;
+        option.setAttribute('data-runtime-version-option', kind + ':' + tag);
+        if (info.desired === tag) { option.selected = true; option.setAttribute('data-desired', 'true'); }
+        option.textContent = tag;
+        select.appendChild(option);
+      });
+      if (!tags.length && info.desired) {
+        const option = document.createElement('option');
+        option.value = info.desired;
+        option.selected = true;
+        option.textContent = info.desired;
+        select.appendChild(option);
+      }
+      select.disabled = select.options.length === 0;
+      select.value = info.desired || (tags[0] || '');
+      wrap.append(text, select);
+      return wrap;
+    };
+    grid.append(
+      makeSelect('meshllm', 'MeshLLM version', config.runtimeVersion.meshllmSelectId),
+      makeSelect('llamacpp', 'llama.cpp version', config.runtimeVersion.llamacppSelectId)
+    );
+    slot.appendChild(grid);
+  }
   function renderApiKeys(keys) {
     const listEl = byId('api-key-list');
     if (!listEl) return;
@@ -1365,6 +1449,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const view = await request('/admin/agent-versions', { headers: headers(false) });
     renderVersions(view);
     setOutput('agent-version-output', 'Loaded ' + ((view.tags || []).length) + ' versions' + (view.stale ? ' (list may be out of date)' : ''));
+    return view;
+  }
+  async function loadRuntimeVersions() {
+    const view = await request('/admin/runtime-versions', { headers: headers(false) });
+    renderRuntimeVersions(view);
+    const meshCount = view && view.meshllm && view.meshllm.tags ? view.meshllm.tags.length : 0;
+    const llamaCount = view && view.llamacpp && view.llamacpp.tags ? view.llamacpp.tags.length : 0;
+    const stale = (view && view.meshllm && view.meshllm.stale) || (view && view.llamacpp && view.llamacpp.stale);
+    setOutput('runtime-version-output', 'Loaded ' + meshCount + ' MeshLLM and ' + llamaCount + ' llama.cpp versions' + (stale ? ' (list may be out of date)' : ''));
     return view;
   }
   async function loadInstaller(prefix) {
@@ -1583,6 +1676,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'model-add': 'model-add-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
+    'runtime-versions-refresh': 'runtime-version-output',
+    'runtime-versions-set': 'runtime-version-output',
     'settings-save': 'settings-output',
     'mesh-rotate': 'mesh-rotate-output',
     'playground-send': 'playground-output'
@@ -1793,6 +1888,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     } else if (action === 'agent-version-set') {
       const select = byId(config.agentVersion.selectId);
       setOutput(out, await request('/admin/agent-version', { method: 'POST', headers: headers(true), body: JSON.stringify({ version: select ? select.value : '' }) }));
+    } else if (action === 'runtime-versions-refresh') {
+      await loadRuntimeVersions();
+    } else if (action === 'runtime-versions-set') {
+      const meshllm = byId(config.runtimeVersion.meshllmSelectId);
+      const llamacpp = byId(config.runtimeVersion.llamacppSelectId);
+      setOutput(out, await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '' }) }));
     } else if (action === 'settings-save') {
       setOutput(out, await request('/admin/settings', { method: 'POST', headers: headers(true), body: JSON.stringify({ offlinePruneSeconds: Number(readInput('prune-seconds')) }) }));
       toast('Settings saved');

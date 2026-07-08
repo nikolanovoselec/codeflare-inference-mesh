@@ -6,6 +6,7 @@ import {
   ADMIN_UI_NAV,
   ADMIN_UI_NODES_TABLE,
   ADMIN_UI_PLAYGROUND,
+  ADMIN_UI_RUNTIME_VERSION,
   ADMIN_UI_TOKS_TRACE,
   ADMIN_UI_TOPOLOGY,
   ADMIN_UI_WIZARD
@@ -253,6 +254,15 @@ function settingsSection(): string {
 ${field({ id: ADMIN_UI_AGENT_VERSION.selectId, label: 'Version to run on every machine', control: emptySlotSelect(ADMIN_UI_AGENT_VERSION.slotId, ADMIN_UI_AGENT_VERSION.selectId, 'agentVersion', 'data-agent-version-select="true" data-stale="false"'), hint: 'Each machine updates to this version the next time it checks in.' })}
 <div class="form-actions">${button({ action: 'agent-version-set', label: 'Apply to all machines', out: 'agent-version-output' })}</div>
 ${output({ id: 'agent-version-output', kind: 'agent-version', pre: true })}
+<div class="subpanel"><h3>Runtime binaries</h3>
+<p class="field-hint">Choose the MeshLLM and llama.cpp releases machines should bootstrap. The binaries are downloaded and managed by each node on its next check-in; they are not bundled into the agent.</p>
+<div class="form-actions">${button({ action: 'runtime-versions-refresh', label: 'Load runtime versions', out: 'runtime-version-output' })}</div>
+<span class="slot" id="${ADMIN_UI_RUNTIME_VERSION.slotId}"><div class="form-grid">
+${field({ id: ADMIN_UI_RUNTIME_VERSION.meshllmSelectId, label: 'MeshLLM version', control: emptySlotSelect(`${ADMIN_UI_RUNTIME_VERSION.slotId}-meshllm`, ADMIN_UI_RUNTIME_VERSION.meshllmSelectId, 'meshllmVersion', 'data-runtime-version-select="meshllm" data-stale="false"'), hint: 'Used by split and mesh-served profiles.' })}
+${field({ id: ADMIN_UI_RUNTIME_VERSION.llamacppSelectId, label: 'llama.cpp version', control: emptySlotSelect(`${ADMIN_UI_RUNTIME_VERSION.slotId}-llamacpp`, ADMIN_UI_RUNTIME_VERSION.llamacppSelectId, 'llamacppVersion', 'data-runtime-version-select="llamacpp" data-stale="false"'), hint: 'Used by direct single-node profiles with session cache affinity.' })}
+</div></span>
+<div class="form-actions">${button({ action: 'runtime-versions-set', label: 'Apply runtime versions', out: 'runtime-version-output' })}</div>
+${output({ id: 'runtime-version-output', kind: 'runtime-version', pre: true })}</div>
 <div class="subpanel"><h3>API keys</h3>
 <p class="field-hint">Create a key to operate the mesh over the <code>/api/v1</code> API. The secret is shown once, so copy it immediately. Rotate issues a fresh secret and retires the old one; revoke disables a key immediately.</p>
 <div class="form-actions">${button({ action: 'api-key-create', label: 'Create API key', out: 'api-key-output' })}</div>

@@ -9,6 +9,7 @@ import {
   ADMIN_UI_PLAYGROUND,
   ADMIN_UI_POLLING,
   ADMIN_UI_PROFILE_ACTIVATION,
+  ADMIN_UI_RUNTIME_VERSION,
   ADMIN_UI_RESPONSIVE,
   ADMIN_UI_SETUP_LOCKED_FEEDBACK,
   ADMIN_UI_TOKS_TRACE,
@@ -33,6 +34,7 @@ export {
   ADMIN_UI_PLAYGROUND,
   ADMIN_UI_POLLING,
   ADMIN_UI_PROFILE_ACTIVATION,
+  ADMIN_UI_RUNTIME_VERSION,
   ADMIN_UI_RESPONSIVE,
   ADMIN_UI_SETUP_LOCKED_FEEDBACK,
   ADMIN_UI_TOKS_TRACE,
@@ -40,7 +42,7 @@ export {
   ADMIN_UI_VIEWS,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
-export type { ActivationProfileView, AdminUiAction, AdminUiStateView, AgentVersionsView, MeshHealthEntry, MeshUiStatusNode } from './admin-ui-contract'
+export type { ActivationProfileView, AdminUiAction, AdminUiStateView, AgentVersionsView, MeshHealthEntry, MeshUiStatusNode, RuntimeVersionsView } from './admin-ui-contract'
 
 /** Server-computed entry state: which view to pre-render and where setup stands. */
 export type AdminUiState = AdminUiStateView
@@ -65,6 +67,7 @@ export function adminUiHtml(workerOrigin: string, state: AdminUiState): string {
     setupLockedFeedback: ADMIN_UI_SETUP_LOCKED_FEEDBACK,
     meshHealth: ADMIN_UI_MESH_HEALTH,
     agentVersion: ADMIN_UI_AGENT_VERSION,
+    runtimeVersion: ADMIN_UI_RUNTIME_VERSION,
     profileActivation: ADMIN_UI_PROFILE_ACTIVATION,
     topology: ADMIN_UI_TOPOLOGY,
     drawer: ADMIN_UI_DRAWER,
@@ -134,5 +137,6 @@ export const ADMIN_UI_ANCHORS = {
   SETUP_LOCKED_FEEDBACK: 'ADMIN_UI_SETUP_LOCKED_FEEDBACK',
   MESH_HEALTH: 'ADMIN_UI_MESH_HEALTH',
   AGENT_VERSION: 'ADMIN_UI_AGENT_VERSION',
+  RUNTIME_VERSION: 'ADMIN_UI_RUNTIME_VERSION',
   PROFILE_ACTIVATION: 'ADMIN_UI_PROFILE_ACTIVATION'
 } as const

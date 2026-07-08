@@ -249,6 +249,32 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-033: Runtime binary version and install visibility
+
+**Intent:** Operators should select the MeshLLM and llama.cpp runtime releases independently from the node-agent release, and should see what each node has installed, what it is installing, and any install failure without SSH access.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. `GET /admin/runtime-versions` returns MeshLLM and llama.cpp release tags fetched from their GitHub releases APIs, cached in `router_config`, and annotated with the current desired selection for each runtime. <!-- @impl: packages/router-worker/src/runtime-versions.ts::RUNTIME_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-ADM-033 lists MeshLLM and llama.cpp release tags with defaults selected) -->
+2. `POST /admin/runtime-versions` validates selected MeshLLM and llama.cpp versions against the release-tag caches, stores them as fleet-wide desired runtime versions, and records a `runtime_versions_selected` audit event. <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsSelect --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-ADM-033 stores selected runtime versions and audits the operator action) -->
+3. The Settings page renders MeshLLM and llama.cpp version dropdowns backed by the same Admin endpoints, and saving posts both selections through `POST /admin/runtime-versions`. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::settingsCard --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-033 renders and saves MeshLLM and llama.cpp runtime version controls from Settings) -->
+4. Admin status and the node detail drawer expose each node's runtime binary status: runtime kind, desired version, installed version when known, `pending`/`installing`/`installed`/`failed` state, and install error when present. <!-- @impl: packages/router-worker/src/router.ts::runtimeBinaryStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-033 renders runtime install status in the node table and drawer) -->
+5. Claim and heartbeat responses carry desired runtime versions so nodes pick up changes automatically on the next check-in. <!-- @impl: packages/router-worker/src/router.ts::handleNodeClaim --> <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-NODE-013 includes selected runtime versions in heartbeat responses) -->
+
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-ADM-008](#req-adm-008-agent-version-management), [REQ-NODE-013](node-agent.md#req-node-013-runtime-binary-bootstrap), [REQ-API-005](control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ### REQ-ADM-005: Custom domain handoff
 
 **Intent:** The custom domain is the permanent home of the console and all machine traffic; the `workers.dev` origin exists only to bootstrap it during first-run setup.

@@ -11,6 +11,7 @@ import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCusto
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
+import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 import { eligibleDirectNodes, meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { singleActiveActivation } from './store'
@@ -101,6 +102,8 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
       if (url.pathname === '/admin/profiles/delete' && request.method === 'POST') return await handleProfileDelete(request, deps, id, now())
       if (url.pathname === '/admin/settings' && request.method === 'POST') return await handleAdminSettings(request, deps, id, now())
+      if (url.pathname === '/admin/runtime-versions' && request.method === 'GET') return await handleAdminRuntimeVersions(request, deps, id, now())
+      if (url.pathname === '/admin/runtime-versions' && request.method === 'POST') return await handleAdminRuntimeVersionSelect(request, deps, id, now())
       if (url.pathname === '/admin/mesh/rotate' && request.method === 'POST') return await handleAdminMeshRotate(request, deps, id, now())
       if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
       if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
@@ -131,6 +134,8 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/mesh/rotate' && request.method === 'POST') return await handleApiMeshRotate(request, deps, id, now())
       if (url.pathname === '/api/v1/settings' && request.method === 'GET') return await handleApiSettingsGet(request, deps, id, now())
       if (url.pathname === '/api/v1/settings' && request.method === 'PUT') return await handleApiSettingsSet(request, deps, id, now())
+      if (url.pathname === '/api/v1/runtime-versions' && request.method === 'GET') return await handleApiRuntimeVersions(request, deps, id, now())
+      if (url.pathname === '/api/v1/runtime-versions' && request.method === 'PUT') return await handleApiRuntimeVersionSet(request, deps, id, now())
       if (url.pathname === '/api/v1/events' && request.method === 'GET') return await handleApiEvents(request, deps, url, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
@@ -272,6 +277,7 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
     nodeToken,
     upstreamToken,
     profiles: await deps.store.listProfiles(),
+    desiredRuntimeVersions: await desiredRuntimeVersions(deps.store),
     ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
   }, 201, requestId)
@@ -312,12 +318,14 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     await applyHeartbeatMeshState(deps.store, deps.env, next, body, now)
   }
   const desiredVersion = await desiredAgentVersion(deps.store)
+  const runtimeVersions = await desiredRuntimeVersions(deps.store)
   // A deactivated node is tainted: it keeps heartbeating but must run no model, so it receives no
   // desired profiles and no mesh bootstrap and is told to stay down. REQ-ADM-030 / REQ-NODE-011.
   if (next.deactivated === true) {
     return json({
       ok: true,
       desiredProfiles: [],
+      desiredRuntimeVersions: runtimeVersions,
       deactivated: true,
       ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
     }, 200, requestId)
@@ -329,6 +337,7 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   return json({
     ok: true,
     desiredProfiles,
+    desiredRuntimeVersions: runtimeVersions,
     ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {}),
     ...(next.reloadNonce ? { reloadNonce: next.reloadNonce } : {})
@@ -455,6 +464,8 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
+  const runtimeVersions = await desiredRuntimeVersions(deps.store)
+  const statusNodes = nodes.map((node) => ({ ...node, runtimeInstall: runtimeBinaryStatus(node, runtimeVersions) }))
   // The read-only user role sees the live operational picture (nodes, profiles,
   // mesh health, throughput) but never configuration state or the admin action log:
   // those carry gateway/domain internals and operator emails and stay admin-only,
@@ -465,10 +476,11 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
         gateway: await deps.store.getConfig('cloudflare_gateway'),
         customDomain: await deps.store.getConfig('custom_domain'),
         offlinePruneSeconds: await offlinePruneSeconds(deps),
+        desiredRuntimeVersions: runtimeVersions,
         audit: await deps.store.listAudit(20)
       }
     : {}
-  const redacted = redactSecrets({ nodes, profiles, profileReadiness: profileReadiness(profiles, nodes), ...adminOnly, generatedAt: now }) as Record<string, unknown>
+  const redacted = redactSecrets({ nodes: statusNodes, profiles, profileReadiness: profileReadiness(profiles, nodes), ...adminOnly, generatedAt: now }) as Record<string, unknown>
   // meshHealth is composed after redaction: its contract carries token presence/age/count
   // fields (never values), which the key-name redactor would otherwise blank out.
   return json({
@@ -477,6 +489,24 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
     meshHealth: await meshHealth(deps.store, deps.env, profiles, nodes, now),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
   }, 200, requestId)
+}
+
+function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: string; readonly llamacpp: string }) {
+  const metrics = node.metrics ?? { runtimeState: 'unknown', activeRequests: 0 }
+  const runtime = (metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp') ? 'llamacpp' : 'meshllm'
+  const desiredVersion = runtime === 'llamacpp' ? desired.llamacpp : desired.meshllm
+  const installedVersion = runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion
+  const error = metrics.lastError || metrics.runtimeDetail || undefined
+  const state = metrics.runtimeState === 'downloading'
+    ? 'installing'
+    : (metrics.runtimeState === 'dependency-missing' || Boolean(error && !installedVersion) ? 'failed' : (installedVersion ? 'installed' : 'pending'))
+  return {
+    runtime,
+    desiredVersion,
+    installedVersion: installedVersion ?? null,
+    state,
+    error: error ?? null
+  }
 }
 
 function profileReadiness(profiles: readonly ModelProfile[], nodes: readonly NodeRecord[]): Array<{ profileId: string; version: number; ready: number; downloading: number; failed: number }> {
@@ -1121,6 +1151,18 @@ async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps,
   return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, actor)
 }
 
+async function handleAdminRuntimeVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleRuntimeVersionsList(request, deps.store, deps.releasesFetcher ?? globalThis.fetch)
+}
+
+async function handleAdminRuntimeVersionSelect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, actor)
+}
+
 /** REQ-ADM-017: lets the console render the admin vs read-only user surface. */
 async function handleWhoami(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
@@ -1524,10 +1566,13 @@ async function handleApiStatus(request: Request, deps: RouterDeps, requestId: st
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
+  const runtimeVersions = await desiredRuntimeVersions(deps.store)
   return json({
     generatedAt: now,
     nodes: { total: nodes.length, online: nodes.filter((node) => node.status === 'online').length },
     models: { total: profiles.length, active: profiles.filter((profile) => profile.active).length },
+    runtimeVersions,
+    runtimeInstalls: nodes.map((node) => ({ nodeId: node.id, ...runtimeBinaryStatus(node, runtimeVersions) })),
     ...(desiredVersion !== undefined ? { agentVersion: desiredVersion } : {})
   }, 200, requestId)
 }
@@ -1545,7 +1590,7 @@ async function handleApiEnrollmentToken(request: Request, deps: RouterDeps, requ
 }
 
 /** Machine-facing node projection: identity, state, and metrics — never token verifiers or internal ports. */
-function toApiNode(node: NodeRecord) {
+function toApiNode(node: NodeRecord, runtimeVersions?: { readonly meshllm: string; readonly llamacpp: string }) {
   return {
     id: node.id,
     displayName: node.displayName,
@@ -1560,6 +1605,7 @@ function toApiNode(node: NodeRecord) {
     ...(node.runtimeModel !== undefined ? { runtimeModel: node.runtimeModel } : {}),
     ...(node.agentVersion !== undefined ? { agentVersion: node.agentVersion } : {}),
     ...(node.metrics !== undefined ? { metrics: node.metrics } : {}),
+    ...(runtimeVersions !== undefined ? { runtimeInstall: runtimeBinaryStatus(node, runtimeVersions) } : {}),
     maxVramGbOverride: node.maxVramGbOverride ?? null,
     deactivated: node.deactivated === true
   }
@@ -1578,7 +1624,8 @@ async function handleApiNodeList(request: Request, deps: RouterDeps, url: URL, r
   if (cursor) nodes = nodes.filter((node) => node.id > cursor)
   const page = nodes.slice(0, limit)
   const nextCursor = nodes.length > limit ? page[page.length - 1]!.id : null
-  return json({ nodes: page.map(toApiNode), nextCursor }, 200, requestId)
+  const runtimeVersions = await desiredRuntimeVersions(deps.store)
+  return json({ nodes: page.map((node) => toApiNode(node, runtimeVersions)), nextCursor }, 200, requestId)
 }
 
 async function handleApiNodeGet(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
@@ -1586,7 +1633,7 @@ async function handleApiNodeGet(request: Request, deps: RouterDeps, url: URL, re
   const nodeId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
   const node = (await deps.store.listNodes(now)).find((candidate) => candidate.id === nodeId)
   if (!node) return json({ error: 'not_found', requestId }, 404, requestId)
-  return json({ node: toApiNode(node) }, 200, requestId)
+  return json({ node: toApiNode(node, await desiredRuntimeVersions(deps.store)) }, 200, requestId)
 }
 
 /** Decommission a node: revoke it and its node/mesh tokens so it must re-enroll. */
@@ -1603,7 +1650,7 @@ async function handleApiNodeReconfigure(request: Request, deps: RouterDeps, url:
   if (updated === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
   await deps.store.upsertNode(updated)
   await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: { maxVramGbOverride: updated.maxVramGbOverride ?? null } })
-  return json({ ok: true, node: toApiNode(updated) }, 200, requestId)
+  return json({ ok: true, node: toApiNode(updated, await desiredRuntimeVersions(deps.store)) }, 200, requestId)
 }
 
 async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
@@ -1645,7 +1692,7 @@ async function apiSetNodeDeactivated(request: Request, deps: RouterDeps, url: UR
   await deps.store.upsertNode(updated)
   if (deactivated) await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
   await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
-  return json({ ok: true, node: toApiNode(updated) }, 200, requestId)
+  return json({ ok: true, node: toApiNode(updated, await desiredRuntimeVersions(deps.store)) }, 200, requestId)
 }
 
 // Automation twin of the console mesh secret rotation (POST /admin/mesh/rotate): rotate
@@ -1661,7 +1708,7 @@ async function handleApiMeshRotate(request: Request, deps: RouterDeps, requestId
 async function handleApiSettingsGet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return json({ offlinePruneSeconds: await offlinePruneSeconds(deps) }, 200, requestId)
+  return json({ offlinePruneSeconds: await offlinePruneSeconds(deps), desiredRuntimeVersions: await desiredRuntimeVersions(deps.store) }, 200, requestId)
 }
 
 async function handleApiSettingsSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -1858,6 +1905,17 @@ async function handleApiAgentVersionSet(request: Request, deps: RouterDeps, requ
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
   return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, `automation:${automation.id}`)
+}
+
+async function handleApiRuntimeVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleRuntimeVersionsList(request, deps.store, deps.releasesFetcher ?? globalThis.fetch)
+}
+
+async function handleApiRuntimeVersionSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, `automation:${automation.id}`)
 }
 
 /** Poll operational events oldest-first, filtered by since/type, paginated by an `at` cursor. */

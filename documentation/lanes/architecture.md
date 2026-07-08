@@ -25,6 +25,7 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 | D1 migrations | Durable schema for config, nodes, sessions, profiles, and audit. | `packages/router-worker/migrations/` | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
 | Mesh state | Router-owned mesh membership: seed election, encrypted invite-token set, rotation counter, mesh health. | `packages/router-worker/src/mesh-state.ts`, `packages/router-worker/src/mesh-crypto.ts` | [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md) |
 | Agent versions | GitHub release-tag cache and fleet-wide desired agent version distribution. | `packages/router-worker/src/agent-versions.ts` | [REQ-ADM-008](../../sdd/spec/setup-admin.md) |
+| Runtime versions | MeshLLM/llama.cpp release-tag caches, fleet-wide desired runtime versions, and heartbeat distribution. | `packages/router-worker/src/runtime-versions.ts` | [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility) |
 | Node Agent | Local service, node claim, heartbeat, proxy, UI, runtime supervision. | `packages/node-agent/` | [REQ-NODE-001](../../sdd/spec/node-agent.md), [REQ-NODE-002](../../sdd/spec/node-agent.md) |
 | GitHub workflows | CI, security checks, deploy, release artifacts. | `.github/workflows/` | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-002](../../sdd/spec/release-ci.md) |
 
