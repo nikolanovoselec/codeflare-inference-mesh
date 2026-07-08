@@ -1191,8 +1191,9 @@ async function handleWhoami(request: Request, deps: RouterDeps, requestId: strin
 async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readOptionalObject<{ gatewayId?: unknown; route?: unknown; messages?: unknown; tools?: unknown; maxTokens?: unknown }>(request)
+  const body = await readOptionalObject<{ gatewayId?: unknown; route?: unknown; user?: unknown; messages?: unknown; tools?: unknown; maxTokens?: unknown }>(request)
   const messages = Array.isArray(body?.messages) ? body!.messages : []
+  const user = cleanString(body?.user)
   const tools = playgroundTools(body?.tools)
   const maxTokens = playgroundMaxTokens(body?.maxTokens)
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
@@ -1215,7 +1216,7 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
       'content-type': 'application/json',
       'cf-aig-authorization': `Bearer ${gatewayToken}`
     },
-    body: JSON.stringify({ model: `dynamic/${route}`, stream: true, messages, ...(tools ? { tools } : {}), ...(maxTokens ? { max_tokens: maxTokens } : {}) })
+    body: JSON.stringify({ model: `dynamic/${route}`, ...(user ? { user } : {}), stream: true, messages, ...(tools ? { tools } : {}), ...(maxTokens ? { max_tokens: maxTokens } : {}) })
   })
   const headers = new Headers({
     'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',

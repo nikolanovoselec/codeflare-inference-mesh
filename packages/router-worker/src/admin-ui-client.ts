@@ -1950,7 +1950,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       // compat endpoint with the selected dynamic route.
       const direct = targetValue === config.playground.directValue;
       const path = direct ? config.playground.directPath : config.playground.gatewayPath;
-      const payload = direct ? { model: choice, messages: messages, user: playgroundSessionUser() } : { gatewayId: targetValue, route: choice, messages: messages };
+      const payload = direct ? { model: choice, messages: messages, user: playgroundSessionUser() } : { gatewayId: targetValue, route: choice, messages: messages, user: playgroundSessionUser() };
       if (tools) payload.tools = tools;
       if (maxTokens) payload.maxTokens = maxTokens;
       // The Stop button aborts this controller; a new send supersedes any running stream.

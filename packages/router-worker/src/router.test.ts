@@ -3060,12 +3060,12 @@ describe('Access-first setup and host gating contracts', () => {
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } })
     }) as typeof fetch
     const { router } = routerFixture({ env: { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-token' }, playgroundFetcher })
-    const res = await router(new Request('https://router.test/admin/playground/chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ gatewayId: 'gw-x', route: 'custom-route', messages: [{ role: 'user', content: 'hi' }] }) }))
+    const res = await router(new Request('https://router.test/admin/playground/chat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ gatewayId: 'gw-x', route: 'custom-route', user: 'user:admin-playground|session:gateway-session', messages: [{ role: 'user', content: 'hi' }] }) }))
     expect(res.status).toBe(200)
     expect(calls).toHaveLength(1)
-    // The selected gateway id builds the compat URL, and the selected route is sent as dynamic/<route>.
+    // The selected gateway id builds the compat URL, and the selected route plus direct-session user are sent upstream.
     expect(calls[0]!.url).toBe('https://gateway.ai.cloudflare.com/v1/account-a/gw-x/compat/chat/completions')
-    expect(calls[0]!.body).toMatchObject({ model: 'dynamic/custom-route', stream: true, messages: [{ role: 'user', content: 'hi' }] })
+    expect(calls[0]!.body).toMatchObject({ model: 'dynamic/custom-route', user: 'user:admin-playground|session:gateway-session', stream: true, messages: [{ role: 'user', content: 'hi' }] })
     expect(calls[0]!.headers['cf-aig-authorization']).toBe('Bearer aig-token')
   })
 
@@ -3634,12 +3634,12 @@ describe('operator playground contracts', () => {
 
     const response = await router(new Request('https://router.test/admin/playground/chat', {
       method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hello' }] })
+      body: JSON.stringify({ model: 'codeflare-mesh', user: 'user:admin-playground|session:gateway-session', messages: [{ role: 'user', content: 'hello' }] })
     }))
 
     expect(response.status).toBe(200)
     expect(capture.url).toBe('https://gateway.ai.cloudflare.com/v1/acct-1/inference-mesh/compat/chat/completions')
-    expect(JSON.parse(String(capture.init?.body))).toEqual({ model: 'dynamic/codeflare-mesh', stream: true, messages: [{ role: 'user', content: 'hello' }] })
+    expect(JSON.parse(String(capture.init?.body))).toEqual({ model: 'dynamic/codeflare-mesh', user: 'user:admin-playground|session:gateway-session', stream: true, messages: [{ role: 'user', content: 'hello' }] })
     expect(response.headers.get('cf-aig-log-id')).toBeNull()
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('content-type')).toContain('text/event-stream')

@@ -852,7 +852,11 @@ describe('dashboard throughput trace and playground contracts', () => {
     await send
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/chat')
     expect(call?.init?.method).toBe('POST')
-    expect(JSON.parse(String(call?.init?.body))).toEqual({ gatewayId: 'gw-a', route: 'custom-route', messages: [{ role: 'user', content: 'hi' }] })
+    const body = JSON.parse(String(call?.init?.body)) as { gatewayId: string; route: string; messages: Array<{ role: string; content: string }>; user: string }
+    expect(body.gatewayId).toBe('gw-a')
+    expect(body.route).toBe('custom-route')
+    expect(body.messages).toEqual([{ role: 'user', content: 'hi' }])
+    expect(body.user).toMatch(/^user:admin-playground\|session:/)
   })
 
   it('REQ-ADM-016 appends a status-specific actionable hint when a playground request fails', async () => {
