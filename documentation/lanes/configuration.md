@@ -152,7 +152,7 @@ Direct llama.cpp profiles use these settings:
 | Prefill batch | `--batch-size` | `2048` | Logical prefill batch. Raising it can speed long-prompt ingestion if GPU memory allows. |
 | Micro-batch | `--ubatch-size` | `512` | Physical prefill sub-batch. Raise carefully when the node has headroom. |
 | Flash attention | `--flash-attn` | On | Fast/memory-efficient attention for large-context direct serving. |
-| Max output tokens | `--predict` | `8192` | Global generation cap; keep it above the reasoning budget. |
+| Total response budget | `-n` / `--predict` | `8192` | Global llama.cpp generation cap. Example: `99` maps to `-n 99`; keep it above the reasoning budget. |
 | Prompt cache | `--cache-prompt` | On | Keeps prompt/KV reuse enabled; leave on for cache-local coding sessions. |
 | Cache reuse | `--cache-reuse` | `256` | llama.cpp reuse window for prompt/KV cache matching. |
 | Reasoning | `--reasoning`, `--reasoning-format`, `--reasoning-budget` | Auto unless set | Thinking-mode controls for reasoning-capable chat templates. |
