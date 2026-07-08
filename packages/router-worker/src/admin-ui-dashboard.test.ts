@@ -382,6 +382,7 @@ describe('dashboard overview contracts', () => {
     expect(textOf(field('mesh-role')!)).toContain('serving-peer')
     expect(field('peers')!.dataset.value).toBe('2')
     expect(field('stages')!.dataset.value).toBe('2')
+    expect(field('reachability')!.dataset.value).toBe('api:down;console:ready')
     expect(textOf(field('reachability')!)).toContain('down / ready')
     expect(textOf(field('meshllm')!)).toContain('0.72.2')
 
@@ -392,6 +393,31 @@ describe('dashboard overview contracts', () => {
     expect(field('node-state')).toBeDefined()
     expect(fields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
     expect(fields.some((node) => node.dataset.drawerField === 'stages')).toBe(false)
+  })
+
+  it('REQ-OBS-011 direct node drawer does not turn unreported heartbeat fields into failures', async () => {
+    const nodes = [
+      { id: 'direct-node', status: 'online', runtime: 'llamacpp', metrics: {
+        runtimeKind: 'llamacpp', runtimeState: 'ready', apiReady: true, consoleReady: null,
+        parallel: 4, ctxSize: 262144, cacheReuse: 256, gpuMemoryUsedMiB: 3907, gpuMemoryTotalMiB: 24576,
+        readyModels: ['unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-IQ3_S'] } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    const textOf = (item: StubElement) => descendants(item).map((node) => node.textContent).join(' ')
+
+    await harness.clickAction('node-detail', { nodeId: 'direct-node' })
+    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const field = (name: string) => fields.find((node) => node.dataset.drawerField === name)
+
+    expect(textOf(field('toks')!)).toContain('not reported')
+    expect(field('reachability')!.dataset.value).toBe('api:ready')
+    expect(textOf(field('reachability')!)).not.toContain('down')
+    expect(fields.some((node) => node.dataset.drawerField === 'mesh-role')).toBe(false)
+    expect(fields.some((node) => node.dataset.drawerField === 'peers')).toBe(false)
+    expect(field('direct-parallel')!.dataset.value).toBe('4')
+    expect(field('direct-parallel')!.dataset.activeSlots).toBeUndefined()
+    expect(textOf(field('direct-parallel')!)).toContain('parallel 4')
+    expect(textOf(field('direct-cached-tokens')!)).toContain('not reported')
   })
 
   it('REQ-ADM-015 opens a model drawer listing the nodes serving each alias', async () => {

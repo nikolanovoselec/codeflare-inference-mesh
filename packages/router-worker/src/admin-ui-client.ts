@@ -328,10 +328,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     el.append(strong, code);
     return el;
   };
-  const nodeToks = (node) => (node.metrics && node.metrics.tokensPerSecond) || 0;
+  const nodeToks = (node) => (node.metrics && typeof node.metrics.tokensPerSecond === 'number') ? node.metrics.tokensPerSecond : null;
   const nodeVramTotal = (node) => (node.metrics && node.metrics.gpuMemoryTotalMiB) || 0;
   const nodeModelCount = (node) => (node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0);
   const round1 = (value) => String(Math.round(value * 10) / 10);
+  const reportedText = (value) => value == null ? 'not reported' : String(value);
+  const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
   const statusDot = (tone, label) => {
     const wrap = document.createElement('span');
     wrap.className = 'chip';
@@ -437,7 +439,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
   const nodeSortValue = (node, key) => {
     if (key === 'status') { const tone = nodeTone(node); return tone === 'ok' ? 2 : tone === 'warn' ? 1 : 0; }
-    if (key === 'toks') return nodeToks(node);
+    if (key === 'toks') return nodeToks(node) == null ? -1 : nodeToks(node);
     if (key === 'vram') return nodeVramTotal(node);
     if (key === 'models') return nodeModelCount(node);
     if (key === 'version') return node.agentVersion || '';
@@ -511,7 +513,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       installChip.setAttribute('data-runtime-install-chip', node.id);
       installChip.setAttribute('data-runtime-install-state', install.state);
       statusCell.appendChild(installChip);
-      cell('toks', String(nodeToks(node)), nodeReady(node) ? round1(nodeToks(node)) : '\u2014');
+      const toks = nodeToks(node);
+      cell('toks', toks == null ? '' : String(toks), toks == null ? 'not reported' : round1(toks));
       cell('vram', String(nodeVramTotal(node)), nodeReady(node) && nodeVramTotal(node) ? Math.round(nodeVramTotal(node) / 1024) + ' GB' : '\u2014');
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
@@ -642,9 +645,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const bodyEl = openDrawer(node.id);
     if (!bodyEl) return;
     const metrics = node.metrics || {};
+    const isDirectRuntime = node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp';
+    const toks = nodeToks(node);
+    const vramUsed = metrics.gpuMemoryUsedMiB;
+    const vramTotal = metrics.gpuMemoryTotalMiB;
     bodyEl.appendChild(drawerField('status', 'Status', nodeStatusText(node)));
-    bodyEl.appendChild(drawerField('toks', 'Tokens/s', nodeReady(node) ? round1(nodeToks(node)) : '\u2014', String(nodeToks(node))));
-    bodyEl.appendChild(drawerField('vram', 'VRAM MiB', nodeReady(node) ? ((metrics.gpuMemoryUsedMiB || 0) + ' / ' + (metrics.gpuMemoryTotalMiB || 0)) : '\u2014', (metrics.gpuMemoryUsedMiB || 0) + '/' + (metrics.gpuMemoryTotalMiB || 0)));
+    bodyEl.appendChild(drawerField('toks', 'Tokens/s', toks == null ? 'not reported' : round1(toks), toks == null ? '' : String(toks)));
+    bodyEl.appendChild(drawerField('vram', 'VRAM MiB', vramUsed == null || vramTotal == null ? 'not reported' : (vramUsed + ' / ' + vramTotal), vramUsed == null || vramTotal == null ? '' : vramUsed + '/' + vramTotal));
     if (metrics.gpuName) bodyEl.appendChild(drawerField('gpu', 'GPU', metrics.gpuName));
     const desired = lastStatus ? lastStatus.desiredAgentVersion : undefined;
     const reported = node.agentVersion || 'unreported';
@@ -674,18 +681,31 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       installError.setAttribute('data-tone', 'danger');
       bodyEl.appendChild(installError);
     }
-    bodyEl.appendChild(drawerField('node-state', 'Node state', metrics.nodeState || '\u2014'));
-    bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', metrics.meshRole || '\u2014'));
-    bodyEl.appendChild(drawerField('peers', 'Peers', String(metrics.peerCount || 0), String(metrics.peerCount || 0)));
-    if (metrics.splitEnabled || metrics.stageCount) bodyEl.appendChild(drawerField('stages', 'Stages', String(metrics.stageCount || 0), String(metrics.stageCount || 0)));
-    bodyEl.appendChild(drawerField('reachability', 'API / console', (metrics.apiReady ? 'ready' : 'down') + ' / ' + (metrics.consoleReady ? 'ready' : 'down')));
+    if (metrics.nodeState) bodyEl.appendChild(drawerField('node-state', 'Node state', metrics.nodeState));
+    if (!isDirectRuntime || metrics.meshRole) bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', metrics.meshRole || 'not reported'));
+    if (!isDirectRuntime || metrics.peerCount != null) bodyEl.appendChild(drawerField('peers', 'Peers', reportedText(metrics.peerCount), metrics.peerCount == null ? '' : String(metrics.peerCount)));
+    if (metrics.splitEnabled || metrics.stageCount) bodyEl.appendChild(drawerField('stages', 'Stages', reportedText(metrics.stageCount), metrics.stageCount == null ? '' : String(metrics.stageCount)));
+    const apiState = readinessText(metrics.apiReady);
+    if (isDirectRuntime && typeof metrics.consoleReady !== 'boolean') {
+      bodyEl.appendChild(drawerField('reachability', 'Runtime API', apiState, 'api:' + apiState));
+    } else {
+      const consoleState = readinessText(metrics.consoleReady);
+      bodyEl.appendChild(drawerField('reachability', 'API / console', apiState + ' / ' + consoleState, 'api:' + apiState + ';console:' + consoleState));
+    }
     if (metrics.meshllmVersion) bodyEl.appendChild(drawerField('meshllm', 'mesh-llm', metrics.meshllmVersion));
     if (metrics.llamacppVersion) bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion));
-    if (node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp') {
-      bodyEl.appendChild(drawerField('direct-context', 'Direct context tokens', metrics.ctxSize != null ? String(metrics.ctxSize) : '\u2014', metrics.ctxSize != null ? String(metrics.ctxSize) : ''));
-      bodyEl.appendChild(drawerField('direct-parallel', 'Direct slots', (metrics.activeSlots || 0) + ' / ' + (metrics.slotCount || metrics.parallel || 0), String(metrics.slotCount || metrics.parallel || 0)));
-      bodyEl.appendChild(drawerField('direct-cache', 'Prompt cache', (metrics.cachePrompt === false ? 'off' : 'on') + ' · reuse ' + (metrics.cacheReuse != null ? metrics.cacheReuse : '\u2014')));
-      bodyEl.appendChild(drawerField('direct-cached-tokens', 'Last cached tokens', metrics.cachedTokensLast != null ? String(metrics.cachedTokensLast) : '\u2014', metrics.cachedTokensLast != null ? String(metrics.cachedTokensLast) : ''));
+    if (isDirectRuntime) {
+      bodyEl.appendChild(drawerField('direct-context', 'Direct context tokens', reportedText(metrics.ctxSize), metrics.ctxSize != null ? String(metrics.ctxSize) : ''));
+      const slotsCapacity = metrics.slotCount != null ? metrics.slotCount : metrics.parallel;
+      const slotsText = metrics.activeSlots != null && slotsCapacity != null ? (metrics.activeSlots + ' / ' + slotsCapacity) : (slotsCapacity != null ? 'parallel ' + slotsCapacity : 'not reported');
+      const slotsRow = drawerField('direct-parallel', 'Direct slots', slotsText, slotsCapacity != null ? String(slotsCapacity) : '');
+      if (metrics.activeSlots != null) slotsRow.setAttribute('data-active-slots', String(metrics.activeSlots));
+      if (metrics.slotCount != null) slotsRow.setAttribute('data-slot-count', String(metrics.slotCount));
+      if (metrics.parallel != null) slotsRow.setAttribute('data-parallel', String(metrics.parallel));
+      bodyEl.appendChild(slotsRow);
+      const cacheState = metrics.cachePrompt === true ? 'on' : metrics.cachePrompt === false ? 'off' : 'not reported';
+      bodyEl.appendChild(drawerField('direct-cache', 'Prompt cache', cacheState + (metrics.cacheReuse != null ? ' · reuse ' + metrics.cacheReuse : '')));
+      bodyEl.appendChild(drawerField('direct-cached-tokens', 'Last cached tokens', reportedText(metrics.cachedTokensLast), metrics.cachedTokensLast != null ? String(metrics.cachedTokensLast) : ''));
       if (metrics.lastError) {
         const llamaErr = drawerField('llamacpp-last-error', 'llama.cpp error', metrics.lastError);
         llamaErr.setAttribute('data-tone', 'danger');
@@ -1272,17 +1292,18 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const domain = status.customDomain || {};
       const serving = nodes.filter((node) => nodeTone(node) === 'ok').length;
       const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
-      const toks = nodes.reduce((total, node) => total + nodeToks(node), 0);
+      const toksValues = nodes.map((node) => nodeToks(node)).filter((value) => value != null);
+      const toks = toksValues.reduce((total, value) => total + value, 0);
       tiles.appendChild(tile('Nodes serving', serving + '/' + nodes.length, 'nodes'));
       tiles.appendChild(tile('Mesh VRAM GB', String(Math.round(vramMiB / 1024)), 'vram'));
-      tiles.appendChild(tile('Tokens/s', round1(toks), 'toks'));
+      tiles.appendChild(tile('Tokens/s', toksValues.length ? round1(toks) : 'not reported', 'toks'));
       tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured', 'domain'));
       tiles.appendChild(tile('Agent version', status.desiredAgentVersion || 'not set', 'version'));
     }
     const pruneInput = byId('prune-seconds');
     if (pruneInput && status.offlinePruneSeconds != null && pruneInput.value === '') pruneInput.value = String(status.offlinePruneSeconds);
     renderTopology(nodes);
-    pushToksSample(nodes.reduce((total, node) => total + nodeToks(node), 0));
+    pushToksSample(nodes.reduce((total, node) => total + (nodeToks(node) || 0), 0));
     renderToksTrace();
     const rollup = byId('overview-mesh');
     if (rollup) {
