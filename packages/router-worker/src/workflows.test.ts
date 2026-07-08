@@ -321,10 +321,11 @@ describe('workflow contract values', () => {
     const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
 
     const validateStep = stepByName(deployJob, 'Validate deploy secrets')!
-    expect(validateStep.env).toMatchObject({ MESH_STATE_KEY: '${{ secrets.MESH_STATE_KEY }}' })
-    const validateEnv = { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token' }
+    expect(validateStep.env).toMatchObject({ MESH_STATE_KEY: '${{ secrets.MESH_STATE_KEY }}', SESSION_AFFINITY_KEY: '${{ secrets.SESSION_AFFINITY_KEY }}' })
+    const validateEnv = { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', SESSION_AFFINITY_KEY: 'session-affinity-key-value' }
     expect(runShellBlock(validateStep.run!, { ...validateEnv, MESH_STATE_KEY: 'mesh-state-key-value' }).status).toBe(0)
     expect(runShellBlock(validateStep.run!, { ...validateEnv, MESH_STATE_KEY: '' }).status).toBe(1)
+    expect(runShellBlock(validateStep.run!, { ...validateEnv, MESH_STATE_KEY: 'mesh-state-key-value', SESSION_AFFINITY_KEY: '' }).status).toBe(1)
 
     const meshKeyStep = stepByName(deployJob, 'Set Worker mesh state key')!
     expect(meshKeyStep).toMatchObject({

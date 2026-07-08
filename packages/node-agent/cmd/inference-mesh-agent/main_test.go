@@ -297,7 +297,7 @@ func TestREQRUN010RestartLatchReleasedWhenRuntimeHangs(t *testing.T) {
 	counter := &agent.ActiveCounter{}
 	manager := newFakeMeshRuntime(counter)
 	manager.setRestartBlock(true)
-	profile := agent.ModelProfile{ID: "wedge-profile", UpstreamModel: "wedge-upstream", Version: 1}
+	profile := agent.ModelProfile{ID: "wedge-profile", UpstreamModel: "wedge-upstream", Version: 1, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "wedge-upstream", BindPort: 4300}}
 	cfg := agent.Config{RuntimeModel: "wedge-upstream", ActiveProfileIDs: []string{"wedge-profile"}, Profiles: []agent.ModelProfile{profile}}
 	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
 	loop.restartTimeout = 80 * time.Millisecond

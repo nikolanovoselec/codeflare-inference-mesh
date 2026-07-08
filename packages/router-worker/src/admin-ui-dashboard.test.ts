@@ -663,7 +663,10 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(harness.byId(ADMIN_UI_PLAYGROUND.outputId).textContent).toBe('Hello mesh')
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/playground/direct-chat')
     expect(call?.init?.method).toBe('POST')
-    expect(JSON.parse(String(call?.init?.body))).toEqual({ model: 'qwen3.6:35b-a3b', messages: [{ role: 'user', content: 'hello mesh' }] })
+    const payload = JSON.parse(String(call?.init?.body)) as { model: string; messages: Array<{ role: string; content: string }>; user: string }
+    expect(payload.model).toBe('qwen3.6:35b-a3b')
+    expect(payload.messages).toEqual([{ role: 'user', content: 'hello mesh' }])
+    expect(payload.user).toMatch(/^user:admin-playground\|session:/)
   })
 
   it('REQ-ADM-016 renders the tools input, max-token cap, and a stop control in the playground', () => {
@@ -1067,7 +1070,7 @@ describe('dashboard routing contracts', () => {
     const addCall = harness.fetchCalls.find((call) => call.path === '/admin/profiles/add')
     expect(addCall).toBeDefined()
     expect(addCall?.init?.method).toBe('POST')
-    expect(JSON.parse(String(addCall?.init?.body))).toEqual({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'split' })
+    expect(JSON.parse(String(addCall?.init?.body))).toEqual({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'split', runtime: 'meshllm' })
     // A successful add refreshes status so the new model appears in the list.
     expect(statusFetches(harness)).toBeGreaterThan(statusBefore)
   })
