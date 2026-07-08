@@ -73,7 +73,7 @@ POST /v1/chat/completions
 
 **Origin check:** n/a
 
-**Request body:** JSON chat completion body with a public model alias. MeshLLM profiles need only `model` and messages. Direct llama.cpp profiles also require a session identity so the router can pin the coding session to one cache-local node without storing raw ids: callers may send OpenAI `user` in the grammar `user:<id>|session:<id>`, or AI Gateway custom-provider calls may supply Gateway metadata (`cf-aig-metadata`, or a forwarded JSON `metadata` object) with `user` and optional `session` values.
+**Request body:** JSON chat completion body with a public model alias. MeshLLM profiles need only `model` and messages. Direct llama.cpp profiles also require a session identity so the router can pin the coding session to one cache-local node without storing raw ids: callers may send OpenAI `user` in the grammar `user:<id>|session:<id>`, or include metadata visible to the router (`cf-aig-metadata` if forwarded, or a JSON `metadata` body object) with `user` and optional `session` values. AI Gateway REST dynamic-route log metadata is observability-only unless the client also sends it in the request body.
 
 **Response**
 
