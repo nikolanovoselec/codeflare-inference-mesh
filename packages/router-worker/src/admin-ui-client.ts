@@ -400,7 +400,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const rt = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : '';
     if (rt === 'failed' || rt === 'dependency-missing') return 'Failed';
     if (nodeReady(node)) return 'Ready';
-    if (rt === 'downloading') return 'Starting · installing runtime or model';
+    if (rt === 'downloading') return 'Starting · downloading runtime or model';
     if (rt === 'loading' || rt === 'starting') return 'Starting · loading model';
     return 'Starting';
   }
@@ -1351,20 +1351,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     slot.appendChild(select);
   }
   function renderRuntimeVersions(view) {
-    const slot = byId(config.runtimeVersion.slotId);
-    if (!slot) return;
-    slot.textContent = '';
-    const grid = document.createElement('div');
-    grid.className = 'form-grid';
-    const makeSelect = (kind, label, selectId) => {
+    const populate = (kind, selectId) => {
+      const select = byId(selectId);
+      if (!select) return false;
       const info = view && view[kind] ? view[kind] : { tags: [], desired: '', stale: true };
-      const wrap = document.createElement('label');
-      wrap.className = 'field';
-      const text = document.createElement('span');
-      text.textContent = label;
-      const select = document.createElement('select');
-      select.id = selectId;
-      select.name = kind + 'Version';
+      select.textContent = '';
       select.setAttribute('data-runtime-version-select', kind);
       select.setAttribute(config.runtimeVersion.staleAttribute, info.stale ? 'true' : 'false');
       const tags = info.tags || [];
@@ -1385,6 +1376,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       }
       select.disabled = select.options.length === 0;
       select.value = info.desired || (tags[0] || '');
+      return true;
+    };
+    const meshReady = populate('meshllm', config.runtimeVersion.meshllmSelectId);
+    const llamaReady = populate('llamacpp', config.runtimeVersion.llamacppSelectId);
+    if (meshReady && llamaReady) return;
+    const slot = byId(config.runtimeVersion.slotId);
+    if (!slot) return;
+    slot.textContent = '';
+    const grid = document.createElement('div');
+    grid.className = 'form-grid';
+    const makeSelect = (kind, label, selectId) => {
+      const wrap = document.createElement('label');
+      wrap.className = 'field';
+      const text = document.createElement('span');
+      text.textContent = label;
+      const select = document.createElement('select');
+      select.id = selectId;
+      select.name = kind + 'Version';
       wrap.append(text, select);
       return wrap;
     };
@@ -1393,6 +1402,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       makeSelect('llamacpp', 'llama.cpp version', config.runtimeVersion.llamacppSelectId)
     );
     slot.appendChild(grid);
+    populate('meshllm', config.runtimeVersion.meshllmSelectId);
+    populate('llamacpp', config.runtimeVersion.llamacppSelectId);
   }
   function renderApiKeys(keys) {
     const listEl = byId('api-key-list');
