@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -209,11 +210,7 @@ func runService(args []string) error {
 
 func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (meshRuntime, string, error) {
 	if profile.Runtime == "llamacpp" {
-		binaryPath, installErr := agent.EnsureLlamaCpp(cfg.DataDir, cfg.RuntimeVersions.LlamaCpp)
-		installError := ""
-		if installErr != nil {
-			installError = installErr.Error()
-		}
+		binaryPath, installError := llamaCppBinaryPath(cfg)
 		manager := agent.NewLlamaCppManager(llamaCppInput(profile, binaryPath))
 		if err := manager.Start(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
 			return nil, installError, err
@@ -248,6 +245,17 @@ func startMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.Model
 // moves with the selected model), and is likewise never fatal. REQ-NODE-010.
 func llamaCppInput(profile agent.ModelProfile, binaryPath string) agent.LlamaCppInput {
 	return agent.LlamaCppInput{ProfileID: profile.ID, ProfileVersion: profile.Version, UpstreamModel: profile.UpstreamModel, Settings: profile.LlamaCpp, BinaryPath: binaryPath}
+}
+
+func llamaCppBinaryPath(cfg agent.Config) (string, string) {
+	if override := strings.TrimSpace(cfg.LlamaCppBinaryPath); override != "" {
+		return override, ""
+	}
+	binaryPath, installErr := agent.EnsureLlamaCpp(cfg.DataDir, cfg.RuntimeVersions.LlamaCpp)
+	if installErr != nil {
+		return binaryPath, installErr.Error()
+	}
+	return binaryPath, ""
 }
 
 func provisionMeshPeerFirewall(ctx context.Context, run agent.CommandRunner, goos string, iface string, profile agent.ModelProfile) {
@@ -669,11 +677,7 @@ func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, man
 	}
 	if profile.Runtime == "llamacpp" {
 		if direct, ok := manager.(*agent.LlamaCppManager); ok {
-			binaryPath, installErr := agent.EnsureLlamaCpp(cfg.DataDir, cfg.RuntimeVersions.LlamaCpp)
-			installError := ""
-			if installErr != nil {
-				installError = installErr.Error()
-			}
+			binaryPath, installError := llamaCppBinaryPath(cfg)
 			if err := direct.RestartWithLlamaInput(ctx, llamaCppInput(profile, binaryPath)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
 				return installError, err
 			}

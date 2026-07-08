@@ -35,11 +35,13 @@ type LlamaCppAsset struct {
 type llamaCppInstallOptions struct {
 	goos         string
 	goarch       string
-	asset        *LlamaCppAsset
-	lookPath     func(file string) (string, error)
-	queryVersion func(binaryPath string) (string, error)
-	download     func(assetURL string) ([]byte, error)
-	fetchRelease func(version string) ([]LlamaCppReleaseAsset, error)
+	asset          *LlamaCppAsset
+	lookPath       func(file string) (string, error)
+	queryVersion   func(binaryPath string) (string, error)
+	download       func(assetURL string) ([]byte, error)
+	fetchRelease   func(version string) ([]LlamaCppReleaseAsset, error)
+	backend        string
+	hostCandidates []string
 }
 
 type LlamaCppReleaseAsset struct {
@@ -91,27 +93,39 @@ func WithLlamaCppReleaseFetcher(fetchRelease func(version string) ([]LlamaCppRel
 	}
 }
 
+func WithLlamaCppBackend(backend string) LlamaCppInstallOption {
+	return func(options *llamaCppInstallOptions) {
+		options.backend = backend
+	}
+}
+
+func WithLlamaCppHostCandidates(paths ...string) LlamaCppInstallOption {
+	return func(options *llamaCppInstallOptions) {
+		options.hostCandidates = append([]string(nil), paths...)
+	}
+}
+
 func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (string, error) {
 	if version == "" {
 		version = LlamaCppDefaultVersion
 	}
 	options := llamaCppInstallOptions{
-		goos:         runtime.GOOS,
-		goarch:       runtime.GOARCH,
-		lookPath:     exec.LookPath,
-		queryVersion: queryLlamaCppVersion,
-		download:     downloadLlamaCppAsset,
-		fetchRelease: fetchLlamaCppReleaseAssets,
+		goos:           runtime.GOOS,
+		goarch:         runtime.GOARCH,
+		lookPath:       exec.LookPath,
+		queryVersion:   queryLlamaCppVersion,
+		download:       downloadLlamaCppAsset,
+		fetchRelease:   fetchLlamaCppReleaseAssets,
+		backend:        detectLlamaCppBackend(runtime.GOOS),
+		hostCandidates: llamaCppHostCandidates(runtime.GOOS),
 	}
 	for _, opt := range opts {
 		opt(&options)
 	}
 
 	binaryName := llamaCppBinaryName(options.goos)
-	if pathBinary, err := options.lookPath(binaryName); err == nil {
-		if out, versionErr := options.queryVersion(pathBinary); versionErr == nil && llamaCppVersionMatches(out, version) {
-			return pathBinary, nil
-		}
+	if pathBinary, ok := findMatchingLlamaCppHostBinary(binaryName, version, options); ok {
+		return pathBinary, nil
 	}
 
 	target := filepath.Join(dataDir, "bin", binaryName)
@@ -125,7 +139,7 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 	if options.asset != nil {
 		asset = *options.asset
 	} else {
-		resolved, err := LlamaCppAssetFor(version, options.goos, options.goarch, options.fetchRelease)
+		resolved, err := LlamaCppAssetForBackend(version, options.goos, options.goarch, options.backend, options.fetchRelease)
 		if err != nil {
 			return "", fmt.Errorf("%w: %v", ErrRuntimeDependencyMissing, err)
 		}
@@ -165,7 +179,11 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 }
 
 func LlamaCppAssetFor(version, goos, goarch string, fetchRelease func(version string) ([]LlamaCppReleaseAsset, error)) (LlamaCppAsset, error) {
-	name, err := llamaCppAssetName(version, goos, goarch)
+	return LlamaCppAssetForBackend(version, goos, goarch, "cpu", fetchRelease)
+}
+
+func LlamaCppAssetForBackend(version, goos, goarch string, backend string, fetchRelease func(version string) ([]LlamaCppReleaseAsset, error)) (LlamaCppAsset, error) {
+	names, err := llamaCppAssetNames(version, goos, goarch, backend)
 	if err != nil {
 		return LlamaCppAsset{}, err
 	}
@@ -173,8 +191,13 @@ func LlamaCppAssetFor(version, goos, goarch string, fetchRelease func(version st
 	if err != nil {
 		return LlamaCppAsset{}, err
 	}
+	byName := map[string]LlamaCppReleaseAsset{}
 	for _, asset := range assets {
-		if asset.Name != name {
+		byName[asset.Name] = asset
+	}
+	for _, name := range names {
+		asset, ok := byName[name]
+		if !ok {
 			continue
 		}
 		sha := strings.TrimPrefix(asset.Digest, "sha256:")
@@ -183,28 +206,114 @@ func LlamaCppAssetFor(version, goos, goarch string, fetchRelease func(version st
 		}
 		return LlamaCppAsset{AssetName: name, URL: asset.BrowserDownloadURL, SHA256: sha}, nil
 	}
-	return LlamaCppAsset{}, fmt.Errorf("no llama.cpp asset %s in %s", name, version)
+	return LlamaCppAsset{}, fmt.Errorf("no llama.cpp asset among %s in %s", strings.Join(names, ", "), version)
 }
 
-func llamaCppAssetName(version, goos, goarch string) (string, error) {
-	suffix := ""
+func llamaCppAssetNames(version, goos, goarch string, backend string) ([]string, error) {
+	name := func(suffix string) string { return fmt.Sprintf("llama-%s-bin-%s", version, suffix) }
 	switch goos + "/" + goarch {
 	case "linux/amd64":
-		suffix = "ubuntu-x64.tar.gz"
+		base := []string{name("ubuntu-x64.tar.gz")}
+		switch backend {
+		case "rocm":
+			return append([]string{name("ubuntu-rocm-7.2-x64.tar.gz")}, base...), nil
+		case "vulkan", "nvidia":
+			return append([]string{name("ubuntu-vulkan-x64.tar.gz")}, base...), nil
+		case "sycl":
+			return append([]string{name("ubuntu-sycl-fp16-x64.tar.gz")}, base...), nil
+		default:
+			return base, nil
+		}
 	case "linux/arm64":
-		suffix = "ubuntu-arm64.tar.gz"
+		base := []string{name("ubuntu-arm64.tar.gz")}
+		if backend == "vulkan" || backend == "nvidia" {
+			return append([]string{name("ubuntu-vulkan-arm64.tar.gz")}, base...), nil
+		}
+		return base, nil
 	case "darwin/amd64":
-		suffix = "macos-x64.tar.gz"
+		return []string{name("macos-x64.tar.gz")}, nil
 	case "darwin/arm64":
-		suffix = "macos-arm64.tar.gz"
+		return []string{name("macos-arm64.tar.gz")}, nil
 	case "windows/amd64":
-		suffix = "win-cpu-x64.zip"
+		base := []string{name("win-cpu-x64.zip")}
+		switch backend {
+		case "cuda13":
+			return append([]string{name("win-cuda-13.3-x64.zip")}, base...), nil
+		case "cuda12", "nvidia":
+			return append([]string{name("win-cuda-12.4-x64.zip")}, base...), nil
+		case "vulkan":
+			return append([]string{name("win-vulkan-x64.zip")}, base...), nil
+		default:
+			return base, nil
+		}
 	case "windows/arm64":
-		suffix = "win-cpu-arm64.zip"
+		return []string{name("win-cpu-arm64.zip")}, nil
 	default:
-		return "", fmt.Errorf("no llama.cpp asset for %s/%s", goos, goarch)
+		return nil, fmt.Errorf("no llama.cpp asset for %s/%s", goos, goarch)
 	}
-	return fmt.Sprintf("llama-%s-bin-%s", version, suffix), nil
+}
+
+func findMatchingLlamaCppHostBinary(binaryName string, version string, options llamaCppInstallOptions) (string, bool) {
+	seen := map[string]bool{}
+	try := func(candidate string) (string, bool) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || seen[candidate] {
+			return "", false
+		}
+		seen[candidate] = true
+		if out, versionErr := options.queryVersion(candidate); versionErr == nil && llamaCppVersionMatches(out, version) {
+			return candidate, true
+		}
+		return "", false
+	}
+	if pathBinary, err := options.lookPath(binaryName); err == nil {
+		if candidate, ok := try(pathBinary); ok {
+			return candidate, true
+		}
+	}
+	for _, candidate := range options.hostCandidates {
+		if candidate, ok := try(candidate); ok {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+func llamaCppHostCandidates(goos string) []string {
+	switch goos {
+	case "linux":
+		return []string{"/usr/local/bin/llama-server", "/usr/bin/llama-server", "/snap/bin/llama-server", "/opt/llama.cpp/bin/llama-server", "/opt/llama-cpp/bin/llama-server", "/opt/llama/bin/llama-server"}
+	case "darwin":
+		return []string{"/opt/homebrew/bin/llama-server", "/usr/local/bin/llama-server"}
+	case "windows":
+		return []string{`C:\Program Files\llama.cpp\llama-server.exe`, `C:\llama.cpp\llama-server.exe`}
+	default:
+		return nil
+	}
+}
+
+func detectLlamaCppBackend(goos string) string {
+	if override := strings.TrimSpace(os.Getenv("INFERENCE_MESH_LLAMA_CPP_BACKEND")); override != "" {
+		return strings.ToLower(override)
+	}
+	if goos == "darwin" {
+		return "metal"
+	}
+	if _, err := exec.LookPath("rocminfo"); err == nil {
+		return "rocm"
+	}
+	if _, err := exec.LookPath("rocm-smi"); err == nil {
+		return "rocm"
+	}
+	if _, err := exec.LookPath("nvidia-smi"); err == nil {
+		// Upstream release archives do not currently publish a Linux CUDA binary for every tag;
+		// prefer the GPU-capable Vulkan archive when no host-installed CUDA llama-server was found.
+		return "nvidia"
+	}
+	if _, err := exec.LookPath("vulkaninfo"); err == nil {
+		return "vulkan"
+	}
+	return "cpu"
 }
 
 func llamaCppBinaryName(goos string) string {

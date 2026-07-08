@@ -33,6 +33,9 @@ type Config struct {
 	MeshLLMConsolePort   int            `json:"meshllmConsolePort"`
 	MeshLLMFlavor        string         `json:"meshllmFlavor,omitempty"`
 	MeshLLMAllowUnpinned bool                  `json:"meshllmAllowUnpinned,omitempty"`
+	// LlamaCppBinaryPath pins a host-installed llama-server binary, for example a CUDA-enabled install.
+	// When set, the agent uses this binary instead of downloading the generic managed release.
+	LlamaCppBinaryPath   string                `json:"llamaCppBinaryPath,omitempty"`
 	RuntimeVersions      RuntimeBinaryVersions `json:"runtimeVersions,omitempty"`
 	NostrRelays          []string              `json:"nostrRelays,omitempty"`
 	RuntimeModel         string         `json:"runtimeModel"`

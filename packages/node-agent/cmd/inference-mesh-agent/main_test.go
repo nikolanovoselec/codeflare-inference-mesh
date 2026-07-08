@@ -737,6 +737,17 @@ func TestREQRUN007VersionBumpRestartsEverySplitServingNode(t *testing.T) {
 	})
 }
 
+func TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride(t *testing.T) {
+	cfg := agent.Config{DataDir: t.TempDir(), LlamaCppBinaryPath: " /opt/llama-cuda/bin/llama-server ", RuntimeVersions: agent.RuntimeBinaryVersions{LlamaCpp: "b9928"}}
+	binaryPath, installError := llamaCppBinaryPath(cfg)
+	if binaryPath != "/opt/llama-cuda/bin/llama-server" {
+		t.Fatalf("expected host-installed llama.cpp binary override, got %q", binaryPath)
+	}
+	if installError != "" {
+		t.Fatalf("expected override to skip managed install, got %q", installError)
+	}
+}
+
 func TestREQNODE013RuntimeVersionChangeRestartsSelectedProfile(t *testing.T) {
 	counter := &agent.ActiveCounter{}
 	fake := newFakeMeshRuntime(counter)

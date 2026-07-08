@@ -32,6 +32,48 @@ func TestREQNODE013LlamaCppReleaseDigestSelectsHostAsset(t *testing.T) {
 	}
 }
 
+func TestREQNODE013LlamaCppAssetPrefersGpuBackendWhenAvailable(t *testing.T) {
+	asset, err := LlamaCppAssetForBackend("b9928", "linux", "amd64", "nvidia", func(version string) ([]LlamaCppReleaseAsset, error) {
+		return []LlamaCppReleaseAsset{
+			{Name: "llama-b9928-bin-ubuntu-x64.tar.gz", Digest: "sha256:" + strings.Repeat("a", 64), BrowserDownloadURL: "https://example.invalid/cpu"},
+			{Name: "llama-b9928-bin-ubuntu-vulkan-x64.tar.gz", Digest: "sha256:" + strings.Repeat("b", 64), BrowserDownloadURL: "https://example.invalid/vulkan"},
+		}, nil
+	})
+	if err != nil {
+		t.Fatalf("LlamaCppAssetForBackend returned error: %v", err)
+	}
+	if asset.AssetName != "llama-b9928-bin-ubuntu-vulkan-x64.tar.gz" {
+		t.Fatalf("asset name = %q", asset.AssetName)
+	}
+	if asset.URL != "https://example.invalid/vulkan" {
+		t.Fatalf("asset URL = %q", asset.URL)
+	}
+}
+
+func TestREQNODE013EnsureLlamaCppDiscoversHostInstalledBinary(t *testing.T) {
+	downloaded := false
+	path, err := EnsureLlamaCpp(t.TempDir(), "b9912",
+		WithLlamaCppPlatform("linux", "amd64"),
+		WithLlamaCppLookPath(lookPathWith(map[string]string{})),
+		WithLlamaCppHostCandidates("/opt/llama/bin/llama-server"),
+		WithLlamaCppVersionQuery(func(binaryPath string) (string, error) {
+			if binaryPath != "/opt/llama/bin/llama-server" {
+				t.Fatalf("queried binary = %q", binaryPath)
+			}
+			return "llama.cpp build 9912", nil
+		}),
+		WithLlamaCppDownload(func(assetURL string) ([]byte, error) { downloaded = true; return nil, nil }))
+	if err != nil {
+		t.Fatalf("EnsureLlamaCpp returned error: %v", err)
+	}
+	if path != "/opt/llama/bin/llama-server" {
+		t.Fatalf("path = %q", path)
+	}
+	if downloaded {
+		t.Fatalf("matching host-installed binary should not trigger a download")
+	}
+}
+
 func TestREQNODE013EnsureLlamaCppInstallsManagedBinary(t *testing.T) {
 	payload := []byte("fake llama-server")
 	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b1234/bin/llama-server", body: payload, mode: 0o755}, {name: "llama-b1234/bin/libllama-server-impl.so", body: []byte("fake shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libllama-common.so.0.0.0", body: []byte("fake versioned shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libllama-common.so.0", linkName: "libllama-common.so.0.0.0", mode: 0o644}, {name: "llama-b1234/bin/libggml-base.so.0.0.0", body: []byte("fake chained shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libggml-base.so.0", linkName: "libggml-base.so.0.0.0", mode: 0o644}, {name: "llama-b1234/bin/libggml-base.so", linkName: "libggml-base.so.0", mode: 0o644}, {name: "llama-b1234/bin/ggml.dll", body: []byte("fake dll"), mode: 0o644}})
