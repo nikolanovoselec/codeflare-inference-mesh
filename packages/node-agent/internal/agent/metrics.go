@@ -6,6 +6,7 @@ import (
 )
 
 type NodeMetrics struct {
+	RuntimeKind               string   `json:"runtimeKind,omitempty"`
 	GPUName                   string   `json:"gpuName,omitempty"`
 	GPUMemoryUsedMiB          int      `json:"gpuMemoryUsedMiB,omitempty"`
 	GPUMemoryTotalMiB         int      `json:"gpuMemoryTotalMiB,omitempty"`
@@ -26,6 +27,14 @@ type NodeMetrics struct {
 	APIReady                  bool     `json:"apiReady,omitempty"`
 	ConsoleReady              bool     `json:"consoleReady,omitempty"`
 	MeshLLMVersion            string   `json:"meshllmVersion,omitempty"`
+	LlamaCppVersion           string   `json:"llamacppVersion,omitempty"`
+	CtxSize                   int      `json:"ctxSize,omitempty"`
+	Parallel                  int      `json:"parallel,omitempty"`
+	CachePrompt               bool     `json:"cachePrompt,omitempty"`
+	CacheReuse                int      `json:"cacheReuse,omitempty"`
+	SlotCount                 int      `json:"slotCount,omitempty"`
+	ActiveSlots               int      `json:"activeSlots,omitempty"`
+	CachedTokensLast          int      `json:"cachedTokensLast,omitempty"`
 	LastError                 string   `json:"lastError,omitempty"`
 	// RuntimeDetail is the most recent error-looking line from mesh-llm's own stderr, so the
 	// console can show why a runtime is wedged; NodeState is the console's raw node_state. REQ-OBS-011.
@@ -91,6 +100,9 @@ func MeshStatusWithModels(st MeshLLMStatus, modelIDs []string) MeshLLMStatus {
 // absent MeshLLM signals stay absent instead of being fabricated.
 func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	merged := base
+	if extra.RuntimeKind != "" {
+		merged.RuntimeKind = extra.RuntimeKind
+	}
 	if extra.GPUName != "" {
 		merged.GPUName = extra.GPUName
 	}
@@ -135,6 +147,30 @@ func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	}
 	if extra.MeshLLMVersion != "" {
 		merged.MeshLLMVersion = extra.MeshLLMVersion
+	}
+	if extra.LlamaCppVersion != "" {
+		merged.LlamaCppVersion = extra.LlamaCppVersion
+	}
+	if extra.CtxSize != 0 {
+		merged.CtxSize = extra.CtxSize
+	}
+	if extra.Parallel != 0 {
+		merged.Parallel = extra.Parallel
+	}
+	if extra.CachePrompt {
+		merged.CachePrompt = true
+	}
+	if extra.CacheReuse != 0 {
+		merged.CacheReuse = extra.CacheReuse
+	}
+	if extra.SlotCount != 0 {
+		merged.SlotCount = extra.SlotCount
+	}
+	if extra.ActiveSlots != 0 {
+		merged.ActiveSlots = extra.ActiveSlots
+	}
+	if extra.CachedTokensLast != 0 {
+		merged.CachedTokensLast = extra.CachedTokensLast
 	}
 	if extra.NodeState != "" {
 		merged.NodeState = extra.NodeState

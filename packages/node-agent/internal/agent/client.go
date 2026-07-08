@@ -185,6 +185,10 @@ type HeartbeatIdentity struct {
 }
 
 func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int, identity HeartbeatIdentity) HeartbeatRequest {
+	runtimeKind := "meshllm"
+	if profile, ok := SelectedProfile(cfg); ok && profile.Runtime != "" {
+		runtimeKind = profile.Runtime
+	}
 	return HeartbeatRequest{
 		NodeID:             cfg.NodeID,
 		DisplayName:        cfg.DisplayName,
@@ -196,7 +200,7 @@ func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int, identity
 		ActiveProfileIDs:   append([]string(nil), cfg.ActiveProfileIDs...),
 		Capacity:           cfg.Capacity,
 		InFlight:           inFlight,
-		Runtime:            "meshllm",
+		Runtime:            runtimeKind,
 		RuntimeModel:       metrics.LoadedModel,
 		MeshID:             identity.MeshID,
 		MeshToken:          identity.MeshToken,

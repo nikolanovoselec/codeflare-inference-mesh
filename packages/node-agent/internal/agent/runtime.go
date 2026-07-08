@@ -16,10 +16,25 @@ type ModelProfile struct {
 	ContextWindow  int               `json:"contextWindow"`
 	Runtime        string            `json:"runtime"`
 	MeshLLM        MeshLLMSettings   `json:"meshllm"`
+	LlamaCpp       LlamaCppSettings  `json:"llamacpp"`
 	Version        int               `json:"version"`
 	RolloutPercent int               `json:"rolloutPercent"`
 	Active         bool              `json:"active"`
 	Metadata       map[string]string `json:"metadata,omitempty"`
+}
+
+type LlamaCppSettings struct {
+	ModelRef      string             `json:"modelRef"`
+	HFRepo        string             `json:"hfRepo"`
+	HFFile        string             `json:"hfFile,omitempty"`
+	Quant         string             `json:"quant,omitempty"`
+	BindPort      int                `json:"bindPort"`
+	ContextWindow int                `json:"contextWindow"`
+	Parallel      int                `json:"parallel"`
+	CachePrompt   bool               `json:"cachePrompt"`
+	CacheReuse    int                `json:"cacheReuse"`
+	Alias         string             `json:"alias"`
+	Reasoning     *ReasoningSettings `json:"reasoning,omitempty"`
 }
 
 type MeshLLMSettings struct {

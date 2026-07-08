@@ -104,6 +104,14 @@ func NewMeshLLMManager(in MeshLLMRenderInput, contextWindow int, dataDir string,
 	}
 }
 
+func (m *MeshLLMManager) Runtime() string { return "meshllm" }
+
+func (m *MeshLLMManager) TargetURL() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return fmt.Sprintf("http://127.0.0.1:%d", m.input.APIPort)
+}
+
 func (m *MeshLLMManager) Start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
