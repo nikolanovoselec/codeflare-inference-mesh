@@ -25,6 +25,10 @@ database_id = "create-via-deploy-workflow"
 name = "REGISTRY"
 class_name = "RegistryDO"
 
+[[durable_objects.bindings]]
+name = "SESSION_AFFINITY"
+class_name = "SessionAffinityDO"
+
 # Workers VPC / Cloudflare Mesh binding (required for real deploys).
 # Kept commented in source so CI dry-runs do not require an account with Workers VPC.
 # The deploy workflow uncomments and verifies this block before `wrangler deploy`.
@@ -36,6 +40,10 @@ class_name = "RegistryDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RegistryDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionAffinityDO"]
 
 # Rate limiting on public endpoints. Limits are per Cloudflare location per 60s (period must be
 # 10 or 60); the effective global limit is higher across locations. Relaxed for normal operation,
@@ -113,6 +121,10 @@ database_id = "create-via-deploy-workflow"
 name = "REGISTRY"
 class_name = "RegistryDO"
 
+[[env.integration.durable_objects.bindings]]
+name = "SESSION_AFFINITY"
+class_name = "SessionAffinityDO"
+
 # Workers VPC / Cloudflare Mesh binding for integration deploys.
 # The deploy workflow uncomments this block before `wrangler deploy --env integration`.
 # [[env.integration.vpc_networks]]
@@ -123,6 +135,10 @@ class_name = "RegistryDO"
 [[env.integration.migrations]]
 tag = "v1"
 new_sqlite_classes = ["RegistryDO"]
+
+[[env.integration.migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionAffinityDO"]
 
 # Integration rate limits: same shape as production, distinct namespaces so the two
 # environments never share counters.

@@ -117,11 +117,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
           CLOUDFLARE_API_TOKEN_RUNTIME: ${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}
           MESH_STATE_KEY: ${{ secrets.MESH_STATE_KEY }}
+          SESSION_AFFINITY_KEY: ${{ secrets.SESSION_AFFINITY_KEY }}
         run: |
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_API_TOKEN_RUNTIME"
           test -n "$MESH_STATE_KEY"
+          test -n "$SESSION_AFFINITY_KEY"
 
       - name: Install router dependencies
         run: npm install
@@ -186,6 +188,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}
           CLOUDFLARE_API_TOKEN_RUNTIME: ${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}
           ADMIN_RECOVERY_TOKEN: ${{ secrets.ADMIN_RECOVERY_TOKEN }}
+          SESSION_AFFINITY_KEY: ${{ secrets.SESSION_AFFINITY_KEY }}
         run: |
           set -euo pipefail
           args=()
@@ -193,7 +196,8 @@ jobs:
           secrets_json="$(node <<'NODE'
           const payload = {
             CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
-            CLOUDFLARE_API_TOKEN_RUNTIME: process.env.CLOUDFLARE_API_TOKEN_RUNTIME
+            CLOUDFLARE_API_TOKEN_RUNTIME: process.env.CLOUDFLARE_API_TOKEN_RUNTIME,
+            SESSION_AFFINITY_KEY: process.env.SESSION_AFFINITY_KEY
           }
           if (process.env.ADMIN_RECOVERY_TOKEN) payload.ADMIN_RECOVERY_TOKEN = process.env.ADMIN_RECOVERY_TOKEN
           process.stdout.write(JSON.stringify(payload))

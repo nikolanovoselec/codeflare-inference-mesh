@@ -934,6 +934,76 @@ describe('router worker behavioral contracts', () => {
     expect((await store.getNode('node-a'))?.inFlight).toBe(0)
   })
 
+  it('REQ-SCH-006 requires body.user for active llama.cpp profiles', async () => {
+    const { router, store } = routerFixture({ env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
+    const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
+    await store.setProfile(direct)
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: direct.publicAliases[0], messages: [] })
+    }))
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: 'session_required', requestId: 'request-a' })
+  })
+
+  it('REQ-SCH-006 pins and reuses a valid direct llama.cpp session without storing raw user ids', async () => {
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
+    const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
+    await store.setProfile(direct)
+    await store.upsertNode(nodeFixture({
+      runtime: 'llamacpp',
+      activeProfileIds: [direct.id],
+      publicModels: [...direct.publicAliases],
+      runtimeModel: direct.upstreamModel,
+      metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel], cachePrompt: true, cacheReuse: 256, parallel: 1 }
+    }))
+
+    const payload = { model: direct.publicAliases[0], user: 'user:operator-a|session:session-a', messages: [{ role: 'user', content: 'hello' }] }
+    const first = await router(new Request('https://router.test/v1/chat/completions', { method: 'POST', headers: { ...bearer('provider-secret'), 'content-type': 'application/json' }, body: JSON.stringify(payload) }))
+    await first.text()
+    const second = await router(new Request('https://router.test/v1/chat/completions', { method: 'POST', headers: { ...bearer('provider-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ ...payload, messages: [{ role: 'user', content: 'hello again' }] }) }))
+    await second.text()
+    const forwarded = await capture.request!.json() as { model: string; user: string }
+    const sessions = [...store.directSessions.values()]
+
+    expect(first.status).toBe(200)
+    expect(first.headers.get('x-inference-mesh-affinity')).toBe('pinned')
+    expect(second.headers.get('x-inference-mesh-affinity')).toBe('reused')
+    expect(second.headers.get('x-inference-mesh-session-node')).toBe('node-a')
+    expect(forwarded.model).toBe(direct.upstreamModel)
+    expect(forwarded.user).toBe('user:operator-a|session:session-a')
+    expect(sessions).toHaveLength(1)
+    expect(JSON.stringify(sessions[0])).not.toContain('operator-a')
+    expect(JSON.stringify(sessions[0])).not.toContain('session-a')
+    expect(sessions[0]!.affinityKey).toMatch(/^codeflare-mesh\|custom-code-model-gguf-q4-k-m-llamacpp\|hmac-sha256:[a-f0-9]{64}$/)
+  })
+
+  it('REQ-SCH-006 fails over only when the pinned direct node becomes ineligible', async () => {
+    const { router, store } = routerFixture({ env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
+    const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
+    await store.setProfile(direct)
+    const directNode = (id: string, activeRequests: number) => nodeFixture({ id, meshIp: id === 'node-a' ? '100.64.1.10' : '100.64.1.11', runtime: 'llamacpp', activeProfileIds: [direct.id], publicModels: [...direct.publicAliases], runtimeModel: direct.upstreamModel, metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests, apiReady: true, readyModels: [direct.upstreamModel] } })
+    await store.upsertNode(directNode('node-a', 0))
+    await store.upsertNode(directNode('node-b', 1))
+
+    const payload = { model: direct.publicAliases[0], user: 'user:operator-a|session:session-a', messages: [] }
+    const first = await router(new Request('https://router.test/v1/chat/completions', { method: 'POST', headers: { ...bearer('provider-secret'), 'content-type': 'application/json' }, body: JSON.stringify(payload) }))
+    await first.text()
+    await store.upsertNode({ ...directNode('node-a', 0), deactivated: true })
+    const second = await router(new Request('https://router.test/v1/chat/completions', { method: 'POST', headers: { ...bearer('provider-secret'), 'content-type': 'application/json' }, body: JSON.stringify(payload) }))
+    await second.text()
+    const session = [...store.directSessions.values()][0]!
+
+    expect(first.headers.get('x-inference-mesh-session-node')).toBe('node-a')
+    expect(second.headers.get('x-inference-mesh-affinity')).toBe('failed_over')
+    expect(second.headers.get('x-inference-mesh-session-node')).toBe('node-b')
+    expect(session.failoverCount).toBe(1)
+  })
+
   it('REQ-RTR-002 REQ-SEC-001 reuses generated upstream token when no env secret exists', async () => {
     // UpstreamTokenReuseTestAnchor
     const capture: { request?: Request } = {}

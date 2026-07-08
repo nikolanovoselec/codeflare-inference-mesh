@@ -5,12 +5,13 @@ import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
 import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayProvisionStatus, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
+import { decideDirectSession, directSessionKey, type DirectSessionDecision, type DirectSessionDecisionRequest } from './direct-affinity'
 import { InvalidJsonBodyError } from './errors'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
-import { meshUrl } from './scheduler'
+import { eligibleDirectNodes, meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { singleActiveActivation } from './store'
 import type { ClaimRequest, CredentialKind, HeartbeatRequest, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store, TokenRecord } from './types'
@@ -162,25 +163,65 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   return runInference(deps, { body, requestHeaders: request.headers, requestId, now })
 }
 
-// The stateless forward path shared by the provider `/v1/chat/completions` route and the admin
-// Playground's direct target. The router selects an eligible node and streams the node's response
-// straight back; mesh-llm owns dispatch, per-node concurrency, and KV-aware routing across the
-// peered mesh, so the router keeps no live reservation state. REQ-SCH-002.
+// The forward path shared by the provider `/v1/chat/completions` route and the admin
+// Playground's direct target. Mesh profiles keep the stateless mesh-llm entry selection;
+// direct llama.cpp profiles require a stable `body.user` and use session affinity so a
+// coding conversation stays on the same cache-warm node. REQ-SCH-002 / REQ-SCH-006.
 async function runInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }): Promise<Response> {
+  const publicModel = input.body.model as string
+  const profile = await deps.store.getProfileByPublicModel(publicModel)
+  if (!profile) return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
+  if (profile.runtime === 'llamacpp') return runDirectLlamaCppInference(deps, input, publicModel, profile)
+  return runMeshInference(deps, input)
+}
+
+async function runMeshInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }): Promise<Response> {
   const publicModel = input.body.model as string
   const selection = await deps.scheduler.selectEntryNode({ publicModel, now: input.now })
   if (!selection.node || !selection.profile) {
     if (selection.reason === 'no-profile') return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
     return json({ error: 'no_healthy_node', requestId: input.requestId }, 503, input.requestId)
   }
+  return forwardInference(deps, input, selection.node, selection.profile)
+}
 
+async function runDirectLlamaCppInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }, publicModel: string, profile: ModelProfile): Promise<Response> {
+  const session = parseDirectSession(input.body.user)
+  if (!session) {
+    await deps.store.appendAudit({ id: input.requestId, type: 'direct_session_rejected', at: input.now, actor: 'provider', target: profile.id, detail: { publicModel, reason: 'invalid_user' } })
+    return json({ error: 'session_required', message: 'llamacpp profiles require body.user formatted as user:<id>|session:<id>', requestId: input.requestId }, 400, input.requestId)
+  }
+  const secret = directAffinitySecret(deps.env)
+  if (!secret) return json({ error: 'session_affinity_key_missing', requestId: input.requestId }, 503, input.requestId)
+  const userHash = `hmac-sha256:${await hmacHex(secret, session.userId)}`
+  const sessionHash = `hmac-sha256:${await hmacHex(secret, session.sessionId)}`
+  const affinityHash = `hmac-sha256:${await hmacHex(secret, `${session.userId}|${session.sessionId}`)}`
+  const candidates = eligibleDirectNodes(await deps.store.listNodes(input.now), profile, publicModel, input.now)
+  const decision = await decideDirectSessionWithAffinity(deps, {
+    affinityKey: directSessionKey(publicModel, profile.id, affinityHash),
+    profileId: profile.id,
+    publicModel,
+    userHash,
+    sessionHash,
+    candidates,
+    now: input.now
+  })
+  if (!decision.node || !decision.affinity) return json({ error: 'no_healthy_node', requestId: input.requestId }, 503, input.requestId)
+  await deps.store.appendAudit({ id: input.requestId, type: `direct_session_${decision.affinity === 'failed_over' ? 'failed_over' : decision.affinity}`, at: input.now, actor: 'provider', target: profile.id, detail: { profileId: profile.id, publicModel, nodeId: decision.node.id, affinityKey: decision.session?.affinityKey ?? '', userHash, sessionHash, reason: decision.affinity === 'reused' ? 'healthy_pin' : decision.affinity === 'failed_over' ? 'node_unhealthy' : 'new' } })
+  const response = await forwardInference(deps, input, decision.node, profile)
+  response.headers.set('x-inference-mesh-affinity', decision.affinity)
+  response.headers.set('x-inference-mesh-session-node', decision.node.id)
+  return response
+}
+
+async function forwardInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string }, node: NodeRecord, profile: ModelProfile): Promise<Response> {
   const upstreamToken = await resolveUpstreamToken(deps)
   if (!upstreamToken) return json({ error: 'upstream_token_missing', requestId: input.requestId }, 503, input.requestId)
 
-  const rewritten = JSON.stringify({ ...input.body, model: selection.profile.upstreamModel })
+  const rewritten = JSON.stringify({ ...input.body, model: profile.upstreamModel })
   let upstream: Response
   try {
-    upstream = await deps.mesh.fetch(meshUrl(selection.node, '/v1/chat/completions'), {
+    upstream = await deps.mesh.fetch(meshUrl(node, '/v1/chat/completions'), {
       method: 'POST',
       headers: approvedNodeHeaders(input.requestHeaders, upstreamToken, input.requestId),
       body: rewritten
@@ -190,7 +231,7 @@ async function runInference(deps: RouterDeps, input: { body: Record<string, unkn
   }
   return new Response(upstream.body, {
     status: upstream.status,
-    headers: responseMetadataHeaders(upstream.headers, input.requestId, selection.node.id)
+    headers: responseMetadataHeaders(upstream.headers, input.requestId, node.id)
   })
 }
 
@@ -1098,6 +1139,33 @@ function usableWorkerBaseUrl(value: string | undefined): string | undefined {
 
 async function resolveUpstreamToken(deps: RouterDeps): Promise<string | undefined> {
   return deps.env.NODE_UPSTREAM_TOKEN ?? await deps.store.getConfig<string>('node_upstream_token')
+}
+
+function parseDirectSession(value: unknown): { readonly userId: string; readonly sessionId: string } | undefined {
+  if (typeof value !== 'string') return undefined
+  const match = /^user:([^|\r\n]{1,256})\|session:([^|\r\n]{1,256})$/.exec(value)
+  return match ? { userId: match[1]!, sessionId: match[2]! } : undefined
+}
+
+function directAffinitySecret(env: Partial<RouterEnv>): string | undefined {
+  return env.SESSION_AFFINITY_KEY ?? env.ADMIN_TOKEN
+}
+
+async function hmacHex(secret: string, value: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value))
+  return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function decideDirectSessionWithAffinity(deps: RouterDeps, request: DirectSessionDecisionRequest): Promise<DirectSessionDecision> {
+  if (!deps.env.SESSION_AFFINITY) return decideDirectSession(deps.store, request)
+  const id = deps.env.SESSION_AFFINITY.idFromName(request.affinityKey)
+  const response = await deps.env.SESSION_AFFINITY.get(id).fetch('https://session-affinity.local/direct-session', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request)
+  })
+  return await response.json() as DirectSessionDecision
 }
 
 async function getOrCreateUpstreamToken(deps: RouterDeps): Promise<string> {
