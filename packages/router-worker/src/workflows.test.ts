@@ -105,7 +105,7 @@ describe('workflow contract values', () => {
     expect(ci.jobs.router!.steps.find((step) => step.uses === 'actions/setup-node@v6.4.0')?.with).toEqual({ 'node-version': '24' })
     expect(ci.jobs.router!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Install dependencies', 'Lint router', 'Test router behavior', 'Type-check router', 'Generate Wrangler types', 'Worker dry-run deploy']))
     expect(stepUses(ci.jobs.agent!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'actions/setup-go@v6.5.0']))
-    expect(ci.jobs.agent!.steps.find((step) => step.uses === 'actions/setup-go@v6.5.0')?.with).toEqual({ 'go-version': '1.26.4' })
+    expect(ci.jobs.agent!.steps.find((step) => step.uses === 'actions/setup-go@v6.5.0')?.with).toEqual({ 'go-version': '1.26.5' })
     expect(ci.jobs.agent!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Go test', 'Go vet', 'Go race tests', 'Build command']))
     expect(ci.jobs.packaging!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Build staged binary', 'Create archive and checksums', 'Version command', 'actions/upload-artifact@v7.0.1']))
     expect(stepUses(ci.jobs.packaging!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
