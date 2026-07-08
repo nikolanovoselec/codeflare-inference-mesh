@@ -106,17 +106,6 @@ export function navItem(options: NavItemOptions): string {
   return `<a class="nav-item" href="#${escapeHtml(options.section)}" data-nav="${escapeHtml(options.section)}"${options.current === true ? ' aria-current="page"' : ''}><span>${escapeHtml(options.label)}</span><small>${escapeHtml(options.hint)}</small></a>`
 }
 
-export interface TabItemOptions {
-  readonly tab: string
-  readonly label: string
-  readonly glyph: string
-  readonly current?: boolean
-}
-
-export function tabItem(options: TabItemOptions): string {
-  return `<button class="tab-item" type="button" data-tab="${escapeHtml(options.tab)}"${options.current === true ? ' aria-current="page"' : ''}><span class="tab-glyph" aria-hidden="true">${escapeHtml(options.glyph)}</span><span>${escapeHtml(options.label)}</span></button>`
-}
-
 export interface WizardStepOptions {
   readonly step: string
   readonly title: string

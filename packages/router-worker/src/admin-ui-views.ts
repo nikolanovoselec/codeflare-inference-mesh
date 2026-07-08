@@ -11,7 +11,7 @@ import {
   ADMIN_UI_TOPOLOGY,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
-import { button, escapeHtml, field, navItem, output, sectionPanel, stepper, tabItem, textInput, wizardStep } from './admin-ui-components'
+import { button, escapeHtml, field, navItem, output, sectionPanel, stepper, textInput, wizardStep } from './admin-ui-components'
 
 /**
  * The three entry views. Pure composition: structure comes from
@@ -300,22 +300,10 @@ export function dashboardView(active: boolean): string {
     navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
     navItem({ section: 'settings', label: 'Settings', hint: 'Version and activity' })
   ].join('')
-  const tabs = [
-    tabItem({ tab: 'overview', label: 'Overview', glyph: '◎', current: true }),
-    tabItem({ tab: 'nodes', label: 'Nodes', glyph: '●' }),
-    tabItem({ tab: 'models', label: 'Models', glyph: '◈' }),
-    tabItem({ tab: 'more', label: 'More', glyph: '⋯' })
-  ].join('')
-  const moreItems = [
-    navItem({ section: 'routing', label: 'Routing', hint: 'Address and gateway' }),
-    navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
-    navItem({ section: 'settings', label: 'Settings', hint: 'Version and activity' })
-  ].join('')
   return `<div class="view dash" id="view-dashboard"${active ? '' : ' hidden'}>
 <nav class="side-nav" aria-label="Console sections" data-nav-sections="${escapeHtml(ADMIN_UI_NAV.sections.join(' '))}">${navItems}</nav>
+<div class="mobile-menu" id="mobile-menu" aria-label="Console sections" data-mobile-menu="${escapeHtml(ADMIN_UI_NAV.sections.join(' '))}" hidden>${navItems}</div>
 <div class="sections">${overviewSection()}${nodesSection()}${modelsSection()}${routingSection()}${playgroundSection()}${settingsSection()}</div>
-<nav class="tab-bar" aria-label="Console sections" data-mobile-tabs="${escapeHtml(ADMIN_UI_NAV.mobileTabs.join(' '))}">${tabs}</nav>
-<div class="more-sheet" id="more-sheet" data-more-sections="${escapeHtml(ADMIN_UI_NAV.moreSections.join(' '))}" hidden>${moreItems}</div>
 <aside class="drawer" id="${ADMIN_UI_DRAWER.containerId}" role="dialog" aria-labelledby="${ADMIN_UI_DRAWER.titleId}" hidden>
 <div class="drawer-head"><h2 id="${ADMIN_UI_DRAWER.titleId}"></h2><button class="btn btn-ghost" type="button" data-action="${ADMIN_UI_DRAWER.closeAction}">Close</button></div>
 <div class="drawer-body" id="${ADMIN_UI_DRAWER.bodyId}"></div>

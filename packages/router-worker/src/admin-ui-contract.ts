@@ -64,13 +64,12 @@ export interface AdminUiStateView {
   readonly recovery?: boolean
 }
 
-/** Dashboard IA: six noun sections; mobile reaches them through four tabs. Model
- * sharing is not its own section — a sharded model is just a model, so its mesh
- * detail lives in that model's Manage drawer alongside every other model. */
+/** Dashboard IA: six noun sections. Desktop uses the side nav; mobile exposes
+ * the same sections through a top-bar menu so it does not fight browser chrome.
+ * Model sharing is not its own section — a sharded model is just a model, so its
+ * mesh detail lives in that model's Manage drawer alongside every other model. */
 export const ADMIN_UI_NAV = {
-  sections: ['overview', 'nodes', 'models', 'routing', 'playground', 'settings'],
-  mobileTabs: ['overview', 'nodes', 'models', 'more'],
-  moreSections: ['routing', 'playground', 'settings']
+  sections: ['overview', 'nodes', 'models', 'routing', 'playground', 'settings']
 } as const
 
 /**

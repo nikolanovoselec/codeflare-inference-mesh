@@ -112,28 +112,30 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
 
   // --- view + section state -------------------------------------------------
+  const setMobileMenu = (open) => {
+    const sheet = byId('mobile-menu');
+    if (sheet) sheet.hidden = !open;
+    const button = byId('mobile-menu-toggle');
+    if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
   const setView = (mode) => {
     document.body.dataset.view = mode;
     ['setup', 'dashboard'].forEach((view) => { const el = byId('view-' + view); if (el) el.hidden = view !== mode; });
     const signOut = byId('sign-out-btn');
     if (signOut) signOut.hidden = mode !== 'dashboard' || !liveToken;
+    const menuToggle = byId('mobile-menu-toggle');
+    if (menuToggle) menuToggle.hidden = mode !== 'dashboard';
+    if (mode !== 'dashboard') setMobileMenu(false);
   };
   const setSection = (name) => {
     config.nav.sections.forEach((section) => {
       const panel = byId(section);
       if (panel) panel.dataset.active = String(section === name);
-      const item = document.querySelector('[data-nav="' + section + '"]');
-      if (item) { if (section === name) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current'); }
+      document.querySelectorAll('[data-nav="' + section + '"]').forEach((item) => {
+        if (section === name) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current');
+      });
     });
-    const moreActive = config.nav.moreSections.indexOf(name) >= 0;
-    config.nav.mobileTabs.forEach((tab) => {
-      const item = document.querySelector('[data-tab="' + tab + '"]');
-      if (!item) return;
-      const active = tab === name || (tab === 'more' && moreActive);
-      if (active) item.setAttribute('aria-current', 'page'); else item.removeAttribute('aria-current');
-    });
-    const sheet = byId('more-sheet');
-    if (sheet) sheet.hidden = true;
+    setMobileMenu(false);
     // Opening Routing discovers the operator's gateways from the runtime token.
     if (name === 'routing') loadGatewayOptions('', 'routing').catch(() => undefined);
     // Opening the Playground lists inference targets (the direct router plus any gateways).
@@ -149,12 +151,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const restrict = restricted && userAllowedSections.indexOf(section) < 0;
       const panel = byId(section);
       if (panel) panel.hidden = restrict;
-      const navItem = document.querySelector('[data-nav="' + section + '"]');
-      if (navItem) navItem.hidden = restrict;
-    });
-    config.nav.mobileTabs.forEach((tab) => {
-      const item = document.querySelector('[data-tab="' + tab + '"]');
-      if (item) item.hidden = restricted && (tab === 'nodes' || tab === 'mesh');
+      document.querySelectorAll('[data-nav="' + section + '"]').forEach((navItem) => { navItem.hidden = restrict; });
     });
     if (restricted) setSection('overview');
   }
@@ -2048,13 +2045,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (wizardBack) { wizardMove(-1); return; }
     const navLink = event.target.closest('[data-nav]');
     if (navLink) { event.preventDefault(); setSection(navLink.dataset.nav); return; }
-    const tab = event.target.closest('[data-tab]');
-    if (tab) {
-      if (tab.dataset.tab === 'more') { const sheet = byId('more-sheet'); if (sheet) sheet.hidden = !sheet.hidden; return; }
-      setSection(tab.dataset.tab);
+    const button = event.target.closest('[data-action]');
+    if (button && button.dataset.action === 'mobile-menu-toggle') {
+      const sheet = byId('mobile-menu');
+      setMobileMenu(!(sheet && !sheet.hidden));
       return;
     }
-    const button = event.target.closest('[data-action]');
     if (!button) return;
     const action = button.dataset.action;
     if (button.dataset.confirm && !armOrProceed(button)) return;

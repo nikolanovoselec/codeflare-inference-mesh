@@ -216,7 +216,7 @@ describe('router worker behavioral contracts', () => {
     ])
     expect(config.responsive).toEqual({ mobileBreakpointPx: 760, desktopMinColumns: 1, minTouchTargetPx: 44 })
     expect(config.views).toEqual({ modes: ['setup', 'dashboard'], attribute: 'data-view' })
-    expect(config.nav).toEqual({ sections: ['overview', 'nodes', 'models', 'routing', 'playground', 'settings'], mobileTabs: ['overview', 'nodes', 'models', 'more'], moreSections: ['routing', 'playground', 'settings'] })
+    expect(config.nav).toEqual({ sections: ['overview', 'nodes', 'models', 'routing', 'playground', 'settings'] })
     expect(config.wizard).toEqual({
       steps: ['connect', 'domain', 'access', 'gateway', 'node', 'review'],
       skippable: ['gateway', 'node'],
@@ -250,7 +250,9 @@ describe('router worker behavioral contracts', () => {
     expect(html).toMatch(/<link rel="icon" href="data:image\/svg\+xml/)
     expect(html).toContain('<noscript>')
     expect(html).toMatch(/@media \(max-width:760px\)/)
-    expect(html).toContain('class="tab-bar"')
+    expect(html).not.toContain('class="tab-bar"')
+    expect(html).toContain('id="mobile-menu-toggle"')
+    expect(html).toContain('id="mobile-menu"')
     // The served behavior script is the pure literal, byte for byte: nothing is
     // serialized from bundled code, so bundler helpers (__name) cannot leak in.
     expect(adminUiScript(html)).toBe(ADMIN_UI_CLIENT_SCRIPT)
@@ -294,13 +296,13 @@ describe('router worker behavioral contracts', () => {
     expect(sections).toEqual(['overview', 'nodes', 'models', 'routing', 'playground', 'settings'])
     expect([...config.nav.sections]).toEqual(sections)
     expect(navTargets.slice(0, 6)).toEqual(sections)
-    expect(navTargets.slice(6)).toEqual(['routing', 'playground', 'settings'])
+    expect(navTargets.slice(6)).toEqual(sections)
     expect(navTargets.every((target) => sectionIds.has(target))).toBe(true)
-    expect(html.match(/data-mobile-tabs="([^"]+)"/)?.[1]).toBe('overview nodes models more')
-    expect([...html.matchAll(/<button class="tab-item"[^>]*data-tab="([^"]+)"/g)].map((match) => match[1])).toEqual(['overview', 'nodes', 'models', 'more'])
+    expect(html.match(/data-mobile-menu="([^"]+)"/)?.[1]).toBe('overview nodes models routing playground settings')
+    expect(html).not.toContain('data-mobile-tabs=')
+    expect(html).not.toContain('class="tab-item"')
     expect([...html.matchAll(/data-active="true"/g)]).toHaveLength(1)
     expect(html).toMatch(/data-nav="overview" aria-current="page"/)
-    expect(html.match(/data-more-sections="([^"]+)"/)?.[1]).toBe('routing playground settings')
   })
 
   it('REQ-ADM-007 labels every dashboard control visibly', async () => {

@@ -260,6 +260,7 @@ export function adminUiHarness(html: string, respond: (path: string, init?: Requ
     hidden: false,
     getElementById: (id: string) => getById(id),
     querySelector: (selector: string) => query(selector),
+    querySelectorAll: (selector: string) => [query(selector)],
     createElement,
     createTextNode,
     addEventListener: (name: string, listener: StubListener) => documentListeners.set(name, listener)

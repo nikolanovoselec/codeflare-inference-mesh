@@ -101,6 +101,24 @@ describe('dashboard overview contracts', () => {
     expect(stat('toks')).toBe('103.8')
   })
 
+  it('REQ-ADM-007 toggles mobile navigation from the top-bar menu and closes it after section changes', async () => {
+    const harness = await dashboardHarness()
+    const menu = harness.byId('mobile-menu')
+    const toggle = harness.byId('mobile-menu-toggle')
+    expect(menu.hidden).toBe(true)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    await harness.clickAction('mobile-menu-toggle')
+    expect(menu.hidden).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    await harness.click(harness.query('[data-nav="nodes"]'))
+    expect(harness.byId('nodes').dataset.active).toBe('true')
+    expect(harness.byId('overview').dataset.active).toBe('false')
+    expect(menu.hidden).toBe(true)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
   it('REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node', async () => {
     const harness = await dashboardHarness()
     const canvas = harness.byId(ADMIN_UI_TOPOLOGY.canvasId)
