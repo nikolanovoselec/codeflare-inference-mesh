@@ -801,7 +801,7 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
       else next.reasoning = reasoning.value
     }
   }
-  return { settings: next as LlamaCppProfileSettings }
+  return { settings: next as unknown as LlamaCppProfileSettings }
 }
 
 // A node's VRAM override replaces the model's global maxVramGb for that node. `null` clears the
@@ -956,7 +956,7 @@ function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, 
       else next.prefixCache = prefixCache.value
     }
   }
-  return { meshllm: next as NonNullable<ModelProfile['meshllm']> }
+  return { meshllm: next as unknown as NonNullable<ModelProfile['meshllm']> }
 }
 
 function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly ModelProfile[], body: ModelConfigBody): { profile: ModelProfile; settings: LlamaCppProfileSettings } | { error: string; status: number } {

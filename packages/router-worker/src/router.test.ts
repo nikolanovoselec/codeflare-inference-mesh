@@ -2363,7 +2363,7 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'single', runtime: 'llamacpp' })
     }))
     const profileId = (await add.json() as { profileId: string }).profileId
-    const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', {
+    const configure = (body: Record<string, unknown>) => router(new Request('https://router.test/admin/profiles/config', {
       method: 'POST',
       headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
       body: JSON.stringify({ profileId, ...body })
