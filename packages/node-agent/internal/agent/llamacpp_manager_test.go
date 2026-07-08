@@ -26,11 +26,12 @@ func TestREQLLAMACPPRenderArgsIncludesCacheAndAlias(t *testing.T) {
 			Ubatch:          2048,
 			FlashAttn:       &flash,
 			MaxOutputTokens: 8192,
+			GPULayers:       "99",
 			Reasoning:       &ReasoningSettings{Enabled: &enabled, Format: "deepseek", Budget: 4096},
 		},
 	})
 	joined := joinArgs(args)
-	for _, want := range []string{"--alias unsloth/Code-Model-GGUF:Q4_K_M", "--hf-repo unsloth/Code-Model-GGUF:Q4_K_M", "--ctx-size 262144", "--parallel 2", "--cache-type-k q8_0", "--cache-type-v q8_0", "--batch-size 8192", "--ubatch-size 2048", "--flash-attn on", "--predict 8192", "--cache-prompt", "--cache-reuse 256", "--slots", "--metrics", "--jinja", "--reasoning on", "--reasoning-format deepseek", "--reasoning-budget 4096"} {
+	for _, want := range []string{"--alias unsloth/Code-Model-GGUF:Q4_K_M", "--hf-repo unsloth/Code-Model-GGUF:Q4_K_M", "--ctx-size 262144", "--parallel 2", "--cache-type-k q8_0", "--cache-type-v q8_0", "--batch-size 8192", "--ubatch-size 2048", "--flash-attn on", "--predict 8192", "--gpu-layers 99", "--cache-prompt", "--cache-reuse 256", "--slots", "--metrics", "--jinja", "--reasoning on", "--reasoning-format deepseek", "--reasoning-budget 4096"} {
 		if !containsArgSequence(joined, want) {
 			t.Fatalf("rendered args missing %q in %q", want, joined)
 		}

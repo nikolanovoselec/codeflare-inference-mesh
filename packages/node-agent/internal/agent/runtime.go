@@ -39,6 +39,7 @@ type LlamaCppSettings struct {
 	Ubatch          int                `json:"ubatch,omitempty"`
 	FlashAttn       *bool              `json:"flashAttn,omitempty"`
 	MaxOutputTokens int                `json:"maxOutputTokens,omitempty"`
+	GPULayers       string             `json:"gpuLayers,omitempty"`
 	Alias           string             `json:"alias"`
 	Reasoning       *ReasoningSettings `json:"reasoning,omitempty"`
 }

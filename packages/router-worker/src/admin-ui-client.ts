@@ -895,12 +895,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const flashValue = llamacpp.flashAttn === true ? 'on' : llamacpp.flashAttn === false ? 'off' : '';
       const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel, placeholder: '1', hint: 'Concurrent direct slots for this node-local llama-server.' }));
+      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-gpu-layers', label: 'GPU layers (-ngl / --gpu-layers)', value: llamacpp.gpuLayers || '', placeholder: 'auto / all / 99', hint: 'Max model layers stored in VRAM. Use 99 to force full offload for most GGUF models; 0 means CPU-only; blank uses llama.cpp default auto.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-k', label: 'KV cache type (keys)', value: llamacpp.cacheTypeK || '', options: kvOptions, hint: 'llama.cpp --cache-type-k. q8_0 is the usual balance; q4_0 fits larger contexts.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-v', label: 'KV cache type (values)', value: llamacpp.cacheTypeV || '', options: kvOptions, hint: 'llama.cpp --cache-type-v. Match the key type unless you are testing a specific tradeoff.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-batch', label: 'Prefill batch', value: llamacpp.batch, placeholder: '2048', hint: 'llama.cpp --batch-size. Higher values speed long prompt ingestion but use more memory.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-ubatch', label: 'Micro-batch', value: llamacpp.ubatch, placeholder: '512', hint: 'llama.cpp --ubatch-size. Raise carefully when the GPU has memory headroom.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-flash', label: 'Flash attention', value: flashValue, options: onOffOptions, hint: 'llama.cpp --flash-attn. Usually On for fast large-context serving.' }));
-      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-maxout', label: 'Total response budget (-n / --predict)', value: llamacpp.maxOutputTokens, placeholder: '8192', hint: 'Global llama.cpp generation cap. Example: 99 maps to -n 99 / --predict 99. Keep above the reasoning budget so the model has room to answer.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-maxout', label: 'Generation length (-n / --predict)', value: llamacpp.maxOutputTokens, placeholder: '8192', hint: 'Number of tokens to predict. Example: 99 maps to -n 99 / --predict 99. Keep above the reasoning budget so the model has room to answer.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-prompt', label: 'Prompt cache', value: llamacpp.cachePrompt === false ? 'off' : 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], hint: 'Keep on for coding-session KV reuse.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-cache-reuse', label: 'Cache reuse', value: llamacpp.cacheReuse, placeholder: '256', min: 0, hint: 'llama.cpp --cache-reuse value for prompt/KV reuse.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'llama.cpp --reasoning for thinking-capable chat templates.' }));
@@ -1856,6 +1857,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         const llamaBatchRaw = readInput('model-edit-llama-batch');
         const llamaUbatchRaw = readInput('model-edit-llama-ubatch');
         const llamaMaxOutRaw = readInput('model-edit-llama-maxout');
+        const llamaGpuLayersRaw = readInput('model-edit-llama-gpu-layers');
         const llamaFlashRaw = readInput('model-edit-llama-flash');
         const llamaReasoningRaw = readInput('model-edit-llama-reasoning');
         payload.llamacpp = {
@@ -1867,7 +1869,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
           batch: llamaBatchRaw === '' ? null : Number(llamaBatchRaw),
           ubatch: llamaUbatchRaw === '' ? null : Number(llamaUbatchRaw),
           flashAttn: llamaFlashRaw === '' ? null : llamaFlashRaw === 'on',
-          maxOutputTokens: llamaMaxOutRaw === '' ? null : Number(llamaMaxOutRaw)
+          maxOutputTokens: llamaMaxOutRaw === '' ? null : Number(llamaMaxOutRaw),
+          gpuLayers: llamaGpuLayersRaw === '' ? null : llamaGpuLayersRaw
         };
         if (llamaReasoningRaw === '') {
           payload.llamacpp.reasoning = null;

@@ -174,6 +174,9 @@ func RenderLlamaCppArgs(in LlamaCppInput) []string {
 	if settings.MaxOutputTokens > 0 {
 		args = append(args, "--predict", fmt.Sprintf("%d", settings.MaxOutputTokens))
 	}
+	if settings.GPULayers != "" {
+		args = append(args, "--gpu-layers", settings.GPULayers)
+	}
 	if settings.CachePrompt {
 		args = append(args, "--cache-prompt")
 	}

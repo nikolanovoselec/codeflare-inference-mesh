@@ -800,6 +800,7 @@ interface LlamaCppConfigBody {
   readonly ubatch?: unknown
   readonly flashAttn?: unknown
   readonly maxOutputTokens?: unknown
+  readonly gpuLayers?: unknown
   readonly bindPort?: unknown
   readonly hfRepo?: unknown
   readonly hfFile?: unknown
@@ -832,6 +833,16 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
     next[key] = raw
     return null
   }
+  const applyGpuLayers = (raw: unknown): string | null => {
+    if (raw === undefined) return null
+    if (raw === null || raw === '') { delete next.gpuLayers; return null }
+    if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) { next.gpuLayers = String(raw); return null }
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim().toLowerCase()
+      if (trimmed === 'auto' || trimmed === 'all' || /^\d+$/.test(trimmed)) { next.gpuLayers = trimmed; return null }
+    }
+    return 'invalid_gpuLayers'
+  }
   for (const err of [
     applyInt('contextWindow', body.contextWindow, 4096),
     applyInt('parallel', body.parallel, 1),
@@ -841,7 +852,8 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
     applyOptionalInt('ubatch', body.ubatch, 1),
     applyOptionalInt('maxOutputTokens', body.maxOutputTokens, 1),
     applyCacheType('cacheTypeK', body.cacheTypeK),
-    applyCacheType('cacheTypeV', body.cacheTypeV)
+    applyCacheType('cacheTypeV', body.cacheTypeV),
+    applyGpuLayers(body.gpuLayers)
   ]) {
     if (err) return { error: err }
   }

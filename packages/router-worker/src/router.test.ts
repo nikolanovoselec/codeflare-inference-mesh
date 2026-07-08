@@ -620,6 +620,7 @@ describe('router worker behavioral contracts', () => {
 
     harness.byId('model-edit-context').value = '131072'
     harness.byId('model-edit-llama-parallel').value = '2'
+    harness.byId('model-edit-llama-gpu-layers').value = '99'
     harness.byId('model-edit-llama-cache-k').value = 'q4_0'
     harness.byId('model-edit-llama-cache-v').value = 'q4_0'
     harness.byId('model-edit-llama-batch').value = '8192'
@@ -638,7 +639,7 @@ describe('router worker behavioral contracts', () => {
       runtime: 'llamacpp',
       contextWindow: 131072,
       modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M',
-      llamacpp: { parallel: 2, cacheReuse: 512, cachePrompt: false, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
+      llamacpp: { parallel: 2, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
     })
 
     await harness.clickAction('node-detail', { nodeId: 'node-direct' })
@@ -2448,13 +2449,13 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ profileId, ...body })
     }))
 
-    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
+    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
     const configured = (await store.listProfiles()).find((profile) => profile.id === profileId)!
 
     expect(ok.status).toBe(200)
     expect(configured.runtime).toBe('llamacpp')
     expect(configured.contextWindow).toBe(131072)
-    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
     expect((await configure({ llamacpp: { batch: null, flashAttn: null, maxOutputTokens: null, reasoning: null } })).status).toBe(200)
     const cleared = (await store.listProfiles()).find((profile) => profile.id === profileId)!
     expect(cleared.llamacpp?.batch).toBeUndefined()
@@ -2464,6 +2465,7 @@ describe('router worker behavioral contracts', () => {
     expect((await configure({ llamacpp: { contextWindow: 2048 } })).status).toBe(400)
     expect((await configure({ llamacpp: { parallel: 0 } })).status).toBe(400)
     expect((await configure({ llamacpp: { cacheTypeK: 'bad' } })).status).toBe(400)
+    expect((await configure({ llamacpp: { gpuLayers: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { bindPort: 9337 } })).status).toBe(400)
   })
 

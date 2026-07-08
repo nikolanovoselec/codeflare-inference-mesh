@@ -68,6 +68,7 @@ export interface LlamaCppProfileSettings {
   readonly ubatch?: number
   readonly flashAttn?: boolean
   readonly maxOutputTokens?: number
+  readonly gpuLayers?: string
   readonly alias: string
   readonly reasoning?: {
     readonly enabled?: boolean

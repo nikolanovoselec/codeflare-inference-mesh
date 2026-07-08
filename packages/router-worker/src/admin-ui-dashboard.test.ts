@@ -452,15 +452,17 @@ describe('dashboard overview contracts', () => {
 
   it('REQ-RUN-011 loads and saves direct llama.cpp runtime tunables from the model drawer', async () => {
     const profiles = [
-      { id: 'custom-direct', displayName: 'Direct Qwen', publicAliases: ['codeflare-mesh', 'direct-qwen'], active: true, rolloutPercent: 100, contextWindow: 262144, runtime: 'llamacpp', llamacpp: { modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', bindPort: 4330, contextWindow: 262144, parallel: 1, cachePrompt: true, cacheReuse: 256, cacheTypeK: 'q8_0', cacheTypeV: 'q8_0', batch: 2048, ubatch: 512, flashAttn: true, maxOutputTokens: 8192, alias: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', reasoning: { enabled: false, format: 'deepseek', budget: 4096 } } }
+      { id: 'custom-direct', displayName: 'Direct Qwen', publicAliases: ['codeflare-mesh', 'direct-qwen'], active: true, rolloutPercent: 100, contextWindow: 262144, runtime: 'llamacpp', llamacpp: { modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', bindPort: 4330, contextWindow: 262144, parallel: 1, cachePrompt: true, cacheReuse: 256, gpuLayers: '99', cacheTypeK: 'q8_0', cacheTypeV: 'q8_0', batch: 2048, ubatch: 512, flashAttn: true, maxOutputTokens: 8192, alias: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', reasoning: { enabled: false, format: 'deepseek', budget: 4096 } } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
     await harness.clickAction('model-detail', { profileId: 'custom-direct' })
 
+    expect(harness.byId('model-edit-llama-gpu-layers').value).toBe('99')
     expect(harness.byId('model-edit-llama-cache-k').value).toBe('q8_0')
     expect(harness.byId('model-edit-llama-batch').value).toBe('2048')
     expect(harness.byId('model-edit-llama-reasoning').value).toBe('off')
 
+    harness.byId('model-edit-llama-gpu-layers').value = '99'
     harness.byId('model-edit-llama-cache-k').value = 'q4_0'
     harness.byId('model-edit-llama-cache-v').value = 'q4_0'
     harness.byId('model-edit-llama-batch').value = '8192'
@@ -473,7 +475,7 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('model-save', { profileId: 'custom-direct', runtime: 'llamacpp', out: 'model-output' })
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
     const body = JSON.parse(String(call?.init?.body))
-    expect(body.llamacpp).toMatchObject({ cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    expect(body.llamacpp).toMatchObject({ gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
   })
 
   it('REQ-ADM-026 shows a Delete control only for a custom, switched-off model', async () => {
