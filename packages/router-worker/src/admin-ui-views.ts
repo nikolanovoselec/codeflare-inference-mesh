@@ -241,9 +241,21 @@ ${output({ id: ADMIN_UI_PLAYGROUND.outputId, kind: 'playground', pre: true })}`
   })
 }
 
+const API_REFERENCE_DOCS_URL = 'https://github.com/nikolanovoselec/codeflare-inference-mesh/blob/llama/documentation/lanes/api-reference-admin.md'
+
+function apiReferenceDocsHref(method: string, path: string): string {
+  const anchor = `${method} ${path}`
+    .toLowerCase()
+    .replace(/[{}]/g, '')
+    .replace(/[^a-z0-9 -]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+  return `${API_REFERENCE_DOCS_URL}#${anchor}`
+}
+
 function settingsSection(): string {
   const apiRows = ADMIN_UI_ACTIONS
-    .map((action) => `<code>${action.method} ${escapeHtml(action.path)}${action.auth === 'admin' ? ' · admin' : ''}</code>`)
+    .map((action) => `<span class="api-row" data-api-reference="${escapeHtml(action.id)}"><code>${action.method} ${escapeHtml(action.path)}${action.auth === 'admin' ? ' · admin' : ''}</code><a data-api-docs-link="${escapeHtml(action.id)}" href="${escapeHtml(apiReferenceDocsHref(action.method, action.path))}" target="_blank" rel="noopener noreferrer">Docs</a></span>`)
     .join('')
   return sectionPanel({
     id: 'settings',

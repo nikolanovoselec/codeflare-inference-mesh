@@ -229,6 +229,9 @@ describe('router worker behavioral contracts', () => {
     // a model's Manage drawer, rendered client-side, so it is not in the initial HTML.
     const serverControls = ['first-run-setup', 'setup-domain', 'access-ident-add', 'setup-access', 'setup-complete', 'gateway-provision-default', 'status-refresh', 'setup-token-create', 'gateway-sync', 'custom-domain-validate', 'agent-versions-refresh', 'agent-version-set', 'runtime-versions-refresh', 'runtime-versions-set', 'settings-save', 'playground-send', 'sign-out']
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
+    const apiDocLinks = [...html.matchAll(/data-api-docs-link="([^"]+)"/g)].map((match) => match[1])
+    expect(apiDocLinks).toEqual(config.actions.map((action) => action.id))
+    expect(html).toContain('documentation/lanes/api-reference-admin.md#post-adminsetup')
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
     // Only the wizard keeps a zone picker; Routing matches the zone from the hostname server-side.
