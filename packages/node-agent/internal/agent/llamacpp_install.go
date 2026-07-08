@@ -304,6 +304,7 @@ func extractLlamaCppTarGz(archive []byte, binaryName string) (map[string][]byte,
 	}
 	defer gz.Close()
 	files := map[string][]byte{}
+	links := map[string]string{}
 	reader := tar.NewReader(gz)
 	for {
 		header, err := reader.Next()
@@ -314,14 +315,26 @@ func extractLlamaCppTarGz(archive []byte, binaryName string) (map[string][]byte,
 			return nil, fmt.Errorf("read llama.cpp archive: %w", err)
 		}
 		base := archiveEntryBase(header.Name)
-		if header.Typeflag != tar.TypeReg || !isLlamaCppRuntimeFile(base, binaryName) {
+		if !isLlamaCppRuntimeFile(base, binaryName) {
 			continue
 		}
-		data, err := io.ReadAll(reader)
-		if err != nil {
-			return nil, fmt.Errorf("read llama.cpp runtime entry %s: %w", base, err)
+		switch header.Typeflag {
+		case tar.TypeReg:
+			data, err := io.ReadAll(reader)
+			if err != nil {
+				return nil, fmt.Errorf("read llama.cpp runtime entry %s: %w", base, err)
+			}
+			files[base] = data
+		case tar.TypeSymlink, tar.TypeLink:
+			links[base] = archiveEntryBase(header.Linkname)
 		}
-		files[base] = data
+	}
+	for link, target := range links {
+		data, ok := files[target]
+		if !ok {
+			return nil, fmt.Errorf("shared library link %s target %s not found in llama.cpp archive", link, target)
+		}
+		files[link] = data
 	}
 	return files, nil
 }

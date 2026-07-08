@@ -34,7 +34,7 @@ func TestREQNODE013LlamaCppReleaseDigestSelectsHostAsset(t *testing.T) {
 
 func TestREQNODE013EnsureLlamaCppInstallsManagedBinary(t *testing.T) {
 	payload := []byte("fake llama-server")
-	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b1234/bin/llama-server", body: payload, mode: 0o755}, {name: "llama-b1234/bin/libllama-server-impl.so", body: []byte("fake shared lib"), mode: 0o644}, {name: "llama-b1234/bin/ggml.dll", body: []byte("fake dll"), mode: 0o644}})
+	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b1234/bin/llama-server", body: payload, mode: 0o755}, {name: "llama-b1234/bin/libllama-server-impl.so", body: []byte("fake shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libllama-common.so.0.0.0", body: []byte("fake versioned shared lib"), mode: 0o644}, {name: "llama-b1234/bin/libllama-common.so.0", linkName: "libllama-common.so.0.0.0", mode: 0o644}, {name: "llama-b1234/bin/ggml.dll", body: []byte("fake dll"), mode: 0o644}})
 	dataDir := t.TempDir()
 	path, err := EnsureLlamaCpp(dataDir, "b1234",
 		WithLlamaCppPlatform("linux", "amd64"),
@@ -69,6 +69,13 @@ func TestREQNODE013EnsureLlamaCppInstallsManagedBinary(t *testing.T) {
 	}
 	if string(lib) != "fake shared lib" {
 		t.Fatalf("installed shared library payload = %q", lib)
+	}
+	versionedLib, err := os.ReadFile(filepath.Join(dataDir, "bin", "libllama-common.so.0"))
+	if err != nil {
+		t.Fatalf("read installed shared library symlink materialization: %v", err)
+	}
+	if string(versionedLib) != "fake versioned shared lib" {
+		t.Fatalf("installed shared library symlink payload = %q", versionedLib)
 	}
 	dll, err := os.ReadFile(filepath.Join(dataDir, "bin", "ggml.dll"))
 	if err != nil {

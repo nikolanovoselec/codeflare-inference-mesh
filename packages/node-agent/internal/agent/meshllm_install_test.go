@@ -22,9 +22,10 @@ import (
 )
 
 type fakeArchiveEntry struct {
-	name string
-	body []byte
-	mode int64
+	name     string
+	body     []byte
+	mode     int64
+	linkName string
 }
 
 func buildFakeMeshLLMTarGz(t *testing.T, entries []fakeArchiveEntry) []byte {
@@ -34,7 +35,11 @@ func buildFakeMeshLLMTarGz(t *testing.T, entries []fakeArchiveEntry) []byte {
 	tw := tar.NewWriter(gz)
 	for _, entry := range entries {
 		header := &tar.Header{Name: entry.name, Mode: entry.mode, Typeflag: tar.TypeReg, Size: int64(len(entry.body))}
-		if strings.HasSuffix(entry.name, "/") {
+		if entry.linkName != "" {
+			header.Typeflag = tar.TypeSymlink
+			header.Linkname = entry.linkName
+			header.Size = 0
+		} else if strings.HasSuffix(entry.name, "/") {
 			header.Typeflag = tar.TypeDir
 			header.Size = 0
 		}
