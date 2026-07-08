@@ -409,6 +409,8 @@ describe('dashboard overview contracts', () => {
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const field = (name: string) => fields.find((node) => node.dataset.drawerField === name)
 
+    const toksCell = descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'direct-node')!).find((cell) => cell.dataset.cell === 'toks')!
+    expect(toksCell.textContent).toBe('not reported')
     expect(textOf(field('toks')!)).toContain('not reported')
     expect(field('reachability')!.dataset.value).toBe('api:ready')
     expect(textOf(field('reachability')!)).not.toContain('down')

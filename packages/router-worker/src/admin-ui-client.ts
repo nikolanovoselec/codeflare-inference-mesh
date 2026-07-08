@@ -439,7 +439,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
   const nodeSortValue = (node, key) => {
     if (key === 'status') { const tone = nodeTone(node); return tone === 'ok' ? 2 : tone === 'warn' ? 1 : 0; }
-    if (key === 'toks') return nodeToks(node) == null ? -1 : nodeToks(node);
+    if (key === 'toks') return !nodeReady(node) || nodeToks(node) == null ? -1 : nodeToks(node);
     if (key === 'vram') return nodeVramTotal(node);
     if (key === 'models') return nodeModelCount(node);
     if (key === 'version') return node.agentVersion || '';
@@ -514,7 +514,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       installChip.setAttribute('data-runtime-install-state', install.state);
       statusCell.appendChild(installChip);
       const toks = nodeToks(node);
-      cell('toks', toks == null ? '' : String(toks), toks == null ? 'not reported' : round1(toks));
+      const toksReady = nodeReady(node) && toks != null;
+      cell('toks', toksReady ? String(toks) : '', nodeReady(node) ? (toks == null ? 'not reported' : round1(toks)) : '\u2014');
       cell('vram', String(nodeVramTotal(node)), nodeReady(node) && nodeVramTotal(node) ? Math.round(nodeVramTotal(node) / 1024) + ' GB' : '\u2014');
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
