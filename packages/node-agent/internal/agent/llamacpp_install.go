@@ -359,7 +359,7 @@ func isLlamaCppRuntimeFile(base, binaryName string) bool {
 		return true
 	}
 	lower := strings.ToLower(base)
-	return strings.HasPrefix(lower, "lib") && (strings.Contains(lower, ".so") || strings.HasSuffix(lower, ".dylib") || strings.HasSuffix(lower, ".dll"))
+	return strings.Contains(lower, ".so") || strings.HasSuffix(lower, ".dylib") || strings.HasSuffix(lower, ".dll")
 }
 
 const LlamaCppInstallAnchors = "REQ-NODE-013"
