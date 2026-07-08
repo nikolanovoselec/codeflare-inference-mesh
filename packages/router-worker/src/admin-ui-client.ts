@@ -397,11 +397,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (node.status === 'revoked') return 'Removed';
     if (node.status === 'draining') return 'Draining';
     if (node.deactivated) return 'Deactivated';
-    const rt = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : '';
-    if (rt === 'failed' || rt === 'dependency-missing') return 'Failed';
+    const metrics = node.metrics || {};
+    const rt = metrics.runtimeState || '';
+    const stateDetail = metrics.nodeState || '';
+    if (rt === 'failed' || rt === 'dependency-missing') return 'Failed' + (stateDetail ? ' · ' + stateDetail : '');
     if (nodeReady(node)) return 'Ready';
-    if (rt === 'downloading') return 'Starting · downloading runtime or model';
-    if (rt === 'loading' || rt === 'starting') return 'Starting · loading model';
+    if (rt === 'downloading') return 'Starting · downloading runtime';
+    if (rt === 'loading' || rt === 'starting') return stateDetail ? 'Starting · ' + stateDetail : 'Starting · loading model';
     return 'Starting';
   }
   const revokeButton = (nodeId) => {
@@ -505,6 +507,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       idButton.textContent = node.id;
       idCell.appendChild(idButton);
       const statusCell = cell('status', nodeCategory(node), undefined);
+      if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
       statusCell.appendChild(statusDot(nodeTone(node), nodeStatusText(node)));
       const install = runtimeInstallInfo(node);
       const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));

@@ -308,7 +308,7 @@ func TestREQRUN010RestartLatchReleasedWhenRuntimeHangs(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		loop.finishProfileRestart(context.Background(), cfg)
+		loop.finishProfileRestart(context.Background(), cfg, "starting")
 		close(done)
 	}()
 	select {
@@ -325,6 +325,28 @@ func TestREQRUN010RestartLatchReleasedWhenRuntimeHangs(t *testing.T) {
 	}
 	if got := manager.State(); got != "failed" {
 		t.Fatalf("expected runtime marked failed after restart timeout, got %q", got)
+	}
+}
+
+func TestREQRUN010ProfileRestartContinuesAfterStaleDrainCounter(t *testing.T) {
+	// A stale proxy counter from an aborted/hung request must not strand a model deploy as
+	// "failed" before the new runtime can even start loading the selected model. The drain
+	// window is best-effort for operator-driven profile changes; after it expires, restart anyway.
+	counter := &agent.ActiveCounter{}
+	counter.Inc()
+	manager := newFakeMeshRuntime(counter)
+	profile := agent.ModelProfile{ID: "next-profile", UpstreamModel: "next-upstream", Version: 2, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "next-upstream", BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "next-upstream", ActiveProfileIDs: []string{"next-profile"}, Profiles: []agent.ModelProfile{profile}}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.drainTimeout = 20 * time.Millisecond
+
+	loop.finishProfileRestart(context.Background(), cfg, "starting")
+
+	if manager.restartCount() != 1 {
+		t.Fatalf("expected stale counter to stop blocking profile restart, got %d restarts", manager.restartCount())
+	}
+	if manager.State() == "failed" || manager.LastError() != "" {
+		t.Fatalf("stale drain counter should not mark runtime failed, state=%q error=%q", manager.State(), manager.LastError())
 	}
 }
 
@@ -352,7 +374,7 @@ func TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall(t *testing.T) {
 	loop.goos = "linux"
 	loop.warpIface = "CloudflareWARP"
 
-	loop.finishProfileRestart(context.Background(), cfg)
+	loop.finishProfileRestart(context.Background(), cfg, "starting")
 
 	mu.Lock()
 	got := allow
@@ -437,11 +459,14 @@ func TestREQRUN005RuntimeRestartMarksPendingProfileNotReady(t *testing.T) {
 	_, started := beginRuntimeProfileRestart(cfg, manager, loadState, restartMu, &restartPending)
 	metrics := runtimeMetrics(manager, loadState, cfg, 0, "")
 
-	if !started || manager.State() != "downloading" || !restartPending {
-		t.Fatalf("expected restart initiation to mark runtime downloading and pending, started=%v state=%q pending=%v", started, manager.State(), restartPending)
+	if !started || manager.State() != "starting" || !restartPending {
+		t.Fatalf("expected profile restart initiation to mark runtime starting and pending, started=%v state=%q pending=%v", started, manager.State(), restartPending)
 	}
 	if metrics.LoadedModel != "" || metrics.LoadedProfileID != "" || metrics.LoadedProfileVersion != 0 {
-		t.Fatalf("downloading restart should not report the pending profile as loaded, got %#v", metrics)
+		t.Fatalf("starting restart should not report the pending profile as loaded, got %#v", metrics)
+	}
+	if metrics.NodeState != "loading model pending-upstream" {
+		t.Fatalf("starting restart should name the model being loaded, got %q", metrics.NodeState)
 	}
 }
 

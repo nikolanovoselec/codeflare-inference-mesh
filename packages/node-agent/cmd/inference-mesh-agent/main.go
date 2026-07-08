@@ -477,15 +477,15 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 			// unchanged (ApplyDesiredProfiles reports no restart for an unchanged set). REQ-NODE-011.
 			if profile, ok := agent.SelectedProfile(next); ok && beginRestart(&s.restartMu, &s.restartPending) {
 				s.loadState.SetStarting(profile)
-				go s.finishProfileRestart(ctx, next)
+				go s.finishProfileRestart(ctx, next, "starting")
 			}
 		} else if versionErr == nil && err == nil && profilesRestart && s.beginProfileRestart(next) {
-			go s.finishProfileRestart(ctx, next)
+			go s.finishProfileRestart(ctx, next, "starting")
 		} else if versionErr == nil && err == nil && runtimeVersionsChanged && beginRestart(&s.restartMu, &s.restartPending) {
 			if profile, ok := agent.SelectedProfile(next); ok {
 				s.loadState.SetStarting(profile)
 			}
-			go s.finishProfileRestart(ctx, next)
+			go s.finishProfileRestart(ctx, next, "downloading")
 		} else if reloadRequested && beginRestart(&s.restartMu, &s.restartPending) {
 			// Force Reload: drain and restart the current profile on operator demand. REQ-NODE-012.
 			go s.finishBootstrapRestart(ctx)
@@ -518,7 +518,7 @@ func (s *serviceLoop) beginProfileRestart(cfg agent.Config) bool {
 	return ok
 }
 
-func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config) {
+func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config, restartState string) {
 	defer finishRestart(&s.restartMu, &s.restartPending)
 	// Bound the restart so a Stop hung on a mesh-llm ignoring SIGTERM cannot block this
 	// goroutine and strand the restart-pending latch, which would suppress every future
@@ -532,7 +532,7 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 		provisionMeshPeerFirewall(ctx, s.cmdRunner, s.goos, s.warpIface, profile)
 	}
 	if hasProfile && s.manager != nil && s.manager.Runtime() != profile.Runtime {
-		if err := waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout); err != nil {
+		if err := waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout); err != nil && ctx.Err() != nil {
 			s.manager.SetFailure(err)
 			return
 		}
@@ -551,7 +551,7 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 		}
 		return
 	}
-	installError, err := restartRuntimeForSelectedProfile(ctx, cfg, s.manager, s.activeRequests, s.drainTimeout)
+	installError, err := restartRuntimeForSelectedProfile(ctx, cfg, s.manager, s.activeRequests, s.drainTimeout, restartState)
 	s.installError = installError
 	if err != nil {
 		s.manager.SetFailure(err)
@@ -630,7 +630,7 @@ func beginRuntimeProfileRestart(cfg agent.Config, manager meshRuntime, loadState
 	if nextProfile == "" || nextProfile == loadState.Key() || upForTarget || !beginRestart(restartMu, restartPending) {
 		return agent.Config{}, false
 	}
-	manager.SetState("downloading")
+	manager.SetState("starting")
 	if profile, ok := agent.SelectedProfile(cfg); ok {
 		loadState.SetStarting(profile)
 	} else {
@@ -655,13 +655,16 @@ func finishRestart(mu *sync.Mutex, pending *bool) {
 	*pending = false
 }
 
-func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, manager meshRuntime, activeRequests *agent.ActiveCounter, drainTimeout time.Duration) (string, error) {
+func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, manager meshRuntime, activeRequests *agent.ActiveCounter, drainTimeout time.Duration, restartState string) (string, error) {
 	profile, ok := agent.SelectedProfile(cfg)
 	if !ok {
 		return "", nil
 	}
-	manager.SetState("downloading")
-	if err := waitForDrain(ctx, activeRequests, manager, drainTimeout); err != nil {
+	if restartState == "" {
+		restartState = "starting"
+	}
+	manager.SetState(restartState)
+	if err := waitForDrain(ctx, activeRequests, manager, drainTimeout); err != nil && ctx.Err() != nil {
 		return "", err
 	}
 	if profile.Runtime == "llamacpp" {
@@ -742,6 +745,9 @@ func runtimeMetrics(manager meshRuntime, loadState *runtimeLoadState, cfg agent.
 	}
 	metrics := agent.RuntimeMetricsWithError(state, loadedModel, active, lastError)
 	metrics.RuntimeKind = runtimeKind
+	if !loaded && state == "starting" && profile.UpstreamModel != "" {
+		metrics.NodeState = "loading model " + profile.UpstreamModel
+	}
 	if state != "downloading" && state != "dependency-missing" && installError == "" {
 		if runtimeKind == "meshllm" {
 			metrics.MeshLLMVersion = runtimeVersionOrDefault(cfg.RuntimeVersions.MeshLLM, agent.MeshLLMPinnedVersion)

@@ -177,19 +177,22 @@ describe('dashboard overview contracts', () => {
   it('REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline', async () => {
     const nodes = [
       { id: 'ready-node', status: 'online', metrics: { runtimeState: 'ready', readyModels: ['m'], tokensPerSecond: 10, gpuMemoryTotalMiB: 8192, gpuMemoryUsedMiB: 4096 } },
-      { id: 'loading-node', status: 'online', metrics: { runtimeState: 'downloading', readyModels: [], tokensPerSecond: 0, gpuMemoryTotalMiB: 0 } },
+      { id: 'loading-node', status: 'online', metrics: { runtimeState: 'starting', nodeState: 'loading model next-upstream', readyModels: [], tokensPerSecond: 0, gpuMemoryTotalMiB: 0 } },
+      { id: 'failed-node', status: 'online', metrics: { runtimeState: 'failed', nodeState: 'loading model next-upstream', readyModels: [] } },
       { id: 'gone-node', status: 'offline', metrics: { runtimeState: 'starting', readyModels: [] } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
     const statusOf = (id: string) => {
       const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === id)!
       const cell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
-      return { category: cell.dataset.value, text: descendants(cell).map((node) => node.textContent).filter(Boolean).join(' ') }
+      return { category: cell.dataset.value, detail: cell.dataset.statusDetail, text: descendants(cell).map((node) => node.textContent).filter(Boolean).join(' ') }
     }
     expect(statusOf('ready-node').category).toBe('ready')
     expect(statusOf('ready-node').text).toContain('Ready')
     expect(statusOf('loading-node').category).toBe('active')
-    expect(statusOf('loading-node').text).toContain('downloading')
+    expect(statusOf('loading-node').detail).toBe('loading model next-upstream')
+    expect(statusOf('failed-node').category).toBe('active')
+    expect(statusOf('failed-node').detail).toBe('loading model next-upstream')
     // A metric that is not yet real reads as an em dash, never a misleading 0.
     const loadingToks = descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'loading-node')!).find((cell) => cell.dataset.cell === 'toks')!
     expect(loadingToks.textContent).toBe('—')
