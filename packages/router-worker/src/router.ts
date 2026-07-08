@@ -267,7 +267,7 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   await deps.store.updateNodeHeartbeat(next)
   // A deactivated node runs no mesh-llm, so its now-dead invite token must not be re-added to mesh
   // state; skip mesh-state application while it is tainted. REQ-ADM-030 / REQ-NODE-011.
-  if (next.deactivated !== true) {
+  if (next.deactivated !== true && next.runtime === 'meshllm') {
     await applyHeartbeatMeshState(deps.store, deps.env, next, body, now)
   }
   const desiredVersion = await desiredAgentVersion(deps.store)
@@ -298,7 +298,7 @@ async function selectedMeshProfile(store: Store, activeProfileIds: readonly stri
   const profiles = await store.listProfiles()
   for (const profileId of activeProfileIds) {
     const profile = profiles.find((item) => item.id === profileId)
-    if (profile?.active) return profile
+    if (profile?.active && profile.runtime === 'meshllm') return profile
   }
   return undefined
 }
@@ -718,7 +718,7 @@ function nodeWithVramOverride(node: NodeRecord, value: number | null | undefined
 // at the node's ceiling instead of the model's global budget.
 function applyNodeVramOverride(profiles: readonly ModelProfile[], override: number | undefined): readonly ModelProfile[] {
   if (override === undefined) return profiles
-  return profiles.map((profile) => ({ ...profile, meshllm: { ...profile.meshllm, maxVramGb: override } }))
+  return profiles.map((profile) => profile.runtime === 'meshllm' && profile.meshllm ? { ...profile, meshllm: { ...profile.meshllm, maxVramGb: override } } : profile)
 }
 
 const MESHLLM_CACHE_TYPES = new Set(['f16', 'q8_0', 'q4_0'])
@@ -802,7 +802,7 @@ function resolvePrefixCache(existing: PrefixCacheBlock | undefined, value: unkno
 // cache type, or a boolean sets it; null / 0 / "" clears it back to Auto by removing
 // the key (never assigning undefined, which JSON.stringify would silently strip from
 // the stored blob). An invalid value yields an error code the caller returns as 400.
-function resolveMeshllmTunables(existing: ModelProfile['meshllm'], body: MeshllmTunablesBody): { meshllm: ModelProfile['meshllm'] } | { error: string } {
+function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, body: MeshllmTunablesBody): { meshllm: NonNullable<ModelProfile['meshllm']> } | { error: string } {
   const next: Record<string, unknown> = { ...existing }
   const applyInt = (key: string, value: unknown, min: number): string | null => {
     if (value === undefined) return null
@@ -852,7 +852,7 @@ function resolveMeshllmTunables(existing: ModelProfile['meshllm'], body: Meshllm
       else next.prefixCache = prefixCache.value
     }
   }
-  return { meshllm: next as ModelProfile['meshllm'] }
+  return { meshllm: next as NonNullable<ModelProfile['meshllm']> }
 }
 
 // handleProfileConfig persists a profile's serving settings — the context window,
@@ -873,6 +873,7 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
   if (!Number.isInteger(contextWindow) || contextWindow < 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
   const maxVram = resolveMaxVram(body.maxVramGb)
   if (maxVram === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
+  if (existing.runtime !== 'meshllm' || !existing.meshllm) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   let meshllm = existing.meshllm
   let upstreamModel = existing.upstreamModel
   if (body.modelRef !== undefined) {
@@ -907,8 +908,8 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
   // refreshes only when stored version <= shipped version) does not overwrite this edit.
   const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, displayName, publicAliases, version: existing.version + 1 }
   await deps.store.setProfile(updated)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0 } })
-  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: updated.meshllm.modelRef, maxVramGb: updated.meshllm.maxVramGb ?? 0, displayName: updated.displayName, callableNames: updated.publicAliases }, 200, requestId)
+  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: meshllm.modelRef, maxVramGb: meshllm.maxVramGb ?? 0 } })
+  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: meshllm.modelRef, maxVramGb: meshllm.maxVramGb ?? 0, displayName: updated.displayName, callableNames: updated.publicAliases }, 200, requestId)
 }
 
 // handleProfileAdd creates a new inactive model profile from an operator-supplied
@@ -1476,19 +1477,19 @@ async function handleApiSettingsSet(request: Request, deps: RouterDeps, requestI
 /** Machine-facing model projection: identity, the names callers use, and rollout state. */
 function toApiModel(profile: ModelProfile) {
   const m = profile.meshllm
+  const l = profile.llamacpp
   return {
     id: profile.id,
     displayName: profile.displayName,
     callableNames: profile.publicAliases,
     active: profile.active,
     rolloutPercent: profile.rolloutPercent,
-    // 0 = Auto: mesh-llm sizes the context window to the node's GPU.
     contextWindow: profile.contextWindow,
-    modelRef: m.modelRef,
-    split: m.split,
-    maxVramGb: m.maxVramGb ?? 0,
-    // Per-model runtime tunables; null means Auto (unset, mesh-llm auto-plans it).
-    tunables: {
+    runtime: profile.runtime,
+    modelRef: l?.modelRef ?? m?.modelRef ?? profile.upstreamModel,
+    split: m?.split ?? false,
+    maxVramGb: m?.maxVramGb ?? 0,
+    tunables: m ? {
       parallel: m.parallel ?? null,
       cacheTypeK: m.cacheTypeK ?? null,
       cacheTypeV: m.cacheTypeV ?? null,
@@ -1498,7 +1499,8 @@ function toApiModel(profile: ModelProfile) {
       maxOutputTokens: m.maxOutputTokens ?? null,
       reasoning: m.reasoning ?? null,
       prefixCache: m.prefixCache ?? null
-    }
+    } : null,
+    ...(l ? { llamacpp: l } : {})
   }
 }
 
@@ -1578,6 +1580,7 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   if (!Number.isInteger(contextWindow) || contextWindow < 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
   const maxVram = resolveMaxVram(body.maxVramGb)
   if (maxVram === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
+  if (existing.runtime !== 'meshllm' || !existing.meshllm) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   let meshllm = existing.meshllm
   let upstreamModel = existing.upstreamModel
   if (body.modelRef !== undefined) {
@@ -1609,7 +1612,7 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   }
   const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, displayName, publicAliases, version: existing.version + 1 }
   await deps.store.setProfile(updated)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { contextWindow, modelRef: updated.meshllm.modelRef } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { contextWindow, modelRef: meshllm.modelRef } })
   return json({ ok: true, model: toApiModel(updated) }, 200, requestId)
 }
 

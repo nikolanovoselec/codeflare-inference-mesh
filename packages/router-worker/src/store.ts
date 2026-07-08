@@ -1,4 +1,5 @@
-import type { AuditEvent, CredentialKind, ModelProfile, NodeRecord, Store, TokenRecord } from './types'
+import { normalizeModelProfile } from './profiles'
+import type { AuditEvent, CredentialKind, DirectSessionRecord, ModelProfile, NodeRecord, Store, TokenRecord } from './types'
 
 // The host gate reads these two config keys on every request; cache them
 // per D1 binding with a short TTL so the hot path avoids two D1 round-trips.
@@ -20,7 +21,8 @@ export class D1Store implements Store {
   async seedDefaultProfiles(profiles: readonly ModelProfile[]): Promise<void> {
     const existingProfiles = await this.listProfiles()
     for (const profile of retiredDefaultProfiles(existingProfiles, profiles)) await this.setProfile(profile)
-    for (const profile of profiles) {
+    const seededDefaults = profiles.map((profile) => seedDefaultActivation(profile, existingProfiles, profiles))
+    for (const profile of seededDefaults) {
       const existing = existingProfiles.find((item) => item.id === profile.id)
       if (!existing || shouldRefreshDefaultProfile(existing, profile)) await this.setProfile(profile)
     }
@@ -29,7 +31,7 @@ export class D1Store implements Store {
   async getProfileByPublicModel(publicModel: string): Promise<ModelProfile | undefined> {
     const rows = await this.db.prepare('SELECT profile_json FROM model_profiles WHERE active = 1').all<{ profile_json: string }>()
     for (const row of rows.results ?? []) {
-      const profile = parseJson<ModelProfile>(row.profile_json)
+      const profile = normalizeModelProfile(parseJson<ModelProfile>(row.profile_json))
       if (profile.publicAliases.includes(publicModel)) return profile
     }
     return undefined
@@ -37,17 +39,18 @@ export class D1Store implements Store {
 
   async getProfileById(profileId: string): Promise<ModelProfile | undefined> {
     const row = await this.db.prepare('SELECT profile_json FROM model_profiles WHERE id = ?').bind(profileId).first<{ profile_json: string }>()
-    return row ? parseJson<ModelProfile>(row.profile_json) : undefined
+    return row ? normalizeModelProfile(parseJson<ModelProfile>(row.profile_json)) : undefined
   }
 
   async listProfiles(): Promise<readonly ModelProfile[]> {
     const rows = await this.db.prepare('SELECT profile_json FROM model_profiles ORDER BY id').all<{ profile_json: string }>()
-    return (rows.results ?? []).map((row) => parseJson<ModelProfile>(row.profile_json))
+    return (rows.results ?? []).map((row) => normalizeModelProfile(parseJson<ModelProfile>(row.profile_json)))
   }
 
   async setProfile(profile: ModelProfile): Promise<void> {
+    const normalized = normalizeModelProfile(profile)
     await this.db.prepare('INSERT OR REPLACE INTO model_profiles (id, profile_json, active, rollout_percent, version, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .bind(profile.id, JSON.stringify(profile), profile.active ? 1 : 0, profile.rolloutPercent, profile.version, this.now())
+      .bind(normalized.id, JSON.stringify(normalized), normalized.active ? 1 : 0, normalized.rolloutPercent, normalized.version, this.now())
       .run()
   }
 
@@ -83,6 +86,19 @@ export class D1Store implements Store {
   async updateNodeHeartbeat(node: NodeRecord): Promise<void> {
     await this.db.prepare('UPDATE nodes SET node_json = ?, status = ?, mesh_ip = ?, inference_port = ?, capacity = ?, last_seen_at = ?, updated_at = ? WHERE id = ?')
       .bind(JSON.stringify(node), node.status, node.meshIp, node.inferencePort, node.capacity, node.lastSeenAt, this.now(), node.id)
+      .run()
+  }
+
+  async getDirectSession(affinityKey: string): Promise<DirectSessionRecord | undefined> {
+    const row = await this.db.prepare('SELECT affinity_key, profile_id, public_model, node_id, user_hash, session_hash, created_at, updated_at, expires_at, failover_count FROM direct_sessions WHERE affinity_key = ?')
+      .bind(affinityKey)
+      .first<DirectSessionRow>()
+    return row ? directSessionFromRow(row) : undefined
+  }
+
+  async putDirectSession(session: DirectSessionRecord): Promise<void> {
+    await this.db.prepare('INSERT OR REPLACE INTO direct_sessions (affinity_key, profile_id, public_model, node_id, user_hash, session_hash, created_at, updated_at, expires_at, failover_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(session.affinityKey, session.profileId, session.publicModel, session.nodeId, session.userHash, session.sessionHash, session.createdAt, session.updatedAt, session.expiresAt, session.failoverCount)
       .run()
   }
 
@@ -178,6 +194,19 @@ interface NodeRow {
   readonly in_flight: number
 }
 
+interface DirectSessionRow {
+  readonly affinity_key: string
+  readonly profile_id: string
+  readonly public_model: string
+  readonly node_id: string
+  readonly user_hash: string
+  readonly session_hash: string
+  readonly created_at: number
+  readonly updated_at: number
+  readonly expires_at: number
+  readonly failover_count: number
+}
+
 interface TokenRow {
   readonly id: string
   readonly kind: CredentialKind
@@ -186,6 +215,21 @@ interface TokenRow {
   readonly node_id: string | null
   readonly created_at: number
   readonly expires_at: number | null
+}
+
+function directSessionFromRow(row: DirectSessionRow): DirectSessionRecord {
+  return {
+    affinityKey: row.affinity_key,
+    profileId: row.profile_id,
+    publicModel: row.public_model,
+    nodeId: row.node_id,
+    userHash: row.user_hash,
+    sessionHash: row.session_hash,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    expiresAt: row.expires_at,
+    failoverCount: row.failover_count
+  }
 }
 
 function tokenFromRow(row: TokenRow): TokenRecord {
@@ -209,14 +253,18 @@ function shouldRefreshDefaultProfile(existing: ModelProfile, next: ModelProfile)
   return existing.version <= next.version && JSON.stringify(existing) !== JSON.stringify(next)
 }
 
+function seedDefaultActivation(profile: ModelProfile, existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): ModelProfile {
+  if (!profile.active) return profile
+  const defaultIds = new Set(defaults.map((item) => item.id))
+  const claimed = existing.some((item) => item.active && !defaultIds.has(item.id) && item.publicAliases.some((alias) => profile.publicAliases.includes(alias)))
+  return claimed ? { ...profile, active: false, rolloutPercent: 0 } : profile
+}
+
 function retiredDefaultProfiles(existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): readonly ModelProfile[] {
   const defaultIds = new Set(defaults.map((profile) => profile.id))
   const defaultAliases = new Set(defaults.flatMap((profile) => [...profile.publicAliases]))
   return existing
-    .filter((profile) => profile.active && (
-      (profile.runtime as string) !== 'meshllm' ||
-      (profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
-    ))
+    .filter((profile) => profile.active && profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
     .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
 }
 

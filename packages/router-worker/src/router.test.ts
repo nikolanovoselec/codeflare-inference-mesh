@@ -6,7 +6,7 @@ import { resetJwksCache } from './access'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan, SETUP_TOKEN_PLACEHOLDER } from './installers'
-import { DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
+import { buildCustomProfile, DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
 import { createRouter } from './router'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
 import { accessJwksFetcher, accessTestKey, MemoryStore, nodeFixture, signAccessJwt } from './test-helpers'
@@ -66,11 +66,13 @@ const MESH_STATE_KEY_B64 = `${'A'.repeat(43)}=`
 function legacyRuntimeProfile(input: { id: string; publicAliases: readonly string[]; version: number }): ModelProfile {
   return {
     id: input.id,
+    displayName: input.id,
     publicAliases: input.publicAliases,
     upstreamModel: input.id,
     sourceMode: 'legacy-source',
     contextWindow: 262144,
     runtime: 'legacy-runtime',
+    meshllm: { modelRef: input.id, split: false, bindPort: 4990 },
     version: input.version,
     rolloutPercent: 100,
     active: true
@@ -668,7 +670,7 @@ describe('router worker behavioral contracts', () => {
     const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === CUSTOM_GGUF)
     expect(created).toBeDefined()
     expect(created?.publicAliases).toContain('codeflare-mesh')
-    expect(created?.meshllm.split).toBe(false)
+    expect(created?.meshllm!.split).toBe(false)
     expect(created?.active).toBe(false)
     expect(created?.rolloutPercent).toBe(0)
   })
@@ -678,15 +680,15 @@ describe('router worker behavioral contracts', () => {
     // A dense family (Qwen3-14B) leaves payloadMode Auto (mesh-llm infers resident-kv).
     expect((await addModel(router, CUSTOM_GGUF, 'single')).status).toBe(201)
     const dense = (await store.listProfiles()).find((profile) => profile.upstreamModel === CUSTOM_GGUF)
-    expect(dense?.meshllm.prefixCache).toEqual({ enabled: true, maxEntries: 16, sharedStrideTokens: 128, sharedRecordLimit: 4 })
-    expect(dense?.meshllm.parallel).toBeGreaterThanOrEqual(2)
+    expect(dense?.meshllm!.prefixCache).toEqual({ enabled: true, maxEntries: 16, sharedStrideTokens: 128, sharedRecordLimit: 4 })
+    expect(dense?.meshllm!.parallel).toBeGreaterThanOrEqual(2)
 
     // A recurrent-hybrid family (Qwen3.5) must pin payloadMode kv-recurrent, or mesh-llm's
     // Auto inference picks resident-kv (the wrong layout) and the cache silently no-ops.
     const recurrentRef = 'unsloth/Qwen3.5-4B-MTP-GGUF:Q6_K'
     expect((await addModel(router, recurrentRef, 'single')).status).toBe(201)
     const recurrent = (await store.listProfiles()).find((profile) => profile.upstreamModel === recurrentRef)
-    expect(recurrent?.meshllm.prefixCache?.payloadMode).toBe('kv-recurrent')
+    expect(recurrent?.meshllm!.prefixCache?.payloadMode).toBe('kv-recurrent')
   })
 
   it('REQ-RUN-011 adds a split model as a profile with split enabled', async () => {
@@ -695,7 +697,7 @@ describe('router worker behavioral contracts', () => {
     const response = await addModel(router, ref, 'split')
     expect(response.status).toBe(201)
     const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === ref)
-    expect(created?.meshllm.split).toBe(true)
+    expect(created?.meshllm!.split).toBe(true)
     expect(created?.active).toBe(false)
     expect(created?.publicAliases).toContain('codeflare-mesh')
   })
@@ -794,7 +796,7 @@ describe('router worker behavioral contracts', () => {
     expect(profiles.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')?.active).toBe(false)
   })
 
-  it('REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active', async () => {
+  it('REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active', async () => {
     const store = new MemoryStore()
     await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-mm', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'], version: 1 }))
     await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-text', publicAliases: ['codeflare-mesh', 'legacy-text-alias'], version: 4 }))
@@ -802,34 +804,38 @@ describe('router worker behavioral contracts', () => {
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     const profiles = await store.listProfiles()
     const retired = profiles.find((profile) => profile.id === 'legacy-default-mm')!
-    const retiredVersioned = profiles.find((profile) => profile.id === 'legacy-default-text')!
+    const retainedVersioned = profiles.find((profile) => profile.id === 'legacy-default-text')!
     const current = await store.getProfileByPublicModel('codeflare-mesh')
 
     expect(retired).toMatchObject({ active: false, rolloutPercent: 0, version: 2 })
-    expect(retiredVersioned).toMatchObject({ active: false, rolloutPercent: 0, version: 5 })
-    expect(current).toMatchObject({ id: 'mesh-smoke-qwen25-1.5b', runtime: 'meshllm', sourceMode: 'meshllm-ref' })
+    expect(retainedVersioned).toMatchObject({ active: true, rolloutPercent: 100, version: 4, runtime: 'meshllm' })
+    expect(current).toMatchObject({ id: 'legacy-default-text', runtime: 'meshllm', sourceMode: 'meshllm-ref' })
   })
 
-  it('REQ-RUN-009 deactivates non-meshllm profile rows regardless of version', async () => {
+  it('REQ-RUN-009 preserves active llama.cpp custom profiles during default seeding', async () => {
     const store = new MemoryStore()
-    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-standalone-row', publicAliases: ['legacy-only-alias'], version: 7 }))
+    const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 7 }
+    await store.setProfile(direct)
 
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    const swept = (await store.listProfiles()).find((profile) => profile.id === 'legacy-standalone-row')!
+    const preserved = (await store.listProfiles()).find((profile) => profile.id === direct.id)!
+    const current = await store.getProfileByPublicModel('codeflare-mesh')
 
-    expect(swept).toMatchObject({ active: false, rolloutPercent: 0, version: 8 })
-    expect(await store.getProfileByPublicModel('legacy-only-alias')).toBeUndefined()
+    expect(preserved).toMatchObject({ active: true, rolloutPercent: 100, version: 7, runtime: 'llamacpp', sourceMode: 'llamacpp-hf' })
+    expect(preserved.llamacpp).toMatchObject({ hfRepo: 'unsloth/Code-Model-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256 })
+    expect(current).toMatchObject({ id: direct.id, runtime: 'llamacpp' })
   })
 
-  it('REQ-SCH-001 deactivates non-meshllm profile rows during seeding', async () => {
+  it('REQ-SCH-001 normalizes legacy profile rows without retiring them by runtime string', async () => {
     const { router, store } = routerFixture()
     await store.setProfile(legacyRuntimeProfile({ id: 'legacy-runtime-row', publicAliases: ['legacy-router-alias'], version: 3 }))
 
     await router(new Request('https://router.test/health'))
-    const swept = (await store.listProfiles()).find((profile) => profile.id === 'legacy-runtime-row')!
+    const normalized = (await store.listProfiles()).find((profile) => profile.id === 'legacy-runtime-row')!
 
-    expect(swept).toMatchObject({ active: false, rolloutPercent: 0, version: 4 })
+    expect(normalized).toMatchObject({ active: true, rolloutPercent: 100, version: 3, runtime: 'meshllm', sourceMode: 'meshllm-ref' })
+    expect(await store.getProfileByPublicModel('legacy-router-alias')).toMatchObject({ id: 'legacy-runtime-row' })
   })
 
   it('REQ-SCH-005 lists only active profile aliases in the public model listing', async () => {
@@ -894,10 +900,10 @@ describe('router worker behavioral contracts', () => {
     for (const profile of DEFAULT_MODEL_PROFILES) {
       expect(profile.sourceMode).toBe('meshllm-ref')
       expect(profile.runtime).toBe('meshllm')
-      expect(profile.upstreamModel).toBe(profile.meshllm.modelRef)
+      expect(profile.upstreamModel).toBe(profile.meshllm!.modelRef)
       expect(profile.version).toBe(1)
-      expect(Number.isInteger(profile.meshllm.bindPort)).toBe(true)
-      expect(profile.meshllm.bindPort).toBeGreaterThan(0)
+      expect(Number.isInteger(profile.meshllm!.bindPort)).toBe(true)
+      expect(profile.meshllm!.bindPort).toBeGreaterThan(0)
       expect(profile.displayName.trim()).toBe(profile.displayName)
       expect(profile.displayName.length).toBeGreaterThan(0)
     }
@@ -1181,7 +1187,7 @@ describe('router worker behavioral contracts', () => {
     // The node's heartbeat now carries the override on every desired profile, capping it below the global.
     const capped = await (await heartbeat()).json() as { desiredProfiles: Array<{ meshllm: { maxVramGb?: number } }> }
     expect(capped.desiredProfiles.length).toBeGreaterThan(0)
-    expect(capped.desiredProfiles.every((profile) => profile.meshllm.maxVramGb === 4)).toBe(true)
+    expect(capped.desiredProfiles.every((profile) => profile.meshllm!.maxVramGb === 4)).toBe(true)
 
     // Clearing removes the override so the node follows the model default again.
     expect((await config({ maxVramGbOverride: null })).status).toBe(200)
@@ -2131,7 +2137,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(ok.status).toBe(200)
     expect(smoke.contextWindow).toBe(8192)
-    expect(smoke.meshllm.modelRef).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
+    expect(smoke.meshllm!.modelRef).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
     expect(smoke.upstreamModel).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
 
     // A context-only update must leave the model ref untouched.
@@ -2139,16 +2145,16 @@ describe('router worker behavioral contracts', () => {
     const afterCtx = (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
     expect(ctxOnly.status).toBe(200)
     expect(afterCtx.contextWindow).toBe(4096)
-    expect(afterCtx.meshllm.modelRef).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
+    expect(afterCtx.meshllm!.modelRef).toBe('unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M')
 
     // A per-model VRAM budget persists to the mesh settings; a fractional cap is allowed and
     // 0 clears the cap. A context-only update must not disturb an existing budget.
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', maxVramGb: 22.5 })).status).toBe(200)
-    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm.maxVramGb).toBe(22.5)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm!.maxVramGb).toBe(22.5)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', contextWindow: 2048 })).status).toBe(200)
-    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm.maxVramGb).toBe(22.5)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm!.maxVramGb).toBe(22.5)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', maxVramGb: 0 })).status).toBe(200)
-    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm.maxVramGb).toBe(0)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm!.maxVramGb).toBe(0)
 
     // Context window 0 means Auto (mesh-llm sizes it) and is accepted; a negative or
     // non-integer context, blank model, negative VRAM, unknown profile, and missing
@@ -2243,7 +2249,7 @@ describe('router worker behavioral contracts', () => {
     expect(unnamed.status).toBe(201)
     const other = (await store.listProfiles()).find((profile) => profile.id.indexOf('custom-other-model') === 0)!
     expect(other.displayName).toBe('Other-Model-GGUF:Q4_K_M')
-    expect(other.meshllm.split).toBe(true)
+    expect(other.meshllm!.split).toBe(true)
   })
 
   it('REQ-ADM-027 renames a model display name and call name with collision and reserved-alias guards', async () => {
@@ -3765,7 +3771,7 @@ describe('control-plane API (/api/v1)', () => {
     expect(body.model.active).toBe(false)
     expect(body.model.callableNames).toContain('codeflare-mesh')
     expect(body.model.modelRef).toBe('unsloth/Qwen3-14B-GGUF:Q4_K_M')
-    expect((await store.listProfiles()).some((profile) => profile.id === body.model.id && !profile.meshllm.split)).toBe(true)
+    expect((await store.listProfiles()).some((profile) => profile.id === body.model.id && !profile.meshllm!.split)).toBe(true)
   })
 
   it('REQ-API-007 adds a split model with split serving enabled', async () => {
@@ -3777,7 +3783,7 @@ describe('control-plane API (/api/v1)', () => {
     const body = await res.json() as { model: { split: boolean } }
     expect(body.model.split).toBe(true)
     const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === ref)
-    expect(created?.meshllm.split).toBe(true)
+    expect(created?.meshllm!.split).toBe(true)
     expect(created?.active).toBe(false)
   })
 
@@ -3922,7 +3928,7 @@ describe('control-plane API (/api/v1)', () => {
     const vram = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ maxVramGb: 16 }) }))
     expect(vram.status).toBe(200)
     expect((await vram.json() as { model: { maxVramGb: number } }).model.maxVramGb).toBe(16)
-    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-default-qwen36-35b')?.meshllm.maxVramGb).toBe(16)
+    expect((await store.listProfiles()).find((profile) => profile.id === 'mesh-default-qwen36-35b')?.meshllm!.maxVramGb).toBe(16)
     expect((await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ maxVramGb: -5 }) }))).status).toBe(400)
     // Context window 0 = Auto is accepted; a negative context is rejected.
     const autoCtx = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 0 }) }))

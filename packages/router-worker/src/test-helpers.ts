@@ -1,5 +1,6 @@
+import { normalizeModelProfile } from './profiles'
 import { OPERATIONAL_EVENT_CHURN_TYPES } from './store'
-import type { AuditEvent, CredentialKind, ModelProfile, NodeRecord, Store, TokenRecord } from './types'
+import type { AuditEvent, CredentialKind, DirectSessionRecord, ModelProfile, NodeRecord, Store, TokenRecord } from './types'
 
 export class MemoryStore implements Store {
   readonly profiles = new Map<string, ModelProfile>()
@@ -7,26 +8,29 @@ export class MemoryStore implements Store {
   readonly tokens: TokenRecord[] = []
   readonly config = new Map<string, unknown>()
   readonly audit: AuditEvent[] = []
+  readonly directSessions = new Map<string, DirectSessionRecord>()
 
   async seedDefaultProfiles(profiles: readonly ModelProfile[]): Promise<void> {
     const existingProfiles = [...this.profiles.values()]
-    for (const profile of retiredDefaultProfiles(existingProfiles, profiles)) this.profiles.set(profile.id, profile)
-    for (const profile of profiles) {
+    for (const profile of retiredDefaultProfiles(existingProfiles, profiles)) this.profiles.set(profile.id, normalizeModelProfile(profile))
+    const seededDefaults = profiles.map((profile) => seedDefaultActivation(profile, existingProfiles, profiles))
+    for (const profile of seededDefaults) {
       const existing = this.profiles.get(profile.id)
-      if (!existing || shouldRefreshDefaultProfile(existing, profile)) this.profiles.set(profile.id, profile)
+      if (!existing || shouldRefreshDefaultProfile(existing, profile)) this.profiles.set(profile.id, normalizeModelProfile(profile))
     }
   }
 
   async getProfileByPublicModel(publicModel: string): Promise<ModelProfile | undefined> {
-    return [...this.profiles.values()].find((profile) => profile.active && profile.publicAliases.includes(publicModel))
+    return [...this.profiles.values()].map(normalizeModelProfile).find((profile) => profile.active && profile.publicAliases.includes(publicModel))
   }
 
   async listProfiles(): Promise<readonly ModelProfile[]> {
-    return [...this.profiles.values()]
+    return [...this.profiles.values()].map(normalizeModelProfile)
   }
 
   async setProfile(profile: ModelProfile): Promise<void> {
-    this.profiles.set(profile.id, profile)
+    const normalized = normalizeModelProfile(profile)
+    this.profiles.set(normalized.id, normalized)
   }
 
   async setActiveProfile(profileId: string, rolloutPercent: number): Promise<void> {
@@ -49,6 +53,14 @@ export class MemoryStore implements Store {
 
   async upsertNode(node: NodeRecord): Promise<void> {
     this.nodes.set(node.id, node)
+  }
+
+  async getDirectSession(affinityKey: string): Promise<DirectSessionRecord | undefined> {
+    return this.directSessions.get(affinityKey)
+  }
+
+  async putDirectSession(session: DirectSessionRecord): Promise<void> {
+    this.directSessions.set(session.affinityKey, session)
   }
 
   async updateNodeHeartbeat(node: NodeRecord): Promise<void> {
@@ -120,14 +132,18 @@ function shouldRefreshDefaultProfile(existing: ModelProfile, next: ModelProfile)
   return existing.version <= next.version && JSON.stringify(existing) !== JSON.stringify(next)
 }
 
+function seedDefaultActivation(profile: ModelProfile, existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): ModelProfile {
+  if (!profile.active) return profile
+  const defaultIds = new Set(defaults.map((item) => item.id))
+  const claimed = existing.some((item) => item.active && !defaultIds.has(item.id) && item.publicAliases.some((alias) => profile.publicAliases.includes(alias)))
+  return claimed ? { ...profile, active: false, rolloutPercent: 0 } : profile
+}
+
 function retiredDefaultProfiles(existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): readonly ModelProfile[] {
   const defaultIds = new Set(defaults.map((profile) => profile.id))
   const defaultAliases = new Set(defaults.flatMap((profile) => [...profile.publicAliases]))
   return existing
-    .filter((profile) => profile.active && (
-      (profile.runtime as string) !== 'meshllm' ||
-      (profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
-    ))
+    .filter((profile) => profile.active && profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
     .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
 }
 

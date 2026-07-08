@@ -1,4 +1,4 @@
-import type { ModelProfile } from './types'
+import type { ModelProfile, RuntimeKind } from './types'
 
 // The single stable public model id AI Gateway forwards. Every model profile
 // carries it as a shared public alias, and the single-active invariant
@@ -73,6 +73,13 @@ export function publicAliasIndex(profiles: readonly ModelProfile[]): Map<string,
 const BIND_PORT_BASE = 4300
 const BIND_PORT_STEP = 10
 
+export const LLAMACPP_PROFILE_DEFAULTS = {
+  contextWindow: 262144,
+  parallel: 1,
+  cachePrompt: true,
+  cacheReuse: 256
+} as const
+
 // Per-model mesh-llm runtime tunable defaults (REQ-RUN-002 / REQ-RUN-003),
 // templated from a proven single-GPU llama.cpp unit but adjusted for mesh-llm.
 // Context window is deliberately left Auto (an omitted value) so mesh-llm sizes it
@@ -142,27 +149,57 @@ export function slugifyModelRef(ref: string): string {
 // advances past every existing profile so a later live process never collides on
 // the mesh bind port. The profile ships with the MESHLLM_TUNABLE_DEFAULTS runtime
 // tunables and an Auto (0) context window; an operator refines both per model.
-export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string | undefined }): ModelProfile {
+export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string | undefined; runtime?: RuntimeKind }): ModelProfile {
   const ref = input.modelRef.trim()
+  const runtime = input.runtime ?? 'meshllm'
   const slug = slugifyModelRef(ref)
   const segment = modelRefSegment(ref)
   const name = input.name?.trim()
-  const payloadMode = meshllmPayloadMode(ref)
-  const highestBindPort = input.existing.reduce((max, profile) => Math.max(max, profile.meshllm.bindPort), BIND_PORT_BASE)
-  return {
-    id: `custom-${slug}${input.split ? '-split' : ''}`,
+  const highestBindPort = input.existing.reduce((max, profile) => Math.max(max, profile.meshllm?.bindPort ?? profile.llamacpp?.bindPort ?? BIND_PORT_BASE), BIND_PORT_BASE)
+  const bindPort = highestBindPort + BIND_PORT_STEP
+  const common = {
     displayName: name && name.length > 0 ? name : segment,
     publicAliases: [STABLE_PUBLIC_MODEL, slug],
     upstreamModel: ref,
+    version: 1,
+    rolloutPercent: 0,
+    active: false
+  } as const
+  if (runtime === 'llamacpp') {
+    const parsed = parseLlamaCppModelRef(ref)
+    return {
+      id: `custom-${slug}-llamacpp`,
+      ...common,
+      sourceMode: 'llamacpp-hf',
+      contextWindow: LLAMACPP_PROFILE_DEFAULTS.contextWindow,
+      runtime,
+      llamacpp: {
+        modelRef: ref,
+        hfRepo: parsed.hfRepo,
+        ...(parsed.hfFile ? { hfFile: parsed.hfFile } : {}),
+        ...(parsed.quant ? { quant: parsed.quant } : {}),
+        bindPort,
+        contextWindow: LLAMACPP_PROFILE_DEFAULTS.contextWindow,
+        parallel: LLAMACPP_PROFILE_DEFAULTS.parallel,
+        cachePrompt: LLAMACPP_PROFILE_DEFAULTS.cachePrompt,
+        cacheReuse: LLAMACPP_PROFILE_DEFAULTS.cacheReuse,
+        alias: ref
+      }
+    }
+  }
+  const payloadMode = meshllmPayloadMode(ref)
+  return {
+    id: `custom-${slug}${input.split ? '-split' : ''}`,
+    ...common,
     sourceMode: 'meshllm-ref',
     // 0 = Auto: mesh-llm sizes the context to the node's GPU instead of a pinned
     // small window that would collapse parallel lanes and disable input caching.
     contextWindow: 0,
-    runtime: 'meshllm',
+    runtime,
     meshllm: {
       modelRef: ref,
       split: input.split,
-      bindPort: highestBindPort + BIND_PORT_STEP,
+      bindPort,
       parallel: MESHLLM_TUNABLE_DEFAULTS.parallel,
       cacheTypeK: MESHLLM_TUNABLE_DEFAULTS.cacheTypeK,
       cacheTypeV: MESHLLM_TUNABLE_DEFAULTS.cacheTypeV,
@@ -175,10 +212,45 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
         ...MESHLLM_TUNABLE_DEFAULTS.prefixCache,
         ...(payloadMode ? { payloadMode } : {})
       }
-    },
-    version: 1,
-    rolloutPercent: 0,
-    active: false
+    }
+  }
+}
+
+function parseLlamaCppModelRef(ref: string): { readonly hfRepo: string; readonly hfFile?: string; readonly quant?: string } {
+  const withoutScheme = ref.replace(/^hf:\/\//, '')
+  const quantSeparator = withoutScheme.lastIndexOf(':')
+  if (quantSeparator <= 0) return { hfRepo: withoutScheme }
+  return {
+    hfRepo: withoutScheme.slice(0, quantSeparator),
+    quant: withoutScheme.slice(quantSeparator + 1)
+  }
+}
+
+export function normalizeModelProfile(profile: ModelProfile): ModelProfile {
+  const runtime = profile.runtime ?? 'meshllm'
+  if (runtime === 'llamacpp' && profile.llamacpp) {
+    const { meshllm: _meshllm, ...withoutMesh } = profile
+    void _meshllm
+    return {
+      ...withoutMesh,
+      runtime,
+      sourceMode: 'llamacpp-hf',
+      contextWindow: profile.contextWindow || profile.llamacpp.contextWindow,
+      upstreamModel: profile.upstreamModel || profile.llamacpp.alias,
+      llamacpp: {
+        ...profile.llamacpp,
+        alias: profile.llamacpp.alias || profile.upstreamModel,
+        contextWindow: profile.llamacpp.contextWindow || profile.contextWindow || LLAMACPP_PROFILE_DEFAULTS.contextWindow,
+        parallel: profile.llamacpp.parallel || LLAMACPP_PROFILE_DEFAULTS.parallel,
+        cachePrompt: profile.llamacpp.cachePrompt !== false,
+        cacheReuse: profile.llamacpp.cacheReuse ?? LLAMACPP_PROFILE_DEFAULTS.cacheReuse
+      }
+    }
+  }
+  return {
+    ...profile,
+    runtime: 'meshllm',
+    sourceMode: 'meshllm-ref'
   }
 }
 

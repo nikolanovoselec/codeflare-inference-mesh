@@ -12,7 +12,63 @@ export interface TokenRecord {
   readonly expiresAt?: number
 }
 
-export type ModelSourceMode = 'meshllm-ref'
+export type RuntimeKind = 'meshllm' | 'llamacpp'
+export type ModelSourceMode = 'meshllm-ref' | 'llamacpp-hf'
+
+export interface MeshLLMProfileSettings {
+  readonly modelRef: string
+  readonly split: boolean
+  readonly bindPort: number
+  readonly maxVramGb?: number
+  // Per-model mesh-llm runtime tunables (REQ-RUN-002 / REQ-RUN-003). Each maps
+  // to a mesh-llm config key and is optional: an omitted value means "Auto" and
+  // is not rendered into the node config, so mesh-llm auto-plans it. An omitted
+  // parallel does NOT auto-plan to 4 lanes; mesh-llm may pick a single lane, which
+  // keeps the resident prefix cache out of its unified-KV mode, so 2 or more is
+  // required for input caching to run.
+  readonly parallel?: number
+  readonly cacheTypeK?: string
+  readonly cacheTypeV?: string
+  readonly batch?: number
+  readonly ubatch?: number
+  readonly flashAttn?: boolean
+  readonly maxOutputTokens?: number
+  readonly reasoning?: {
+    readonly enabled?: boolean
+    readonly format?: string
+    readonly budget?: number
+  }
+  // Prompt-prefix cache. This is what populates prompt_tokens_details.cached_tokens; it
+  // is NOT enabled by parallel. maxEntries is capped low (16): the uncertified fallback of
+  // 128 overruns the KV cell pool. payloadMode is load-bearing for recurrent-hybrid
+  // families (qwen35, qwen3-next, falcon-h1): left Auto, mesh-llm picks resident-kv (the
+  // wrong layout) and the cache silently no-ops, so those must pin `kv-recurrent`.
+  readonly prefixCache?: {
+    readonly enabled?: boolean
+    readonly maxEntries?: number
+    readonly payloadMode?: string
+    readonly sharedStrideTokens?: number
+    readonly sharedRecordLimit?: number
+  }
+}
+
+export interface LlamaCppProfileSettings {
+  readonly modelRef: string
+  readonly hfRepo: string
+  readonly hfFile?: string
+  readonly quant?: string
+  readonly bindPort: number
+  readonly contextWindow: number
+  readonly parallel: number
+  readonly cachePrompt: boolean
+  readonly cacheReuse: number
+  readonly alias: string
+  readonly reasoning?: {
+    readonly enabled?: boolean
+    readonly format?: string
+    readonly budget?: number
+  }
+}
 
 export interface ModelProfile {
   readonly id: string
@@ -21,49 +77,16 @@ export interface ModelProfile {
   readonly upstreamModel: string
   readonly sourceMode: ModelSourceMode
   readonly contextWindow: number
-  readonly runtime: 'meshllm'
-  readonly meshllm: {
-    readonly modelRef: string
-    readonly split: boolean
-    readonly bindPort: number
-    readonly maxVramGb?: number
-    // Per-model mesh-llm runtime tunables (REQ-RUN-002 / REQ-RUN-003). Each maps
-    // to a mesh-llm config key and is optional: an omitted value means "Auto" and
-    // is not rendered into the node config, so mesh-llm auto-plans it. An omitted
-    // parallel does NOT auto-plan to 4 lanes; mesh-llm may pick a single lane, which
-    // keeps the resident prefix cache out of its unified-KV mode, so 2 or more is
-    // required for input caching to run.
-    readonly parallel?: number
-    readonly cacheTypeK?: string
-    readonly cacheTypeV?: string
-    readonly batch?: number
-    readonly ubatch?: number
-    readonly flashAttn?: boolean
-    readonly maxOutputTokens?: number
-    readonly reasoning?: {
-      readonly enabled?: boolean
-      readonly format?: string
-      readonly budget?: number
-    }
-    // Prompt-prefix cache. This is what populates prompt_tokens_details.cached_tokens; it
-    // is NOT enabled by parallel. maxEntries is capped low (16): the uncertified fallback of
-    // 128 overruns the KV cell pool. payloadMode is load-bearing for recurrent-hybrid
-    // families (qwen35, qwen3-next, falcon-h1): left Auto, mesh-llm picks resident-kv (the
-    // wrong layout) and the cache silently no-ops, so those must pin `kv-recurrent`.
-    readonly prefixCache?: {
-      readonly enabled?: boolean
-      readonly maxEntries?: number
-      readonly payloadMode?: string
-      readonly sharedStrideTokens?: number
-      readonly sharedRecordLimit?: number
-    }
-  }
+  readonly runtime: RuntimeKind
+  readonly meshllm?: MeshLLMProfileSettings
+  readonly llamacpp?: LlamaCppProfileSettings
   readonly version: number
   readonly rolloutPercent: number
   readonly active: boolean
 }
 
 export interface NodeMetrics {
+  readonly runtimeKind?: RuntimeKind
   readonly gpuName?: string
   readonly gpuMemoryUsedMiB?: number
   readonly gpuMemoryTotalMiB?: number
@@ -84,6 +107,14 @@ export interface NodeMetrics {
   readonly apiReady?: boolean
   readonly consoleReady?: boolean
   readonly meshllmVersion?: string
+  readonly llamacppVersion?: string
+  readonly ctxSize?: number
+  readonly parallel?: number
+  readonly cachePrompt?: boolean
+  readonly cacheReuse?: number
+  readonly slotCount?: number
+  readonly activeSlots?: number
+  readonly cachedTokensLast?: number
   readonly lastError?: string
   /** Most recent error-looking line from mesh-llm's own stderr (REQ-OBS-011), and the console's raw node_state, so the console can show why a runtime is wedged. */
   readonly runtimeDetail?: string
@@ -103,7 +134,7 @@ export interface NodeRecord {
   readonly inFlight: number
   readonly lastSeenAt: number
   readonly failurePenaltyUntil?: number
-  readonly runtime: 'meshllm'
+  readonly runtime: RuntimeKind
   readonly runtimeModel?: string
   readonly agentVersion?: string
   readonly nodeTokenVerifier?: string
@@ -162,7 +193,7 @@ export interface HeartbeatRequest {
   readonly activeProfileIds: readonly string[]
   readonly capacity: number
   readonly inFlight: number
-  readonly runtime: 'meshllm'
+  readonly runtime: RuntimeKind
   readonly runtimeModel?: string
   readonly meshId?: string
   readonly meshToken?: string
@@ -194,6 +225,19 @@ export interface EntrySelection {
   readonly reason?: 'no-profile' | 'no-node'
 }
 
+export interface DirectSessionRecord {
+  readonly affinityKey: string
+  readonly profileId: string
+  readonly publicModel: string
+  readonly nodeId: string
+  readonly userHash: string
+  readonly sessionHash: string
+  readonly createdAt: number
+  readonly updatedAt: number
+  readonly expiresAt: number
+  readonly failoverCount: number
+}
+
 export interface Store {
   seedDefaultProfiles(profiles: readonly ModelProfile[]): Promise<void>
   getProfileByPublicModel(publicModel: string): Promise<ModelProfile | undefined>
@@ -205,6 +249,8 @@ export interface Store {
   getNode(nodeId: string): Promise<NodeRecord | undefined>
   upsertNode(node: NodeRecord): Promise<void>
   updateNodeHeartbeat(node: NodeRecord): Promise<void>
+  getDirectSession(affinityKey: string): Promise<DirectSessionRecord | undefined>
+  putDirectSession(session: DirectSessionRecord): Promise<void>
   revokeNode(nodeId: string, now: number): Promise<void>
   deleteNode(nodeId: string): Promise<void>
   getToken(kind: CredentialKind, id: string): Promise<TokenRecord | undefined>
@@ -233,6 +279,7 @@ export interface RateLimiter {
 export interface RouterEnv {
   readonly DB: D1Database
   readonly REGISTRY: DurableObjectNamespace
+  readonly SESSION_AFFINITY?: DurableObjectNamespace
   readonly MESH: Fetcher
   readonly RL_INFERENCE?: RateLimiter
   readonly RL_HEARTBEAT?: RateLimiter
@@ -254,6 +301,7 @@ export interface RouterEnv {
   readonly ADMIN_RECOVERY_TOKEN?: string
   readonly SETUP_REOPEN?: string
   readonly MESH_STATE_KEY?: string
+  readonly SESSION_AFFINITY_KEY?: string
   readonly WORKER_BASE_URL?: string
   readonly GITHUB_REPOSITORY?: string
   readonly AGENT_RELEASE_TAG?: string

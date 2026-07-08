@@ -22,12 +22,33 @@ export function eligibleNodes(nodes: readonly NodeRecord[], profile: ModelProfil
   return nodes.filter((node) => isEligible(node, profile, now))
 }
 
+export function eligibleDirectNodes(nodes: readonly NodeRecord[], profile: ModelProfile, publicModel: string, now: number): readonly NodeRecord[] {
+  return nodes.filter((node) => isDirectEligible(node, profile, publicModel, now))
+}
+
 export function isEligible(node: NodeRecord, profile: ModelProfile, now: number): boolean {
+  if (profile.runtime !== 'meshllm') return false
   if (node.status !== 'online') return false
   if (node.deactivated === true) return false
   if (now - node.lastSeenAt > HEARTBEAT_TTL_MS) return false
-  if ((node.runtime as string) !== 'meshllm') return false
+  if (node.runtime !== 'meshllm') return false
   if (!node.publicModels.some((model) => profile.publicAliases.includes(model))) return false
+  if (!node.activeProfileIds.includes(profile.id)) return false
+  const runtimeState = node.metrics?.runtimeState
+  if (runtimeState !== 'ready' && runtimeState !== 'running') return false
+  if (node.metrics?.apiReady !== true) return false
+  if (node.metrics?.readyModels?.includes(profile.upstreamModel) !== true) return false
+  if (!isSafeMeshTarget(node.meshIp, node.inferencePort)) return false
+  return true
+}
+
+export function isDirectEligible(node: NodeRecord, profile: ModelProfile, publicModel: string, now: number): boolean {
+  if (profile.runtime !== 'llamacpp') return false
+  if (node.status !== 'online') return false
+  if (node.deactivated === true) return false
+  if (now - node.lastSeenAt > HEARTBEAT_TTL_MS) return false
+  if (node.runtime !== 'llamacpp') return false
+  if (!node.publicModels.includes(publicModel)) return false
   if (!node.activeProfileIds.includes(profile.id)) return false
   const runtimeState = node.metrics?.runtimeState
   if (runtimeState !== 'ready' && runtimeState !== 'running') return false
