@@ -1079,10 +1079,10 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
 }
 
 // handleProfileAdd creates a new inactive model profile from an operator-supplied
-// mesh-llm-compatible reference and serving mode, so a model beyond the seeded set
-// joins the catalog for rollout and activation without redeploying the Worker. The
-// reference is trimmed and must be non-empty; mode "split" builds a layer-package
-// (multi-machine) profile, anything else a single-machine profile. A reference whose
+// model reference, serving mode, and runtime, so a model beyond the seeded set joins
+// the catalog for rollout and activation without redeploying the Worker. The reference
+// is trimmed and must be non-empty; mode "split" builds a MeshLLM layer-package profile,
+// while direct llama.cpp is allowed only for single-machine profiles. A reference whose
 // derived id collides with an existing profile is refused rather than overwriting it.
 async function handleProfileAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)

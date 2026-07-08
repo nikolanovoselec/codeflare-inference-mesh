@@ -170,7 +170,7 @@ ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}
 
 function addModelCard(): string {
   return `<div class="subpanel"><h3>Add a model</h3>
-<p class="field-hint">Add any mesh-llm-compatible model. Single machine: every machine runs the whole model. Split across machines: the machines share the model's layers, for a model too big for one machine.</p>
+<p class="field-hint">Add a model reference and choose its runtime. MeshLLM can run single-machine or split models; llama.cpp is direct and cache-local for single-machine coding sessions.</p>
 <div class="form-grid">
 ${field({ id: 'model-add-name', label: 'Name', control: textInput({ id: 'model-add-name', name: 'name', placeholder: 'e.g. Fast Coder' }), hint: 'Shown in the console. Leave blank to name it after the model file.' })}
 ${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine (full model each)</option><option value="split">Split across machines</option></select></span>' })}
