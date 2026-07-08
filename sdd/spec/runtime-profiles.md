@@ -47,7 +47,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 6. The MeshLLM runtime tunables are parallel lanes, KV cache types, prefill batch, micro-batch, flash attention, max output tokens, reasoning, and the prefix cache (enable, payload mode, max entries, shared-prefix tuning); each is optional and an omitted value means Auto and is not rendered. <!-- @impl: packages/router-worker/src/profiles.ts::MESHLLM_TUNABLE_DEFAULTS --> <!-- @impl: packages/router-worker/src/profiles.ts::meshllmPayloadMode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 persists per-model runtime tunables and clears them back to Auto) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 a new model ships with input caching enabled and multi-lane by default) -->
 7. A config update can clear a previously set tunable back to Auto. <!-- @impl: packages/router-worker/src/router.ts::resolveMeshllmTunables --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 persists per-model runtime tunables and clears them back to Auto) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P0
 
@@ -67,12 +67,12 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Acceptance Criteria:**
 
-1. Default seeding refreshes an existing managed default row when the shipped profile definition changes. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active) -->
-2. Default seeding retires stale active managed defaults that still own a public alias now owned by a shipped default profile. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping retired alias owners active) -->
-3. Default seeding deactivates every profile row whose runtime is not `meshllm`, regardless of profile version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 deactivates non-meshllm profile rows regardless of version) -->
+1. Default seeding refreshes an existing managed default row when the shipped profile definition changes. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active) -->
+2. Default seeding retires stale active managed defaults that still own a public alias now owned by a shipped default profile. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active) -->
+3. Default seeding deactivates every profile row whose runtime is not `meshllm`, regardless of profile version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active) -->
 4. `POST /admin/profiles/activate` activates the target profile and atomically deactivates every other active profile, so at most one model is ever active (one mesh, one active model). <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 activation is single-active) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P0
 
@@ -100,7 +100,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 6. When a profile sets any supported value, the agent renders a per-profile config file (`--config <data dir>/meshllm-<profileId>.toml`) placing each under its MeshLLM subtable: `[models.model_fit]` (context, batch, micro-batch, KV cache types, flash attention, and a `prefix_cache` child table), `[models.throughput]` (parallel), and `[models.request_defaults]` (max output tokens, reasoning). <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003ContextLimitConfigRendering) -->
 7. A configuration value left unset (`0`/empty/absent, including a non-positive context limit) is omitted so MeshLLM auto-plans it; when a profile sets nothing, no config file is written. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003ContextLimitConfigRendering) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
@@ -128,7 +128,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 6. The agent does not restart a runtime that is already loading or serving the currently selected profile, so a healthy ready runtime is left running instead of being torn down on each heartbeat tick. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted) -->
 7. A restart attempt is bounded by a timeout so a Stop hung on a runtime ignoring SIGTERM cannot block the restart goroutine and strand the restart-pending latch; the bounded attempt releases the latch and marks the runtime failed, so a later heartbeat retries instead of the node wedging in a transient state until a manual relaunch. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::finishProfileRestart --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::restartCtx --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010RestartLatchReleasedWhenRuntimeHangs) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
@@ -155,7 +155,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 5. The agent drains and stops the runtime before shutdown, update, or profile switch. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeManagerUsesProcessLifetimeContext) -->
 6. The agent reports runtime state, loaded model, active profile ID/version, mesh membership state, MeshLLM version, and dependency-missing errors on heartbeat/dashboard status. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsMarksLaunchedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsMarksReadySelectedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsReportsActualLoadedProfile) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeRestartMarksPendingProfileNotReady) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
@@ -211,7 +211,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 6. Draining waits until both the local proxy in-flight counter and the MeshLLM console `inflight_requests` reach zero, bounded by the drain timeout, so a restart never lands while MeshLLM is still generating a response. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::waitForDrain --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN006DrainWaitsForMeshLLMConsoleInflight) -->
 7. The agent's tracked mesh id reflects only the current process: it mirrors the console mesh id (clearing it when the console reports none) and resets the mesh id, invite token, and readiness on each new process launch, so no stale identity is reported or triggers a restart. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006PollStatusClearsStaleMeshIDWhenConsoleReportsNone) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006StartClearsStaleMeshIdentity) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P1
 
@@ -239,7 +239,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 6. A node is never handed its own invite token as a join target; it joins only on invite tokens reported by other nodes. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-008 re-elects a node holding only its own token instead of joining it to itself) -->
 7. When a node's own token is the only entry left with no live seed, the router re-elects that node and drops the stale mesh id and token so it creates a fresh mesh. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-RUN-008 re-elects a node holding only its own token instead of joining it to itself) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P1
 
@@ -264,7 +264,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 3. A split profile reports loaded only when the full model id appears in the node's `/v1/models`, which MeshLLM populates only after every stage is ready. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN007SplitReadinessGatedOnFullModelId) -->
 4. A profile version bump on an active split profile drains and restarts every serving node, interrupting the whole mesh until all stages reload; split rollout is a mesh-wide outage, not a rolling update. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN007VersionBumpRestartsEverySplitServingNode) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P1
 
@@ -278,7 +278,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ### REQ-RUN-011: Custom model onboarding
 
-**Intent:** Operators must be able to add a model beyond the seeded profiles by supplying a mesh-llm-compatible model reference and a serving mode, so the router creates a new inactive profile that joins the model catalog and becomes available for rollout and activation without redeploying the Worker.
+**Intent:** Operators must be able to add a model beyond the seeded profiles by supplying a model reference, serving mode, and runtime. MeshLLM models can be single-node or split; llama.cpp models are direct single-node profiles for cache-local coding sessions. The router creates a new inactive profile that joins the model catalog and becomes available for rollout and activation without redeploying the Worker.
 
 **Applies To:** Admin
 
@@ -297,6 +297,14 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 6. Adding a model requires admin authentication. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 requires admin authentication to add a model) -->
 
 7. A successful add records a profile-added audit event. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 records a profile-added audit event on a successful add) -->
+
+8. `POST /admin/profiles/add` with runtime `llamacpp` and serving mode `single` creates an inactive direct profile with source mode `llamacpp-hf`, llama.cpp model settings, prompt caching enabled, cache reuse configured, and no MeshLLM split state. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 adds a direct llama.cpp single model as an inactive profile) -->
+
+9. Runtime `llamacpp` with serving mode `split` is rejected with status 400 and creates no direct profile, because split serving remains MeshLLM-only. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 rejects direct llama.cpp for split models) -->
+
+10. The Admin UI model-add runtime selector posts the same authenticated `runtime` field that the Admin API accepts, and split mode forces the selector back to `meshllm`. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-RUN-011 keeps direct llama.cpp UI controls backed by admin API payloads) -->
+
+11. A direct profile's Manage drawer exposes llama.cpp runtime settings and saves them through `POST /admin/profiles/config` with a `llamacpp` settings block, without rendering MeshLLM-only controls. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-RUN-011 keeps direct llama.cpp UI controls backed by admin API payloads) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 

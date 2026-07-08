@@ -101,7 +101,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 5. Discovery runs over `nostr`, carrying rendezvous metadata only, never inference. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMRenderAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004ArgvListForbidsPublicExposureFlags) --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004NostrRelaysAppendWhenConfiguredOnly) -->
 6. iroh's inference data transport is pinned to the WARP overlay via `--bind-ip` + `--disable-iroh-relays`, with no public relay/STUN fallback. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMRenderAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQSEC004ArgvListForbidsPublicExposureFlags) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P1
 
@@ -127,7 +127,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 4. Runtime-control dashboard POSTs reject browser Origin headers that do not match the dashboard origin. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC004RuntimeExposureUsesLocalDashboardAndUpstreamToken) -->
 5. Runtime process logs are redacted before display or heartbeat transmission when they contain credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQSEC008DashboardRedactsCredentials) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P1
 

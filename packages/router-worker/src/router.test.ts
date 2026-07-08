@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_ACTIONS, ADMIN_UI_CONFIRM, ADMIN_UI_NAV, ADMIN_UI_RESPONSIVE, ADMIN_UI_SETUP_LOCKED_FEEDBACK, ADMIN_UI_VIEWS, ADMIN_UI_WIZARD } from './admin-ui'
 import { ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
-import { adminUiHarness, elementStub } from './admin-ui-harness'
+import { adminUiHarness, descendants, elementStub } from './admin-ui-harness'
 import { resetJwksCache } from './access'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
@@ -538,6 +538,95 @@ describe('router worker behavioral contracts', () => {
     expect(harness.byId('installer-output').textContent).toBe('install command for /admin/installers/windows')
   })
 
+  it('REQ-ADM-006 REQ-RUN-011 keeps direct llama.cpp UI controls backed by admin API payloads', async () => {
+    // DirectRuntimeUiParityTestAnchor
+    const { router, store } = routerFixture()
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+    await store.putConfig('setup_state', { phase: 'complete', completedAt: 1_700_000_000_000 })
+    const directProfile = {
+      id: 'direct-qwen',
+      displayName: 'Direct Qwen',
+      publicAliases: ['codeflare-mesh', 'direct-qwen'],
+      upstreamModel: 'unsloth/Qwen3-14B-GGUF:Q4_K_M',
+      contextWindow: 262144,
+      active: true,
+      rolloutPercent: 100,
+      runtime: 'llamacpp',
+      sourceMode: 'llamacpp-hf',
+      version: 1,
+      llamacpp: { alias: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', hfRepo: 'unsloth/Qwen3-14B-GGUF', hfFile: 'qwen.gguf', quant: 'Q4_K_M', contextWindow: 262144, bindPort: 9338, parallel: 1, cachePrompt: true, cacheReuse: 256 }
+    }
+    const status = {
+      nodes: [{ id: 'node-direct', displayName: 'Direct Node', meshIp: '100.64.1.20', inferencePort: 8080, localDashboardPort: 3131, status: 'online', publicModels: ['direct-qwen'], activeProfileIds: ['direct-qwen'], capacity: 1, inFlight: 0, lastSeenAt: Date.now(), runtime: 'llamacpp', metrics: { runtimeKind: 'llamacpp', runtimeState: 'ready', activeRequests: 0, tokensPerSecond: 12, readyModels: ['unsloth/Qwen3-14B-GGUF:Q4_K_M'], loadedModel: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', gpuMemoryUsedMiB: 1024, gpuMemoryTotalMiB: 24576, llamacppVersion: 'b5000', ctxSize: 262144, parallel: 1, cachePrompt: true, cacheReuse: 256, slotCount: 1, activeSlots: 0, cachedTokensLast: 4096, apiReady: true, consoleReady: true } }],
+      profiles: [directProfile],
+      profileReadiness: [{ profileId: 'direct-qwen', ready: 1, failed: 0 }],
+      meshHealth: [],
+      audit: [],
+      desiredAgentVersion: 'agent-v1',
+      offlinePruneSeconds: 300
+    }
+    const html = await (await router(new Request('https://mesh.example.com/admin'))).text()
+    const harness = adminUiHarness(html, async (path) => {
+      if (path === '/admin/status') return Response.json(status)
+      if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
+      if (path.startsWith('/admin/cloudflare/gateway/options')) return Response.json({ gateways: [], routes: [], defaults: {} })
+      if (path === '/admin/profiles/add') return Response.json({ ok: true, profileId: 'custom-direct' }, { status: 201 })
+      if (path === '/admin/profiles/config') return Response.json({ ok: true, profileId: 'direct-qwen' })
+      return new Response('install', { status: 200, headers: { 'content-type': 'text/plain' } })
+    }, { hostname: 'mesh.example.com', sessionToken: 'admin-secret' })
+    harness.run()
+    await harness.flush(10)
+
+    const addMode = harness.byId('model-add-mode')
+    const addRuntime = harness.byId('model-add-runtime')
+    addRuntime.value = 'llamacpp'
+    addMode.value = 'split'
+    addMode.dataset.modelAddMode = 'true'
+    await harness.change(addMode)
+    expect(addRuntime.disabled).toBe(true)
+    expect(addRuntime.value).toBe('meshllm')
+
+    addMode.value = 'single'
+    await harness.change(addMode)
+    addRuntime.value = 'llamacpp'
+    harness.byId('model-add-ref').value = ' unsloth/Qwen3-14B-GGUF:Q4_K_M '
+    await harness.clickAction('model-add', { out: 'profile-output' })
+    const addCall = harness.fetchCalls.find((call) => call.path === '/admin/profiles/add')
+    expect(JSON.parse(String(addCall?.init?.body))).toMatchObject({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'single', runtime: 'llamacpp' })
+
+    const profileRow = harness.byId('profile-list').children.find((row) => row.dataset.profileRow === 'direct-qwen')
+    expect(profileRow).toBeDefined()
+    expect(descendants(profileRow!).find((item) => item.dataset.runtime)?.dataset.runtime).toBe('llamacpp')
+    expect(descendants(profileRow!).find((item) => item.dataset.servingMode)?.dataset.servingMode).toBe('single')
+
+    await harness.clickAction('model-detail', { profileId: 'direct-qwen' })
+    const modelDrawer = descendants(harness.byId('drawer-body'))
+    expect(modelDrawer.find((item) => item.dataset.drawerField === 'runtime')?.dataset.value).toBe('llamacpp')
+    expect(modelDrawer.some((item) => item.id === 'model-edit-llama-parallel')).toBe(true)
+    expect(modelDrawer.some((item) => item.id === 'model-edit-parallel')).toBe(false)
+    expect(modelDrawer.some((item) => item.id === 'model-edit-vram')).toBe(false)
+
+    harness.byId('model-edit-context').value = '131072'
+    harness.byId('model-edit-llama-parallel').value = '2'
+    harness.byId('model-edit-llama-cache-prompt').value = 'off'
+    harness.byId('model-edit-llama-cache-reuse').value = '512'
+    await harness.clickAction('model-save', { profileId: 'direct-qwen', runtime: 'llamacpp', out: 'model-edit-output' })
+    const configCall = harness.fetchCalls.filter((call) => call.path === '/admin/profiles/config').at(-1)
+    expect(JSON.parse(String(configCall?.init?.body))).toEqual({
+      profileId: 'direct-qwen',
+      runtime: 'llamacpp',
+      contextWindow: 131072,
+      modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M',
+      llamacpp: { parallel: 2, cacheReuse: 512, cachePrompt: false }
+    })
+
+    await harness.clickAction('node-detail', { nodeId: 'node-direct' })
+    const nodeFields = new Map(descendants(harness.byId('drawer-body')).filter((item) => item.dataset.drawerField).map((item) => [item.dataset.drawerField, item.dataset.value]))
+    expect(nodeFields.get('direct-context')).toBe('262144')
+    expect(nodeFields.get('direct-parallel')).toBe('1')
+    expect(nodeFields.get('direct-cached-tokens')).toBe('4096')
+  })
+
   it('REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families', async () => {
     // RouteFamilySeparationTestAnchor
     const { router } = routerFixture()
@@ -961,7 +1050,7 @@ describe('router worker behavioral contracts', () => {
     expect((await store.getNode('node-a'))?.inFlight).toBe(0)
   })
 
-  it('REQ-SCH-006 requires body.user for active llama.cpp profiles', async () => {
+  it('REQ-SCH-004 rejects direct llama.cpp requests without a session user', async () => {
     const { router, store } = routerFixture({ env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
     const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
     await store.setProfile(direct)
@@ -976,7 +1065,7 @@ describe('router worker behavioral contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'session_required', requestId: 'request-a' })
   })
 
-  it('REQ-SCH-006 pins and reuses a valid direct llama.cpp session without storing raw user ids', async () => {
+  it('REQ-SCH-004 reuses the pinned direct node and stores only hashed affinity keys', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
     const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
@@ -1009,7 +1098,7 @@ describe('router worker behavioral contracts', () => {
     expect(sessions[0]!.affinityKey).toMatch(/^codeflare-mesh\|custom-code-model-gguf-q4-k-m-llamacpp\|hmac-sha256:[a-f0-9]{64}$/)
   })
 
-  it('REQ-SCH-006 fails over only when the pinned direct node becomes ineligible', async () => {
+  it('REQ-SCH-004 fails over a direct session when the pinned node is no longer eligible', async () => {
     const { router, store } = routerFixture({ env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
     const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
     await store.setProfile(direct)
@@ -2612,7 +2701,7 @@ describe('router worker behavioral contracts', () => {
     expect(JSON.stringify(body)).not.toContain('invite-token-value-a')
   })
 
-  it('REQ-SCH-006 direct llama.cpp heartbeats never receive mesh bootstrap or write mesh state', async () => {
+  it('REQ-SCH-004 direct llama.cpp heartbeats never receive mesh bootstrap or write mesh state', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 3 }
     await store.setProfile(direct)
@@ -3444,6 +3533,47 @@ describe('operator playground contracts', () => {
       return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream', 'cf-aig-log-id': 'log-should-not-leak' } })
     }) as typeof fetch
   }
+
+  it('REQ-ADM-029 REQ-RUN-011 direct playground sends a stable session user for affinity', async () => {
+    // DirectPlaygroundSessionUserTestAnchor
+    const store = new MemoryStore()
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+    await store.putConfig('setup_state', { phase: 'complete', completedAt: 1_700_000_000_000 })
+    const { router } = routerFixture({ store })
+    const html = await (await router(new Request('https://mesh.example.com/admin'))).text()
+    const directProfile = { id: 'direct-qwen', displayName: 'Direct Qwen', publicAliases: ['codeflare-mesh', 'direct-qwen'], upstreamModel: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', active: true, runtime: 'llamacpp' }
+    const harness = adminUiHarness(html, async (path) => {
+      if (path === '/admin/status') return Response.json({ nodes: [], profiles: [directProfile], profileReadiness: [], meshHealth: [], audit: [] })
+      if (path === '/admin/agent-versions') return Response.json({ tags: [], stale: false })
+      if (path.startsWith('/admin/cloudflare/gateway/options')) return Response.json({ gateways: [], routes: [], defaults: {} })
+      if (path === '/admin/playground/direct-chat') {
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'))
+            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+            controller.close()
+          }
+        })
+        return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      }
+      return new Response('install', { status: 200, headers: { 'content-type': 'text/plain' } })
+    }, { hostname: 'mesh.example.com', sessionToken: 'admin-secret' })
+    harness.run()
+    await harness.flush(10)
+    harness.byId('playground-prompt').value = 'hello'
+
+    await harness.clickAction('playground-send', { out: 'playground-output' })
+    await harness.flush(10)
+    await harness.clickAction('playground-send', { out: 'playground-output' })
+    await harness.flush(10)
+
+    const payloads = harness.fetchCalls.filter((call) => call.path === '/admin/playground/direct-chat').map((call) => JSON.parse(String(call.init?.body)) as { model: string; user: string; messages: readonly unknown[] })
+    expect(payloads).toHaveLength(2)
+    expect(payloads.map((payload) => payload.model)).toEqual(['direct-qwen', 'direct-qwen'])
+    expect(payloads[0]!.user).toMatch(/^user:admin-playground\|session:/)
+    expect(new Set(payloads.map((payload) => payload.user)).size).toBe(1)
+    expect(payloads[0]!.messages).toHaveLength(1)
+  })
 
   it('REQ-ADM-029 rejects unauthenticated playground requests', async () => {
     const { router } = routerFixture()

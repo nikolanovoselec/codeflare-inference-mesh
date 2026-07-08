@@ -19,7 +19,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 5. The service marks itself draining before intentional shutdown or update restart. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE001ServiceSkeletonAndListenerPolicy) -->
 6. The agent resolves its config path from the `INFERENCE_MESH_CONFIG` override when set, so the installed service and the install step agree on one config path independent of the invoking user's home directory. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigPath --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestConfigPathHonorsExplicitConfigEnv) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
 **Priority:** P0
 
@@ -122,7 +122,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 4. Runtime failures return an OpenAI-style error envelope and preserve an appropriate HTTP status. <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
 5. The proxy does not expose node credentials, setup tokens, or admin tokens to the local runtime. <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE003UpstreamProxyEnforcesBearerAndStreams) -->
 
-**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P0
 
@@ -149,7 +149,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 5. The dashboard runtime panel reports split state, stage count, API and console ports, the last runtime error, and tokens per second when MeshLLM exposes it. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE004DashboardReportsMeshLLMRuntimePanel) -->
 6. Dashboard controls can start, stop, and restart the managed MeshLLM process through the agent's runtime controller interface only after the node has a claimed profile. <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE004DashboardRuntimeControlsUseController) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime), [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-CI-001](constraints.md#con-ci-001-ci-is-the-verification-surface)
 
 **Priority:** P1
 
@@ -227,7 +227,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 6. The agent supervises the MeshLLM process directly and never installs MeshLLM's upstream service units. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::MeshLLMInstallAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE006NeverInstallsUpstreamServiceUnits) -->
 7. MeshLLM binary downloads request only the pinned GitHub release URLs, adding no install-time egress beyond `github.com`. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::MeshLLMInstallAnchors --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE006DownloadsOnlyPinnedReleaseURLs) -->
 
-**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P0
 
@@ -252,7 +252,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 3. Provisioning runs best-effort after WARP detection at startup and never fails startup: a missing tool, an unknown WARP interface, an invalid protocol, or a macOS host is logged or a no-op rather than fatal. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @impl: packages/node-agent/internal/agent/firewall.go::EnsureInboundRule --> <!-- @test: packages/node-agent/internal/agent/firewall_test.go (TestREQNODE010EnsureInboundRule) -->
 4. Beyond the TCP data-plane port, the agent opens the active profile's iroh mesh-peer transport port (the `--bind-port`) for inbound UDP scoped to the WARP interface, at startup and again on every profile switch because the bind-port moves with the selected model, so a default-deny host cannot drop the QUIC stage handshake and strand a multi-node mesh at zero peers. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::provisionMeshPeerFirewall --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall) -->
 
-**Constraints:** [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation), [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
@@ -276,7 +276,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 2. A deactivated node keeps heartbeating and applying router-driven self-updates; only mesh-llm launch is suppressed. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE011DeactivatedNodeStopsRuntimeAndReactivationRelaunches) -->
 3. Clearing the taint relaunches the selected profile even when the desired profile set is unchanged. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE011DeactivatedNodeStopsRuntimeAndReactivationRelaunches) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
@@ -300,7 +300,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 2. A repeated (already-applied) nonce does not restart the runtime again. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE012ForceReloadRestartsOncePerNonce) -->
 3. The node echoes the applied nonce back on its next heartbeat so the router can retire the one-shot directive. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::collect --> <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE012ForceReloadRestartsOncePerNonce) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P2
 

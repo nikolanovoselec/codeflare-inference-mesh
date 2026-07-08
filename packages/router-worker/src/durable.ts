@@ -33,5 +33,5 @@ export class SessionAffinityDO implements DurableObject {
 
 export const DURABLE_ANCHORS = {
   REQ_SCH_002: 'REQ-SCH-002',
-  REQ_SCH_006: 'REQ-SCH-006'
+  REQ_SCH_004: 'REQ-SCH-004'
 } as const

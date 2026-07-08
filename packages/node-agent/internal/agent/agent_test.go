@@ -242,7 +242,7 @@ func TestREQNODE007HeartbeatResendsMeshIdentityEveryTick(t *testing.T) {
 }
 
 func TestREQLLAMACPPHeartbeatReportsSelectedDirectRuntime(t *testing.T) {
-	t.Run("REQ-SCH-006", func(t *testing.T) {
+	t.Run("REQ-SCH-004 REQ-OBS-003", func(t *testing.T) {
 		cfg := DefaultConfig(t.TempDir())
 		cfg.ActiveProfileIDs = []string{"direct-profile"}
 		cfg.Profiles = []ModelProfile{{

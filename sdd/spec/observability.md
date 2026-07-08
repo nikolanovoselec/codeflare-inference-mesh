@@ -44,6 +44,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 5. Admin status includes recent audit events, persisted setup/gateway/domain state, and a generation timestamp. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status and REQ-RUN-004 reports profile readiness in admin status) -->
 6. Admin status omits token hashes and plaintext credentials. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status and REQ-RUN-004 reports profile readiness in admin status) -->
 7. Admin status returns a machine-readable JSON shape for UI and automation use. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-002 REQ-OBS-002 returns redacted machine-readable admin status and REQ-RUN-004 reports profile readiness in admin status) -->
+8. Direct llama.cpp nodes surface runtime kind, llama.cpp version, context size, parallel/slot state, prompt-cache settings, and the most recent cached-token count through Admin status and the node detail drawer. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-RUN-011 keeps direct llama.cpp UI controls backed by admin API payloads) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -68,8 +69,9 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 1. Heartbeat metrics include runtime state, ready models, active profile ID/version, and in-flight requests. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 2. Heartbeat metrics include mesh ID, mesh role, peer count, split and stage state, MeshLLM API and console readiness, and the MeshLLM version. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 3. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
+4. Direct llama.cpp heartbeat metrics include runtime kind, llama.cpp version, configured context size, parallel slots, prompt-cache settings, slot usage, and latest cached-token count when the runtime exposes them. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-RUN-011 keeps direct llama.cpp UI controls backed by admin API payloads) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
@@ -93,7 +95,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 2. A node reports runtime state ready only while the console reports serving and the selected profile's upstream model is routable in the node's own model list. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS008MapsMeshLLMNodeStates) -->
 3. Console state loading is reported as downloading, standby is reported as starting, and an unreachable console after grace or a process exit is reported as failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::MapMeshLLMState --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS008MapsMeshLLMNodeStates) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
@@ -119,7 +121,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 4. Token-throughput metrics are read from the MeshLLM console status `tok_per_sec` value when the console exposes it. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
 5. Prompt-versus-generation throughput splits are absent rather than fabricated when the MeshLLM status does not expose them. <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMStatus --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS003ParsesMeshLLMStatus) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
@@ -271,7 +273,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 2. The manager exposes the captured line through `RuntimeErrorDetail`, and the per-tick heartbeat metrics carry it as `runtimeDetail` and the console's raw `node_state` as `nodeState`, with zero values never overwriting a present value on merge. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::RuntimeErrorDetail --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::collect --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::applyMeshStatusMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::MergeRuntimeMetrics --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeErrorDetailReflectsRing) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQOBS011RuntimeDetailAndNodeStateRideHeartbeat) -->
 3. The console node Manage drawer surfaces these diagnostics as read-only rows: the captured runtime error (a distinct danger-toned row, shown only when present), the node state, mesh role, peer count, stage count (only when split), API/console reachability, and the mesh-llm version. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 the node drawer surfaces the runtime error, node state, and mesh diagnostics) -->
 
-**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-meshllm-only-runtime)
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P2
 

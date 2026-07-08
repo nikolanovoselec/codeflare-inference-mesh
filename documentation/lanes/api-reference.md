@@ -73,21 +73,21 @@ POST /v1/chat/completions
 
 **Origin check:** n/a
 
-**Request body:** JSON chat completion body with a public model alias.
+**Request body:** JSON chat completion body with a public model alias. MeshLLM profiles need only `model` and messages. Direct llama.cpp profiles also require `user` in the grammar `user:<id>|session:<id>` so the router can pin the coding session to one cache-local node without storing raw ids.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Selected node response is returned; streaming responses stay streamed. | Node response body. |
-| `400` | JSON is invalid or `model` is missing. | `{ "error": "invalid_json", "requestId": string }` |
+| `400` | JSON is invalid, `model` is missing, or a direct llama.cpp profile is called without a valid `user:<id>|session:<id>` value. | `{ "error": "invalid_json" \| "invalid_user", "requestId": string }` |
 | `401` | Provider token is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | Public model alias has no configured profile. | `{ "error": "no-profile", "requestId": string }` |
 | `413` | Request body exceeds `MAX_REQUEST_BYTES`. | `{ "error": "request_too_large", "requestId": string }` |
 | `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
 | `503` | No eligible node is ready to serve, or no upstream token is available. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-005](../../sdd/spec/state-scheduling.md)
+**Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-SCH-005](../../sdd/spec/state-scheduling.md)
 
 ### POST /node/claim
 
@@ -691,7 +691,7 @@ A `ModelProjection` is `{ "id": string, "displayName": string, "callableNames": 
 
 ### POST /api/v1/models
 
-Adds a new model to the catalog from a mesh-llm-compatible reference and serving mode (the automation twin of the console add-model form).
+Adds a new model to the catalog from a model reference, serving mode, and runtime (the automation twin of the console add-model form).
 
 ```http
 POST /api/v1/models
@@ -699,14 +699,14 @@ POST /api/v1/models
 
 **Authentication:** automation key
 
-**Request body:** `{ "modelRef": string, "mode"?: "single" | "split", "name"?: string }` — `modelRef` is required, trimmed, and non-empty; `mode` defaults to `single` (`split` builds a layer-package profile); `name` is an optional display name (defaults to the model-file segment). The model id and callable alias are derived from the reference.
+**Request body:** `{ "modelRef": string, "mode"?: "single" | "split", "runtime"?: "meshllm" | "llamacpp", "name"?: string }` — `modelRef` is required, trimmed, and non-empty; `mode` defaults to `single` (`split` builds a layer-package profile); `runtime` defaults to `meshllm`. Direct `llamacpp` profiles are single-machine only and ship with prompt caching/cache reuse enabled for coding-session affinity. `name` is an optional display name (defaults to the model-file segment). The model id and callable alias are derived from the reference.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `201` | A new inactive model is created carrying the stable `codeflare-mesh` callable name; it reaches production only through `POST /api/v1/models/{id}/enable`. | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | `modelRef` is missing or blank. | `invalid_model_ref` error body. |
+| `400` | `modelRef` is missing/blank, `runtime` is invalid, or `runtime: "llamacpp"` was requested with `mode: "split"`. | `invalid_model_ref` / `invalid_runtime` / `split_requires_meshllm` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `409` | The reference's derived id already exists. | `duplicate_profile` error body. |
 
@@ -714,7 +714,7 @@ POST /api/v1/models
 
 ### POST /api/v1/models/{id}
 
-Updates a model's context window, model reference, VRAM budget, display name, callable name, and/or MeshLLM runtime tunables.
+Updates a model's context window, model reference, VRAM budget, display name, callable name, and runtime-specific tunables.
 
 ```http
 POST /api/v1/models/{id}
@@ -722,16 +722,16 @@ POST /api/v1/models/{id}
 
 **Authentication:** automation key
 
-**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "reasoning"?: object }`. Every field is optional; an omitted field is left unchanged. Context window must be a non-negative integer (`0` = Auto); model reference must be non-empty; VRAM budget must be a number `≥ 0` (`0` = no cap); `name` sets the display name (non-blank); `callName` sets the model's own callable alias (slugified, non-empty, not the reserved `codeflare-mesh`, not a collision) while keeping the shared alias.
+**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "runtime"?: "meshllm" | "llamacpp", "llamacpp"?: { "parallel"?: number, "cachePrompt"?: boolean, "cacheReuse"?: number, "bindPort"?: number }, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "reasoning"?: object }`. Every field is optional; an omitted field is left unchanged. MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama.cpp context window must be at least `4096`; model reference must be non-empty; VRAM budget is MeshLLM-only and must be a number `≥ 0` (`0` = no cap); `name` sets the display name (non-blank); `callName` sets the model's own callable alias (slugified, non-empty, not the reserved `codeflare-mesh`, not a collision) while keeping the shared alias.
 
-The tunables mirror `POST /admin/profiles/config`: `parallel`/`batch`/`ubatch`/`maxOutputTokens` are positive integers, `cacheTypeK`/`cacheTypeV` one of `f16`/`q8_0`/`q4_0`, `flashAttn` a boolean, and `reasoning` a `{ enabled?, format?, budget? }` object (layered onto the existing block). A `null` / `0` / `""` value clears a tunable back to Auto.
+For MeshLLM profiles, the tunables mirror `POST /admin/profiles/config`: `parallel`/`batch`/`ubatch`/`maxOutputTokens` are positive integers, `cacheTypeK`/`cacheTypeV` one of `f16`/`q8_0`/`q4_0`, `flashAttn` a boolean, and `reasoning` a `{ enabled?, format?, budget? }` object (layered onto the existing block). A `null` / `0` / `""` value clears a tunable back to Auto. For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block; `parallel` must be `>= 1`, `cacheReuse` must be `>= 0`, `cachePrompt` is boolean, and reserved bind ports are rejected.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The updated model projection (`callableNames` reflects a changed call name). | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | The context window (negative or non-integer; `0` is accepted as Auto), model reference, VRAM budget, display name, call name, or a runtime tunable was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_reasoning` / `invalid_model_config` error body. |
+| `400` | The context window, model reference, VRAM budget, display name, call name, runtime, or runtime tunable was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_reasoning` / `invalid_llamacpp` / `invalid_cachePrompt` / `bind_port_conflict` / `invalid_model_config` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |

@@ -89,6 +89,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // The in-flight playground stream's abort controller, so the Stop button can end a
   // runaway generation. Null when no stream is running.
   let playgroundController = null;
+  const playgroundSessionKey = 'codeflareInferenceMeshPlaygroundSession';
+  const playgroundSessionUser = () => {
+    let value = localStorage.getItem(playgroundSessionKey);
+    if (!value) {
+      value = (globalThis.crypto && globalThis.crypto.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()) + '-' + Math.random().toString(16).slice(2));
+      localStorage.setItem(playgroundSessionKey, value);
+    }
+    return 'user:admin-playground|session:' + value;
+  };
   const setHealth = (state, label) => { const pill = byId('health-pill'); if (!pill) return; pill.dataset.health = state; pill.textContent = label; };
   // Map a failed playground status to an actionable next step. The raw status alone
   // ('failed (401)') tells an operator nothing about what to fix.
@@ -631,6 +640,18 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (metrics.splitEnabled || metrics.stageCount) bodyEl.appendChild(drawerField('stages', 'Stages', String(metrics.stageCount || 0), String(metrics.stageCount || 0)));
     bodyEl.appendChild(drawerField('reachability', 'API / console', (metrics.apiReady ? 'ready' : 'down') + ' / ' + (metrics.consoleReady ? 'ready' : 'down')));
     if (metrics.meshllmVersion) bodyEl.appendChild(drawerField('meshllm', 'mesh-llm', metrics.meshllmVersion));
+    if (metrics.llamacppVersion) bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion));
+    if (node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp') {
+      bodyEl.appendChild(drawerField('direct-context', 'Direct context tokens', metrics.ctxSize != null ? String(metrics.ctxSize) : '\u2014', metrics.ctxSize != null ? String(metrics.ctxSize) : ''));
+      bodyEl.appendChild(drawerField('direct-parallel', 'Direct slots', (metrics.activeSlots || 0) + ' / ' + (metrics.slotCount || metrics.parallel || 0), String(metrics.slotCount || metrics.parallel || 0)));
+      bodyEl.appendChild(drawerField('direct-cache', 'Prompt cache', (metrics.cachePrompt === false ? 'off' : 'on') + ' · reuse ' + (metrics.cacheReuse != null ? metrics.cacheReuse : '\u2014')));
+      bodyEl.appendChild(drawerField('direct-cached-tokens', 'Last cached tokens', metrics.cachedTokensLast != null ? String(metrics.cachedTokensLast) : '\u2014', metrics.cachedTokensLast != null ? String(metrics.cachedTokensLast) : ''));
+      if (metrics.lastError) {
+        const llamaErr = drawerField('llamacpp-last-error', 'llama.cpp error', metrics.lastError);
+        llamaErr.setAttribute('data-tone', 'danger');
+        bodyEl.appendChild(llamaErr);
+      }
+    }
     const models = Array.isArray(metrics.readyModels) ? metrics.readyModels : [];
     models.forEach((model) => {
       const item = document.createElement('div');
@@ -742,6 +763,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const bodyEl = openDrawer(modelName(profile));
     if (!bodyEl) return;
     bodyEl.appendChild(drawerField('active', 'Status', profile.active ? 'On' : 'Off'));
+    bodyEl.appendChild(drawerField('runtime', 'Runtime', profile.runtime === 'llamacpp' ? 'llama.cpp' : 'mesh-llm', profile.runtime || 'meshllm'));
     // Editable settings, saved through the validated profile-config endpoint. Name is
     // the human label; call name is this model's own public alias. Apps can always
     // also reach whichever model is on through the shared codeflare-mesh name. Only a
@@ -769,18 +791,20 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     callRow.appendChild(drawerHint('The stable name callers ask for, auto-derived from the model. Apps can always also use the shared codeflare-mesh name; you rarely need to change this.'));
     bodyEl.appendChild(callRow);
     const meshllm = profile.meshllm || {};
+    const llamacpp = profile.llamacpp || {};
+    const isDirect = profile.runtime === 'llamacpp';
     const ctxRow = document.createElement('label');
     ctxRow.className = 'drawer-row';
     ctxRow.textContent = 'Context window (tokens)';
     const ctxInput = document.createElement('input');
     ctxInput.id = 'model-edit-context';
     ctxInput.type = 'number';
-    ctxInput.min = '0';
+    ctxInput.min = isDirect ? '4096' : '0';
     ctxInput.placeholder = 'Auto';
     // 0 = Auto, shown as a blank field: mesh-llm sizes the context to the GPU.
-    ctxInput.value = profile.contextWindow ? String(profile.contextWindow) : '';
+    ctxInput.value = (isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) ? String(isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) : '';
     ctxRow.appendChild(ctxInput);
-    ctxRow.appendChild(drawerHint('Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
+    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Direct profiles require a pinned value (4096 or higher).' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
     bodyEl.appendChild(ctxRow);
     const modelRow = document.createElement('label');
     modelRow.className = 'drawer-row';
@@ -788,7 +812,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const modelInput = document.createElement('input');
     modelInput.id = 'model-edit-model';
     modelInput.type = 'text';
-    modelInput.value = (profile.meshllm && profile.meshllm.modelRef) || '';
+    modelInput.value = (profile.llamacpp && profile.llamacpp.modelRef) || (profile.meshllm && profile.meshllm.modelRef) || '';
     modelRow.appendChild(modelInput);
     bodyEl.appendChild(modelRow);
     const vramRow = document.createElement('label');
@@ -802,35 +826,42 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     // Empty when there is no cap (unset or zero); a positive value is the GB ceiling.
     vramInput.value = profile.meshllm && profile.meshllm.maxVramGb ? String(profile.meshllm.maxVramGb) : '';
     vramRow.appendChild(vramInput);
-    bodyEl.appendChild(vramRow);
-    // Advanced runtime tunables (REQ-RUN-002 / REQ-RUN-003): each maps to a mesh-llm
-    // config key. Blank / Auto leaves mesh-llm to plan the value; placeholders show
-    // the sensible default. Parallel lanes 2 or more is what enables input caching.
+    if (!isDirect) bodyEl.appendChild(vramRow);
+    // Advanced runtime settings are runtime-specific: MeshLLM gets Auto-clearable
+    // tunables, while direct llama.cpp gets cache-local server flags.
     const advancedHead = document.createElement('div');
     advancedHead.className = 'drawer-subhead';
     advancedHead.textContent = 'Advanced runtime';
     bodyEl.appendChild(advancedHead);
-    const reasoning = meshllm.reasoning || {};
-    const flashValue = meshllm.flashAttn === true ? 'on' : meshllm.flashAttn === false ? 'off' : '';
-    const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
-    const kvOptions = [{ value: '', label: 'Auto' }, { value: 'f16', label: 'f16 (full precision)' }, { value: 'q8_0', label: 'q8_0 (balanced)' }, { value: 'q4_0', label: 'q4_0 (smallest)' }];
-    const onOffOptions = [{ value: '', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
-    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-parallel', label: 'Parallel lanes', value: meshllm.parallel, placeholder: 'Auto', hint: 'Concurrent request slots. 2 or more enables input caching (fast prompt reuse); 1 disables it. Blank = Auto (mesh-llm plans up to 4).' }));
-    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-cache-k', label: 'KV cache type (keys)', value: meshllm.cacheTypeK || '', options: kvOptions, hint: 'Precision of the cached keys. q8_0 halves memory vs f16 with negligible quality loss; q4_0 quarters it to fit very large contexts.' }));
-    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-cache-v', label: 'KV cache type (values)', value: meshllm.cacheTypeV || '', options: kvOptions, hint: 'Precision of the cached values. Match the key type unless you have a reason not to.' }));
-    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-batch', label: 'Prefill batch', value: meshllm.batch, placeholder: '2048', hint: 'Tokens processed per prefill step. Higher (e.g. 8192) speeds long-prompt ingestion but uses more memory. Blank = default.' }));
-    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-ubatch', label: 'Micro-batch', value: meshllm.ubatch, placeholder: '512', hint: 'Physical sub-batch of the prefill batch. Higher (e.g. 4096) speeds ingestion at higher memory. Blank = default.' }));
-    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-flash', label: 'Flash attention', value: flashValue, options: onOffOptions, hint: 'Memory-efficient attention; also required for quantized KV. Leave On unless the model is incompatible.' }));
-    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-maxout', label: 'Max output tokens', value: meshllm.maxOutputTokens, placeholder: '8192', hint: 'Cap on tokens generated per response, including reasoning tokens. Bounds runaway answers. Keep it above the reasoning budget so the model has room to answer. Blank = default.' }));
-    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'Enables the model thinking phase (reasoning-capable models only).' }));
-    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'Reasoning output format tag. Usually deepseek.' }));
-    bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers. Part of the output budget, so keep it below Max output tokens (a 2:1 split, e.g. 8192 / 4096, leaves room to answer).' }));
+    if (!isDirect) {
+      const reasoning = meshllm.reasoning || {};
+      const flashValue = meshllm.flashAttn === true ? 'on' : meshllm.flashAttn === false ? 'off' : '';
+      const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
+      const kvOptions = [{ value: '', label: 'Auto' }, { value: 'f16', label: 'f16 (full precision)' }, { value: 'q8_0', label: 'q8_0 (balanced)' }, { value: 'q4_0', label: 'q4_0 (smallest)' }];
+      const onOffOptions = [{ value: '', label: 'Auto' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' }];
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-parallel', label: 'Parallel lanes', value: meshllm.parallel, placeholder: 'Auto', hint: 'Concurrent request slots. 2 or more enables input caching (fast prompt reuse); 1 disables it. Blank = Auto (mesh-llm plans up to 4).' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-cache-k', label: 'KV cache type (keys)', value: meshllm.cacheTypeK || '', options: kvOptions, hint: 'Precision of the cached keys. q8_0 halves memory vs f16 with negligible quality loss; q4_0 quarters it to fit very large contexts.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-cache-v', label: 'KV cache type (values)', value: meshllm.cacheTypeV || '', options: kvOptions, hint: 'Precision of the cached values. Match the key type unless you have a reason not to.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-batch', label: 'Prefill batch', value: meshllm.batch, placeholder: '2048', hint: 'Tokens processed per prefill step. Higher (e.g. 8192) speeds long-prompt ingestion but uses more memory. Blank = default.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-ubatch', label: 'Micro-batch', value: meshllm.ubatch, placeholder: '512', hint: 'Physical sub-batch of the prefill batch. Higher (e.g. 4096) speeds ingestion at higher memory. Blank = default.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-flash', label: 'Flash attention', value: flashValue, options: onOffOptions, hint: 'Memory-efficient attention; also required for quantized KV. Leave On unless the model is incompatible.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-maxout', label: 'Max output tokens', value: meshllm.maxOutputTokens, placeholder: '8192', hint: 'Cap on tokens generated per response, including reasoning tokens. Bounds runaway answers. Keep it above the reasoning budget so the model has room to answer. Blank = default.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'Enables the model thinking phase (reasoning-capable models only).' }));
+      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'Reasoning output format tag. Usually deepseek.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers. Part of the output budget, so keep it below Max output tokens (a 2:1 split, e.g. 8192 / 4096, leaves room to answer).' }));
+    }
+    if (isDirect) {
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel, placeholder: '1', hint: 'Concurrent direct slots for this node-local llama-server.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-prompt', label: 'Prompt cache', value: llamacpp.cachePrompt === false ? 'off' : 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], hint: 'Keep on for coding-session KV reuse.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-cache-reuse', label: 'Cache reuse', value: llamacpp.cacheReuse, placeholder: '256', min: 0, hint: 'llama.cpp --cache-reuse value for prompt/KV reuse.' }));
+    }
     const save = document.createElement('button');
     save.type = 'button';
     save.className = 'btn btn-primary';
     save.textContent = 'Save settings';
     save.dataset.action = 'model-save';
     save.dataset.profileId = profile.id;
+    save.dataset.runtime = profile.runtime || 'meshllm';
     save.dataset.out = 'model-edit-output';
     bodyEl.appendChild(save);
     // A custom, switched-off model can be permanently removed here; built-in models
@@ -1017,15 +1048,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const name = document.createElement('strong');
       name.setAttribute('data-model-name', profile.id);
       name.textContent = modelName(profile);
-      // Serving mode is a badge, not part of the name: a split model stands out in accent.
+      // Serving mode and runtime are badges, not part of the name: split stands out in accent,
+      // and llama.cpp direct profiles surface their cache-local routing contract.
+      const direct = profile.runtime === 'llamacpp';
       const split = Boolean(profile.meshllm && profile.meshllm.split);
       const badge = chipEl(split ? 'accent' : null, split ? 'Split across machines' : 'Full model per machine');
       badge.setAttribute('data-serving-mode', split ? 'split' : 'single');
-      nameRow.append(name, badge);
+      const runtimeBadge = chipEl(direct ? 'accent' : null, direct ? 'llama.cpp direct' : 'mesh-llm');
+      runtimeBadge.setAttribute('data-runtime', direct ? 'llamacpp' : 'meshllm');
+      nameRow.append(name, badge, runtimeBadge);
       const detail = document.createElement('small');
       const ready = readiness.find((item) => item.profileId === profile.id);
       const serving = servingCount(profile);
-      detail.textContent = 'Alias: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
+      detail.textContent = 'Alias: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (direct ? ' · requires body.user' : '') + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
       body.append(nameRow, detail);
       row.appendChild(body);
       const toggle = document.createElement('button');
@@ -1685,40 +1720,52 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const vramRaw = readInput('model-edit-vram');
       const nameEl = byId('model-edit-name');
       const callEl = byId('model-edit-callname');
-      const payload = { profileId: id };
-      // Blank context window = Auto (0): mesh-llm sizes it to the GPU.
-      payload.contextWindow = ctxRaw === '' ? 0 : Number(ctxRaw);
+      const runtime = button.dataset.runtime || 'meshllm';
+      const payload = { profileId: id, runtime: runtime };
+      payload.contextWindow = ctxRaw === '' ? (runtime === 'llamacpp' ? 262144 : 0) : Number(ctxRaw);
       if (modelRaw !== '') payload.modelRef = modelRaw;
-      // Empty means "leave as-is"; 0 explicitly clears the cap.
-      if (vramRaw !== '') payload.maxVramGb = Number(vramRaw);
+      // Empty means "leave as-is"; 0 explicitly clears the mesh-llm cap. Direct llama.cpp
+      // does not use this mesh-only VRAM budget.
+      if (runtime !== 'llamacpp' && vramRaw !== '') payload.maxVramGb = Number(vramRaw);
       // Only send name / call name when the operator actually changed them, so saving
       // an unrelated setting never rewrites a default model's extra canonical aliases.
       if (nameEl && nameEl.value.trim() && nameEl.value !== nameEl.dataset.original) payload.name = nameEl.value.trim();
       if (callEl && callEl.value.trim() && callEl.value !== callEl.dataset.original) payload.callName = callEl.value.trim();
-      // Runtime tunables are sent from the current field state (the server merge is
-      // idempotent). A blank number or the Auto option clears the field back to Auto
-      // (null / '') so mesh-llm auto-plans it, rather than pinning a stale value.
-      const parRaw = readInput('model-edit-parallel');
-      payload.parallel = parRaw === '' ? null : Number(parRaw);
-      payload.cacheTypeK = readInput('model-edit-cache-k');
-      payload.cacheTypeV = readInput('model-edit-cache-v');
-      const batchRaw = readInput('model-edit-batch');
-      payload.batch = batchRaw === '' ? null : Number(batchRaw);
-      const ubatchRaw = readInput('model-edit-ubatch');
-      payload.ubatch = ubatchRaw === '' ? null : Number(ubatchRaw);
-      const flashRaw = readInput('model-edit-flash');
-      payload.flashAttn = flashRaw === '' ? null : flashRaw === 'on';
-      const maxOutRaw = readInput('model-edit-maxout');
-      payload.maxOutputTokens = maxOutRaw === '' ? null : Number(maxOutRaw);
-      const reasoningRaw = readInput('model-edit-reasoning');
-      if (reasoningRaw === '') {
-        payload.reasoning = null;
+      if (runtime === 'llamacpp') {
+        const llamaParallelRaw = readInput('model-edit-llama-parallel');
+        const llamaCacheReuseRaw = readInput('model-edit-llama-cache-reuse');
+        const llamaCachePromptRaw = readInput('model-edit-llama-cache-prompt');
+        payload.llamacpp = {
+          parallel: llamaParallelRaw === '' ? 1 : Number(llamaParallelRaw),
+          cacheReuse: llamaCacheReuseRaw === '' ? 256 : Number(llamaCacheReuseRaw),
+          cachePrompt: llamaCachePromptRaw !== 'off'
+        };
       } else {
-        const fmtRaw = readInput('model-edit-reasoning-format');
-        const budgetRaw = readInput('model-edit-reasoning-budget');
-        // Blank sub-fields send null (clear to Auto), matching the blank = Auto affordance
-        // the other tunables use; a set value is sent verbatim.
-        payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw === '' ? null : fmtRaw, budget: budgetRaw === '' ? null : Number(budgetRaw) };
+        // Runtime tunables are sent from the current field state (the server merge is
+        // idempotent). A blank number or the Auto option clears the field back to Auto
+        // (null / '') so mesh-llm auto-plans it, rather than pinning a stale value.
+        const parRaw = readInput('model-edit-parallel');
+        payload.parallel = parRaw === '' ? null : Number(parRaw);
+        payload.cacheTypeK = readInput('model-edit-cache-k');
+        payload.cacheTypeV = readInput('model-edit-cache-v');
+        const batchRaw = readInput('model-edit-batch');
+        payload.batch = batchRaw === '' ? null : Number(batchRaw);
+        const ubatchRaw = readInput('model-edit-ubatch');
+        payload.ubatch = ubatchRaw === '' ? null : Number(ubatchRaw);
+        const flashRaw = readInput('model-edit-flash');
+        payload.flashAttn = flashRaw === '' ? null : flashRaw === 'on';
+        const maxOutRaw = readInput('model-edit-maxout');
+        payload.maxOutputTokens = maxOutRaw === '' ? null : Number(maxOutRaw);
+        const reasoningRaw = readInput('model-edit-reasoning');
+        if (reasoningRaw === '') {
+          payload.reasoning = null;
+        } else {
+          const fmtRaw = readInput('model-edit-reasoning-format');
+          const budgetRaw = readInput('model-edit-reasoning-budget');
+          // Blank sub-fields send null (clear to Auto), matching the blank = Auto affordance
+          // the other tunables use; a set value is sent verbatim.
+          payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw === '' ? null : fmtRaw, budget: budgetRaw === '' ? null : Number(budgetRaw) };
+        }
       }
       setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       toast('Model settings saved');
@@ -1758,8 +1805,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const ref = readInput('model-add-ref');
       if (!ref) { setOutput(out, 'Enter a model reference to add.', true); return; }
       const modeSelect = byId('model-add-mode');
+      const runtimeSelect = byId('model-add-runtime');
       const name = readInput('model-add-name');
-      const payload = { modelRef: ref, mode: modeSelect ? modeSelect.value : 'single' };
+      const mode = modeSelect ? modeSelect.value : 'single';
+      const runtime = mode === 'split' ? 'meshllm' : (runtimeSelect && runtimeSelect.value ? runtimeSelect.value : 'meshllm');
+      const payload = { modelRef: ref, mode: mode, runtime: runtime };
       if (name) payload.name = name;
       setOutput(out, await request('/admin/profiles/add', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       await refreshStatus().catch(() => undefined);
@@ -1788,7 +1838,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       // compat endpoint with the selected dynamic route.
       const direct = targetValue === config.playground.directValue;
       const path = direct ? config.playground.directPath : config.playground.gatewayPath;
-      const payload = direct ? { model: choice, messages: messages } : { gatewayId: targetValue, route: choice, messages: messages };
+      const payload = direct ? { model: choice, messages: messages, user: playgroundSessionUser() } : { gatewayId: targetValue, route: choice, messages: messages };
       if (tools) payload.tools = tools;
       if (maxTokens) payload.maxTokens = maxTokens;
       // The Stop button aborts this controller; a new send supersedes any running stream.
@@ -1939,6 +1989,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (installer) {
       const prefix = installer.dataset.prefix || '';
       if (liveToken || onCustomDomain) loadInstaller(prefix).catch((error) => setOutput(prefix + 'installer-output', friendlyError('installer-generate', error), true));
+      return;
+    }
+    const runtimeSelect = event.target.closest('[data-model-add-mode]');
+    if (runtimeSelect) {
+      const addRuntime = byId('model-add-runtime');
+      if (addRuntime) {
+        const split = runtimeSelect.value === 'split';
+        addRuntime.disabled = split;
+        if (split) addRuntime.value = 'meshllm';
+      }
       return;
     }
     const targetSelect = event.target.closest('[data-playground-target-select]');

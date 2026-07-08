@@ -210,7 +210,7 @@ The console Playground's **Stop** button aborts an in-flight stream client-side 
 
 ### POST /admin/playground/direct-chat
 
-Runs a chat completion straight through the router's scheduler to a serving node, bypassing the AI Gateway, so operators can verify inference even when no gateway is reachable.
+Runs a chat completion straight through the router's scheduler to a serving node, bypassing the AI Gateway, so operators can verify inference even when no gateway is reachable. Direct llama.cpp models use the same session-affinity contract as public OpenAI-compatible calls.
 
 ```http
 POST /admin/playground/direct-chat
@@ -220,20 +220,20 @@ POST /admin/playground/direct-chat
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `model` (an internal callable model) and `messages`. Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer cap, forwarded as `max_tokens`) are passed through when supplied. `model` is required; a present, malformed body is rejected with the shared `400` `invalid_json`.
+**Request body:** JSON body with `model` (an internal callable model), `messages`, and — for direct llama.cpp profiles — `user` in the grammar `user:<id>|session:<id>`. The Admin console supplies a stable browser-session value automatically. Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer cap, forwarded as `max_tokens`) are passed through when supplied. `model` is required; a present, malformed body is rejected with the shared `400` `invalid_json`.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Node response streamed back to the caller. | Event-stream / JSON pass-through from the serving node. |
-| `400` | The request omitted a model. | `{ "error": "model_required", "requestId": string }` |
+| `400` | The request omitted a model or called a direct llama.cpp model without a valid session user. | `{ "error": "model_required" \| "invalid_user", "requestId": string }` |
 | `401` | No valid console role resolved for the caller. | Error object. |
 | `404` | No profile matched the model. | `{ "error": "no-profile", "requestId": string }` |
 | `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
 | `503` | No eligible node is ready to serve, or the node upstream token is not configured. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-031](../../sdd/spec/setup-admin.md#req-adm-031-operator-playground-target-selection), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-031](../../sdd/spec/setup-admin.md#req-adm-031-operator-playground-target-selection), [REQ-ADM-017](../../sdd/spec/setup-admin.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity)
 
 ### POST /admin/setup-tokens
 
@@ -663,7 +663,7 @@ POST /admin/profiles/activate
 
 ### POST /admin/profiles/add
 
-Creates a new inactive model profile from an operator-supplied mesh-llm-compatible model reference and serving mode, so a model beyond the seeded set joins the catalog for rollout and activation without redeploying the Worker.
+Creates a new inactive model profile from an operator-supplied model reference, serving mode, and runtime, so a model beyond the seeded set joins the catalog for rollout and activation without redeploying the Worker.
 
 ```http
 POST /admin/profiles/add
@@ -673,14 +673,14 @@ POST /admin/profiles/add
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `modelRef` (required, trimmed, non-empty), `mode` (`single` or `split`, default `single`), and optional `name` (display name; defaults to the model-file segment). Mode `split` builds a layer-package (multi-machine) profile; any other value a single-machine profile. The profile id and public alias are derived from the reference.
+**Request body:** JSON body with `modelRef` (required, trimmed, non-empty), `mode` (`single` or `split`, default `single`), `runtime` (`meshllm` or `llamacpp`, default `meshllm`), and optional `name` (display name; defaults to the model-file segment). Mode `split` builds a MeshLLM layer-package profile and forces `runtime: "meshllm"`; `runtime: "llamacpp"` is single-machine only and creates a direct cache-local profile. The profile id and public alias are derived from the reference.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `201` | A new inactive profile is created carrying the stable `codeflare-mesh` alias with `rolloutPercent` zero and `split` set per mode, and a `profile_added` audit event records the reference. | `{ "ok": true, "profileId": string, "displayName": string, "split": boolean }` |
-| `400` | `modelRef` is missing or blank. | `{ "error": "invalid_model_ref", "requestId": string }` |
+| `201` | A new inactive profile is created carrying the stable `codeflare-mesh` alias with `rolloutPercent` zero, `split` set per mode for MeshLLM, `runtime` set to the selected runtime, and a `profile_added` audit event records the reference. | `{ "ok": true, "profileId": string, "displayName": string, "split": boolean, "runtime": "meshllm" \| "llamacpp" }` |
+| `400` | `modelRef` is missing/blank, `runtime` is invalid, or `runtime: "llamacpp"` was requested with `mode: "split"`. | `{ "error": "invalid_model_ref" \| "invalid_runtime" \| "split_requires_meshllm", "requestId": string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `409` | The reference's derived profile id already exists. | `{ "error": "duplicate_profile", "profileId": string, "requestId": string }` |
 
@@ -688,7 +688,7 @@ POST /admin/profiles/add
 
 ### POST /admin/profiles/config
 
-Updates a model's serving settings — context window, model reference, VRAM budget, display name, callable name, and/or the MeshLLM runtime tunables — through the same validated store path the automation API uses, bumping the profile version so a later default re-seed does not overwrite the edit.
+Updates a model's serving settings — context window, model reference, VRAM budget, display name, callable name, and runtime-specific tunables — through the same validated store path the automation API uses, bumping the profile version so a later default re-seed does not overwrite the edit.
 
 ```http
 POST /admin/profiles/config
@@ -698,16 +698,16 @@ POST /admin/profiles/config
 
 **Origin check:** n/a
 
-**Request body:** JSON body with `profileId` (required) plus any of `contextWindow` (non-negative integer; `0` = Auto), `modelRef` (non-empty string), `maxVramGb` (number `≥ 0`, `0` = no cap), `name` (display name; non-blank), and `callName` (slugified callable alias; non-empty, not the reserved `codeflare-mesh`, not a collision). A changed call name keeps the shared alias. Each field besides `profileId` is optional; an omitted field is left unchanged.
+**Request body:** JSON body with `profileId` (required) plus any of `runtime` (`meshllm` or `llamacpp`), `contextWindow`, `modelRef` (non-empty string), `maxVramGb` (MeshLLM-only number `≥ 0`, `0` = no cap), `name` (display name; non-blank), and `callName` (slugified callable alias; non-empty, not the reserved `codeflare-mesh`, not a collision). A changed call name keeps the shared alias. Each field besides `profileId` is optional; an omitted field is left unchanged. MeshLLM context window accepts `0` for Auto; direct llama.cpp context window must be at least `4096`.
 
-It also accepts the per-model MeshLLM runtime tunables: `parallel`, `batch`, `ubatch`, `maxOutputTokens` (positive integers), `cacheTypeK` / `cacheTypeV` (`f16` \| `q8_0` \| `q4_0`), `flashAttn` (boolean), `reasoning` (`{ enabled?, format?, budget? }`, layered onto the existing block), and `prefixCache` (`{ enabled?, payloadMode?, maxEntries?, sharedStrideTokens?, sharedRecordLimit? }`, layered; `payloadMode` is `resident-kv` \| `kv-recurrent` \| `full-state`, `maxEntries` is `1`-`128`). A positive integer / allowed string / boolean sets a tunable; `null` / `0` / `""` clears it back to Auto (the field is removed, so MeshLLM auto-plans it).
+MeshLLM profiles accept the per-model runtime tunables: `parallel`, `batch`, `ubatch`, `maxOutputTokens` (positive integers), `cacheTypeK` / `cacheTypeV` (`f16` \| `q8_0` \| `q4_0`), `flashAttn` (boolean), `reasoning` (`{ enabled?, format?, budget? }`, layered onto the existing block), and `prefixCache` (`{ enabled?, payloadMode?, maxEntries?, sharedStrideTokens?, sharedRecordLimit? }`, layered; `payloadMode` is `resident-kv` \| `kv-recurrent` \| `full-state`, `maxEntries` is `1`-`128`). A positive integer / allowed string / boolean sets a tunable; `null` / `0` / `""` clears it back to Auto (the field is removed, so MeshLLM auto-plans it). Direct llama.cpp profiles accept a `llamacpp` block with `parallel` (`>= 1`), `cachePrompt` (boolean), `cacheReuse` (`>= 0`), and optional `bindPort`; reserved bind ports are rejected.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The updated profile's settings (`displayName`/`callableNames` reflect a changed name or call name); a `profile_configured` audit event records the context window, model reference, and VRAM budget. | `{ "ok": true, "profileId": string, "contextWindow": number, "modelRef": string, "maxVramGb": number, "displayName": string, "callableNames": string[] }` |
-| `400` | `profileId` is missing, or the context window (negative or non-integer), model reference, VRAM budget, display name, call name, or a runtime tunable (a negative or non-integer `parallel`/`batch`/`ubatch`/`maxOutputTokens`, an unknown `cacheTypeK`/`cacheTypeV`, a non-boolean `flashAttn`, a malformed `reasoning`, or a `prefixCache` with a non-boolean `enabled` or an out-of-range `maxEntries`) was invalid. | `invalid_profile_config` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_reasoning` / `invalid_prefix_cache` error body. |
+| `200` | The updated profile's settings (`displayName`/`callableNames` reflect a changed name or call name); a `profile_configured` audit event records the context window, model reference, and runtime-relevant settings. | `{ "ok": true, "profileId": string, "contextWindow": number, "modelRef": string, "maxVramGb"?: number, "displayName": string, "callableNames": string[], "runtime"?: "meshllm" \| "llamacpp" }` |
+| `400` | `profileId` is missing, or the context window, model reference, VRAM budget, display name, call name, runtime, or runtime tunable was invalid. | `invalid_profile_config` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_reasoning` / `invalid_prefix_cache` / `invalid_llamacpp` / `invalid_cachePrompt` / `bind_port_conflict` error body. |
 | `401` | Admin credential is missing or invalid. | Error object. |
 | `404` | No profile with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |

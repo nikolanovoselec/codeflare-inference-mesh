@@ -174,6 +174,7 @@ function addModelCard(): string {
 <div class="form-grid">
 ${field({ id: 'model-add-name', label: 'Name', control: textInput({ id: 'model-add-name', name: 'name', placeholder: 'e.g. Fast Coder' }), hint: 'Shown in the console. Leave blank to name it after the model file.' })}
 ${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine (full model each)</option><option value="split">Split across machines</option></select></span>' })}
+${field({ id: 'model-add-runtime', label: 'Runtime', control: '<span class="slot"><select id="model-add-runtime" name="runtime" data-model-add-runtime="true"><option value="meshllm">mesh-llm (mesh / split)</option><option value="llamacpp">llama.cpp (direct cache-local)</option></select></span>', hint: 'llama.cpp is for single-machine coding sessions and requires body.user. Split models always use mesh-llm.' })}
 </div>
 <div class="form-grid">
 ${field({ id: 'model-add-ref', label: 'Model file', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'The Hugging Face model file to serve, as repo:quant. Paste one, or find one below.' })}

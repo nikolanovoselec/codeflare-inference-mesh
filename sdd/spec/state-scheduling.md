@@ -16,7 +16,7 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 2. D1 stores Cloudflare resource identifiers created or selected during setup, the agent release-tag cache (`agent_versions_cache`), and the selected fleet agent version (`desired_agent_version`) as router configuration records. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-SCH-001 persists the release-tag cache and desired agent version) -->
 3. D1 stores node records, model profiles, public aliases, and audit events. (The legacy `sessions` and `reservations` tables remain as dead schema after the move to stateless forwarding; a later migration drops them.) <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) -->
 4. D1 stores one mesh state record per MeshLLM profile under the `mesh_state:<profileId>` router configuration key as AES-GCM ciphertext, never as plaintext token material. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SCH-001 stores mesh state as AES-GCM ciphertext and round-trips it from D1) -->
-5. Profile seeding deactivates every stored profile row whose runtime is not `meshllm`, regardless of row version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-001 deactivates non-meshllm profile rows during seeding) -->
+5. Profile seeding deactivates every stored profile row whose runtime is not `meshllm`, regardless of row version. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active) -->
 6. Router startup can rebuild scheduler hot state from D1 without requiring manual repair. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
@@ -78,6 +78,33 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 **Priority:** P0
 
 **Dependencies:** [REQ-SCH-002](#req-sch-002-stateless-entry-node-forwarding), [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-SCH-004: Direct session affinity
+
+**Intent:** Direct llama.cpp profiles need cache-local routing for coding sessions without reintroducing live reservations to the MeshLLM path. A direct request identifies its operator/session through the OpenAI-compatible `body.user` field, the router stores only HMAC-derived keys, and a Durable Object coordinates a reusable node pin with D1 fallback so repeated direct prompts stay on the same node until that node stops being eligible.
+
+**Applies To:** Client
+
+**Acceptance Criteria:**
+
+1. Direct llama.cpp chat requests require `body.user` in the exact grammar `user:<id>|session:<id>`; missing or malformed values are rejected before scheduling. <!-- @impl: packages/router-worker/src/router.ts::parseDirectSession --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 rejects direct llama.cpp requests without a session user) -->
+2. The router hashes the user and session ids with HMAC-SHA-256 using `SESSION_AFFINITY_KEY` (or local/test fallback) and never stores raw user or session ids. <!-- @impl: packages/router-worker/src/router.ts::directAffinitySecret --> <!-- @impl: packages/router-worker/src/router.ts::hmacHex --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 reuses the pinned direct node and stores only hashed affinity keys) -->
+3. Direct affinity pins a session to an eligible llama.cpp node and reuses that node on later requests while it remains eligible. <!-- @impl: packages/router-worker/src/direct-affinity.ts::decideDirectSession --> <!-- @impl: packages/router-worker/src/store.ts::putDirectSession --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 reuses the pinned direct node and stores only hashed affinity keys) -->
+4. If the pinned node is offline, deactivated, or no longer eligible for the direct profile, the router fails over to another eligible llama.cpp node and updates the direct session record. <!-- @impl: packages/router-worker/src/direct-affinity.ts::decideDirectSession --> <!-- @impl: packages/router-worker/src/scheduler.ts::eligibleDirectNodes --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 fails over a direct session when the pinned node is no longer eligible) -->
+5. Direct affinity state lives in the `direct_sessions` D1 table and the `SessionAffinityDO` Durable Object binding; MeshLLM scheduling continues to use stateless entry-node selection and never requires `body.user`. <!-- @impl: packages/router-worker/migrations/0003_direct_sessions.sql --> <!-- @impl: packages/router-worker/src/durable.ts::SessionAffinityDO --> <!-- @impl: packages/router-worker/wrangler.toml::SESSION_AFFINITY --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-004 direct llama.cpp heartbeats never receive mesh bootstrap or write mesh state) -->
+6. The Admin playground direct target sends a stable `body.user` value for the browser session so manual prompts exercise the same affinity contract as API callers. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::playgroundSessionUser --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-029 REQ-RUN-011 direct playground sends a stable session user for affinity) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-SCH-001](#req-sch-001-durable-router-state), [REQ-SCH-003](#req-sch-003-node-eligibility-and-scheduler-miss-responses), [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding)
 
 **Verification:** Automated test
 

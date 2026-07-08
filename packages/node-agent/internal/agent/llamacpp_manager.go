@@ -369,4 +369,4 @@ func containsString(values []string, target string) bool {
 	return false
 }
 
-const LlamaCppManagerAnchors = "REQ-RUN-LLAMACPP REQ-SCH-006"
+const LlamaCppManagerAnchors = "REQ-RUN-011 REQ-SCH-004"

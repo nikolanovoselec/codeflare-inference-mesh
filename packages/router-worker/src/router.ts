@@ -166,7 +166,7 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
 // The forward path shared by the provider `/v1/chat/completions` route and the admin
 // Playground's direct target. Mesh profiles keep the stateless mesh-llm entry selection;
 // direct llama.cpp profiles require a stable `body.user` and use session affinity so a
-// coding conversation stays on the same cache-warm node. REQ-SCH-002 / REQ-SCH-006.
+// coding conversation stays on the same cache-warm node. REQ-SCH-002 / REQ-SCH-004.
 async function runInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }): Promise<Response> {
   const publicModel = input.body.model as string
   const profile = await deps.store.getProfileByPublicModel(publicModel)

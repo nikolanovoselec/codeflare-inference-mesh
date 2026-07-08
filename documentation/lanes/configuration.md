@@ -26,8 +26,11 @@
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/router.ts::handleGatewaySync`, `packages/router-worker/src/router.ts::handleCustomDomain`, `packages/router-worker/src/router.ts::handleSetupAccess`, `packages/router-worker/src/router.ts::handleZones`, `packages/router-worker/src/router.ts::handleGatewayOptions` | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-012](../../sdd/spec/setup-admin.md), [REQ-GWY-005](../../sdd/spec/gateway.md) |
 | `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for Gateway/domain automation | `packages/router-worker/src/router.ts::handleGatewaySync`, `packages/router-worker/src/router.ts::handleCustomDomain`, `packages/router-worker/src/router.ts::handleSetupAccess`, `packages/router-worker/src/router.ts::handleZones`, `packages/router-worker/src/router.ts::handleGatewayOptions` | [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-012](../../sdd/spec/setup-admin.md), [REQ-GWY-005](../../sdd/spec/gateway.md) |
 | `MESH_STATE_KEY` | n/a | yes for mesh bootstrap and rotation | `packages/router-worker/src/mesh-state.ts::meshKeyFor` | [REQ-SEC-006](../../sdd/spec/security.md) |
+| `SESSION_AFFINITY_KEY` | `ADMIN_TOKEN` only in local/test fallback | yes for deploy | `packages/router-worker/src/router.ts::directAffinitySecret` | [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity) |
 
 `MESH_STATE_KEY` is the AES-GCM key for the per-profile mesh state envelope, so D1 holds only `{iv, ciphertext}` and never plaintext invite tokens. Deploy sets it from the GitHub secret of the same name via `wrangler secret put`. When it is absent, mesh bootstrap and rotation fail closed with `mesh_state_key_missing` and the Admin UI shows a missing-key banner, while claim, heartbeat persistence, and scheduling of already-ready nodes continue. ([REQ-SEC-006](../../sdd/spec/security.md)) <!-- @impl: packages/router-worker/src/mesh-state.ts::meshKeyFor --> <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS -->
+
+`SESSION_AFFINITY_KEY` is the HMAC key for direct llama.cpp `body.user` values. D1 stores only hashed user/session ids in `direct_sessions`; raw ids never persist. Local tests can fall back to `ADMIN_TOKEN`, but production should set a distinct secret. ([REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity)) <!-- @impl: packages/router-worker/src/router.ts::directAffinitySecret --> <!-- @impl: packages/router-worker/src/router.ts::hmacHex -->
 
 ## Worker vars
 
@@ -50,7 +53,8 @@
 | Binding | Purpose | REQs |
 | --- | --- | --- |
 | `DB` | D1 database for durable router state. | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
-| `REGISTRY` | Durable Object namespace for mesh seed election; the inference request path is stateless and does not use it. | [REQ-RUN-008](../../sdd/spec/runtime-profiles.md) |
+| `REGISTRY` | Durable Object namespace for mesh seed election; the MeshLLM inference request path is stateless and does not use it. | [REQ-RUN-008](../../sdd/spec/runtime-profiles.md) |
+| `SESSION_AFFINITY` | Durable Object namespace for direct llama.cpp session-to-node pin decisions, backed by the D1 `direct_sessions` table. | [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity) |
 | `MESH` | Workers VPC Network binding using `network_id = "cf1:network"` and `remote = true` for the Worker-to-private-node `fetch()` path. | [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-004](../../sdd/spec/router-worker.md) |
 | `RL_INFERENCE` | Rate limit for credentialed `/v1` inference (the AI Gateway path), keyed by a hash of the provider token; 100000 per location per 60s. | [REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting) |
 | `RL_HEARTBEAT` | Rate limit for `/node/heartbeat`, keyed by a hash of the node token; 120 per location per 60s. | [REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting) |
@@ -100,7 +104,7 @@ Two Zero Trust settings are also mandatory for mesh reachability: the network po
 | `runtimeModel` | `unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/metrics.go::RuntimeMetrics` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
 | `publicModels` | `["codeflare-mesh"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md) |
 | `activeProfileIds` | `["mesh-default-qwen36-35b"]` | no | `packages/node-agent/internal/agent/config.go::DefaultConfig`, `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-RUN-004](../../sdd/spec/runtime-profiles.md) |
-| `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles`, `packages/node-agent/internal/agent/runtime.go::SelectedProfile`, `packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md), [REQ-RUN-010](../../sdd/spec/runtime-profiles.md) |
+| `profiles` | claim/heartbeat response | no | `packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles`, `packages/node-agent/internal/agent/runtime.go::SelectedProfile`, `packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs`, `packages/node-agent/internal/agent/llamacpp_manager.go::LlamaCppManager` | [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md), [REQ-RUN-010](../../sdd/spec/runtime-profiles.md), [REQ-RUN-011](../../sdd/spec/runtime-profiles.md#req-run-011-custom-model-onboarding) |
 | `HF_TOKEN` | node service environment | no, only for gated Hugging Face models pulled by `mesh-llm` | `packages/node-agent/internal/agent/meshllm_render.go::MeshLLMEnv` | [REQ-RUN-010](../../sdd/spec/runtime-profiles.md) |
 | `capacity` | `1` | no | `packages/node-agent/internal/agent/client.go::HeartbeatFromConfig` | [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | `dataDir` | `.inference-mesh` (installers set a system dir: Linux `/var/lib/inference-mesh`, macOS `/usr/local/var/inference-mesh`, Windows `%ProgramData%\InferenceMesh`) | no | `packages/node-agent/cmd/inference-mesh-agent/main.go::defaultDataDir` | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md) |
@@ -120,7 +124,7 @@ The router calls `seedDefaultProfiles(DEFAULT_MODEL_PROFILES)` at request entry,
 
 ## Model runtime tunables
 
-Each model carries per-model MeshLLM runtime tunables, edited from the model's Manage drawer (Advanced runtime) or over `POST /admin/profiles/config` / `POST /api/v1/models/{id}`. Every value the operator sets is rendered into the node's per-profile `meshllm-<profileId>.toml` under its MeshLLM subtable; a value left blank (Auto / unset) is omitted so MeshLLM auto-plans it. New custom models are created with the defaults below. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration))
+Each model carries runtime-specific tunables, edited from the model's Manage drawer (Advanced runtime) or over `POST /admin/profiles/config` / `POST /api/v1/models/{id}`. MeshLLM values are rendered into the node's per-profile `meshllm-<profileId>.toml` under their MeshLLM subtables; a value left blank (Auto / unset) is omitted so MeshLLM auto-plans it. Direct llama.cpp values are rendered into `llama-server` flags and require a pinned context window for cache-local coding sessions. New custom models are created with the defaults below. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-011](../../sdd/spec/runtime-profiles.md#req-run-011-custom-model-onboarding), [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration))
 
 | Setting | MeshLLM config key | Default | What it is / does |
 | --- | --- | --- | --- |
@@ -137,6 +141,16 @@ Each model carries per-model MeshLLM runtime tunables, edited from the model's M
 
 Context window defaults to Auto so MeshLLM sizes it to the GPU; pinning a small context on a large model collapses the lane count. Parallel lanes and the input cache default on (not Auto): an omitted parallel lets MeshLLM pick a single lane, and an omitted cache defers to family auto-detection that leaves it off for uncertified families, which together is why input caching never engaged. To reproduce a proven high-throughput single-GPU profile (a 262K-context MoE on a 24 GB GPU), set context window `262144`, parallel lanes `2` or more, KV cache types `q4_0` (which is what lets the large context fit), prefill batch `8192`, micro-batch `4096`, flash attention on, the input cache on, max output tokens `8192`, and reasoning on / `deepseek` / `4096`. Raising the batch sizes and the context both cost GPU memory, so size them to the node.
 
+Direct llama.cpp profiles use these settings:
+
+| Setting | llama-server flag | Default | What it is / does |
+| --- | --- | --- | --- |
+| Context window | `--ctx-size` | `262144` | Direct profiles require a pinned context window (`>= 4096`) so coding-session KV reuse has a stable cache budget. |
+| Parallel slots | `--parallel` | `1` | Number of concurrent llama.cpp slots for the node-local runtime. |
+| Prompt cache | `--cache-prompt` | On | Keeps prompt/KV reuse enabled; leave on for cache-local coding sessions. |
+| Cache reuse | `--cache-reuse` | `256` | llama.cpp reuse window for prompt/KV cache matching. |
+| Bind port | `--port` | derived per profile | The node-local llama.cpp API port; reserved mesh/proxy ports are rejected. |
+
 ## GitHub secrets
 
 | Variable | Default | Required | Consumed by | Implements |
@@ -145,6 +159,7 @@ Context window defaults to Auto so MeshLLM sizes it to the GPU; pinning a small 
 | `CLOUDFLARE_API_TOKEN_DEPLOY` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain setup | `.github/workflows/deploy.yml` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
 | `MESH_STATE_KEY` | n/a | yes for deploy; the workflow validates it and fails closed when absent | `.github/workflows/deploy.yml`, pushed to the Worker via `wrangler secret put` | [REQ-SEC-006](../../sdd/spec/security.md) |
+| `SESSION_AFFINITY_KEY` | n/a | yes for deploy | `.github/workflows/deploy.yml`, pushed to the Worker via `wrangler secret bulk` | [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity) |
 | `ADMIN_RECOVERY_TOKEN` | n/a | no | `.github/workflows/deploy.yml`, `packages/router-worker/src/router.ts::handleAdminRecovery` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | `COSIGN_PRIVATE_KEY` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | `COSIGN_PASSWORD` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |

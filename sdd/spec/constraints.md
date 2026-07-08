@@ -28,9 +28,9 @@ Mesh state, including invite tokens, is stored only AES-GCM envelope-encrypted v
 
 D1 stores setup state, Cloudflare resource IDs, model profiles, aliases, nodes, sessions, reservations, and audit records. Durable Objects may cache hot state but must rebuild from D1.
 
-## CON-RUNTIME-001: MeshLLM-only runtime
+## CON-RUNTIME-001: Runtime boundaries
 
-The only managed runtime is MeshLLM (`mesh-llm`), forming a private mesh over WARP CGNAT unicast. Discovery is `nostr`: public relays carry rendezvous metadata only (peer identity + Mesh IP), never inference. Inference data rides iroh, pinned to the WARP overlay by `--bind-ip <MeshIP>` + `--disable-iroh-relays` (no public relay/STUN fallback), with a Cloudflare Gateway egress policy blocking any non-`100.96.0.0/12` iroh/QUIC flow as the network-layer backstop. Shipped profiles never enable public mesh publishing or inference egress.
+MeshLLM (`mesh-llm`) is the only managed runtime allowed to form a private multi-node mesh or split a model over WARP CGNAT unicast. Discovery is `nostr`: public relays carry rendezvous metadata only (peer identity + Mesh IP), never inference. Inference data rides iroh, pinned to the WARP overlay by `--bind-ip <MeshIP>` + `--disable-iroh-relays` (no public relay/STUN fallback), with a Cloudflare Gateway egress policy blocking any non-`100.96.0.0/12` iroh/QUIC flow as the network-layer backstop. Direct llama.cpp (`llama-server`) profiles are allowed only as single-node cache-local sessions routed by direct session affinity; they never participate in MeshLLM split/mesh state. Shipped profiles never enable public mesh publishing or inference egress.
 
 ## CON-MODEL-001: Stable Gateway aliases
 

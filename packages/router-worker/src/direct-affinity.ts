@@ -59,5 +59,5 @@ export async function decideDirectSession(store: Store, request: DirectSessionDe
 }
 
 export const DIRECT_AFFINITY_ANCHORS = {
-  REQ_SCH_006: 'REQ-SCH-006'
+  REQ_SCH_004: 'REQ-SCH-004'
 } as const
