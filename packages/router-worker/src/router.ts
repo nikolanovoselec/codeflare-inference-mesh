@@ -166,7 +166,7 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   if (new TextEncoder().encode(bodyText).byteLength > maxBytes) return json({ error: 'request_too_large', requestId }, 413, requestId)
   const body = parseObject(bodyText)
   if (!body || typeof body.model !== 'string') return json({ error: 'invalid_json', requestId }, 400, requestId)
-  return runInference(deps, { body, requestHeaders: request.headers, requestId, now })
+  return runInference(deps, { body: directSessionBody(body, request.headers), requestHeaders: request.headers, requestId, now })
 }
 
 // The forward path shared by the provider `/v1/chat/completions` route and the admin
@@ -1328,6 +1328,39 @@ function parseDirectSession(value: unknown): { readonly userId: string; readonly
   if (typeof value !== 'string') return undefined
   const match = /^user:([^|\r\n]{1,256})\|session:([^|\r\n]{1,256})$/.exec(value)
   return match ? { userId: match[1]!, sessionId: match[2]! } : undefined
+}
+
+function directSessionBody(body: Record<string, unknown>, headers: Headers): Record<string, unknown> {
+  if (parseDirectSession(body.user)) return body
+  const fallback = gatewayMetadataDirectSession(headers, body.metadata)
+  return fallback ? { ...body, user: fallback } : body
+}
+
+function gatewayMetadataDirectSession(headers: Headers, bodyMetadata: unknown): string | undefined {
+  const metadata = parseGatewayMetadata(headers.get('cf-aig-metadata')) ?? parseGatewayMetadataObject(bodyMetadata)
+  const user = directSessionPart(metadata?.user)
+  if (!user) return undefined
+  const session = directSessionPart(metadata?.session) ?? user
+  return `user:${user}|session:${session}`
+}
+
+function parseGatewayMetadata(value: string | null): Record<string, unknown> | undefined {
+  if (!value) return undefined
+  try {
+    return parseGatewayMetadataObject(JSON.parse(value) as unknown)
+  } catch {
+    return undefined
+  }
+}
+
+function parseGatewayMetadataObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+
+function directSessionPart(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return undefined
+  const cleaned = String(value).trim().replace(/[|\r\n]/g, '-').slice(0, 256)
+  return cleaned || undefined
 }
 
 function directAffinitySecret(env: Partial<RouterEnv>): string | undefined {

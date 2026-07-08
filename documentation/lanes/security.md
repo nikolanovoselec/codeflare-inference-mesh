@@ -54,6 +54,16 @@
 
 **Implements:** [REQ-SEC-012](../../sdd/spec/security.md)
 
+## AI Gateway metadata and direct affinity
+
+**Threat:** Direct llama.cpp affinity needs a stable session identity, but public clients may reach the router only through AI Gateway dynamic routes. If the router ignored Gateway metadata, authenticated Gateway calls without OpenAI `body.user` would fail; if it stored or logged raw metadata, operator identity could leak into durable state.
+
+**Mitigation:** After provider-token authentication succeeds, `/v1/chat/completions` accepts Gateway metadata (`cf-aig-metadata.user`, or `metadata.user` if forwarded in the request body) as a fallback direct-affinity identity when `body.user` is absent. An optional metadata `session` value overrides the session id; otherwise the user value is reused as the session id. The router sanitizes delimiter/newline characters, then the existing direct-affinity path HMAC-hashes user/session values before writing D1/DO state. Explicit `body.user` still wins when present.
+
+**Verification:** The metadata-affinity router test asserts Gateway metadata produces a valid forwarded llama.cpp `user` value and that raw metadata is absent from durable direct-session records. <!-- @impl: packages/router-worker/src/router.ts::gatewayMetadataDirectSession --> <!-- @impl: packages/router-worker/src/router.test.ts (REQ-SCH-004 derives direct llama.cpp session affinity from AI Gateway metadata) -->
+
+**Implements:** [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-SEC-001](../../sdd/spec/security.md)
+
 ## Route authorization
 
 **Threat:** A credential for one actor could call routes intended for another actor.

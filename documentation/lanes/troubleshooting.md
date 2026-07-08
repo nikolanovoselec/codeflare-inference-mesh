@@ -169,11 +169,11 @@
 
 ## Clients get "Model execution failed" from the dynamic route while the playground works
 
-**Symptom:** An external OpenAI-compatible client (for example an agent SDK) calling the AI Gateway dynamic route `dynamic/<route>` fails with `500`/`503` and body `{"state":"Failed","error":"Model execution failed (Error)"}`, while the console playground and a direct custom-provider call against the same gateway and model succeed. Gateway logs show the failed call at `provider=run`, `path=/run` with no underlying provider step.
+**Symptom:** An external OpenAI-compatible client (for example an agent SDK) calling the AI Gateway dynamic route `dynamic/<route>` fails with `400`/`500`/`503` and body `{"state":"Failed","error":"Model execution failed (Error)"}` or Cloudflare code `7003`, while the console playground or a direct custom-provider call against the same gateway and model succeeds. Gateway logs show the failed call at `request_type=run`, `path=/run`.
 
-**Cause:** The AI Gateway token the client presents in `cf-aig-authorization` authenticates against the Authenticated Gateway but lacks the `AI Gateway: Run` scope, so the gateway refuses to execute the dynamic route and returns the generic "Model execution failed" mask before any provider step runs. The console playground and internal probes work because they use tokens that already carry `AI Gateway: Run` (the Worker's `CLOUDFLARE_API_TOKEN_RUNTIME`), so the missing scope is invisible from inside the console. This is a token-scope gap, not a route, provider, or model fault. ([REQ-SEC-012](../../sdd/spec/security.md))
+**Cause:** Two distinct issues collapse to this generic Gateway error. If Gateway logs show no provider step or `provider=unknown`, the caller token likely lacks `AI Gateway: Run`. If Gateway logs show `provider=custom-codeflare-inference-mesh`, `model=dynamic/codeflare-mesh`, and metadata such as `user`, the route reached the router but the direct llama.cpp profile needs a session identity; the router derives it from `cf-aig-metadata.user` after the metadata-affinity fix. ([REQ-SEC-012](../../sdd/spec/security.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity))
 
-**Fix:** Mint or edit the client's AI Gateway token to include the `AI Gateway: Run` scope and use it for `cf-aig-authorization`. Editing a token's permissions keeps its value, so consuming clients do not need a new token string. Confirm with a chat completion for the public alias `codeflare-mesh` through the dynamic route.
+**Fix:** First confirm the client's Cloudflare token includes `AI Gateway: Run` and is used with `cf-aig-gateway-id`. Then ensure the Worker version includes metadata-to-affinity translation, or send OpenAI `user: "user:<id>|session:<id>"` explicitly. Confirm with a chat completion for `dynamic/codeflare-mesh` and inspect Gateway logs for `status_code=200`.
 
 ## Requests return 429 rate_limited
 

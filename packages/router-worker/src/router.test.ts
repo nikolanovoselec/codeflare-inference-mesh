@@ -1072,6 +1072,48 @@ describe('router worker behavioral contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'session_required', requestId: 'request-a' })
   })
 
+  it('REQ-SCH-004 derives direct llama.cpp session affinity from AI Gateway metadata', async () => {
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
+    const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
+    await store.setProfile(direct)
+    await store.upsertNode(nodeFixture({
+      runtime: 'llamacpp',
+      activeProfileIds: [direct.id],
+      publicModels: [...direct.publicAliases],
+      runtimeModel: direct.upstreamModel,
+      metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] }
+    }))
+
+    const headerResponse = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json', 'cf-aig-metadata': JSON.stringify({ user: 'operator@example.com', ignored: true }) },
+      body: JSON.stringify({ model: direct.publicAliases[0], messages: [{ role: 'user', content: 'hi' }] })
+    }))
+    await headerResponse.text()
+    const headerForwarded = await capture.request!.json() as { user?: string }
+
+    const bodyResponse = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: direct.publicAliases[0], metadata: { user: 'body@example.com', session: 'body-session' }, messages: [{ role: 'user', content: 'hi' }] })
+    }))
+    await bodyResponse.text()
+    const bodyForwarded = await capture.request!.json() as { user?: string }
+    const sessions = [...store.directSessions.values()]
+
+    expect(headerResponse.status).toBe(200)
+    expect(bodyResponse.status).toBe(200)
+    expect(headerResponse.headers.get('x-inference-mesh-affinity')).toBe('pinned')
+    expect(bodyResponse.headers.get('x-inference-mesh-affinity')).toBe('pinned')
+    expect(headerForwarded.user).toBe('user:operator@example.com|session:operator@example.com')
+    expect(bodyForwarded.user).toBe('user:body@example.com|session:body-session')
+    expect(sessions).toHaveLength(2)
+    expect(JSON.stringify(sessions)).not.toContain('operator@example.com')
+    expect(JSON.stringify(sessions)).not.toContain('body@example.com')
+    expect(JSON.stringify(sessions)).not.toContain('body-session')
+  })
+
   it('REQ-SCH-004 reuses the pinned direct node and stores only hashed affinity keys', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
