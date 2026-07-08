@@ -241,6 +241,34 @@ func TestREQNODE007HeartbeatResendsMeshIdentityEveryTick(t *testing.T) {
 	})
 }
 
+func TestREQLLAMACPPHeartbeatReportsSelectedDirectRuntime(t *testing.T) {
+	t.Run("REQ-SCH-006", func(t *testing.T) {
+		cfg := DefaultConfig(t.TempDir())
+		cfg.ActiveProfileIDs = []string{"direct-profile"}
+		cfg.Profiles = []ModelProfile{{
+			ID:             "direct-profile",
+			PublicAliases:  []string{"codeflare-mesh"},
+			UpstreamModel:  "unsloth/Code-Model-GGUF:Q4_K_M",
+			SourceMode:     "llamacpp-hf",
+			ContextWindow:  262144,
+			Runtime:        "llamacpp",
+			LlamaCpp:       LlamaCppSettings{ModelRef: "unsloth/Code-Model-GGUF:Q4_K_M", HFRepo: "unsloth/Code-Model-GGUF", Quant: "Q4_K_M", BindPort: 4300, ContextWindow: 262144, Parallel: 1, CachePrompt: true, CacheReuse: 256, Alias: "unsloth/Code-Model-GGUF:Q4_K_M"},
+			Version:        3,
+			RolloutPercent: 100,
+			Active:         true,
+		}}
+
+		request := HeartbeatFromConfig(cfg, RuntimeMetrics("ready", "unsloth/Code-Model-GGUF:Q4_K_M", 0), 0, HeartbeatIdentity{})
+
+		if request.Runtime != "llamacpp" {
+			t.Fatalf("heartbeat runtime = %q, want llamacpp", request.Runtime)
+		}
+		if request.RuntimeModel != "unsloth/Code-Model-GGUF:Q4_K_M" {
+			t.Fatalf("heartbeat runtime model mismatch: %q", request.RuntimeModel)
+		}
+	})
+}
+
 func TestREQNODE007ResponsesCarryMeshBootstrapAndDesiredVersion(t *testing.T) {
 	t.Run("REQ-NODE-007", func(t *testing.T) {
 		var claim ClaimResponse
