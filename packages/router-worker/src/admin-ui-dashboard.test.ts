@@ -614,7 +614,7 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
-    expect(fields.find((node) => node.dataset.drawerField === 'stage-ownership')!.textContent).toContain('L0-26 → Arch Linux · Ready')
+    expect(fields.find((node) => node.dataset.drawerField === 'stage-ownership')!.dataset.value).toBe('L0-26 → Arch Linux · Ready')
   })
 
   it('REQ-ADM-030 the drawer Deactivate/Activate control posts to the node taint endpoint', async () => {
