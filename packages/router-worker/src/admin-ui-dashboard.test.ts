@@ -1346,7 +1346,7 @@ describe('dashboard routing contracts', () => {
   })
 
   it('REQ-ADM-024 reads the connected gateway as a state card', async () => {
-    // The connected gateway renders as a compact ok-toned status row carrying the gateway id as its value.
+    // The connected gateway renders as an ok-toned status card carrying the gateway id as its value.
     const harness = await dashboardHarness()
     const card = harness.byId('gateway-current')
     const value = descendants(card).find((node) => node.className === 'state-value')

@@ -1166,8 +1166,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     value.className = 'state-value';
     value.textContent = present ? parts.value : (parts.placeholder || '—');
     el.append(label, value);
-    if (present && parts.sub) { const sub = document.createElement('span'); sub.className = 'state-sub'; sub.textContent = parts.sub; el.appendChild(sub); }
     if (present && parts.chip) el.appendChild(chipEl(parts.chipTone || 'ok', parts.chip));
+    if (present && parts.sub) { const sub = document.createElement('span'); sub.className = 'state-sub'; sub.textContent = parts.sub; el.appendChild(sub); }
   }
   // Dropdown B options for the direct router: one option per switched-on model, sending and
   // showing the model's own callable name with the human model name in brackets — e.g.

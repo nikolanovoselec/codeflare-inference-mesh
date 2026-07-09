@@ -211,25 +211,25 @@ function routingSection(): string {
   return sectionPanel({
     id: 'routing',
     title: 'Routing',
-    description: 'The address people use to reach your models, and how requests find this router. Everything here is discovered from your connected Cloudflare account, so you never type an ID by hand.',
+    description: 'The address people use to reach your models, and how requests find this router. Connected resources stay visible here; changes are synced through Cloudflare for you.',
     body: `<div class="subpanel"><h3>AI Gateway</h3>
-<div class="state-card is-empty" id="gateway-current"><span class="state-label">Connected gateway</span><span class="state-value">Not connected yet</span></div>
-<p class="field-hint">Pick one of your existing gateways, or create a new one. The dynamic route <code>codeflare-mesh</code> is created for you.</p>
-<div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Provision Configuration', variant: 'primary', out: 'gateway-output' })}</div>
+<div class="state-card is-empty" id="gateway-current"><span class="state-label">AI Gateway</span><span class="state-value">Not connected yet</span></div>
+<p class="field-hint">Choose the gateway that should expose <code>codeflare-mesh</code>. The route and provider stay managed by the router.</p>
+<div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Sync gateway route', variant: 'primary', out: 'gateway-output' })}</div>
 <div class="form-grid" id="rt-gateway-selects">
 ${field({ id: 'rt-gateway-select', label: 'Gateway', control: '<span class="slot" id="rt-gateway-slot"><select id="rt-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
 ${field({ id: 'rt-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'rt-gateway-provider-name', name: 'providerName', value: 'Codeflare Inference Mesh' }), hint: 'The provider created on your AI Gateway. Copy its API key below into the provider API Key field.' })}
 </div>
 <p class="route-status"><span class="route-chip" id="rt-route-chip" hidden><span class="route-dot"></span>route <code>codeflare-mesh</code> on this gateway · <span id="rt-route-state">not connected</span></span></p>
 <div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
-<div class="form-actions">${button({ action: 'gateway-sync', label: 'Provision Configuration', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
+<div class="form-actions">${button({ action: 'gateway-sync', label: 'Sync gateway route', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
 ${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}</div>
 <div class="subpanel"><h3>Custom domain</h3>
 <div class="state-card is-empty" id="custom-domain-current"><span class="state-label">Custom domain</span><span class="state-value">Not set yet</span></div>
 <div class="form-grid">
-${field({ id: 'custom-domain', label: 'Address people will use', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }), hint: 'Just the address. We match it to your Cloudflare domain automatically.' })}
+${field({ id: 'custom-domain', label: 'Public address', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }), hint: 'Enter only the hostname. The matching Cloudflare zone is resolved automatically.' })}
 </div>
-<div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Set up custom domain', out: 'domain-output' })}</div>
+<div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Connect domain', out: 'domain-output' })}</div>
 ${output({ id: 'domain-output', kind: 'custom-domain', pre: true })}</div>`
   })
 }
