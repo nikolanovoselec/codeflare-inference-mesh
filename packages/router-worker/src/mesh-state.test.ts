@@ -416,15 +416,16 @@ describe('mesh state core', () => {
   })
 
   it('REQ-OBS-011 aggregates full stage ownership and prefers ready duplicate reports', async () => {
-    const nodeA = meshNode('linux-node', { displayName: 'Arch Linux', lastSeenAt: NOW, metrics: { runtimeState: 'ready', activeRequests: 0, meshNodeId: 'mesh-linux', stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26, state: 'ready' }] } })
+    const nodeA = meshNode('linux-node', { displayName: 'Arch Linux', lastSeenAt: NOW, metrics: { runtimeState: 'ready', loadedProfileId: PROFILE_ID, activeRequests: 0, meshNodeId: 'mesh-linux', stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26 }] } })
     const nodeB = meshNode('mac-node', { displayName: 'Macbook Air', lastSeenAt: NOW, metrics: { runtimeState: 'ready', activeRequests: 0, meshNodeId: 'mesh-mac', stageAssignments: [{ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'failed' }, { stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] } })
     const { store, env, profile } = await meshFixture(nodeA, nodeB)
     await reportToken(store, env, nodeA, 'invite-token-node-a', 'mesh-1', NOW)
+    const staleNodeA = { ...nodeA, activeProfileIds: [] }
 
-    const [entry] = await meshHealth(store, env, [profile], [nodeA, nodeB], NOW)
+    const [entry] = await meshHealth(store, env, [profile], [staleNodeA, nodeB], NOW)
     expect(entry).toBeDefined()
     expect(entry!.stageAssignments).toEqual([
-      expect.objectContaining({ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26, state: 'ready', reportedByNodeId: 'linux-node' }),
+      expect.objectContaining({ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26, reportedByNodeId: 'linux-node' }),
       expect.objectContaining({ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready', reportedByNodeId: 'mac-node' })
     ])
   })

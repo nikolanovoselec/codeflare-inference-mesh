@@ -342,7 +342,9 @@ describe('dashboard overview contracts', () => {
 
     const cells = descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'node-big')!)
     expect(cells.some((cell) => cell.dataset.cell === 'toks')).toBe(false)
-    expect(cells.find((cell) => cell.dataset.cell === 'vram')!.dataset.value).toBe('24576')
+    const bigVram = cells.find((cell) => cell.dataset.cell === 'vram')!
+    expect(bigVram.dataset.value).toBe('24576')
+    expect(bigVram.textContent).toBe('195.3 GiB / 240 GiB')
     expect(cells.find((cell) => cell.dataset.cell === 'models')!.dataset.value).toBe('2')
   })
 
@@ -487,7 +489,7 @@ describe('dashboard overview contracts', () => {
     expect(field('status')).toBeDefined()
     expect(field('toks')).toBeUndefined()
     expect(field('vram')!.dataset.value).toBe('4000/8192')
-    expect(descendants(field('vram')!).map((node) => node.textContent).join(' ')).toContain('3.9 GiB / 8 GiB')
+    expect(descendants(field('vram')!).map((node) => node.textContent).join(' ')).toContain('39.1 GiB / 80 GiB')
     expect(field('version')!.dataset.reported).toBe('v1.2.0')
     expect(field('version')!.dataset.desiredMatch).toBe('false')
     const models = fields.filter((node) => node.dataset.drawerModel)
@@ -514,7 +516,7 @@ describe('dashboard overview contracts', () => {
   })
 
   it('REQ-ADM-030 a deactivated node reads as tainted (warn tone) and its drawer offers Activate', async () => {
-    const status = statusFixture({ nodes: [{ id: 'node-off', status: 'online', deactivated: true, metrics: { runtimeState: 'failed', runtimeDetail: 'readiness deadline exceeded', readyModels: [], activeRequests: 0, tokensPerSecond: 0, gpuMemoryTotalMiB: 8192 } }] })
+    const status = statusFixture({ nodes: [{ id: 'node-off', status: 'online', deactivated: true, metrics: { runtimeState: 'failed', runtimeDetail: 'readiness deadline exceeded', readyModels: [], activeRequests: 0, tokensPerSecond: 0, gpuMemoryTotalMiB: 8192, meshllmVersion: '0.72.2' } }] })
     const harness = await dashboardHarness({ status })
     const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((node) => node.dataset.nodeRow === 'node-off')!
     const chip = descendants(row).find((node) => node.className === 'chip')!
@@ -528,7 +530,8 @@ describe('dashboard overview contracts', () => {
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const textOf = (item: StubElement) => descendants(item).map((node) => node.textContent).join(' ')
     const runtimeInstall = fields.find((node) => node.dataset.drawerField === 'runtime-install')!
-    expect(textOf(runtimeInstall)).toContain('MeshLLM paused')
+    expect(textOf(runtimeInstall)).toContain('0.72.2 installed')
+    expect(textOf(runtimeInstall)).not.toContain('deactivated')
     expect(textOf(runtimeInstall)).not.toContain('install failed')
     expect(runtimeInstall.dataset.runtimeInstallState).toBe('paused')
     const activate = fields.find((node) => node.dataset.action === 'node-activate')
@@ -541,15 +544,15 @@ describe('dashboard overview contracts', () => {
   it('REQ-OBS-011 renders a split stage owner as active work, not standby/API client', async () => {
     const nodes = [
       {
-        id: 'battlestation', displayName: 'battlestation', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'], maxVramGbOverride: 16,
-        metrics: { runtimeKind: 'meshllm', runtimeState: 'ready', nodeState: 'serving', meshRole: 'coordinator', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-host', meshMaxVramGb: 16, gpuName: 'NVIDIA GeForce RTX 3090', gpuMemoryTotalMiB: 24_576, activeRequests: 0, splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 63_200_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 5_700_000_000 }] } }
+        id: 'battlestation', displayName: 'battlestation', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: [], maxVramGbOverride: 16,
+        metrics: { runtimeKind: 'meshllm', runtimeState: 'ready', nodeState: 'serving', meshRole: 'coordinator', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-host', meshMaxVramGb: 16, gpuName: 'NVIDIA GeForce RTX 3090', gpuMemoryUsedMiB: 18_799, gpuMemoryTotalMiB: 24_576, activeRequests: 0, loadedProfileId: 'mesh-default-qwen36-35b', splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 63_200_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 5_700_000_000 }] } }
       },
       {
         id: 'mac-100-96-0-14', displayName: 'Mac', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'],
         metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-mac', meshllmVersion: '0.72.2', meshMaxVramGb: 6, gpuName: 'Apple M2', activeRequests: 0, splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 63_200_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 5_700_000_000 }] }, stageAssignments: [{ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'failed' }, { stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] }
       }
     ]
-    const meshHealth = [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, coordinatorNodeId: 'mesh-host', peerNodeIds: ['mesh-host', 'mesh-mac'], readyModels: ['codeflare-mesh'], failedNodeIds: [], tokenCount: 2, stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-host', layerStart: 0, layerEnd: 26, state: 'ready' }, { stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] }]
+    const meshHealth = [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, coordinatorNodeId: 'mesh-host', peerNodeIds: ['mesh-host', 'mesh-mac'], readyModels: ['codeflare-mesh'], failedNodeIds: [], tokenCount: 2, stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-host', layerStart: 0, layerEnd: 26 }, { stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] }]
     const harness = await dashboardHarness({ status: statusFixture({ nodes, meshHealth }) })
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'mac-100-96-0-14')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
@@ -582,7 +585,8 @@ describe('dashboard overview contracts', () => {
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const battleVram = fields.find((node) => node.dataset.drawerField === 'vram')!
     expect(battleVram.dataset.vramSource).toBe('reported')
-    expect(battleVram.dataset.value).toBe('24576')
+    expect(battleVram.dataset.value).toBe('18799/24576')
+    expect(descendants(battleVram).map((node) => node.textContent).join(' ')).toContain('183.6 GiB / 240 GiB')
     const battleSplitReadiness = fields.find((node) => node.dataset.drawerField === 'split-readiness')!
     const battleCapacity = descendants(battleSplitReadiness).find((node) => node.dataset.participantLabel === 'battlestation')!
     expect(battleCapacity.dataset.participantCapacityGb).toBe('63.2')
@@ -594,6 +598,26 @@ describe('dashboard overview contracts', () => {
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const modelStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
     expect(descendants(modelStage).map((node) => node.textContent).join(' ')).toContain('L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
+  })
+
+  it('REQ-OBS-011 hides model_size_unknown during reload and update transitions', async () => {
+    const splitReadiness = { verdict: 'model_size_unknown', blockers: [{ reason: 'model_size_unknown' }] }
+    const nodes = [{ id: 'linux-node', displayName: 'Arch Linux', status: 'online', activeProfileIds: ['mesh-default-qwen36-35b'], metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'loading model meshllm/ERNIE', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 0, splitEnabled: true, activeRequests: 0, splitReadiness } }]
+    const meshHealth = [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, peerNodeIds: ['linux-node'], readyModels: [], failedNodeIds: [], tokenCount: 1, splitReadiness }]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshHealth }) })
+    const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'linux-node')!
+    const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
+    expect(descendants(statusCell).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
+
+    await harness.clickAction('node-detail', { nodeId: 'linux-node' })
+    let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    expect(fields.some((node) => node.dataset.drawerField === 'split-readiness')).toBe(false)
+    expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
+
+    await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
+    fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    expect(fields.some((node) => node.className === 'split-readiness-block')).toBe(false)
+    expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
   })
 
   it('REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status', async () => {
@@ -694,6 +718,7 @@ describe('dashboard overview contracts', () => {
     expect(fields.some((node) => node.dataset.drawerField === 'peers')).toBe(false)
     expect(field('direct-parallel')!.dataset.value).toBe('4')
     expect(field('direct-parallel')!.dataset.activeSlots).toBeUndefined()
+    expect(textOf(field('vram')!)).toContain('38.2 GiB / 240 GiB')
     expect(textOf(field('direct-parallel')!)).toContain('parallel 4')
     expect(textOf(field('direct-cached-tokens')!)).toContain('not reported')
   })

@@ -297,7 +297,7 @@ function selectedMeshProfile(profiles: readonly ModelProfile[], activeProfileIds
 }
 
 function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: readonly NodeRecord[], now: number): MeshHealthEntry {
-  const members = nodes.filter((node) => node.activeProfileIds.includes(profile.id))
+  const members = nodes.filter((node) => nodeParticipatesInProfile(node, profile))
   const byFreshness = (left: NodeRecord, right: NodeRecord): number => right.lastSeenAt - left.lastSeenAt
   const explicitCoordinator = members.filter((node) => node.metrics?.meshRole === 'coordinator').sort(byFreshness)[0]
   const lastErrorNode = members.filter((node) => node.metrics?.lastError !== undefined).sort(byFreshness)[0]
@@ -330,6 +330,14 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
     ...(oldestTokenAt !== undefined ? { secretAgeMs: now - oldestTokenAt } : {}),
     ...(lastErrorNode?.metrics?.lastError !== undefined ? { lastError: lastErrorNode.metrics.lastError } : {})
   }
+}
+
+function nodeParticipatesInProfile(node: NodeRecord, profile: ModelProfile): boolean {
+  if (node.activeProfileIds.includes(profile.id)) return true
+  if (node.metrics?.loadedProfileId === profile.id) return true
+  if (node.runtimeModel === profile.upstreamModel) return true
+  if (node.metrics?.readyModels?.includes(profile.upstreamModel) === true) return true
+  return false
 }
 
 function meshStageAssignments(nodes: readonly NodeRecord[]): readonly StageAssignment[] {
