@@ -120,7 +120,7 @@ GitHub Actions is authoritative for full suites, builds, lint, type-checks, depl
 | Manual integration deploy | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/deploy.yml::REL002ManualIntegrationDeploy` <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> |
 | Release artifacts | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/deploy.yml::REL003ReleaseArtifacts` <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts --> |
 | Bounded fuzz | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/fuzz.yml::REL004FuzzWorkflows` <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows --> |
-| Dependency updates | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/dependabot.yml` <!-- @impl: .github/dependabot.yml --> |
+| Dependency updates | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/dependabot.yml` <!-- @impl: .github/dependabot.yml::updates --> |
 | Workflow contract tests | [release-ci.md](../../sdd/spec/release-ci.md) | `packages/router-worker/src/workflows.test.ts::workflow` <!-- @impl: packages/router-worker/src/workflows.test.ts::workflow --> |
 | Service install | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/service.go::ServiceInstallPlan` <!-- @impl: packages/node-agent/internal/agent/service.go::ServiceInstallPlan --> |
 | Runtime command | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs` <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> |

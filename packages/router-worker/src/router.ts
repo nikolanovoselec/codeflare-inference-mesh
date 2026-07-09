@@ -1799,14 +1799,19 @@ async function resolveRole(request: Request, deps: RouterDeps, now: number): Pro
 
 /** Admin-only gate: config writes require the admin role. */
 async function requireAdmin(request: Request, deps: RouterDeps, now: number): Promise<string | undefined> {
-  if (isMutatingMethod(request.method) && accessJwtSource(request) === 'cookie' && !hasSameOriginSignal(request)) return undefined
+  if (isMutatingMethod(request.method) && usesAccessJwt(request) && !hasSameOriginSignal(request)) return undefined
   const verdict = await resolveRole(request, deps, now)
   return verdict?.role === 'admin' ? verdict.actor : undefined
 }
 
 /** Reader gate: any verified console role (admin or user) may read status + use the playground. */
 async function requireUser(request: Request, deps: RouterDeps, now: number): Promise<RoleVerdict | undefined> {
+  if (isMutatingMethod(request.method) && usesAccessJwt(request) && !hasSameOriginSignal(request)) return undefined
   return await resolveRole(request, deps, now)
+}
+
+function usesAccessJwt(request: Request): boolean {
+  return accessJwtSource(request) !== null
 }
 
 function isMutatingMethod(method: string): boolean {

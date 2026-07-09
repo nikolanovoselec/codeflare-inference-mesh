@@ -3136,14 +3136,14 @@ describe('Access-first setup and host gating contracts', () => {
     await store.putConfig('access_config', accessConfig())
     const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]) })
     const jwt = await signAccessJwt(key, accessPayload())
-    const response = await router(new Request(`https://${HOST}/admin/setup-tokens`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt } }))
+    const response = await router(new Request(`https://${HOST}/admin/setup-tokens`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt, origin: `https://${HOST}` } }))
     expect(response.status).toBe(201)
     const audit = await store.listAudit(5)
     const created = audit.find((event) => event.type === 'setup_token_created')
     expect(created?.actor).toBe('operator@example.com')
   })
 
-  it('REQ-SEC-009 rejects cookie-backed admin mutations without same-origin evidence', async () => {
+  it('REQ-SEC-009 rejects Access-backed admin mutations without same-origin evidence', async () => {
     resetJwksCache()
     const key = await accessTestKey('key-1')
     const store = new MemoryStore()
@@ -3151,17 +3151,40 @@ describe('Access-first setup and host gating contracts', () => {
     const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]) })
     const jwt = await signAccessJwt(key, accessPayload())
 
-    const crossSite = await router(new Request(`https://${HOST}/admin/setup-tokens`, {
+    const cookieOnlyCrossSite = await router(new Request(`https://${HOST}/admin/setup-tokens`, {
       method: 'POST',
       headers: { cookie: `CF_Authorization=${jwt}` }
     }))
+    const accessHeaderAndCookieCrossSite = await router(new Request(`https://${HOST}/admin/setup-tokens`, {
+      method: 'POST',
+      headers: { 'cf-access-jwt-assertion': jwt, cookie: `CF_Authorization=${jwt}` }
+    }))
     const sameOrigin = await router(new Request(`https://${HOST}/admin/setup-tokens`, {
       method: 'POST',
-      headers: { cookie: `CF_Authorization=${jwt}`, origin: `https://${HOST}` }
+      headers: { 'cf-access-jwt-assertion': jwt, cookie: `CF_Authorization=${jwt}`, origin: `https://${HOST}` }
     }))
 
-    expect(crossSite.status).toBe(401)
+    expect(cookieOnlyCrossSite.status).toBe(401)
+    expect(accessHeaderAndCookieCrossSite.status).toBe(401)
     expect(sameOrigin.status).toBe(201)
+  })
+
+  it('REQ-SEC-009 rejects Access-backed user mutations without same-origin evidence', async () => {
+    resetJwksCache()
+    const key = await accessTestKey('key-1')
+    const store = new MemoryStore()
+    await store.putConfig('access_config', accessConfig())
+    const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]) })
+    const jwt = await signAccessJwt(key, accessPayload())
+
+    const response = await router(new Request(`https://${HOST}/admin/playground/speed-test`, {
+      method: 'POST',
+      headers: { 'cf-access-jwt-assertion': jwt, cookie: `CF_Authorization=${jwt}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh' })
+    }))
+
+    expect(response.status).toBe(401)
+    expect(await store.getConfig<LastSpeedTestSummary>('last_speed_test')).toBeUndefined()
   })
 
   function roleConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -3260,7 +3283,7 @@ describe('Access-first setup and host gating contracts', () => {
   it('REQ-ADM-029 REQ-ADM-017 lets the read-only user role reach the playground endpoint', async () => {
     const { router, key } = await roleRouter(roleConfig({ adminEmails: ['admin@example.com'], userEmails: ['viewer@example.com'] }), [])
     const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
-    const response = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [] }) }))
+    const response = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt, origin: `https://${HOST}` }, body: JSON.stringify({ model: 'codeflare-mesh', messages: [] }) }))
     // A user role clears the requireUser gate (a rejected role would be 401); here it reaches the gateway-config check.
     expect(response.status).not.toBe(401)
     expect(await response.json()).toMatchObject({ error: 'gateway_not_configured' })
@@ -3444,7 +3467,7 @@ describe('Access-first setup and host gating contracts', () => {
     const { router } = routerFixture({ store, env: { CLOUDFLARE_API_TOKEN_RUNTIME: 'aig-token' }, jwksFetcher: accessJwksFetcher([key.jwk]), identityFetcher: identityGroupsFetcher([]), playgroundFetcher })
     const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
     // The read-only user asks for an arbitrary gateway; the server ignores it and uses the default.
-    const res = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt, 'content-type': 'application/json' }, body: JSON.stringify({ gatewayId: 'evil-gw', route: 'evil-route', messages: [] }) }))
+    const res = await router(new Request(`https://${HOST}/admin/playground/chat`, { method: 'POST', headers: { 'cf-access-jwt-assertion': jwt, 'content-type': 'application/json', origin: `https://${HOST}` }, body: JSON.stringify({ gatewayId: 'evil-gw', route: 'evil-route', messages: [] }) }))
     expect(res.status).toBe(200)
     expect(calls).toEqual(['https://gateway.ai.cloudflare.com/v1/acct-1/default-gw/compat/chat/completions'])
   })

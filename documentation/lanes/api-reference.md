@@ -396,7 +396,7 @@ POST /api/v1/keys
 
 **Authentication:** admin Access session or admin bearer credential
 
-**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
+**Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** None.
 
@@ -419,7 +419,7 @@ GET /api/v1/keys
 
 **Authentication:** admin Access session or admin bearer credential
 
-**Origin check:** n/a (read-only admin-key listing; Access-cookie mutation guard does not apply).
+**Origin check:** n/a (read-only admin-key listing; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -442,7 +442,7 @@ DELETE /api/v1/keys/{id}
 
 **Authentication:** admin Access session or admin bearer credential
 
-**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
+**Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** None.
 
@@ -466,7 +466,7 @@ POST /api/v1/keys/{id}/rotate
 
 **Authentication:** admin Access session or admin bearer credential
 
-**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
+**Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** None.
 
@@ -490,7 +490,7 @@ GET /api/v1/status
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -515,7 +515,7 @@ POST /api/v1/speed-test
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** Optional JSON body. `model` selects the callable model and defaults to `codeflare-mesh`. `promptTokens` is clamped from `64` to `8192` and defaults to `2048`; `maxTokens` is clamped from `16` to `512` and defaults to `160`.
 
@@ -541,7 +541,7 @@ POST /api/v1/enrollment-tokens
 
 **Authentication:** automation key or admin
 
-**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
+**Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** None.
 
@@ -564,7 +564,7 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Query parameters:** `status` (exact node status: `online`, `offline`, `draining` — revoked nodes are excluded from every listing, so `revoked` never matches even if a tombstone row survives a mid-revoke failure), `q` (case-insensitive match on node id or display name), `limit` (page size, default 100, max 1000), `cursor` (return nodes with id greater than this value).
 
@@ -593,7 +593,7 @@ GET /api/v1/nodes/{id}
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -617,7 +617,7 @@ DELETE /api/v1/nodes/{id}
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -641,7 +641,7 @@ POST /api/v1/nodes/{id}/reconfigure
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** `{ "displayName"?: string, "maxVramGbOverride"?: number | null }` — a non-blank `displayName` renames the node; a number `≥ 0` caps this node (0 = uncapped on this node); `null` clears the override so the node follows the model's global budget.
 
@@ -666,7 +666,7 @@ POST /api/v1/nodes/{id}/deactivate
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -690,7 +690,7 @@ POST /api/v1/nodes/{id}/activate
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -714,7 +714,7 @@ POST /api/v1/nodes/{id}/reload
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -738,7 +738,7 @@ GET /api/v1/models
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -763,7 +763,7 @@ POST /api/v1/models
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** `{ "modelRef": string, "mode"?: "single" | "split", "runtime"?: "meshllm" | "llamacpp", "name"?: string }` — `modelRef` is required, trimmed, and non-empty; `mode` defaults to `single` (`split` builds a layer-package profile); `runtime` defaults to `meshllm`. Direct `llamacpp` profiles are single-machine only and ship with prompt caching/cache reuse enabled for coding-session affinity. `name` is an optional display name (defaults to the model-file segment). The model id and callable alias are derived from the reference.
 
@@ -788,7 +788,7 @@ POST /api/v1/models/{id}
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "runtime"?: "meshllm" | "llamacpp", "llamacpp"?: { "parallel"?: number, "gpuLayers"?: number | string | null, "cachePrompt"?: boolean, "cacheReuse"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean | null, "maxOutputTokens"?: number | null, "reasoning"?: object | null, "bindPort"?: number }, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "reasoning"?: object }`. Every field is optional; an omitted field is left unchanged. MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama.cpp context window must be at least `4096`; model reference must be non-empty; VRAM budget is MeshLLM-only and must be a number `≥ 0` (`0` = no cap); `name` sets the display name (non-blank); `callName` sets the model's own callable alias (slugified, non-empty, not the reserved `codeflare-mesh`, not a collision) while keeping the shared alias.
 
@@ -816,7 +816,7 @@ POST /api/v1/models/{id}/enable
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -840,7 +840,7 @@ POST /api/v1/models/{id}/disable
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -864,7 +864,7 @@ DELETE /api/v1/models/{id}
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -889,7 +889,7 @@ GET /api/v1/agent-versions
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -912,7 +912,7 @@ PUT /api/v1/agent-version
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** `{ "version": string }` — must be one of the available versions; the router refreshes the release list once when the requested tag is missing from the warm cache.
 
@@ -936,7 +936,7 @@ POST /api/v1/gateway/sync
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** Optional JSON with `accountId`, `gatewayId`, and `providerName`; omitted values fall back to stored settings and environment defaults. Route name and public model stay pinned to `codeflare-mesh`.
 
@@ -962,7 +962,7 @@ GET /api/v1/runtime-versions
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -985,7 +985,7 @@ PUT /api/v1/runtime-versions
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** `{ "meshllm"?: string, "llamacpp"?: string }` — each provided value must be in the corresponding release-tag list.
 
@@ -1009,7 +1009,7 @@ GET /api/v1/events?since={ms}&type={t1,t2}&limit={n}
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Query parameters:** `since` (opaque cursor `"<at>:<id>"` — return events keyset-ordered strictly after that `(at, id)`; a bare millisecond `<ms>` is still accepted and stays exclusive of events at that millisecond; default `0`), `type` (comma-separated event types to include), `limit` (page size, default 100, max 1000).
 
@@ -1034,7 +1034,7 @@ POST /api/v1/mesh/rotate
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** `{ "profileId": string }` — the model profile whose mesh secret to rotate.
 
@@ -1060,7 +1060,7 @@ GET /api/v1/settings
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** None.
 
@@ -1083,7 +1083,7 @@ PUT /api/v1/settings
 
 **Authentication:** automation key
 
-**Origin check:** n/a (automation-key bearer path; Access-cookie admin mutation guard does not apply).
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
 **Request body:** `{ "offlinePruneSeconds": number }` — a non-negative integer number of seconds (`0` disables offline-node pruning).
 
