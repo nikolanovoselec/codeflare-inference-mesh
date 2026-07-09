@@ -439,7 +439,20 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const generation = speedNumber(summary && summary.generationTokensPerSecond);
     return prompt == null || generation == null ? 'not run' : 'prompt ' + round1(prompt) + ' / gen ' + round1(generation) + ' tok/s';
   };
-  const nodeVramTotal = (node) => (node.metrics && node.metrics.gpuMemoryTotalMiB) || 0;
+  function nodeVramInfo(node) {
+    const metrics = (node && node.metrics) || {};
+    const reportedTotal = Number(metrics.gpuMemoryTotalMiB || 0);
+    const reportedUsed = metrics.gpuMemoryUsedMiB == null ? null : Number(metrics.gpuMemoryUsedMiB);
+    const splitBytes = nodeSplitVramBytes(node);
+    const splitTotal = splitBytes ? splitBytes / 1048576 : 0;
+    return {
+      totalMiB: reportedTotal > 0 ? reportedTotal : splitTotal,
+      usedMiB: reportedUsed != null && Number.isFinite(reportedUsed) ? reportedUsed : null,
+      source: reportedTotal > 0 ? 'reported' : (splitTotal > 0 ? 'split-readiness' : 'none'),
+      splitBytes: splitBytes || null
+    };
+  }
+  const nodeVramTotal = (node) => nodeVramInfo(node).totalMiB || 0;
   const nodeModelCount = (node) => (node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0);
   const reportedText = (value) => value == null ? 'not reported' : String(value);
   const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
@@ -529,6 +542,42 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const raw = item.routerNodeId || item.nodeId || item.shortNodeId || '';
       return { label: item.displayName || nodeLabelForId(raw, candidates), raw: raw, vram: bytesToGb(item.vramBytes) };
     }) : [];
+  }
+  function idMatchesNode(value, node) {
+    const raw = String(value || '').trim();
+    if (!raw || !node) return false;
+    const names = [node.id, node.displayName, node.name, node.metrics && node.metrics.meshNodeId].filter(Boolean).map(String);
+    return names.some((name) => name === raw || name.indexOf(raw) === 0 || raw.indexOf(name) === 0);
+  }
+  function participantMatchesNode(participant, node) {
+    if (!participant || !node) return false;
+    return idMatchesNode(participant.routerNodeId, node) || idMatchesNode(participant.nodeId, node) || idMatchesNode(participant.shortNodeId, node) || participant.displayName === nodeDisplayName(node);
+  }
+  function nodeSplitVramBytes(node) {
+    const reports = [];
+    if (node && node.metrics && node.metrics.splitReadiness) reports.push(node.metrics.splitReadiness);
+    if (lastStatus && Array.isArray(lastStatus.meshHealth)) lastStatus.meshHealth.forEach((entry) => { if (entry.splitReadiness) reports.push(entry.splitReadiness); });
+    const matches = reports.flatMap((report) => Array.isArray(report.participants) ? report.participants : []).filter((participant) => participantMatchesNode(participant, node) && participant.vramBytes != null);
+    return matches.reduce((max, participant) => Math.max(max, Number(participant.vramBytes) || 0), 0);
+  }
+  function stageMatchesNode(stage, node) {
+    return idMatchesNode(stage && stage.nodeId, node) || idMatchesNode(stage && stage.reportedByNodeId, node);
+  }
+  function stageKey(stage) {
+    return [stage.stageId || '', stage.stageIndex == null ? '' : stage.stageIndex, stage.nodeId || '', stage.reportedByNodeId || '', stage.layerStart == null ? '' : stage.layerStart, stage.layerEnd == null ? '' : stage.layerEnd].join(':');
+  }
+  function nodeStageAssignments(node) {
+    const byKey = new Map();
+    const add = (stage) => { if (stage && stageMatchesNode(stage, node)) byKey.set(stageKey(stage), stage); };
+    if (node && node.metrics && Array.isArray(node.metrics.stageAssignments)) node.metrics.stageAssignments.forEach(add);
+    if (lastStatus && Array.isArray(lastStatus.meshHealth)) lastStatus.meshHealth.forEach((entry) => (Array.isArray(entry.stageAssignments) ? entry.stageAssignments : []).forEach(add));
+    return [...byKey.values()].sort((left, right) => (left.stageIndex || 0) - (right.stageIndex || 0));
+  }
+  function stageDetailText(stage, candidates, includeOwner) {
+    const layers = stage.layerStart != null && stage.layerEnd != null ? ('L' + stage.layerStart + '-' + stage.layerEnd) : ('stage ' + stage.stageIndex);
+    const owner = includeOwner ? (' → ' + nodeLabelForId(stage.nodeId || stage.reportedByNodeId || '', candidates)) : '';
+    const state = stage.state ? ' · ' + humanizeKey(stage.state) : '';
+    return layers + owner + state;
   }
   function splitReadinessBlock(report, candidates) {
     const wrap = document.createElement('div');
@@ -964,10 +1013,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!bodyEl) return;
     const metrics = node.metrics || {};
     const isDirectRuntime = node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp';
-    const vramUsed = metrics.gpuMemoryUsedMiB;
-    const vramTotal = metrics.gpuMemoryTotalMiB;
+    const vram = nodeVramInfo(node);
+    const vramValue = vram.totalMiB <= 0 ? 'not reported' : (vram.usedMiB == null ? (vram.splitBytes ? fmtGb(bytesToGb(vram.splitBytes)) + ' usable' : fmtGibFromMiB(vram.totalMiB)) : (fmtGibFromMiB(vram.usedMiB) + ' / ' + fmtGibFromMiB(vram.totalMiB)));
     bodyEl.appendChild(drawerField('status', 'Status', nodeStatusText(node)));
-    bodyEl.appendChild(drawerField('vram', 'VRAM', vramUsed == null || vramTotal == null ? 'not reported' : (fmtGibFromMiB(vramUsed) + ' / ' + fmtGibFromMiB(vramTotal)), vramUsed == null || vramTotal == null ? '' : vramUsed + '/' + vramTotal));
+    const vramRow = drawerField('vram', 'VRAM', vramValue, vram.totalMiB > 0 ? (vram.usedMiB == null ? String(Math.round(vram.totalMiB)) : vram.usedMiB + '/' + Math.round(vram.totalMiB)) : '');
+    vramRow.setAttribute('data-vram-source', vram.source);
+    bodyEl.appendChild(vramRow);
     const activeProfile = activeProfileForNode(node);
     const profileBudget = activeProfile && activeProfile.meshllm ? activeProfile.meshllm.maxVramGb : undefined;
     if (profileBudget != null || node.maxVramGbOverride != null || metrics.meshMaxVramGb != null) {
@@ -1026,7 +1077,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (workState) bodyEl.appendChild(drawerField('work-state', 'Work state', workState, workState));
     if (!isDirectRuntime || metrics.meshRole || (metrics.stageCount || 0) > 0) bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', nodeMeshRoleLabel(metrics) || 'not reported'));
     if (!isDirectRuntime || metrics.peerCount != null) bodyEl.appendChild(drawerField('peers', 'Peers', reportedText(metrics.peerCount), metrics.peerCount == null ? '' : String(metrics.peerCount)));
-    if (metrics.splitEnabled || metrics.stageCount) bodyEl.appendChild(drawerField('stages', 'Stages', reportedText(metrics.stageCount), metrics.stageCount == null ? '' : String(metrics.stageCount)));
+    const nodeStages = nodeStageAssignments(node);
+    if (nodeStages.length) bodyEl.appendChild(drawerField('stage-ownership', 'Stage ownership', nodeStages.map((stage) => stageDetailText(stage, allStatusNodes(), true)).join('; '), nodeStages.map(stageKey).join(',')));
+    else if (metrics.splitEnabled || metrics.stageCount) bodyEl.appendChild(drawerField('stages', 'Stages', reportedText(metrics.stageCount), metrics.stageCount == null ? '' : String(metrics.stageCount)));
     const apiState = readinessText(metrics.apiReady);
     if (isDirectRuntime && typeof metrics.consoleReady !== 'boolean') {
       bodyEl.appendChild(drawerField('reachability', 'Runtime API', apiState, 'api:' + apiState));
@@ -1312,6 +1365,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       heading.className = 'drawer-subhead';
       heading.textContent = 'Mesh';
       bodyEl.appendChild(heading);
+      const stageText = stageOwnersText(meshEntry, meshNodesForEntry(meshEntry));
+      if (stageText) bodyEl.appendChild(drawerField('stage-ownership', 'Stage ownership', stageText, stageText));
       bodyEl.appendChild(buildMeshCard(meshEntry));
       const reset = document.createElement('button');
       reset.type = 'button';

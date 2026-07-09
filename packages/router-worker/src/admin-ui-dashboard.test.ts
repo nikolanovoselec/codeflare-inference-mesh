@@ -533,11 +533,18 @@ describe('dashboard overview contracts', () => {
   })
 
   it('REQ-OBS-011 renders a split stage owner as active work, not standby/API client', async () => {
-    const nodes = [{
-      id: 'mac-100-96-0-14', displayName: 'Mac', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'], maxVramGbOverride: 4,
-      metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshllmVersion: '0.72.2', meshMaxVramGb: 4, gpuName: 'Apple M2', activeRequests: 0 }
-    }]
-    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    const nodes = [
+      {
+        id: 'battlestation', displayName: 'battlestation', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'], maxVramGbOverride: 16,
+        metrics: { runtimeKind: 'meshllm', runtimeState: 'ready', nodeState: 'serving', meshRole: 'coordinator', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-host', meshMaxVramGb: 16, activeRequests: 0, splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 16_000_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 4_000_000_000 }] } }
+      },
+      {
+        id: 'mac-100-96-0-14', displayName: 'Mac', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'], maxVramGbOverride: 4,
+        metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-mac', meshllmVersion: '0.72.2', meshMaxVramGb: 4, gpuName: 'Apple M2', activeRequests: 0, splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 16_000_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 4_000_000_000 }] }, stageAssignments: [{ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] }
+      }
+    ]
+    const meshHealth = [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, coordinatorNodeId: 'mesh-host', peerNodeIds: ['mesh-host', 'mesh-mac'], readyModels: ['codeflare-mesh'], failedNodeIds: [], tokenCount: 2, stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-host', layerStart: 0, layerEnd: 26, state: 'ready' }, { stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] }]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshHealth }) })
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'mac-100-96-0-14')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
     expect(statusCell.dataset.meshRole).toBe('Stage owner')
@@ -545,11 +552,25 @@ describe('dashboard overview contracts', () => {
     expect(descendants(statusChip).map((node) => node.textContent).join(' ')).toContain('Stage owner')
 
     await harness.clickAction('node-detail', { nodeId: 'mac-100-96-0-14' })
-    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const textOf = (name: string) => descendants(fields.find((node) => node.dataset.drawerField === name)!).map((node) => node.textContent).join(' ')
     expect(textOf('work-state')).toContain('Serving split stage')
     expect(textOf('mesh-role')).toContain('Stage owner')
+    expect(textOf('vram')).toContain('4 GB usable')
+    expect(fields.find((node) => node.dataset.drawerField === 'vram')!.dataset.vramSource).toBe('split-readiness')
+    expect(textOf('stage-ownership')).toContain('L27-28 → Mac · Ready')
+    expect(fields.some((node) => node.dataset.drawerField === 'stages')).toBe(false)
     expect(fields.some((node) => node.dataset.drawerField === 'node-state')).toBe(false)
+
+    await harness.clickAction('node-detail', { nodeId: 'battlestation' })
+    fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    expect(textOf('vram')).toContain('16 GB usable')
+    expect(textOf('stage-ownership')).toContain('L0-26 → battlestation · Ready')
+
+    await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
+    fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const modelStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
+    expect(descendants(modelStage).map((node) => node.textContent).join(' ')).toContain('L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
   })
 
   it('REQ-ADM-030 the drawer Deactivate/Activate control posts to the node taint endpoint', async () => {
