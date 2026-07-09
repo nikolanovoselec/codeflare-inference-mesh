@@ -692,7 +692,8 @@ func TestREQRUN006BootstrapRestartDrainsBeforeRelaunch(t *testing.T) {
 		fake.needsRestart = true
 		bootstrap := &agent.MeshBootstrap{Action: "join", Rotation: 2, MeshID: "mesh-2", JoinTokens: []string{"tokX", "tokY"}}
 		router := newRouterFixture(t, agent.HeartbeatResponse{OK: true, MeshBootstrap: bootstrap})
-		cfg := agent.Config{RouterURL: router.server.URL, NodeToken: "node-token", Capacity: 1}
+		profile := agent.ModelProfile{ID: "split-profile", UpstreamModel: "meshllm/model-layers", Version: 1, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "meshllm/model-layers", Split: true, BindPort: 4420}}
+		cfg := agent.Config{RouterURL: router.server.URL, NodeToken: "node-token", Capacity: 1, RuntimeModel: profile.UpstreamModel, ActiveProfileIDs: []string{profile.ID}, Profiles: []agent.ModelProfile{profile}}
 		loop := newLoopForTest(t, cfg, counter, fake, nil, nil)
 
 		loop.tick(context.Background())

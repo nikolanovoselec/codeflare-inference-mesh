@@ -327,9 +327,9 @@ describe('dashboard overview contracts', () => {
 
     const sortButton = (key: string) => harness.clickAction('nodes-sort', { sort: key })
     await sortButton('vram')
-    expect(rowOrder(harness)).toEqual(['node-down', 'node-small', 'node-big'])
-    await sortButton('vram')
     expect(rowOrder(harness)).toEqual(['node-big', 'node-small', 'node-down'])
+    await sortButton('vram')
+    expect(rowOrder(harness)).toEqual(['node-down', 'node-small', 'node-big'])
 
     const cells = descendants(tableRows(harness)[0]!)
     expect(cells.some((cell) => cell.dataset.cell === 'toks')).toBe(false)
