@@ -15,6 +15,10 @@
 
 Codeflare Inference Mesh is the self-hosted inference layer of the **[Codeflare](https://codeflare.ch)** family ([GitHub](https://github.com/nikolanovoselec/codeflare)), the agentic engine. It pools the idle GPUs and CPUs already sitting in your fleet into one private fabric and serves open models on it through two runtimes: [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) for multi-machine split models, and direct [llama.cpp](https://github.com/ggml-org/llama.cpp) for cache-local single-node serving. It is the inference engine behind your agentic coding and operations agents, autonomous execution agents, internal chatbots, and anything else in the organization that needs low-latency private inference without shipping prompts to a hosted model by default.
 
+<p align="center">
+  <img src="assets/operator-console-overview.png" alt="Codeflare Inference Mesh operator console showing available machines, known VRAM, last speed test, custom domain status, and node health." width="100%">
+</p>
+
 ---
 
 ## Why it exists
@@ -69,6 +73,10 @@ flowchart LR
 **Direct llama.cpp mode** is for non-layered models that fit on a single node and need predictable coding-session cache reuse. The node agent launches `llama-server` directly with profile-owned context, parallel lanes, KV cache type, prompt cache, cache reuse, flash-attention, batch, GPU-layer, max-output, and reasoning settings. The router requires a stable session component, preferably `body.user` formatted as `user:<id>|session:<id>`, hashes it with `SESSION_AFFINITY_KEY`, stores only HMAC-derived keys in D1, and uses `SessionAffinityDO` to pin that session to a healthy llama.cpp node until failover is required.
 
 Layered models always use mesh-llm. Non-layered custom models can run either through mesh-llm or direct llama.cpp, so operators can choose between split-capable mesh behavior and single-node cache-local behavior per model.
+
+<p align="center">
+  <img src="assets/operator-console-models.png" alt="Codeflare Inference Mesh model list showing split MeshLLM and direct llama.cpp runtime profiles with deploy and manage controls." width="100%">
+</p>
 
 ## Private mesh transport
 
