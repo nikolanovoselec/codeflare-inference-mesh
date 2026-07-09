@@ -162,25 +162,19 @@ Direct llama.cpp profiles use these settings:
 
 ## GitHub secrets
 
-| Variable | Default | Required | Consumed by | Implements |
-| --- | --- | --- | --- | --- |
-| `CLOUDFLARE_ACCOUNT_ID` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
-| `CLOUDFLARE_API_TOKEN_DEPLOY` | n/a | yes for deploy | `.github/workflows/deploy.yml` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | n/a | yes for Gateway/domain setup | `.github/workflows/deploy.yml` | [REQ-GWY-003](../../sdd/spec/gateway.md) |
-| `MESH_STATE_KEY` | n/a | yes for deploy; the workflow validates it and fails closed when absent | `.github/workflows/deploy.yml`, pushed to the Worker via `wrangler secret put` | [REQ-SEC-006](../../sdd/spec/security.md) |
-| `SESSION_AFFINITY_KEY` | n/a | yes for deploy | `.github/workflows/deploy.yml`, pushed to the Worker via `wrangler secret bulk` | [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity) |
-| `ADMIN_RECOVERY_TOKEN` | n/a | no | `.github/workflows/deploy.yml`, `packages/router-worker/src/router.ts::handleAdminRecovery` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
-| `COSIGN_PRIVATE_KEY` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| `COSIGN_PASSWORD` | n/a | no | `.github/workflows/deploy.yml` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
+The GitHub Actions secret inventory is maintained in the private operations repository:
+
+https://github.com/nikolanovoselec/codeflare-inference-mesh-private
+
+When required secrets, optional secrets, consumers, or REQ backlinks change, update the private README as the source of truth. This public configuration lane intentionally does not duplicate the operational secret matrix.
 
 ## GitHub variables
 
-| Variable | Default | Required | Consumed by | Implements |
-| --- | --- | --- | --- | --- |
-| `WORKER_BASE_URL` | n/a | optional bootstrap URL; when set, must be HTTPS origin-only | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
-| `PRODUCTION_WORKER_BASE_URL` | n/a | optional production bootstrap URL; when set, must be HTTPS origin-only | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
-| `INTEGRATION_WORKER_BASE_URL` | n/a | optional integration bootstrap URL; when set, must be HTTPS origin-only | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
-| `CLOUDFLARE_WORKERS_DEV_SUBDOMAIN` | n/a | optional helper for deriving a bootstrap workers.dev URL | `packages/router-worker/scripts/resolve-deploy-settings.mjs` | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+The GitHub Actions variable inventory is maintained in the private operations repository:
+
+https://github.com/nikolanovoselec/codeflare-inference-mesh-private
+
+When deploy variables, defaults, consumers, or REQ backlinks change, update the private README as the source of truth. This public configuration lane intentionally does not duplicate the operational variable matrix.
 
 ## SDD config
 

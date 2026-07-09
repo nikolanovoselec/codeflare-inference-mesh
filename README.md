@@ -75,25 +75,11 @@ You need a Cloudflare account and a GitHub repository. Everything builds and dep
 <details>
 <summary><strong>Deploy secrets &amp; token scopes</strong></summary>
 
-Set these in **Settings → Secrets and variables → Actions**. Use scoped API tokens, never a global key.
+The deploy secret list, Cloudflare token scopes, and GitHub Actions variable inventory are maintained in the private operations repository:
 
-| Secret | Required | Purpose |
-| --- | --- | --- |
-| `CLOUDFLARE_ACCOUNT_ID` | Yes | Cloudflare account used by deploy and runtime setup. |
-| `CLOUDFLARE_API_TOKEN_DEPLOY` | Yes | Deploys Workers and manages D1. |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | Yes | Lets the deployed Worker sync AI Gateway and provision custom domains and Access. |
-| `MESH_STATE_KEY` | Yes | Encrypts stored private-mesh state; the deploy fails closed without it. |
-| `ADMIN_RECOVERY_TOKEN` | Optional | Emergency recovery for a lost admin session. |
-| `COSIGN_PRIVATE_KEY` / `COSIGN_PASSWORD` | Optional | Signs release checksums. |
+https://github.com/nikolanovoselec/codeflare-inference-mesh-private
 
-**Token scopes**
-
-| Token | Minimum scopes |
-| --- | --- |
-| `CLOUDFLARE_API_TOKEN_DEPLOY` | `Workers Scripts: Edit`, `D1: Edit`, `Account Settings: Read` |
-| `CLOUDFLARE_API_TOKEN_RUNTIME` | `AI Gateway: Edit`, `AI Gateway: Run`, `Access: Apps and Policies Edit`, `Access: Organizations, Identity Providers, and Groups Edit`, `Account Settings: Read`; add `Workers Routes: Edit` and target-zone DNS permissions for custom-domain provisioning. |
-
-Do not store the provider, admin, setup, node, or upstream tokens as GitHub secrets. First-run setup mints those, and each surfaces only where it is used. `AI Gateway: Run` on the runtime token lets the Worker execute the console playground through the authenticated gateway (presented as `cf-aig-authorization`); `Edit` alone syncs the gateway but cannot run inference through it. **Consumer clients** that call the mesh through the dynamic route present their own AI Gateway token carrying the `AI Gateway: Run` scope in `cf-aig-authorization` (a client credential, not a deploy secret); see [security.md](documentation/lanes/security.md) and [troubleshooting.md](documentation/lanes/troubleshooting.md).
+When deployment secrets, token scopes, or Actions variables change, update that private README as the source of truth. This public README intentionally does not duplicate the operational matrix.
 
 Deploy tags: `vX.Y.Z-dev.N` for integration, `vX.Y.Z` for production.
 
