@@ -3203,7 +3203,8 @@ describe('Access-first setup and host gating contracts', () => {
       fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
         capture.request = new Request(input, init)
         return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
-      }
+      },
+      connect() { throw new Error('connect is not used by speed-test forwarding') }
     } as Fetcher
     const { router, store } = routerFixture({ mesh })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
@@ -3237,7 +3238,10 @@ describe('Access-first setup and host gating contracts', () => {
         controller.close()
       }
     })
-    const mesh = { fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }) } as Fetcher
+    const mesh = {
+      fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
+      connect() { throw new Error('connect is not used by speed-test forwarding') }
+    } as Fetcher
     const { router, store } = routerFixture({ mesh })
     await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
