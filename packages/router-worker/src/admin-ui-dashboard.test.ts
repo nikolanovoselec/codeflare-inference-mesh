@@ -331,7 +331,7 @@ describe('dashboard overview contracts', () => {
     await sortButton('vram')
     expect(rowOrder(harness)).toEqual(['node-down', 'node-small', 'node-big'])
 
-    const cells = descendants(tableRows(harness)[0]!)
+    const cells = descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'node-big')!)
     expect(cells.some((cell) => cell.dataset.cell === 'toks')).toBe(false)
     expect(cells.find((cell) => cell.dataset.cell === 'vram')!.dataset.value).toBe('24576')
     expect(cells.find((cell) => cell.dataset.cell === 'models')!.dataset.value).toBe('2')
