@@ -513,7 +513,7 @@ describe('dashboard overview contracts', () => {
   })
 
   it('REQ-ADM-030 a deactivated node reads as tainted (warn tone) and its drawer offers Activate', async () => {
-    const status = statusFixture({ nodes: [{ id: 'node-off', status: 'online', deactivated: true, metrics: { runtimeState: 'ready', readyModels: [], activeRequests: 0, tokensPerSecond: 0, gpuMemoryTotalMiB: 8192 } }] })
+    const status = statusFixture({ nodes: [{ id: 'node-off', status: 'online', deactivated: true, metrics: { runtimeState: 'failed', runtimeDetail: 'readiness deadline exceeded', readyModels: [], activeRequests: 0, tokensPerSecond: 0, gpuMemoryTotalMiB: 8192 } }] })
     const harness = await dashboardHarness({ status })
     const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((node) => node.dataset.nodeRow === 'node-off')!
     const chip = descendants(row).find((node) => node.className === 'chip')!
@@ -525,6 +525,11 @@ describe('dashboard overview contracts', () => {
 
     await harness.clickAction('node-detail', { nodeId: 'node-off' })
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const textOf = (item: StubElement) => descendants(item).map((node) => node.textContent).join(' ')
+    const runtimeInstall = fields.find((node) => node.dataset.drawerField === 'runtime-install')!
+    expect(textOf(runtimeInstall)).toContain('MeshLLM paused')
+    expect(textOf(runtimeInstall)).not.toContain('install failed')
+    expect(runtimeInstall.dataset.runtimeInstallState).toBe('paused')
     const activate = fields.find((node) => node.dataset.action === 'node-activate')
     expect(activate).toBeDefined()
     expect(activate!.textContent).toBe('Activate')

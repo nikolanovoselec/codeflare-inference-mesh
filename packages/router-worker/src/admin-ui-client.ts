@@ -638,9 +638,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
   const nodeTone = (node) => {
     const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
-    if (splitReadinessIssue(node.metrics && node.metrics.splitReadiness)) return 'warn';
-    if (runtime === 'failed' || node.status === 'offline') return 'danger';
+    if (node.status === 'offline') return 'danger';
     if (node.deactivated) return 'warn';
+    if (splitReadinessIssue(node.metrics && node.metrics.splitReadiness)) return 'warn';
+    if (runtime === 'failed') return 'danger';
     if (nodeServingCapacity(node)) return 'ok';
     if (node.status === 'online' && (runtime === 'running' || runtime === 'ready')) return 'ok';
     return 'warn';
@@ -702,11 +703,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     return metrics.lastError || metrics.runtimeDetail || '';
   }
   function runtimeInstallInfo(node) {
-    if (node.runtimeInstall) return { ...node.runtimeInstall, error: node.runtimeInstall.state === 'failed' ? node.runtimeInstall.error : null };
+    if (node.runtimeInstall && !node.deactivated) return { ...node.runtimeInstall, error: node.runtimeInstall.state === 'failed' ? node.runtimeInstall.error : null };
     const metrics = node.metrics || {};
     const runtime = metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp' ? 'llamacpp' : 'meshllm';
     const desired = lastStatus && lastStatus.desiredRuntimeVersions ? lastStatus.desiredRuntimeVersions[runtime] : '';
-    const installed = runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion;
+    const installed = node.runtimeInstall && node.runtimeInstall.installedVersion ? node.runtimeInstall.installedVersion : (runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion);
+    if (node.deactivated) return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: 'paused', error: null };
     const error = currentRuntimeError(metrics);
     const state = metrics.runtimeState === 'downloading' ? 'installing' : ((metrics.runtimeState === 'dependency-missing' || (error && !installed)) ? 'failed' : (installed ? 'installed' : 'pending'));
     return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: state, error: state === 'failed' ? (error || null) : null };
@@ -716,6 +718,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const runtimeInstallText = (node) => {
     const info = runtimeInstallInfo(node);
     const desired = info.desiredVersion || 'selected';
+    if (info.state === 'paused') return info.installedVersion ? (info.installedVersion + ' installed · deactivated') : (runtimeInstallLabel(info) + ' paused');
     if (info.state === 'installing') return 'Installing ' + runtimeInstallLabel(info) + ' ' + desired;
     if (info.state === 'failed') return runtimeInstallLabel(info) + ' install failed';
     if (info.installedVersion) return info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? ' installed' : ' → ' + desired);
@@ -1125,9 +1128,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     nameInput.dataset.original = nodeDisplayName(node);
     nameRow.appendChild(nameInput);
     bodyEl.appendChild(nameRow);
-    const vramRow = document.createElement('label');
-    vramRow.className = 'drawer-row';
-    vramRow.textContent = 'Max VRAM override (GB, blank = use model default)';
+    const vramOverrideRow = document.createElement('label');
+    vramOverrideRow.className = 'drawer-row';
+    vramOverrideRow.textContent = 'Max VRAM override (GB, blank = use model default)';
     const vramInput = document.createElement('input');
     vramInput.id = 'node-edit-vram';
     vramInput.type = 'number';
@@ -1135,8 +1138,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     vramInput.step = '0.5';
     // Blank = follow the model's global budget; a number caps just this node (0 = uncapped here).
     vramInput.value = node.maxVramGbOverride != null ? String(node.maxVramGbOverride) : '';
-    vramRow.appendChild(vramInput);
-    bodyEl.appendChild(vramRow);
+    vramOverrideRow.appendChild(vramInput);
+    bodyEl.appendChild(vramOverrideRow);
     const saveVram = document.createElement('button');
     saveVram.type = 'button';
     saveVram.className = 'btn';
