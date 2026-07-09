@@ -267,7 +267,8 @@ describe('dashboard overview contracts', () => {
     expect(descendants(field('split-readiness')).some((node) => node.dataset.splitField === 'participants')).toBe(true)
     expect(field('mesh-vram-budget').dataset.profileBudget).toBe('16')
     expect(field('mesh-vram-budget').dataset.nodeOverride).toBe('16')
-    expect(field('mesh-vram-budget').dataset.launchedBudget).toBe('12')
+    expect(field('mesh-vram-budget').dataset.runningBudget).toBe('12')
+    expect(field('mesh-vram-budget').dataset.budgetStale).toBe('true')
   })
 
   it('REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node', async () => {
