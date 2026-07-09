@@ -107,6 +107,8 @@ describe('dashboard overview contracts', () => {
     expect(css).toContain('body{')
     expect(css).toContain('font:var(--fs-md)/1.55 var(--font-sans)')
     expect(css).toContain('code,pre,.metric-value,.endpoint-chip{font-family:var(--font-mono)')
+    expect(css).toContain('.scramble-word{display:inline-block;white-space:nowrap;text-align:left;vertical-align:baseline;background:var(--flare-gradient)')
+    expect(css).not.toContain('.scramble-word+.scramble-word')
   })
 
   it('REQ-ADM-007 renders a Codeflare operator-console hero and nav rail contracts', () => {
@@ -159,6 +161,7 @@ describe('dashboard overview contracts', () => {
     harness.run()
     const words = target.children.filter((child) => child.className === 'scramble-word')
     expect(words.map((word) => word.textContent)).toEqual(['Inference', 'Mesh'])
+    expect(target.children.some((child) => child.nodeType === 3 && child.textContent === ' ')).toBe(true)
 
     vi.advanceTimersByTime(3_400)
     expect(words.some((word) => word.textContent !== 'Inference' && word.textContent !== 'Mesh')).toBe(true)
@@ -309,6 +312,41 @@ describe('dashboard overview contracts', () => {
     expect(gone.category).toBe('offline')
     expect(gone.text).toContain('Offline')
     expect(gone.text).not.toContain('starting')
+  })
+
+  it('REQ-OBS-011 surfaces split mesh peer discovery blockers without SSH', async () => {
+    const splitProfile = { ...dashboardProfiles[1]!, active: true }
+    const nodes = [{
+      id: 'mac-worker',
+      status: 'online',
+      activeProfileIds: [splitProfile.id],
+      runtime: 'meshllm',
+      metrics: {
+        runtimeKind: 'meshllm',
+        runtimeState: 'starting',
+        nodeState: 'standby',
+        splitEnabled: true,
+        peerCount: 0,
+        stageCount: 0,
+        apiReady: false,
+        consoleReady: true,
+        meshllmVersion: '0.72.2',
+        readyModels: [],
+        activeRequests: 0
+      }
+    }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles: [splitProfile], nodes }) })
+    const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'mac-worker')!
+    const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
+
+    expect(statusCell.dataset.statusDetail).toBe('split-mesh-peer-discovery')
+    expect(descendants(statusCell).find((node) => node.className === 'chip')!.dataset.tone).toBe('danger')
+
+    await harness.clickAction('node-detail', { nodeId: 'mac-worker' })
+    const blocker = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.dataset.drawerField === 'mesh-discovery-blocker')!
+    expect(blocker.getAttribute('data-tone')).toBe('danger')
+    expect(blocker.getAttribute('data-peer-count')).toBe('0')
+    expect(blocker.getAttribute('data-stage-count')).toBe('0')
   })
 
   it('REQ-ADM-015 filters the nodes table by status chip and by search', async () => {

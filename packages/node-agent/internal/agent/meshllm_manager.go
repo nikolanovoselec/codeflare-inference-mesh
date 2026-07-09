@@ -358,8 +358,8 @@ func (m *MeshLLMManager) APIReady() bool {
 // NeedsRestart reports whether a heartbeat bootstrap demands a drain and
 // restart: the response rotation differs from the running rotation, the
 // response mesh id differs from the running mesh id with join tokens present,
-// or create arrives while a mesh is running. Callers drain via waitForDrain
-// before acting on it.
+// a tokenless process receives join tokens, or create promotes a running joiner
+// to seed. Callers drain via waitForDrain before acting on it.
 func (m *MeshLLMManager) NeedsRestart(b *MeshBootstrap) bool {
 	if b == nil {
 		return false
@@ -373,6 +373,12 @@ func (m *MeshLLMManager) NeedsRestart(b *MeshBootstrap) bool {
 		return true
 	}
 	if b.MeshID != "" && m.meshID != "" && b.MeshID != m.meshID && len(b.JoinTokens) > 0 {
+		return true
+	}
+	// Existing nodes start before their first heartbeat, so they may launch tokenless
+	// and sit in private discovery. Once the router returns a peer token, relaunch with
+	// --join so the node can enter the split mesh instead of waiting forever.
+	if b.Action == "join" && len(b.JoinTokens) > 0 && m.launchedAction != "join" {
 		return true
 	}
 	// The router sends action "create" to the seed on every heartbeat (mesh-state.ts

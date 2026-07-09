@@ -112,43 +112,88 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
 
   // --- hero progressive enhancement ----------------------------------------
-  const scrambleChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@$%&*';
+  const scrambleChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*<>{}[]|/\\\\~';
+  const scrambleTickMs = 50;
   function randomScrambleChar() { return scrambleChars[Math.floor(Math.random() * scrambleChars.length)] || 'A'; }
   function reduceMotion() {
     try { return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_error) { return false; }
   }
-  function scrambleValue(target, phase) {
-    if (phase < 60 || phase >= 132) return target;
-    if (phase < 88) return target.replace(/\\S/g, randomScrambleChar);
-    const revealed = Math.min(target.length, Math.max(0, phase - 88));
-    return target.split('').map((char, index) => {
-      if (char === ' ') return ' ';
-      return index < revealed ? char : randomScrambleChar();
-    }).join('');
+  function scheduleFrame(fn) {
+    const targetWindow = typeof window === 'object' ? window : globalThis;
+    if (targetWindow && typeof targetWindow.requestAnimationFrame === 'function') targetWindow.requestAnimationFrame(fn);
+    else fn();
+  }
+  function animateScrambleWord(span, target) {
+    const chars = target.split('');
+    let phase = 'hold';
+    let frame = -Math.floor(Math.random() * 50);
+    let current = chars.slice();
+    setInterval(() => {
+      frame += 1;
+      if (phase === 'hold') {
+        if (frame > 60) { phase = 'scramble'; frame = 0; }
+        return;
+      }
+      if (phase === 'scramble') {
+        current = chars.map((char) => (Math.random() < 0.4 ? randomScrambleChar() : char));
+        if (frame > 26) { phase = 'decrypt'; frame = 0; }
+      } else if (phase === 'decrypt') {
+        current = chars.map((char) => (Math.random() < frame / 22 ? char : randomScrambleChar()));
+        if (frame > 22) { phase = 'swap'; frame = 0; current = chars.slice(); }
+      } else if (phase === 'swap') {
+        const a = Math.floor(Math.random() * current.length);
+        const b = Math.floor(Math.random() * current.length);
+        const next = current[a];
+        current[a] = current[b];
+        current[b] = next;
+        if (frame > 12) { phase = 'hold'; frame = 0; current = chars.slice(); }
+      }
+      span.textContent = current.join('');
+    }, scrambleTickMs);
   }
   function initScramble() {
     if (reduceMotion()) return;
+    const targetWindow = typeof window === 'object' ? window : globalThis;
     Array.prototype.slice.call(document.querySelectorAll('[data-scramble]')).forEach((target) => {
-      const source = (target.textContent || '').trim();
-      if (!source) return;
+      const source = target.textContent || '';
+      if (!source.trim()) return;
       target.textContent = '';
-      const words = source.split(/\\s+/).map((word) => {
+      const words = [];
+      source.split(/(\\s+)/).forEach((part) => {
+        if (part === '') return;
+        if (/^\\s+$/.test(part)) {
+          target.appendChild(document.createTextNode(part));
+          return;
+        }
         const span = document.createElement('span');
         span.className = 'scramble-word';
-        span.dataset.target = word;
-        span.textContent = word;
+        span.textContent = part;
         target.appendChild(span);
-        if (span.style && typeof span.getBoundingClientRect === 'function') {
-          const width = span.getBoundingClientRect().width;
-          if (width) span.style.width = width + 'px';
-        }
-        return span;
+        words.push({ span: span, text: part });
       });
-      let frame = 0;
-      setInterval(() => {
-        words.forEach((span) => { span.textContent = scrambleValue(span.dataset.target || '', frame % 140); });
-        frame += 1;
-      }, 50);
+      const lockWidths = () => {
+        words.forEach((word) => { if (word.span.style) word.span.style.width = ''; word.span.textContent = word.text; });
+        words.forEach((word) => {
+          if (word.span.style && typeof word.span.getBoundingClientRect === 'function') {
+            const width = word.span.getBoundingClientRect().width;
+            if (width) word.span.style.width = width.toFixed(2) + 'px';
+          }
+        });
+      };
+      const start = () => {
+        lockWidths();
+        words.forEach((word) => animateScrambleWord(word.span, word.text));
+      };
+      const fonts = document.fonts;
+      if (fonts && fonts.ready && typeof fonts.ready.then === 'function') fonts.ready.then(() => scheduleFrame(start));
+      else scheduleFrame(start);
+      let resizeTimer = 0;
+      if (targetWindow && typeof targetWindow.addEventListener === 'function') {
+        targetWindow.addEventListener('resize', () => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => scheduleFrame(lockWidths), 150);
+        });
+      }
     });
   }
   initScramble();
@@ -420,6 +465,30 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (nodeReady(node)) return 'ready';
     return 'active';
   }
+  function activeProfileForNode(node) {
+    const profiles = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
+    const active = Array.isArray(node.activeProfileIds) ? node.activeProfileIds : [];
+    return profiles.find((profile) => active.indexOf(profile.id) >= 0) || profiles.find((profile) => profile.upstreamModel && profile.upstreamModel === node.runtimeModel);
+  }
+  function splitMeshBlocker(node) {
+    const metrics = node.metrics || {};
+    const profile = activeProfileForNode(node);
+    const splitProfile = Boolean(metrics.splitEnabled || (profile && profile.meshllm && profile.meshllm.split));
+    const meshRuntime = metrics.runtimeKind === 'meshllm' || node.runtime === 'meshllm' || (profile && profile.runtime === 'meshllm');
+    if (!meshRuntime || !splitProfile || node.status !== 'online' || nodeReady(node)) return undefined;
+    const noPeers = metrics.peerCount === 0;
+    const noStages = metrics.stageCount === 0;
+    const standby = metrics.nodeState === 'standby' || metrics.runtimeState === 'starting';
+    if (!standby || (!noPeers && !noStages)) return undefined;
+    const port = profile && profile.meshllm && profile.meshllm.bindPort ? String(profile.meshllm.bindPort) : '';
+    return { profile: profile, peerCount: metrics.peerCount, stageCount: metrics.stageCount, port: port };
+  }
+  function meshBlockerText(node) {
+    const blocker = splitMeshBlocker(node);
+    if (!blocker) return '';
+    const portHint = blocker.port ? 'WARP UDP ' + blocker.port : 'the mesh UDP port';
+    return 'No MeshLLM peers discovered for this split profile. Start another node with the same model/split profile, or check ' + portHint + ' and the join token.';
+  }
   function runtimeInstallInfo(node) {
     if (node.runtimeInstall) return node.runtimeInstall;
     const metrics = node.metrics || {};
@@ -450,6 +519,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const stateDetail = metrics.nodeState || '';
     if (rt === 'failed' || rt === 'dependency-missing') return 'Failed' + (stateDetail ? ' · ' + stateDetail : '');
     if (nodeReady(node)) return 'Ready';
+    if (splitMeshBlocker(node)) return 'Mesh waiting for peers · no peers discovered';
     if (rt === 'downloading') return 'Starting · downloading runtime';
     if (rt === 'loading' || rt === 'starting') return stateDetail ? 'Starting · ' + stateDetail : 'Starting · loading model';
     return 'Starting';
@@ -555,8 +625,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       idButton.textContent = node.id;
       idCell.appendChild(idButton);
       const statusCell = cell('status', nodeCategory(node), undefined);
-      if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
-      statusCell.appendChild(statusDot(nodeTone(node), nodeStatusText(node)));
+      const blocker = splitMeshBlocker(node);
+      if (blocker) statusCell.setAttribute('data-status-detail', 'split-mesh-peer-discovery');
+      else if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
+      statusCell.appendChild(statusDot(blocker ? 'danger' : nodeTone(node), nodeStatusText(node)));
       const install = runtimeInstallInfo(node);
       const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));
       installChip.setAttribute('data-runtime-install-chip', node.id);
@@ -730,6 +802,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const installError = drawerField('runtime-install-error', 'Runtime install error', install.error);
       installError.setAttribute('data-tone', 'danger');
       bodyEl.appendChild(installError);
+    }
+    const blockerText = meshBlockerText(node);
+    if (blockerText) {
+      const blocker = splitMeshBlocker(node);
+      const row = drawerField('mesh-discovery-blocker', 'Mesh blocker', blockerText);
+      row.setAttribute('data-tone', 'danger');
+      if (blocker && blocker.peerCount != null) row.setAttribute('data-peer-count', String(blocker.peerCount));
+      if (blocker && blocker.stageCount != null) row.setAttribute('data-stage-count', String(blocker.stageCount));
+      bodyEl.appendChild(row);
     }
     if (metrics.nodeState) bodyEl.appendChild(drawerField('node-state', 'Node state', metrics.nodeState));
     if (!isDirectRuntime || metrics.meshRole) bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', metrics.meshRole || 'not reported'));

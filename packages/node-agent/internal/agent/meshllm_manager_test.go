@@ -588,6 +588,26 @@ func TestREQRUN006WaitDefersLaunchAndJoinRendersTokens(t *testing.T) {
 	})
 }
 
+func TestREQRUN006TokenlessStartupRestartsWhenJoinArrivesBeforeMeshID(t *testing.T) {
+	t.Run("REQ-RUN-006", func(t *testing.T) {
+		fixture := newMeshManagerForTest(t, MeshLLMRenderInput{ProfileID: "prof", ModelRef: "target-model", Rotation: 1}, 0)
+		if err := fixture.manager.Start(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if fixture.launch.count() != 1 {
+			t.Fatalf("initial tokenless launch count = %d, want 1", fixture.launch.count())
+		}
+		if meshID := fixture.manager.CurrentMeshID(); meshID != "" {
+			t.Fatalf("fresh tokenless launch must not have captured a mesh id yet, got %q", meshID)
+		}
+
+		bootstrap := &MeshBootstrap{Action: "join", Rotation: 1, MeshID: "mesh-1", JoinTokens: []string{"tokA"}}
+		if !fixture.manager.NeedsRestart(bootstrap) {
+			t.Fatal("tokenless startup must restart when the router later returns a join token before any mesh id is captured")
+		}
+	})
+}
+
 func TestREQRUN006RestartTriggersDrainAndRelaunch(t *testing.T) {
 	t.Run("REQ-RUN-006", func(t *testing.T) {
 		console := &consoleFixture{status: statusPayload("serving", "mesh-1", "tok-1")}
