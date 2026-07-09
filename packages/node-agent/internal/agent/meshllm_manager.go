@@ -378,7 +378,7 @@ func (m *MeshLLMManager) NeedsRestart(b *MeshBootstrap) bool {
 	// Existing nodes start before their first heartbeat, so they may launch tokenless
 	// and sit in private discovery. Once the router returns a peer token, relaunch with
 	// --join so the node can enter the split mesh instead of waiting forever.
-	if b.Action == "join" && len(b.JoinTokens) > 0 && m.launchedAction != "join" {
+	if b.Action == "join" && len(b.JoinTokens) > 0 && m.launchedAction != "join" && m.meshID == "" {
 		return true
 	}
 	// The router sends action "create" to the seed on every heartbeat (mesh-state.ts
