@@ -119,7 +119,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   function scrambleValue(target, phase) {
     if (phase < 60 || phase >= 132) return target;
-    if (phase < 88) return target.replace(/\S/g, randomScrambleChar);
+    if (phase < 88) return target.replace(/\\S/g, randomScrambleChar);
     const revealed = Math.min(target.length, Math.max(0, phase - 88));
     return target.split('').map((char, index) => {
       if (char === ' ') return ' ';
@@ -132,7 +132,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const source = (target.textContent || '').trim();
       if (!source) return;
       target.textContent = '';
-      const words = source.split(/\s+/).map((word) => {
+      const words = source.split(/\\s+/).map((word) => {
         const span = document.createElement('span');
         span.className = 'scramble-word';
         span.dataset.target = word;
