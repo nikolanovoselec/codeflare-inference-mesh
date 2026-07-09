@@ -471,7 +471,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (capacity.shortfallBytes != null) element.setAttribute('data-shortfall-bytes', String(capacity.shortfallBytes));
   }
   function humanizeKey(value) {
-    return String(value || '').replace(/^participant_/, '').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+    return String(value || '').replace(/^participant_/, '').replace(/_/g, ' ').replace(/\\b\\w/g, (char) => char.toUpperCase());
   }
   function splitReadinessLabel(report) {
     if (!report) return '';
@@ -685,10 +685,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!metrics) return '';
     if ((metrics.stageCount || 0) > 0 && metrics.apiReady === true && metrics.consoleReady === true) return 'Serving split stage';
     if (Array.isArray(metrics.readyModels) && metrics.readyModels.length > 0) return 'Serving model';
-    if (metrics.apiReady === true || metrics.consoleReady === true) return 'Runtime online';
     if (metrics.runtimeState === 'downloading') return 'Installing runtime';
     if (metrics.runtimeState === 'starting' || metrics.runtimeState === 'loading') return 'Starting model';
     if (metrics.runtimeState === 'failed' || metrics.runtimeState === 'dependency-missing') return 'Needs attention';
+    if (metrics.apiReady === true || metrics.consoleReady === true) return 'Runtime online';
     return metrics.runtimeState ? humanizeKey(metrics.runtimeState) : '';
   }
   function nodeServingCapacity(node) {

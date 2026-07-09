@@ -235,7 +235,8 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('node-detail', { nodeId: 'battlestation' })
     const drawerFields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(drawerFields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
-    expect(drawerFields.find((node) => node.dataset.drawerField === 'work-state')?.textContent).toContain('Serving model')
+    const drawerText = (name: string) => descendants(drawerFields.find((node) => node.dataset.drawerField === name)!).map((node) => node.textContent).join(' ')
+    expect(drawerText('work-state')).toContain('Serving model')
   })
 
   it('REQ-OBS-007 surfaces split capacity shortfall instead of marking raw standby green', async () => {
@@ -358,7 +359,7 @@ describe('dashboard overview contracts', () => {
       return { category: cell.dataset.value, detail: cell.dataset.statusDetail, text: descendants(cell).map((node) => node.textContent).filter(Boolean).join(' ') }
     }
     expect(statusOf('ready-node').category).toBe('ready')
-    expect(statusOf('ready-node').text).toContain('Ready')
+    expect(statusOf('ready-node').text).toContain('Serving model')
     expect(statusOf('loading-node').category).toBe('active')
     expect(statusOf('loading-node').detail).toBe('loading model next-upstream')
     expect(statusOf('failed-node').category).toBe('active')
@@ -540,7 +541,8 @@ describe('dashboard overview contracts', () => {
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'mac-100-96-0-14')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
     expect(statusCell.dataset.meshRole).toBe('Stage owner')
-    expect(descendants(statusCell).find((node) => node.className === 'chip')?.textContent).toContain('Stage owner')
+    const statusChip = descendants(statusCell).find((node) => node.className === 'chip')!
+    expect(descendants(statusChip).map((node) => node.textContent).join(' ')).toContain('Stage owner')
 
     await harness.clickAction('node-detail', { nodeId: 'mac-100-96-0-14' })
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
