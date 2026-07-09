@@ -1358,6 +1358,31 @@ describe('dashboard routing contracts', () => {
     expect(descendants(card).find((node) => node.className === 'chip')?.textContent).toContain('needs provisioning')
   })
 
+  it('REQ-ADM-024 preserves the selected gateway across dashboard refreshes', async () => {
+    const provisionChecks: string[] = []
+    const harness = await dashboardHarness({
+      respond: (path) => {
+        if (path.startsWith('/admin/cloudflare/gateway/options')) return Response.json({ gateways: [{ id: 'codeflare-enterprise' }, { id: 'lab-gateway' }], routes: [], defaults: { gatewayId: 'codeflare-enterprise', providerName: 'Codeflare Inference Mesh' } })
+        if (path.startsWith('/admin/cloudflare/gateway/provision-status')) {
+          provisionChecks.push(new URL('https://router.test' + path).searchParams.get('gateway') || '')
+          return Response.json({ gatewayId: provisionChecks.at(-1), provisioned: true, routeEnabled: true, routeName: 'codeflare-mesh', routeId: 'r', providerId: 'p' })
+        }
+        return undefined
+      }
+    })
+    await harness.click(harness.query('[data-nav="routing"]'))
+    await harness.flush(20)
+    harness.byId('rt-gateway-select').value = 'lab-gateway'
+    await harness.change(harness.byId('rt-gateway-select'))
+    await harness.flush(20)
+    await harness.clickAction('status-refresh')
+    await harness.flush(20)
+
+    expect(harness.byId('rt-gateway-select').value).toBe('lab-gateway')
+    expect(descendants(harness.byId('gateway-current')).find((node) => node.className === 'state-value')?.textContent).toBe('lab-gateway')
+    expect(provisionChecks).toContain('lab-gateway')
+  })
+
   it('REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key', async () => {
     const harness = await dashboardHarness({
       respond: (path, init) => path === '/admin/cloudflare/gateway/sync' && (init?.method || 'GET') === 'POST'

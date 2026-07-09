@@ -1705,16 +1705,21 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     }
     const gatewayCurrent = byId('gateway-current');
     if (gatewayCurrent) {
-      const gateway = status.gateway || {};
-      renderStateCard(gatewayCurrent, {
-        label: 'AI Gateway',
-        value: gateway.gatewayId || '',
-        placeholder: 'Not connected yet',
-        sub: gateway.gatewayId ? ('route ' + (gateway.routeName || STABLE_PUBLIC_MODEL)) : '',
-        chip: gateway.gatewayId ? 'connected' : '',
-        chipTone: 'ok',
-        state: gateway.gatewayId ? 'ok' : ''
-      });
+      const selectedGateway = selectedGatewayValue('routing');
+      if (selectedGateway) {
+        refreshProvisionChip(selectedGateway).catch(() => undefined);
+      } else {
+        const gateway = status.gateway || {};
+        renderStateCard(gatewayCurrent, {
+          label: 'AI Gateway',
+          value: gateway.gatewayId || '',
+          placeholder: 'Not connected yet',
+          sub: gateway.gatewayId ? ('route ' + (gateway.routeName || STABLE_PUBLIC_MODEL)) : '',
+          chip: gateway.gatewayId ? 'connected' : '',
+          chipTone: 'ok',
+          state: gateway.gatewayId ? 'ok' : ''
+        });
+      }
     }
     const domainCurrent = byId('custom-domain-current');
     if (domainCurrent) {
@@ -1992,18 +1997,23 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (scope === 'routing') return { empty: 'rt-gateway-empty', selects: 'rt-gateway-selects', gwSlot: 'rt-gateway-slot', gwSelect: 'rt-gateway-select', gwNew: 'rt-gateway-new-wrap', providerName: 'rt-gateway-provider-name' };
     return { empty: 'wizard-gateway-empty', selects: 'wizard-gateway-selects', gwSlot: 'wiz-gateway-slot', gwSelect: 'wiz-gateway-select', gwNew: 'wiz-gateway-new-wrap', providerName: 'wiz-gateway-provider-name' };
   }
+  function selectedGatewayValue(scope) {
+    const select = byId(gatewayScopeIds(scope).gwSelect);
+    return select && select.value ? select.value : '';
+  }
   async function loadGatewayOptions(gatewayId, scope) {
     const ids = gatewayScopeIds(scope);
     const emptyPanel = byId(ids.empty);
     const selects = byId(ids.selects);
     if (!emptyPanel || !selects) return;
+    const currentGateway = selectedGatewayValue(scope);
     const body = await request('/admin/cloudflare/gateway/options' + (gatewayId ? '?gateway=' + encodeURIComponent(gatewayId) : ''), { headers: headers(false) });
     const gateways = (body.gateways || []).map((gateway) => gateway.id);
     const defaults = body.defaults || {};
     emptyPanel.hidden = gateways.length > 0;
     selects.hidden = gateways.length === 0;
     if (!gateways.length) { if (scope === 'routing') refreshProvisionChip('').catch(() => undefined); return; }
-    const wantedGateway = gatewayId || defaults.gatewayId;
+    const wantedGateway = gatewayId || currentGateway || defaults.gatewayId;
     const gatewayValue = gateways.indexOf(wantedGateway) >= 0 ? wantedGateway : '__new__';
     fillChoiceSelect(ids.gwSlot, ids.gwSelect, 'gatewayId', 'data-gateway-select', gateways, gatewayValue, 'Create new gateway\u2026');
     toggleNewField(ids.gwNew, gatewayValue === '__new__');
