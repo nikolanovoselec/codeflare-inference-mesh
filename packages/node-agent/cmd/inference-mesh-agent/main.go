@@ -454,16 +454,29 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 			metrics.RuntimeDetail = detail
 		}
 	}
-	// The MeshLLM console does not always report GPU memory; when total VRAM is
-	// still unknown, fall back to the host GPU tool so the dashboard shows real
-	// VRAM instead of 0. Used VRAM legitimately stays 0 on an idle GPU.
-	if metrics.GPUMemoryTotalMiB == 0 {
-		if gpu := agent.GPUFallbackMetrics(ctx, runtime.GOOS, execCommandRunner); gpu.GPUMemoryTotalMiB > 0 {
+	// The MeshLLM console does not always report complete GPU memory. Fall back to
+	// the host GPU tool for any missing part: total VRAM when absent, and used VRAM
+	// when MeshLLM reports only card capacity. This keeps /api/v1/nodes and the UI
+	// on trusted GPU telemetry, never split-readiness planner capacity.
+	if metrics.GPUMemoryTotalMiB == 0 || metrics.GPUMemoryUsedMiB == 0 {
+		runner := s.cmdRunner
+		if runner == nil {
+			runner = execCommandRunner
+		}
+		goosName := s.goos
+		if goosName == "" {
+			goosName = runtime.GOOS
+		}
+		if gpu := agent.GPUFallbackMetrics(ctx, goosName, runner); gpu.GPUMemoryTotalMiB > 0 || gpu.GPUMemoryUsedMiB > 0 {
 			if metrics.GPUName == "" {
 				metrics.GPUName = gpu.GPUName
 			}
-			metrics.GPUMemoryUsedMiB = gpu.GPUMemoryUsedMiB
-			metrics.GPUMemoryTotalMiB = gpu.GPUMemoryTotalMiB
+			if metrics.GPUMemoryUsedMiB == 0 {
+				metrics.GPUMemoryUsedMiB = gpu.GPUMemoryUsedMiB
+			}
+			if metrics.GPUMemoryTotalMiB == 0 {
+				metrics.GPUMemoryTotalMiB = gpu.GPUMemoryTotalMiB
+			}
 		}
 	}
 	s.telemetry.Store(metrics)

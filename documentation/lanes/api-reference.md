@@ -150,6 +150,7 @@ POST /node/heartbeat
 - `meshNodeId` — MeshLLM's own non-secret node id, used only to correlate split-readiness participants with enrolled Codeflare nodes.
 - `meshRole` — `coordinator` when the node owns stage 0, `serving-peer` when it owns another stage or MeshLLM reports serving/loading, else `api-client`.
 - `readyModels` — the model ids from the node's own `/v1/models` (the mesh-wide union).
+- `gpuName`, `gpuMemoryUsedMiB`, and `gpuMemoryTotalMiB` from trusted GPU telemetry. MeshLLM may report rated capacity without used memory; the node agent fills missing used memory from the host GPU tool when available so node projections can render used/total VRAM without using split planner capacity.
 - `peerCount`, `splitEnabled`, `stageCount`, `stageAssignments[]` (`stageId`, `stageIndex`, `nodeId`, `layerStart`, `layerEnd`, `state`, optional backend/device fields), `apiReady`, `consoleReady`, `meshllmVersion`, and `meshMaxVramGb` (the launched MeshLLM `--max-vram` budget).
 - `splitReadiness` for split profiles when MeshLLM reports diagnostics: `verdict`, `capacityAdvice` (`requiredBytes`, `aggregateCapacityBytes`, `shortfallBytes`, `eligibleNodeCount`), `participants[]`, `blockers[]`, and `recommendations[]`. Aggregated status adds `routerNodeId`/`displayName` to participants when `meshNodeId` can be matched, so operators see machine names instead of MeshLLM hashes. This distinguishes peer/download problems from planner capacity shortfalls.
 
@@ -549,6 +550,8 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 **Authentication:** automation key
 
 **Query parameters:** `status` (exact node status: `online`, `offline`, `draining` — revoked nodes are excluded from every listing, so `revoked` never matches even if a tombstone row survives a mid-revoke failure), `q` (case-insensitive match on node id or display name), `limit` (page size, default 100, max 1000), `cursor` (return nodes with id greater than this value).
+
+`NodeProjection.metrics`, when present, includes the node's runtime metrics. GPU fields use MiB units: `gpuMemoryUsedMiB` is current trusted GPU memory in use when known, and `gpuMemoryTotalMiB` is trusted card/system GPU memory capacity when known. MeshLLM split-readiness participant capacity is never substituted for these fields.
 
 `NodeProjection.runtimeInstall` reports the node runtime binary state for automation and UI parity: `{ "runtime": "meshllm" | "llamacpp", "desiredVersion": string, "installedVersion": string | null, "state": "pending" | "installing" | "installed" | "failed", "error": string | null }`.
 

@@ -336,6 +336,44 @@ func TestREQOBS007CollectCarriesSplitReadinessAndLaunchedBudget(t *testing.T) {
 	}
 }
 
+func TestREQOBS009CollectFillsMeshLLMUsedVRAMFromHostTelemetry(t *testing.T) {
+	// MeshLLM can report rated GPU capacity without used VRAM. The heartbeat/API must still carry
+	// trusted used/total GPU telemetry when the host GPU tool can provide the missing used value.
+	profile := agent.ModelProfile{
+		ID: "split-p", UpstreamModel: "meshllm/model-layers", Version: 1, Runtime: "meshllm",
+		MeshLLM: agent.MeshLLMSettings{ModelRef: "meshllm/model-layers", Split: true, BindPort: 4420},
+	}
+	cfg := agent.Config{
+		RuntimeModel: profile.UpstreamModel,
+		ActiveProfileIDs: []string{profile.ID},
+		Profiles: []agent.ModelProfile{profile},
+	}
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	manager.ready = []string{profile.UpstreamModel}
+	manager.status = agent.MeshLLMStatus{
+		NodeState: "serving",
+		NodeID:    "node-1",
+		GPUs:      []agent.GPUStatus{{Name: "NVIDIA GeForce RTX 3090", RatedVRAMGB: 24}},
+	}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.goos = "linux"
+	loop.cmdRunner = func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if name != "nvidia-smi" {
+			return nil, errors.New("unexpected command " + name)
+		}
+		return []byte("NVIDIA GeForce RTX 3090, 18799, 24576\n"), nil
+	}
+
+	metrics, _ := loop.collect(context.Background(), cfg)
+	if metrics.GPUMemoryTotalMiB != 24*1024 {
+		t.Fatalf("MeshLLM-rated total VRAM should be preserved, got %d", metrics.GPUMemoryTotalMiB)
+	}
+	if metrics.GPUMemoryUsedMiB != 18799 {
+		t.Fatalf("missing MeshLLM used VRAM should be filled from host telemetry, got %d", metrics.GPUMemoryUsedMiB)
+	}
+}
+
 func TestREQRUN010RestartLatchReleasedWhenRuntimeHangs(t *testing.T) {
 	// A runtime restart whose Stop blocks (a mesh-llm ignoring SIGTERM) must not strand the
 	// restart-pending latch. The bounded restart timeout unblocks it so a later heartbeat can
