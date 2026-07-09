@@ -220,6 +220,29 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ---
 
+### REQ-API-009: Programmatic speed test
+
+**Intent:** Automation can measure direct inference-router throughput without Cloudflare Access or AI Gateway, so fleet tooling can compare prompt ingestion and generation speed for the selected model on the Worker → node-agent → runtime path.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `POST /api/v1/speed-test` requires an automation key, rejects unauthenticated callers, and accepts an optional callable model plus bounded prompt and generation sizes. <!-- @impl: packages/router-worker/src/router.ts::handleApiSpeedTest --> <!-- @impl: packages/router-worker/src/router.ts::runSpeedTest --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-009 exposes the direct router speed test to automation callers) -->
+2. The response reports prompt-token ingestion timing and generation timing separately, with token-count fields marked estimated only when the upstream stream lacks usage metadata. <!-- @impl: packages/router-worker/src/router.ts::measureSpeedStream --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-009 exposes the direct router speed test to automation callers) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-ADM-034](setup-admin.md#req-adm-034-direct-router-speed-test)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference.md](../../documentation/lanes/api-reference.md)

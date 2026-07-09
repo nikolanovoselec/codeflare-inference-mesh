@@ -142,10 +142,13 @@ export const ADMIN_UI_PLAYGROUND = {
   toolsId: 'playground-tools',
   maxTokensId: 'playground-max-tokens',
   outputId: 'playground-output',
+  speedOutputId: 'playground-speed-output',
   sendAction: 'playground-send',
+  speedAction: 'playground-speed-test',
   stopAction: 'playground-stop',
   directValue: 'direct',
   directPath: '/admin/playground/direct-chat',
+  speedPath: '/admin/playground/speed-test',
   gatewayPath: '/admin/playground/chat'
 } as const
 

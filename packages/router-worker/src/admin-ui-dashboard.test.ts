@@ -804,6 +804,29 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(html).toContain('data-action="' + ADMIN_UI_PLAYGROUND.stopAction + '"')
   })
 
+  it('REQ-ADM-034 runs a direct router speed test from the playground', async () => {
+    const result = {
+      model: 'qwen3.6:35b-a3b',
+      requestedPromptTokens: 2048,
+      requestedMaxTokens: 160,
+      tokens: { prompt: 2048, completion: 80, promptEstimated: false, completionEstimated: false },
+      throughput: { promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2 }
+    }
+    const harness = await dashboardHarness({
+      respond: (path) => path === ADMIN_UI_PLAYGROUND.speedPath ? Response.json(result) : undefined
+    })
+    harness.byId(ADMIN_UI_PLAYGROUND.selectId).value = 'qwen3.6:35b-a3b'
+
+    await harness.clickAction(ADMIN_UI_PLAYGROUND.speedAction, { out: ADMIN_UI_PLAYGROUND.speedOutputId })
+    const call = harness.fetchCalls.find((entry) => entry.path === ADMIN_UI_PLAYGROUND.speedPath)
+    const payload = JSON.parse(String(call?.init?.body)) as { model: string }
+    const rendered = JSON.parse(harness.byId(ADMIN_UI_PLAYGROUND.speedOutputId).textContent) as typeof result
+
+    expect(payload.model).toBe('qwen3.6:35b-a3b')
+    expect(rendered.tokens).toEqual(result.tokens)
+    expect(rendered.throughput).toEqual(result.throughput)
+  })
+
   it('REQ-ADM-029 forwards tools and a max-token cap and surfaces tool calls on the dynamic route', async () => {
     const harness = await dashboardHarness({
       respond: (path) => path === '/admin/playground/direct-chat'

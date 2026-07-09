@@ -880,6 +880,29 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
+### REQ-ADM-034: Direct router speed test
+
+**Intent:** An operator can measure inference-router throughput from the console without involving AI Gateway, so runtime tuning distinguishes prompt ingestion speed from generation speed on the Worker → node-agent → runtime path.
+
+**Applies To:** Admin, Control Plane API
+
+**Acceptance Criteria:**
+
+1. The Playground renders a Speed Test action that posts the currently selected callable model to the direct speed-test endpoint and renders the returned measurement fields. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::playgroundSection --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-034 runs a direct router speed test from the playground) -->
+2. `POST /admin/playground/speed-test` requires a console role, drives the router's direct scheduling path for the selected model, and returns prompt-token ingestion timing separately from generation timing. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundSpeedTest --> <!-- @impl: packages/router-worker/src/router.ts::runSpeedTest --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-034 playground speed test measures direct router token ingestion and generation) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-ADM-016](#req-adm-016-operator-playground), [REQ-ADM-029](#req-adm-029-playground-inference-endpoints), [REQ-API-009](control-plane-api.md#req-api-009-programmatic-speed-test)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/api-reference-admin.md](../../documentation/lanes/api-reference-admin.md)

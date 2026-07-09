@@ -236,8 +236,9 @@ ${field({ id: ADMIN_UI_PLAYGROUND.selectId, label: 'Model or route', control: em
 ${field({ id: ADMIN_UI_PLAYGROUND.promptId, label: 'Prompt', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.promptId}" name="prompt" rows="4" placeholder="Ask the mesh something to verify the full path."></textarea>` })}
 ${field({ id: ADMIN_UI_PLAYGROUND.toolsId, label: 'Tools (JSON, optional)', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.toolsId}" name="tools" rows="3" placeholder='[{"type":"function","function":{"name":"get_weather","parameters":{}}}]'></textarea>`, hint: 'Paste an OpenAI-format tools array to reproduce an agentic (tool-calling) request on the real route. Leave blank for a plain chat.' })}
 ${field({ id: ADMIN_UI_PLAYGROUND.maxTokensId, label: 'Max tokens', control: textInput({ id: ADMIN_UI_PLAYGROUND.maxTokensId, name: 'maxTokens', type: 'number', min: 1, placeholder: '2048' }), hint: 'Cap on the response length so a runaway generation is bounded. Blank uses the model default.' })}
-<div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}${button({ action: ADMIN_UI_PLAYGROUND.stopAction, label: 'Stop', variant: 'ghost', out: ADMIN_UI_PLAYGROUND.outputId })}</div>
-${output({ id: ADMIN_UI_PLAYGROUND.outputId, kind: 'playground', pre: true })}`
+<div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}${button({ action: ADMIN_UI_PLAYGROUND.speedAction, label: 'Speed test', variant: 'ghost', out: ADMIN_UI_PLAYGROUND.speedOutputId })}${button({ action: ADMIN_UI_PLAYGROUND.stopAction, label: 'Stop', variant: 'ghost', out: ADMIN_UI_PLAYGROUND.outputId })}</div>
+${output({ id: ADMIN_UI_PLAYGROUND.outputId, kind: 'playground', pre: true })}
+${output({ id: ADMIN_UI_PLAYGROUND.speedOutputId, kind: 'playground-speed', pre: true })}`
   })
 }
 

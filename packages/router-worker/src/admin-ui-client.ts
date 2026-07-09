@@ -1726,7 +1726,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'runtime-versions-set': 'runtime-version-output',
     'settings-save': 'settings-output',
     'mesh-rotate': 'mesh-rotate-output',
-    'playground-send': 'playground-output'
+    'playground-send': 'playground-output',
+    'playground-speed-test': 'playground-speed-output'
   };
   async function runAction(action, button) {
     const prefix = button.dataset.prefix || '';
@@ -1981,6 +1982,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       setOutput(out, await request('/admin/profiles/add', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
       await refreshStatus().catch(() => undefined);
       toast('Model added');
+    } else if (action === config.playground.speedAction) {
+      const target = byId(config.playground.targetSelectId);
+      const targetValue = target && target.value ? target.value : config.playground.directValue;
+      const select = byId(config.playground.selectId);
+      const model = targetValue === config.playground.directValue && select && select.value ? select.value : STABLE_PUBLIC_MODEL;
+      setOutput(out, 'Running speed test...');
+      setOutput(out, await request(config.playground.speedPath, { method: 'POST', headers: headers(true), body: JSON.stringify({ model }) }));
     } else if (action === config.playground.sendAction) {
       const target = byId(config.playground.targetSelectId);
       const targetValue = target && target.value ? target.value : config.playground.directValue;

@@ -3189,6 +3189,71 @@ describe('Access-first setup and host gating contracts', () => {
     expect(forwarded.max_tokens).toBe(256)
   })
 
+  it('REQ-ADM-034 playground speed test measures direct router token ingestion and generation', async () => {
+    const capture: { request?: Request } = {}
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hello "}}]}\n\n'))
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"world"}}],"usage":{"prompt_tokens":256,"completion_tokens":2}}\n\n'))
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+        controller.close()
+      }
+    })
+    const mesh = {
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        capture.request = new Request(input, init)
+        return new Response(stream, { headers: { 'content-type': 'text/event-stream' } })
+      }
+    } as Fetcher
+    const { router, store } = routerFixture({ mesh })
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+
+    const response = await router(new Request('https://router.test/admin/playground/speed-test', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 256, maxTokens: 32 })
+    }))
+    const measured = await response.json() as { tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number }
+    const forwarded = await capture.request!.json() as { model: string; user?: string; max_tokens?: number; messages: Array<{ role: string; content: string }> }
+
+    expect(response.status).toBe(200)
+    expect(forwarded.model).toBe(SMOKE_UPSTREAM)
+    expect(forwarded.user).toMatch(/^user:speed-test\|session:request-a$/)
+    expect(forwarded.max_tokens).toBe(32)
+    expect(forwarded.messages[0]!.content.length).toBeGreaterThan(900)
+    expect(measured.requestedPromptTokens).toBe(256)
+    expect(measured.requestedMaxTokens).toBe(32)
+    expect(measured.tokens).toMatchObject({ prompt: 256, completion: 2, promptEstimated: false, completionEstimated: false })
+    expect(measured.throughput.promptTokensPerSecond).toBeGreaterThan(0)
+    expect(measured.throughput.generationTokensPerSecond).toBeGreaterThan(0)
+  })
+
+  it('REQ-API-009 exposes the direct router speed test to automation callers', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}],"usage":{"prompt_tokens":64,"completion_tokens":1}}\n\n'))
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+        controller.close()
+      }
+    })
+    const mesh = { fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }) } as Fetcher
+    const { router, store } = routerFixture({ mesh })
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+
+    const unauthorized = await router(new Request('https://router.test/api/v1/speed-test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh' }) }))
+    const response = await router(new Request('https://router.test/api/v1/speed-test', { method: 'POST', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 64, maxTokens: 16 }) }))
+    const measured = await response.json() as { tokens: { prompt: number; completion: number }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number } }
+
+    expect(unauthorized.status).toBe(401)
+    expect(response.status).toBe(200)
+    expect(measured.tokens).toMatchObject({ prompt: 64, completion: 1 })
+    expect(measured.throughput.promptTokensPerSecond).toBeGreaterThan(0)
+    expect(measured.throughput.generationTokensPerSecond).toBeGreaterThan(0)
+  })
+
   it('REQ-ADM-029 direct playground forwards the session user required by llama.cpp profiles', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })

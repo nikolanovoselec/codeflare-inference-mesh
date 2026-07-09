@@ -489,6 +489,30 @@ GET /api/v1/status
 
 **Implements:** [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status)
 
+### POST /api/v1/speed-test
+
+Runs a bounded synthetic prompt through the router's direct scheduling path and returns prompt-ingestion and generation throughput for automation. This bypasses AI Gateway and measures the Worker → node-agent → runtime leg.
+
+```http
+POST /api/v1/speed-test
+```
+
+**Authentication:** automation key
+
+**Request body:** Optional JSON body. `model` selects the callable model and defaults to `codeflare-mesh`. `promptTokens` is clamped from `64` to `8192` and defaults to `2048`; `maxTokens` is clamped from `16` to `512` and defaults to `160`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Speed test completed. | `{ model, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage }`, where `throughput.promptTokensPerSecond` measures prompt ingestion from upstream usage when available (or the synthetic prompt size when `tokens.promptEstimated` is true) and `throughput.generationTokensPerSecond` measures completion generation. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No profile matched the model. | `no-profile` error body. |
+| `502` | The selected node could not be reached over Mesh transport. | `node_unreachable` error body. |
+| `503` | No eligible node is ready to serve, or the node upstream token is not configured. | `no_healthy_node` or `upstream_token_missing` error body. |
+
+**Implements:** [REQ-API-009](../../sdd/spec/control-plane-api.md#req-api-009-programmatic-speed-test), [REQ-ADM-034](../../sdd/spec/setup-admin.md#req-adm-034-direct-router-speed-test)
+
 ### POST /api/v1/enrollment-tokens
 
 Mints a node enrollment (setup) token for programmatic provisioning at scale. Accepts an automation key or an admin credential.

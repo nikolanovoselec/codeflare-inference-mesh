@@ -109,12 +109,14 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
       if (url.pathname === '/admin/playground/chat' && request.method === 'POST') return await handlePlaygroundChat(request, deps, id, now())
       if (url.pathname === '/admin/playground/direct-chat' && request.method === 'POST') return await handlePlaygroundDirect(request, deps, id, now())
+      if (url.pathname === '/admin/playground/speed-test' && request.method === 'POST') return await handlePlaygroundSpeedTest(request, deps, id, now())
       if (url.pathname === '/admin/whoami' && request.method === 'GET') return await handleWhoami(request, deps, id, now())
       if (url.pathname === '/api/v1/keys' && request.method === 'POST') return await handleApiKeyCreate(request, deps, id, now())
       if (url.pathname === '/api/v1/keys' && request.method === 'GET') return await handleApiKeyList(request, deps, id, now())
       if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+\/rotate$/) && request.method === 'POST') return await handleApiKeyRotate(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+$/) && request.method === 'DELETE') return await handleApiKeyRevoke(request, deps, url, id, now())
       if (url.pathname === '/api/v1/status' && request.method === 'GET') return await handleApiStatus(request, deps, id, now())
+      if (url.pathname === '/api/v1/speed-test' && request.method === 'POST') return await handleApiSpeedTest(request, deps, id, now())
       if (url.pathname === '/api/v1/gateway/sync' && request.method === 'POST') return await handleApiGatewaySync(request, deps, id, now())
       if (url.pathname === '/api/v1/enrollment-tokens' && request.method === 'POST') return await handleApiEnrollmentToken(request, deps, id, now())
       if (url.pathname === '/api/v1/nodes' && request.method === 'GET') return await handleApiNodeList(request, deps, url, id, now())
@@ -1283,6 +1285,120 @@ async function handlePlaygroundDirect(request: Request, deps: RouterDeps, reques
   const tools = playgroundTools(body?.tools)
   const maxTokens = playgroundMaxTokens(body?.maxTokens)
   return runInference(deps, { body: { model, ...(user ? { user } : {}), messages, stream: true, ...(tools ? { tools } : {}), ...(maxTokens ? { max_tokens: maxTokens } : {}) }, requestHeaders: request.headers, requestId, now })
+}
+
+async function handlePlaygroundSpeedTest(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const viewer = await requireUser(request, deps, now)
+  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readOptionalObject<SpeedTestBody>(request)
+  return await runSpeedTest(deps, body, request.headers, requestId, now)
+}
+
+async function handleApiSpeedTest(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readOptionalObject<SpeedTestBody>(request)
+  return await runSpeedTest(deps, body, request.headers, requestId, now)
+}
+
+interface SpeedTestBody {
+  readonly model?: unknown
+  readonly promptTokens?: unknown
+  readonly maxTokens?: unknown
+}
+
+async function runSpeedTest(deps: RouterDeps, body: SpeedTestBody | undefined, requestHeaders: Headers, requestId: string, now: number): Promise<Response> {
+  const model = cleanString(body?.model) ?? STABLE_PUBLIC_MODEL
+  const promptTokens = boundedInt(body?.promptTokens, 64, 8192, 2048)
+  const maxTokens = boundedInt(body?.maxTokens, 16, 512, 160)
+  const prompt = speedTestPrompt(promptTokens)
+  const startedAt = Date.now()
+  const upstream = await runInference(deps, {
+    body: {
+      model,
+      user: `user:speed-test|session:${requestId}`,
+      stream: true,
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt }]
+    },
+    requestHeaders,
+    requestId,
+    now
+  })
+  if (!upstream.ok || !upstream.body) {
+    return new Response(upstream.body, { status: upstream.status, headers: upstream.headers })
+  }
+  const measured = await measureSpeedStream(upstream.body, startedAt, promptTokens)
+  return json({ model, promptChars: prompt.length, requestedPromptTokens: promptTokens, requestedMaxTokens: maxTokens, ...measured }, 200, requestId)
+}
+
+function boundedInt(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+function speedTestPrompt(targetTokens: number): string {
+  const unit = 'Measure inference speed with stable repeated technical text, preserving exact identifiers and dependency edges. '
+  const approxChars = targetTokens * 4
+  return unit.repeat(Math.max(1, Math.ceil(approxChars / unit.length))).slice(0, approxChars) + '\nReturn a concise numbered list.'
+}
+
+async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: number, fallbackPromptTokens: number): Promise<Record<string, unknown>> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffered = ''
+  let firstTokenAt = 0
+  let completedAt = startedAt
+  let outputChars = 0
+  let chunks = 0
+  let usage: Record<string, unknown> | undefined
+  while (true) {
+    const chunk = await reader.read()
+    completedAt = Date.now()
+    if (chunk.done) break
+    buffered += decoder.decode(chunk.value, { stream: true })
+    const lines = buffered.split('\n')
+    buffered = lines.pop() ?? ''
+    for (const raw of lines) {
+      const line = raw.trim()
+      if (!line.startsWith('data:')) continue
+      const data = line.slice(5).trim()
+      if (!data || data === '[DONE]') continue
+      try {
+        const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }>; usage?: Record<string, unknown> }
+        if (parsed.usage) usage = parsed.usage
+        const content = parsed.choices?.map((choice) => choice.delta?.content ?? '').join('') ?? ''
+        if (content) {
+          if (firstTokenAt === 0) firstTokenAt = Date.now()
+          chunks += 1
+          outputChars += content.length
+        }
+      } catch {
+        // Ignore keep-alives and non-OpenAI SSE lines.
+      }
+    }
+  }
+  const reportedPromptTokens = usageNumber(usage, 'prompt_tokens')
+  const promptTokens = reportedPromptTokens ?? fallbackPromptTokens
+  const reportedCompletionTokens = usageNumber(usage, 'completion_tokens')
+  const completionTokens = reportedCompletionTokens ?? Math.max(1, Math.round(outputChars / 4))
+  const ttftMs = firstTokenAt > 0 ? firstTokenAt - startedAt : completedAt - startedAt
+  const generationMs = firstTokenAt > 0 ? Math.max(1, completedAt - firstTokenAt) : Math.max(1, completedAt - startedAt)
+  return {
+    timingsMs: { timeToFirstToken: ttftMs, generation: generationMs, total: completedAt - startedAt },
+    tokens: { prompt: promptTokens, completion: completionTokens, promptEstimated: reportedPromptTokens == null, completionEstimated: reportedCompletionTokens == null },
+    throughput: {
+      promptTokensPerSecond: Math.round((promptTokens / Math.max(0.001, ttftMs / 1000)) * 10) / 10,
+      generationTokensPerSecond: Math.round((completionTokens / Math.max(0.001, generationMs / 1000)) * 10) / 10
+    },
+    chunks,
+    outputChars,
+    usage: usage ?? null
+  }
+}
+
+function usageNumber(usage: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = usage?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 // playgroundTools passes through an OpenAI-format tool-definitions array so an

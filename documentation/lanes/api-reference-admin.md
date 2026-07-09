@@ -14,7 +14,7 @@ Any admin route can also return `500` with body `{ "error": "internal_error", "r
 
 Admin routes are also rate-limited: `RL_AUTH` covers `/admin/login`, `/admin/setup`, `/admin/recovery/reset`, and `/admin/setup-tokens`; every other admin route falls to `RL_PUBLIC`. An over-limit request receives `429` with body `{ "error": "rate_limited", "requestId": string }` before its handler runs, and the per-route Response tables below omit this shared `429` the same way they omit the shared `500`. ([REQ-SEC-011](../../sdd/spec/security.md#req-sec-011-public-endpoint-rate-limiting))
 
-An admin route that reads a JSON body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. The optional-body routes — `POST /admin/cloudflare/gateway/sync`, `POST /admin/mesh/rotate`, `POST /admin/playground/chat`, and `POST /admin/playground/direct-chat` — still accept a request with no body (applying route defaults, or returning that route's own required-field error); only a present, unparseable body is rejected. ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
+An admin route that reads a JSON body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. The optional-body routes — `POST /admin/cloudflare/gateway/sync`, `POST /admin/mesh/rotate`, `POST /admin/playground/chat`, `POST /admin/playground/direct-chat`, and `POST /admin/playground/speed-test` — still accept a request with no body (applying route defaults, or returning that route's own required-field error); only a present, unparseable body is rejected. ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
 
 ## Endpoints
 
@@ -234,6 +234,32 @@ POST /admin/playground/direct-chat
 | `503` | No eligible node is ready to serve, or the node upstream token is not configured. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
 
 **Implements:** [REQ-ADM-016](../../sdd/spec/setup-admin.md#req-adm-016-operator-playground), [REQ-ADM-029](../../sdd/spec/setup-admin.md#req-adm-029-playground-inference-endpoints), [REQ-ADM-031](../../sdd/spec/setup-admin.md#req-adm-031-operator-playground-target-selection), [REQ-ADM-017](../../sdd/spec/setup-admin.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity)
+
+### POST /admin/playground/speed-test
+
+Runs a bounded synthetic prompt through the router's direct scheduling path and returns timing measurements for prompt ingestion and generation. This bypasses AI Gateway so the result isolates Worker → node-agent → runtime behavior.
+
+```http
+POST /admin/playground/speed-test
+```
+
+**Authentication:** any console role (admin or read-only user)
+
+**Origin check:** n/a
+
+**Request body:** Optional JSON body. `model` selects the callable model and defaults to `codeflare-mesh`. `promptTokens` bounds the synthetic prompt size from `64` to `8192` tokens and defaults to `2048`. `maxTokens` bounds generated output from `16` to `512` tokens and defaults to `160`.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Speed test completed. | `{ model, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage }` where `throughput.promptTokensPerSecond` measures prompt ingestion from upstream usage when available (or the synthetic prompt size when `tokens.promptEstimated` is true), and `throughput.generationTokensPerSecond` measures completion generation. |
+| `401` | No valid console role resolved for the caller. | Error object. |
+| `404` | No profile matched the model. | `{ "error": "no-profile", "requestId": string }` |
+| `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
+| `503` | No eligible node is ready to serve, or the node upstream token is not configured. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
+
+**Implements:** [REQ-ADM-034](../../sdd/spec/setup-admin.md#req-adm-034-direct-router-speed-test), [REQ-SCH-002](../../sdd/spec/state-scheduling.md#req-sch-002-stateless-entry-node-forwarding)
 
 ### POST /admin/setup-tokens
 
