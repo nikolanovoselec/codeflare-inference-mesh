@@ -1,4 +1,4 @@
-import { extractAccessJwt, fetchIdentityGroups, verifyAccessRequest } from './access'
+import { accessJwtSource, extractAccessJwt, fetchIdentityGroups, verifyAccessRequest } from './access'
 import { CloudflareAccessClient, type AccessProvisionRequest, type AccessProvisionResult } from './access-provisioning'
 import { adminUiHtml, type AdminUiState } from './admin-ui'
 import { consoleMovedHtml } from './admin-ui-views'
@@ -12,7 +12,7 @@ import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth
 import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
-import { eligibleDirectNodes, meshUrl } from './scheduler'
+import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { singleActiveActivation } from './store'
 import type { ClaimRequest, CredentialKind, HeartbeatRequest, LastSpeedTestSummary, LlamaCppProfileSettings, ModelProfile, NodeRecord, RouterEnv, RuntimeKind, Scheduler, Store, TokenRecord } from './types'
@@ -210,7 +210,7 @@ async function runDirectLlamaCppInference(deps: RouterDeps, input: { body: Recor
   const userHash = `hmac-sha256:${await hmacHex(secret, session.userId)}`
   const sessionHash = `hmac-sha256:${await hmacHex(secret, session.sessionId)}`
   const affinityHash = `hmac-sha256:${await hmacHex(secret, `${session.userId}|${session.sessionId}`)}`
-  const candidates = eligibleDirectNodes(await deps.store.listNodes(input.now), profile, publicModel, input.now)
+  const candidates = eligibleDirectNodes(await deps.store.listNodes(input.now), profile, publicModel, input.now, deps.env)
   const decision = await decideDirectSessionWithAffinity(deps, {
     affinityKey: directSessionKey(publicModel, profile.id, affinityHash),
     profileId: profile.id,
@@ -235,14 +235,16 @@ async function forwardInference(deps: RouterDeps, input: { body: Record<string, 
   const rewritten = JSON.stringify({ ...input.body, model: profile.upstreamModel })
   let upstream: Response
   try {
-    upstream = await deps.mesh.fetch(meshUrl(node, '/v1/chat/completions'), {
+    upstream = await deps.mesh.fetch(meshUrl(node, '/v1/chat/completions', deps.env), {
       method: 'POST',
       headers: approvedNodeHeaders(input.requestHeaders, upstreamToken, input.requestId),
-      body: rewritten
+      body: rewritten,
+      redirect: 'manual'
     })
   } catch {
     return json({ error: 'node_unreachable', requestId: input.requestId }, 502, input.requestId)
   }
+  if (upstream.status >= 300 && upstream.status < 400) return json({ error: 'node_redirect_rejected', requestId: input.requestId }, 502, input.requestId)
   return new Response(upstream.body, {
     status: upstream.status,
     headers: responseMetadataHeaders(upstream.headers, input.requestId, node.id)
@@ -253,7 +255,7 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
   const setupToken = await authenticateAnyStoredToken(request, deps.store, 'setup', now)
   if (!setupToken) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readJson<ClaimRequest>(request)
-  const validation = validateClaim(body)
+  const validation = validateClaim(body, deps.env)
   if (validation.length > 0) return json({ error: 'invalid_claim', fields: validation }, 400, requestId)
   const nodeToken = generateBearerToken('node')
   const upstreamToken = await getOrCreateUpstreamToken(deps)
@@ -294,7 +296,8 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
 
 async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const body = await readJson<HeartbeatRequest>(request)
-  if (!body?.nodeId) return json({ error: 'invalid_heartbeat' }, 400, requestId)
+  const validation = validateHeartbeat(body, deps.env)
+  if (validation.length > 0) return json({ error: 'invalid_heartbeat', fields: validation }, 400, requestId)
   const node = await deps.store.getNode(body.nodeId)
   if (!node) return json({ error: 'unknown_node' }, 404, requestId)
   if (node.status === 'revoked') return json({ error: 'node_revoked' }, 403, requestId)
@@ -1796,6 +1799,7 @@ async function resolveRole(request: Request, deps: RouterDeps, now: number): Pro
 
 /** Admin-only gate: config writes require the admin role. */
 async function requireAdmin(request: Request, deps: RouterDeps, now: number): Promise<string | undefined> {
+  if (isMutatingMethod(request.method) && accessJwtSource(request) === 'cookie' && !hasSameOriginSignal(request)) return undefined
   const verdict = await resolveRole(request, deps, now)
   return verdict?.role === 'admin' ? verdict.actor : undefined
 }
@@ -1803,6 +1807,26 @@ async function requireAdmin(request: Request, deps: RouterDeps, now: number): Pr
 /** Reader gate: any verified console role (admin or user) may read status + use the playground. */
 async function requireUser(request: Request, deps: RouterDeps, now: number): Promise<RoleVerdict | undefined> {
   return await resolveRole(request, deps, now)
+}
+
+function isMutatingMethod(method: string): boolean {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
+}
+
+function hasSameOriginSignal(request: Request): boolean {
+  const requestOrigin = new URL(request.url).origin
+  const origin = request.headers.get('origin')
+  if (origin) return origin === requestOrigin
+  const referer = request.headers.get('referer')
+  if (referer) {
+    try {
+      return new URL(referer).origin === requestOrigin
+    } catch {
+      return false
+    }
+  }
+  const fetchSite = request.headers.get('sec-fetch-site')
+  return fetchSite === 'same-origin' || fetchSite === 'none'
 }
 
 /**
@@ -2341,16 +2365,55 @@ function responseMetadataHeaders(upstream: Headers, requestId: string, nodeId: s
   return headers
 }
 
-function validateClaim(body: ClaimRequest | undefined): string[] {
+function validateClaim(body: ClaimRequest | undefined, env: Pick<RouterEnv, 'MESH_ALLOWED_CIDRS' | 'MESH_ALLOWED_PORTS'> = {}): string[] {
   if (!body) return ['displayName', 'meshIp', 'inferencePort', 'publicModels', 'activeProfileIds', 'capacity']
   const errors: string[] = []
-  if (!body.displayName) errors.push('displayName')
-  if (!body.meshIp) errors.push('meshIp')
+  if (typeof body.displayName !== 'string' || body.displayName.length === 0) errors.push('displayName')
+  if (typeof body.meshIp !== 'string' || body.meshIp.length === 0) errors.push('meshIp')
   if (!Number.isInteger(body.inferencePort)) errors.push('inferencePort')
-  if (!Array.isArray(body.publicModels)) errors.push('publicModels')
-  if (!Array.isArray(body.activeProfileIds)) errors.push('activeProfileIds')
+  if (typeof body.meshIp === 'string' && body.meshIp && Number.isInteger(body.inferencePort) && !isSafeMeshTarget(body.meshIp, body.inferencePort, env)) errors.push('meshTarget')
+  if (!Array.isArray(body.publicModels) || !body.publicModels.every((item) => typeof item === 'string' && item.length > 0)) errors.push('publicModels')
+  if (!Array.isArray(body.activeProfileIds) || !body.activeProfileIds.every((item) => typeof item === 'string' && item.length > 0)) errors.push('activeProfileIds')
   if (!Number.isInteger(body.capacity) || body.capacity < 1) errors.push('capacity')
   return errors
+}
+
+function validateHeartbeat(body: HeartbeatRequest | undefined, env: Pick<RouterEnv, 'MESH_ALLOWED_CIDRS' | 'MESH_ALLOWED_PORTS'> = {}): string[] {
+  if (!body) return ['nodeId']
+  const errors: string[] = []
+  if (typeof body.nodeId !== 'string' || body.nodeId.length === 0) errors.push('nodeId')
+  if (typeof body.displayName !== 'string' || body.displayName.length === 0) errors.push('displayName')
+  if (typeof body.meshIp !== 'string' || body.meshIp.length === 0) errors.push('meshIp')
+  if (!Number.isInteger(body.inferencePort)) errors.push('inferencePort')
+  if (typeof body.meshIp === 'string' && body.meshIp && Number.isInteger(body.inferencePort) && !isSafeMeshTarget(body.meshIp, body.inferencePort, env)) errors.push('meshTarget')
+  if (!Number.isInteger(body.localDashboardPort) || body.localDashboardPort < 1 || body.localDashboardPort > 65535) errors.push('localDashboardPort')
+  if (!['online', 'offline', 'draining'].includes(body.status)) errors.push('status')
+  if (!Array.isArray(body.publicModels) || !body.publicModels.every((item) => typeof item === 'string' && item.length > 0)) errors.push('publicModels')
+  if (!Array.isArray(body.activeProfileIds) || !body.activeProfileIds.every((item) => typeof item === 'string' && item.length > 0)) errors.push('activeProfileIds')
+  if (!Number.isInteger(body.capacity) || body.capacity < 1) errors.push('capacity')
+  if (!Number.isInteger(body.inFlight) || body.inFlight < 0) errors.push('inFlight')
+  if (!['meshllm', 'llamacpp'].includes(body.runtime)) errors.push('runtime')
+  if (body.runtimeModel !== undefined && typeof body.runtimeModel !== 'string') errors.push('runtimeModel')
+  if (body.agentVersion !== undefined && typeof body.agentVersion !== 'string') errors.push('agentVersion')
+  if (body.reloadNonce !== undefined && typeof body.reloadNonce !== 'string') errors.push('reloadNonce')
+  if (body.metrics !== undefined && !validNodeMetrics(body.metrics)) errors.push('metrics')
+  return errors
+}
+
+function validNodeMetrics(metrics: unknown): boolean {
+  if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics)) return false
+  const value = metrics as Record<string, unknown>
+  if (typeof value.runtimeState !== 'string' || value.runtimeState.length === 0) return false
+  if (typeof value.activeRequests !== 'number' || !Number.isInteger(value.activeRequests) || value.activeRequests < 0) return false
+  if (value.runtimeKind !== undefined && !['meshllm', 'llamacpp'].includes(String(value.runtimeKind))) return false
+  if (value.apiReady !== undefined && typeof value.apiReady !== 'boolean') return false
+  if (value.consoleReady !== undefined && typeof value.consoleReady !== 'boolean') return false
+  if (value.readyModels !== undefined && (!Array.isArray(value.readyModels) || !value.readyModels.every((item) => typeof item === 'string'))) return false
+  for (const key of ['gpuMemoryUsedMiB', 'gpuMemoryTotalMiB', 'activeRequests', 'tokensPerSecond', 'promptTokensPerSecond', 'generationTokensPerSecond', 'peerCount', 'stageCount', 'meshMaxVramGb', 'ctxSize', 'parallel', 'cacheReuse', 'slotCount', 'activeSlots', 'cachedTokensLast']) {
+    const raw = value[key]
+    if (raw !== undefined && (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0)) return false
+  }
+  return true
 }
 
 function stableNodeId(displayName: string, meshIp: string): string {

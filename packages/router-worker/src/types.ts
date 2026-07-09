@@ -391,4 +391,6 @@ export interface RouterEnv {
   readonly AGENT_RELEASE_TAG?: string
   readonly MAX_REQUEST_BYTES?: string
   readonly HEARTBEAT_TTL_SECONDS?: string
+  readonly MESH_ALLOWED_CIDRS?: string
+  readonly MESH_ALLOWED_PORTS?: string
 }

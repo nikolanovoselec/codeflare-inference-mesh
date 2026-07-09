@@ -17,10 +17,23 @@ This ledger records binding technical choices for the first implementation. It i
 | [AD-009](#ad-009-best-effort-hardware-metrics-first) | Accepted | Start hardware metrics with best-effort platform probes rather than native GPU libraries. | [REQ-OBS-009](../../sdd/spec/observability.md#req-obs-009-hardware-and-throughput-metrics) |
 | [AD-010](#ad-010-public-release-artifacts-after-mesh-proof) | Accepted | Publish public GitHub Release artifacts for installers and update staging after the first Worker path is proven. | [REQ-REL-003](../../sdd/spec/release-ci.md#req-rel-003-node-agent-release-artifacts), [REQ-NODE-005](../../sdd/spec/node-agent.md#req-node-005-agent-update-staging) |
 | [AD-011](#ad-011-first-run-setup-is-the-one-time-bootstrap-gate) | Accepted | Keep first-run setup open until completed; do not require a separate initial setup token. | [REQ-ADM-001](../../sdd/spec/setup-admin.md#req-adm-001-first-run-setup), [REQ-ADM-002](../../sdd/spec/setup-admin.md#req-adm-002-admin-authentication) |
-| [AD-012](#ad-012-meshllm-only-private-inference-backend) | Accepted | Remove llama.cpp from the product contract; the agent installs and supervises a pinned `mesh-llm` as the only runtime, with router-owned private-mesh membership and private-only shipped profiles. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md#req-run-008-router-mesh-membership-authority), [REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update), [REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle) |
+| [AD-012](#ad-012-meshllm-only-private-inference-backend) | Superseded by AD-016 | Make MeshLLM the only private split-serving runtime; AD-016 restores direct llama.cpp for single-node cache-local sessions. | [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-006](../../sdd/spec/runtime-profiles.md#req-run-006-private-mesh-formation), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md#req-run-008-router-mesh-membership-authority), [REQ-NODE-006](../../sdd/spec/node-agent.md#req-node-006-meshllm-binary-install-and-update), [REQ-SEC-006](../../sdd/spec/security.md#req-sec-006-mesh-token-lifecycle) |
 | [AD-013](#ad-013-cloudflare-access-is-the-human-admin-entrance) | Accepted | Gate human admin access with Cloudflare Access on the operator's custom domain; bearer tokens remain machine-and-recovery-only and the bootstrap origin locks after handoff. | [REQ-SEC-009](../../sdd/spec/security.md#req-sec-009-cloudflare-access-admin-authentication), [REQ-SEC-010](../../sdd/spec/security.md#req-sec-010-role-based-console-access), [REQ-ADM-012](../../sdd/spec/setup-admin.md#req-adm-012-domain-and-access-provisioning), [REQ-ADM-013](../../sdd/spec/setup-admin.md#req-adm-013-break-glass-recovery), [REQ-ADM-014](../../sdd/spec/setup-admin.md#req-adm-014-host-gating-and-console-lock) |
 | [AD-014](#ad-014-public-model-alias-renamed-to-codeflare-mesh) | Accepted | Rename the default public model alias and gateway route from `mesh-default` to `codeflare-mesh` across code, spec, and docs; internal profile IDs and derived mesh-network names are unchanged. | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation) |
 | [AD-015](#ad-015-stateless-thin-forwarder-with-mesh-owned-routing) | Accepted | Make the router a stateless thin forwarder; `mesh-llm` owns concurrency and KV-aware routing; discovery moves from mdns to Nostr with iroh data pinned to the WARP overlay; add reversible node deactivation. | [REQ-SCH-002](../../sdd/spec/state-scheduling.md#req-sch-002-stateless-entry-node-forwarding), [REQ-SEC-004](../../sdd/spec/security.md#req-sec-004-runtime-api-exposure), [REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation), [REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model) |
+| [AD-016](#ad-016-direct-llamacpp-cache-local-runtime) | Accepted | Support direct llama.cpp only for single-node cache-local profiles while MeshLLM remains the split-serving runtime. | [REQ-RUN-012](../../sdd/spec/runtime-profiles.md#req-run-012-direct-llamacpp-runtime), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-NODE-013](../../sdd/spec/node-agent.md#req-node-013-runtime-binary-bootstrap) |
+
+## AD-016: Direct llama.cpp cache-local runtime
+
+**Status:** Accepted
+
+**Context:** Direct single-node coding sessions need predictable KV-cache reuse, and the implementation includes `LlamaCppManager`, direct-session affinity, managed `llama-server` install, and direct runtime status. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::LlamaCppManager --> <!-- @impl: packages/router-worker/src/direct-affinity.ts::DIRECT_AFFINITY_ANCHORS -->
+
+**Decision:** MeshLLM remains the only split/private-mesh runtime. Direct llama.cpp is supported only for single-node, cache-local profiles; router affinity pins HMAC-derived session ids to eligible direct nodes, and direct profiles do not receive mesh bootstrap state.
+
+**Consequences:** AD-012 is superseded for runtime exclusivity. Runtime docs describe both MeshLLM split serving and direct llama.cpp serving.
+
+**Related requirements:** [REQ-RUN-012](../../sdd/spec/runtime-profiles.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md), [REQ-NODE-013](../../sdd/spec/node-agent.md)
 
 ## AD-015: Stateless thin-forwarder with mesh-owned routing
 
@@ -72,11 +85,11 @@ This ledger records binding technical choices for the first implementation. It i
 
 ## AD-012: MeshLLM-only private inference backend
 
-**Status:** Accepted
+**Status:** Superseded by AD-016
 
 **Context:** The llama.cpp path required an operator-installed CUDA `llama-server` on every node and bound each node to one loaded model process. MeshLLM is a supervisable Apache-2.0 Rust binary with an OpenAI-compatible API, invite-token private meshes that run over WARP CGNAT unicast, and Skippy split serving across nodes. AD-006 had also drifted: it names Qwen3.6 27B and Gemma 4 profiles while the shipped defaults were already Qwen3.6-35B. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager -->
 
-**Decision:** Remove llama.cpp from the product contract entirely. The agent installs and supervises a pinned `mesh-llm` as the only managed runtime. Mesh membership is router-owned: the invite-token set, AES-GCM-encrypted mesh state, and a rotation counter live in the Worker. Shipped profiles are private-only with zero public discovery, publishing, Nostr, or relay/STUN egress. Fleet agent versions are router-driven.
+**Decision:** Make MeshLLM the only private split-serving runtime. The agent installs and supervises a pinned `mesh-llm` for mesh profiles. Mesh membership is router-owned: the invite-token set, AES-GCM-encrypted mesh state, and a rotation counter live in the Worker. AD-016 restores direct llama.cpp only for single-node cache-local profiles. Fleet agent versions are router-driven.
 
 **Alternatives considered:** Keeping llama.cpp as a fallback runtime; a dual-runtime adapter layer. Both rejected — the plan removes llama.cpp rather than keeping it beside MeshLLM.
 

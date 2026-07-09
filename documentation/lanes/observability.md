@@ -4,6 +4,7 @@
 
 - [Response metadata](#response-metadata)
 - [Admin status](#admin-status)
+- [Live dashboard surface](#live-dashboard-surface)
 - [Node metrics](#node-metrics)
 - [Mesh health](#mesh-health)
 - [Audit events](#audit-events)

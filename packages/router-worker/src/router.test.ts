@@ -1304,11 +1304,29 @@ describe('router worker behavioral contracts', () => {
     expect(await response.text()).toBe('data: one\n\ndata: two\n\n')
   })
 
-  it('REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs', () => {
+  it('REQ-RTR-004 accepts only configured Mesh IP destinations and proxy ports', () => {
     expect(isSafeMeshTarget('100.64.1.10', 8080)).toBe(true)
-    expect(isSafeMeshTarget('10.0.0.5', 8080)).toBe(true)
+    expect(isSafeMeshTarget('10.0.0.5', 8080)).toBe(false)
+    expect(isSafeMeshTarget('10.0.0.5', 8080, { MESH_ALLOWED_CIDRS: '10.0.0.0/24', MESH_ALLOWED_PORTS: '8080' })).toBe(true)
+    expect(isSafeMeshTarget('100.64.1.10', 443)).toBe(false)
     expect(isSafeMeshTarget('https://evil.example', 443)).toBe(false)
     expect(isSafeMeshTarget('8.8.8.8', 8080)).toBe(false)
+  })
+
+  it('REQ-RTR-004 rejects node redirects instead of following a new destination', async () => {
+    const mesh = { fetch: async () => new Response(null, { status: 302, headers: { location: 'http://10.0.0.9:8080/v1/chat/completions' } }) } as Fetcher
+    const { router, store } = routerFixture({ mesh })
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [] })
+    }))
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toMatchObject({ error: 'node_redirect_rejected', requestId: 'request-a' })
   })
 
   it('REQ-SCH-005 returns 503 no_healthy_node when no eligible node is ready', async () => {
@@ -1441,6 +1459,23 @@ describe('router worker behavioral contracts', () => {
     expect(store.tokens.find((token) => token.id === expiredRecord.id)?.active).toBe(true)
     expect(store.tokens.filter((token) => token.kind === 'setup' && token.id !== expiredRecord.id).every((token) => token.active === false)).toBe(true)
     expect(store.nodes.has('node-a-100-64-1-10')).toBe(true)
+  })
+
+  it('REQ-SEC-007 rejects unsafe node claim network targets before creating a node', async () => {
+    const { router, store } = routerFixture()
+    const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
+    const claimAdmin = (await setupResponse.json() as { adminToken: string }).adminToken
+    const setup = await (await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(claimAdmin) }))).json() as { setupToken: string }
+
+    const claim = await router(new Request('https://router.test/node/claim', {
+      method: 'POST',
+      headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Node A', meshIp: '10.0.0.5', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2 })
+    }))
+
+    expect(claim.status).toBe(400)
+    expect(await claim.json()).toMatchObject({ error: 'invalid_claim', fields: expect.arrayContaining(['meshTarget']) })
+    expect(store.nodes.size).toBe(0)
   })
 
   it('REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics', async () => {
@@ -2869,6 +2904,23 @@ describe('router worker behavioral contracts', () => {
     expect(store.audit.some((event) => event.type.startsWith('mesh_state'))).toBe(false)
   })
 
+  it('REQ-NODE-002 rejects malformed heartbeat payloads before persisting node telemetry', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
+
+    const response = await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: heartbeatBody({ meshIp: '10.0.0.5', metrics: { runtimeState: 'ready', activeRequests: -1 } })
+    }))
+    const node = await store.getNode('node-a')
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: 'invalid_heartbeat', fields: expect.arrayContaining(['meshTarget', 'metrics']) })
+    expect(node?.meshIp).toBe('100.64.1.10')
+    expect(node?.metrics?.activeRequests).toBe(0)
+  })
+
   it('REQ-SEC-007 node revoke removes the node mesh tokens from distribution', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
@@ -3085,6 +3137,27 @@ describe('Access-first setup and host gating contracts', () => {
     const audit = await store.listAudit(5)
     const created = audit.find((event) => event.type === 'setup_token_created')
     expect(created?.actor).toBe('operator@example.com')
+  })
+
+  it('REQ-SEC-009 rejects cookie-backed admin mutations without same-origin evidence', async () => {
+    resetJwksCache()
+    const key = await accessTestKey('key-1')
+    const store = new MemoryStore()
+    await store.putConfig('access_config', accessConfig())
+    const { router } = routerFixture({ store, jwksFetcher: accessJwksFetcher([key.jwk]) })
+    const jwt = await signAccessJwt(key, accessPayload())
+
+    const crossSite = await router(new Request(`https://${HOST}/admin/setup-tokens`, {
+      method: 'POST',
+      headers: { cookie: `CF_Authorization=${jwt}` }
+    }))
+    const sameOrigin = await router(new Request(`https://${HOST}/admin/setup-tokens`, {
+      method: 'POST',
+      headers: { cookie: `CF_Authorization=${jwt}`, origin: `https://${HOST}` }
+    }))
+
+    expect(crossSite.status).toBe(401)
+    expect(sameOrigin.status).toBe(201)
   })
 
   function roleConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {

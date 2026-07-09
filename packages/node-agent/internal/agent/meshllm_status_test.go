@@ -303,7 +303,7 @@ func TestREQOBS008MapsMeshLLMNodeStates(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run("REQ-OBS-008 "+tc.name, func(t *testing.T) {
 			st := MeshLLMStatus{NodeState: tc.nodeState, ServingModels: tc.servingModels}
 			got := MapMeshLLMState(st, upstream, tc.processAlive, tc.consoleReachable)
 			if got != tc.want {
@@ -373,7 +373,7 @@ func TestREQOBS008ServingModelRefMatchIsLenient(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run("REQ-OBS-008 "+tc.name, func(t *testing.T) {
 			st := MeshLLMStatus{NodeState: "serving", ServingModels: tc.servingModels}
 			got := MapMeshLLMState(st, tc.upstream, true, true)
 			if got != tc.want {

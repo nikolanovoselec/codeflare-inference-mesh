@@ -60,7 +60,7 @@ Optional custom-domain provisioning uses the runtime Cloudflare token after depl
 
 ## Greenfield bootstrap
 
-There is no fleet migration. The first deploy seeds the shipped MeshLLM profiles, deactivates every active profile row whose runtime is not `meshllm` regardless of version, and `/v1/models` lists only active aliases — that sweep is the entire cutover. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md)) ([REQ-RUN-009](../../sdd/spec/runtime-profiles.md))
+There is no fleet migration. The first deploy seeds the shipped MeshLLM profiles and refreshes changed managed defaults. Legacy active rows at version `<= 1` that still own a shipped alias but are no longer current defaults are retired; custom and direct llama.cpp profiles are not swept solely because their runtime is not `meshllm`. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md)) ([REQ-RUN-009](../../sdd/spec/runtime-profiles.md))
 
 1. Configure the `MESH_STATE_KEY` and `SESSION_AFFINITY_KEY` GitHub Actions secrets, then deploy the Worker (integration first); the workflow fails closed without the required secrets. ([REQ-SEC-006](../../sdd/spec/security.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity))
 2. Complete first-run setup and mint a single-use enrollment token per node. ([REQ-ADM-003](../../sdd/spec/setup-admin.md))

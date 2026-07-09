@@ -88,11 +88,12 @@ This domain covers the public Worker that receives provider calls, protects rout
 
 **Acceptance Criteria:**
 
-1. Node records store Mesh IP and port as separate fields. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs) -->
-2. The router accepts Mesh IPs only when they match configured private CIDR rules. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs) -->
-3. The router accepts node ports only when they match the allowed port set. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs) -->
-4. The Worker constructs target URLs itself from validated Mesh IP and port fields. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs) -->
-5. The Worker rejects node records that contain a full upstream URL. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only private Mesh IP destinations and rejects full upstream URLs) -->
+1. Node records store Mesh IP and port as separate fields. <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only configured Mesh IP destinations and proxy ports) -->
+2. The router accepts Mesh IPs only when they match configured private CIDR rules. <!-- @impl: packages/router-worker/src/scheduler.ts::isSafeMeshTarget --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only configured Mesh IP destinations and proxy ports) -->
+3. The router accepts node ports only when they match the allowed port set. <!-- @impl: packages/router-worker/src/scheduler.ts::isSafeMeshTarget --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only configured Mesh IP destinations and proxy ports) -->
+4. The Worker constructs target URLs itself from validated Mesh IP and port fields. <!-- @impl: packages/router-worker/src/scheduler.ts::meshUrl --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only configured Mesh IP destinations and proxy ports) -->
+5. The Worker rejects node records that contain a full upstream URL. <!-- @impl: packages/router-worker/src/scheduler.ts::isSafeMeshTarget --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 accepts only configured Mesh IP destinations and proxy ports) -->
+6. The Worker uses manual redirect handling for Mesh forwarding and rejects node redirects instead of following an unvalidated destination. <!-- @impl: packages/router-worker/src/router.ts::forwardInference --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-004 rejects node redirects instead of following a new destination) -->
 
 **Constraints:** [CON-NET-001](constraints.md#con-net-001-mesh-destination-validation), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 

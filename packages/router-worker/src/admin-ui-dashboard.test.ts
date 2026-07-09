@@ -476,7 +476,7 @@ describe('dashboard overview contracts', () => {
     expect(textOf(tokenItems[0]!)).toContain('2')
   })
 
-  it('REQ-ADM-015 opens a node drawer with metrics, version drift, and an armed revoke control', async () => {
+  it('REQ-ADM-015 REQ-ADM-032 the drawer offers Force Reload wired to the reload action', async () => {
     const harness = await dashboardHarness()
     const drawer = harness.byId(ADMIN_UI_DRAWER.containerId)
     expect(drawer.hidden).toBe(true)
@@ -641,12 +641,14 @@ describe('dashboard overview contracts', () => {
     expect(fields.find((node) => node.dataset.drawerField === 'stage-ownership')!.dataset.value).toBe('L0-26 → Arch Linux · Ready')
   })
 
-  it('REQ-ADM-030 the drawer Deactivate/Activate control posts to the node taint endpoint', async () => {
+  it('REQ-ADM-019 REQ-ADM-030 renders concise completion messages for routine mutating actions', async () => {
     const harness = await dashboardHarness()
     // Clicking Deactivate on an active node must POST to the deactivate endpoint (not silently no-op).
     await harness.clickAction('node-deactivate', { nodeId: 'node-small', out: 'node-output' })
     const deactivate = harness.fetchCalls.find((entry) => entry.path === '/admin/nodes/node-small/deactivate')
     expect(deactivate?.init?.method).toBe('POST')
+    expect(harness.byId('node-output').textContent.length).toBeGreaterThan(0)
+    expect(harness.byId('node-output').textContent).not.toMatch(/^\s*\{/)
 
     // Clicking Activate on a deactivated node must POST to the activate endpoint.
     await harness.clickAction('node-activate', { nodeId: 'node-small', out: 'node-output' })

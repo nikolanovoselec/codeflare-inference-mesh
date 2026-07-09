@@ -6,6 +6,8 @@ workers_dev = true
 [vars]
 MAX_REQUEST_BYTES = "16777216"
 HEARTBEAT_TTL_SECONDS = "45"
+MESH_ALLOWED_CIDRS = "100.64.0.0/10"
+MESH_ALLOWED_PORTS = "8080,11434"
 AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
 AI_GATEWAY_ID = "inference-mesh"
 AI_GATEWAY_ROUTE_NAME = "codeflare-mesh"
@@ -102,6 +104,8 @@ workers_dev = true
 [env.integration.vars]
 MAX_REQUEST_BYTES = "16777216"
 HEARTBEAT_TTL_SECONDS = "45"
+MESH_ALLOWED_CIDRS = "100.64.0.0/10"
+MESH_ALLOWED_PORTS = "8080,11434"
 AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
 AI_GATEWAY_ID = "inference-mesh-integration"
 AI_GATEWAY_ROUTE_NAME = "codeflare-mesh"

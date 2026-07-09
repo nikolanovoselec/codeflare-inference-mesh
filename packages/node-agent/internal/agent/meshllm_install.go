@@ -443,6 +443,26 @@ func safeArchiveEntryBase(name string) (string, error) {
 	return base, nil
 }
 
+func safeRuntimeFilePath(root, name string) (string, error) {
+	if _, err := safeArchiveEntryBase(name); err != nil {
+		return "", err
+	}
+	dest := filepath.Join(root, name)
+	cleanRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve runtime root: %w", err)
+	}
+	cleanDest, err := filepath.Abs(dest)
+	if err != nil {
+		return "", fmt.Errorf("resolve runtime path: %w", err)
+	}
+	rootPrefix := cleanRoot + string(os.PathSeparator)
+	if cleanDest == cleanRoot || !strings.HasPrefix(cleanDest, rootPrefix) {
+		return "", fmt.Errorf("path escapes runtime root")
+	}
+	return cleanDest, nil
+}
+
 func downloadMeshLLMAsset(assetURL string) ([]byte, error) {
 	client := &http.Client{Timeout: 30 * time.Minute}
 	response, err := client.Get(assetURL)

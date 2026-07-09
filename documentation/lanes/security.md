@@ -4,6 +4,7 @@
 
 - [Trust boundaries](#trust-boundaries)
 - [Authenticated AI Gateway](#authenticated-ai-gateway)
+- [AI Gateway metadata and direct affinity](#ai-gateway-metadata-and-direct-affinity)
 - [Route authorization](#route-authorization)
 - [Rate limiting](#rate-limiting)
 - [Token storage](#token-storage)
@@ -50,7 +51,7 @@
 
 **Mitigation:** The Worker provisions the gateway as an Authenticated Gateway (`authentication: true`) and reconciles any gateway created before this to authenticated on the next sync. Provider-native requests to `gateway.ai.cloudflare.com` must then carry a valid AI Gateway token in the `cf-aig-authorization` header; the operator playground sends the Worker's runtime token, and external clients of the route supply their own token created with the `AI Gateway Run` permission. AI Gateway tokens are account-scoped, so isolate tenants with separate Cloudflare accounts rather than per-gateway token scope.
 
-**Verification:** The gateway-provisioning test asserts creation with authentication and reconciliation of an existing open gateway; the playground test asserts the `cf-aig-authorization` header. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::CloudflareGatewayClient.ensureGateway --> <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat -->
+**Verification:** The gateway-provisioning test asserts creation with authentication and reconciliation of an existing open gateway; the playground test asserts the `cf-aig-authorization` header. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::ensureGateway --> <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundChat -->
 
 **Implements:** [REQ-SEC-012](../../sdd/spec/security.md)
 
@@ -60,7 +61,7 @@
 
 **Mitigation:** After provider-token authentication succeeds, `/v1/chat/completions` accepts metadata that is visible to the Worker (`cf-aig-metadata.user` when forwarded by the caller, or `metadata.user` in the request body) as a fallback direct-affinity identity when `body.user` is absent. If AI Gateway REST dynamic-route metadata is observability-only and not forwarded, the router uses a provider-scoped fallback (`ai-gateway/provider-default`) so dynamic-route calls still reach a cache-local llama.cpp node. An optional metadata `session` value overrides the session id; otherwise the user value is reused as the session id. The router sanitizes delimiter/newline characters, then the existing direct-affinity path HMAC-hashes user/session values before writing D1/DO state. Explicit `body.user` still wins when present.
 
-**Verification:** The metadata-affinity router test asserts Gateway metadata produces a valid forwarded llama.cpp `user` value and that raw metadata is absent from durable direct-session records. <!-- @impl: packages/router-worker/src/router.ts::gatewayMetadataDirectSession --> <!-- @impl: packages/router-worker/src/router.test.ts (REQ-SCH-004 derives direct llama.cpp session affinity from AI Gateway metadata) -->
+**Verification:** The metadata-affinity router test asserts Gateway metadata produces a valid forwarded llama.cpp `user` value and that raw metadata is absent from durable direct-session records. <!-- @impl: packages/router-worker/src/router.ts::gatewayMetadataDirectSession -->
 
 **Implements:** [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -190,7 +191,7 @@ Heartbeat, enrollment, admin authentication, and the public catch-all each have 
 
 **Mitigation:** Once Access is configured, the Worker maps each verified caller to a console role. Admin and user identity sets (Access group names and emails) are captured at setup and stored durably. On each request `resolveRole` compares the caller's email and live Access groups (from `get-identity`, restricted to the team's `cloudflareaccess.com` domain to prevent SSRF) against those sets: admin wins over user, a user-only match is read-only, any verified identity is a read-only user when no user set is configured, and an identity matching neither set is refused when a user set exists. <!-- @impl: packages/router-worker/src/router.ts::resolveRole --> <!-- @impl: packages/router-worker/src/access.ts::fetchIdentityGroups -->
 
-The role is enforced server-side: `requireAdmin` gates every configuration write, so client-side hiding is convenience, not control. <!-- @impl: packages/router-worker/src/router.ts::requireAdmin -->
+The role is enforced server-side: `requireAdmin` gates every configuration write, so client-side hiding is convenience, not control. Cookie-backed Access admin mutations also require same-origin browser evidence; bearer automation remains header-authenticated. <!-- @impl: packages/router-worker/src/router.ts::requireAdmin --> <!-- @impl: packages/router-worker/src/router.ts::hasSameOriginSignal -->
 
 **Verification:** Router tests assert admin/user/deny resolution, admin-wins-on-overlap, the open-to-everyone default, and that the user role is refused on a config write; access tests assert the get-identity group lookup and its domain guard. <!-- @impl: packages/router-worker/src/router.test.ts::HostGatingTestAnchor --> <!-- @impl: packages/router-worker/src/access.test.ts::AccessIdentityGroupsTestAnchor -->
 
@@ -200,7 +201,7 @@ The role is enforced server-side: `requireAdmin` gates every configuration write
 
 **Threat:** Hand-assembled Zero Trust policies can leave the console exposed or machine paths blocked.
 
-**Mitigation:** The setup wizard provisions the Access application with an allow policy gating on the captured roles: admin and user emails become managed Access groups (`<worker>-admins` / `<worker>-users`) and the policy includes those plus any operator-named admin/user groups; when no user set is configured the policy opens to everyone so the mesh's own role check grants read-only access. A separate bypass application covers the provider, node, health, and installer paths so machine traffic needs no Access session. If the bypass policy cannot be created, the bypass application is removed rather than left policy-less (deny-all). Re-runs update the managed applications and groups instead of duplicating them. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.provisionAccess -->
+**Mitigation:** The setup wizard provisions the Access application with an allow policy gating on the captured roles: admin and user emails become managed Access groups (`<worker>-admins` / `<worker>-users`) and the policy includes those plus any operator-named admin/user groups; when no user set is configured the policy opens to everyone so the mesh's own role check grants read-only access. A separate bypass application covers the provider, node, health, and installer paths so machine traffic needs no Access session. If the bypass policy cannot be created, the bypass application is removed rather than left policy-less (deny-all). Re-runs update the managed applications and groups instead of duplicating them. <!-- @impl: packages/router-worker/src/access-provisioning.ts::provisionAccess -->
 
 **Verification:** Provisioning tests assert the managed-group creation, the group-gated and everyone-open policy payloads, the bypass destinations, rollback on policy failure, and idempotent re-runs. <!-- @impl: packages/router-worker/src/access-provisioning.test.ts::AccessProvisioningTestAnchor -->
 

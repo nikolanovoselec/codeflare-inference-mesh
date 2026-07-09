@@ -4,6 +4,7 @@
 
 - [Conventions](#conventions)
 - [Endpoints](#endpoints)
+- [Control-plane API (`/api/v1`)](#control-plane-api-apiv1)
 - [Source anchors and specification backlinks](#source-anchors-and-specification-backlinks)
 
 ## Conventions

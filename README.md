@@ -37,7 +37,7 @@ flowchart LR
         router["Worker router<br/>profiles · scheduler"]
         d1["D1<br/>durable state"]
         affinity["SessionAffinityDO<br/>llama.cpp pins"]
-        nostr["Private Nostr relay<br/>discovery only"]
+        nostr["Nostr relay(s)<br/>rendezvous metadata only"]
     end
     subgraph mesh["Cloudflare Mesh / WARP (private data plane)"]
         nodeA["Node agent<br/>host"]
@@ -82,7 +82,7 @@ Layered models always use mesh-llm. Non-layered custom models can run either thr
 
 Split serving uses [iroh](https://github.com/n0-computer/iroh) as the private runtime data plane between nodes. Codeflare binds mesh-llm to the node's Cloudflare Mesh IP and starts it with iroh relays disabled, so stage traffic goes direct peer-to-peer over WARP instead of through a public relay. iroh gives mesh-llm an encrypted QUIC transport for the model pipeline, while Cloudflare Mesh provides the bidirectional L3/L4 reachability that makes relay fallback unnecessary. That keeps prompts, activations, and outputs on the operator-controlled private network while still allowing nodes on different physical networks to behave like one inference fabric.
 
-Peer discovery uses [Nostr](https://github.com/nostr-protocol/nostr), but only as rendezvous metadata. Codeflare points mesh-llm at an operator-owned private Nostr relay on Cloudflare Workers and Durable Objects; the relay exchanges endpoint identity and candidate Mesh addresses, never prompts or model outputs. This is deliberately one discovery component: a WebSocket Nostr relay on Cloudflare, with no iroh relay. The reason is simple: Nostr fits Workers' WebSocket/Durable Object model, while an iroh relay needs UDP/STUN/QUIC relay semantics that belong on a VM or container and are unnecessary when Cloudflare Mesh already carries the direct UDP data path.
+Peer discovery uses [Nostr](https://github.com/nostr-protocol/nostr) only as rendezvous metadata. With no `nostrRelays` configured, mesh-llm uses its built-in public relay defaults; operators that need private rendezvous set `nostrRelays` in the node config, which renders one `--nostr-relay` flag per URL. Relays carry peer identity and WARP Mesh addresses only; iroh data stays direct over WARP via `--bind-ip` and `--disable-iroh-relays`.
 
 Cloudflare Mesh is the backbone for connectivity, routing, inference guardrails, and the control plane. AI Gateway gives clients one stable enterprise route, Workers enforce provider authentication and request limits, D1 and Durable Objects hold durable scheduling and affinity state, Access protects the operator console, and WARP gives every node a private address the Worker and peer nodes can reach. The result is a native Cloudflare deployment: public edge where you want policy, private Mesh where you want inference, and no third-party infrastructure in the data path.
 

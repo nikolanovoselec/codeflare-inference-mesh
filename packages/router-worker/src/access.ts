@@ -31,6 +31,20 @@ export function resetJwksCache(): void {
   jwksCache = null
 }
 
+export type AccessJwtSource = 'header' | 'cookie'
+
+export function accessJwtSource(request: Request): AccessJwtSource | null {
+  if (request.headers.get(ASSERTION_HEADER)) return 'header'
+  const cookies = request.headers.get('cookie')
+  if (!cookies) return null
+  for (const pair of cookies.split(';')) {
+    const separator = pair.indexOf('=')
+    if (separator < 0) continue
+    if (pair.slice(0, separator).trim() === ACCESS_COOKIE) return 'cookie'
+  }
+  return null
+}
+
 export function extractAccessJwt(request: Request): string | null {
   const header = request.headers.get(ASSERTION_HEADER)
   if (header) return header

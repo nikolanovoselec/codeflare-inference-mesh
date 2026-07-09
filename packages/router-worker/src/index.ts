@@ -10,7 +10,7 @@ export default {
   async fetch(request: Request, env: RouterEnv): Promise<Response> {
     const router = createRouter({
       store: new D1Store(env.DB),
-      scheduler: new StoreScheduler(new D1Store(env.DB)),
+      scheduler: new StoreScheduler(new D1Store(env.DB), env),
       mesh: env.MESH,
       env
     })

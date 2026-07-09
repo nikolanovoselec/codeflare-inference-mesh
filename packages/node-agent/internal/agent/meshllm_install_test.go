@@ -131,6 +131,15 @@ var meshLLMShippedCombos = []struct {
 }
 
 func TestREQNODE006PinnedVersionAndChecksumMapEmbedded(t *testing.T) {
+	t.Run("REQ-NODE-006 resolves pinned MeshLLM release assets", func(t *testing.T) {
+		asset, err := MeshLLMAssetFor("linux", "amd64", "cpu")
+		if err != nil {
+			t.Fatalf("expected linux/amd64 cpu asset: %v", err)
+		}
+		if !strings.Contains(asset.AssetName, MeshLLMPinnedVersion) || asset.SHA256 == "" {
+			t.Fatalf("asset missing pinned version or checksum: %+v", asset)
+		}
+	})
 	if !regexp.MustCompile(`^v\d+\.\d+\.\d+$`).MatchString(MeshLLMPinnedVersion) {
 		t.Fatalf("pinned version %q is not a release tag", MeshLLMPinnedVersion)
 	}

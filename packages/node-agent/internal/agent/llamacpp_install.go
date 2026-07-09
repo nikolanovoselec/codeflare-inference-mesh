@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -172,8 +171,14 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 		if safeName == binaryName {
 			mode = 0o700
 		}
-		dest := filepath.Join(binDir, safeName)
-		tmp := dest + ".tmp"
+		dest, err := safeRuntimeFilePath(binDir, safeName)
+		if err != nil {
+			return "", fmt.Errorf("%w: unsafe llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, safeName, err)
+		}
+		tmp, err := safeRuntimeFilePath(binDir, safeName+".tmp")
+		if err != nil {
+			return "", fmt.Errorf("%w: unsafe llama.cpp runtime stage file %s: %v", ErrRuntimeDependencyMissing, safeName, err)
+		}
 		if err := os.WriteFile(tmp, file, mode); err != nil {
 			return "", fmt.Errorf("%w: stage llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, safeName, err)
 		}
