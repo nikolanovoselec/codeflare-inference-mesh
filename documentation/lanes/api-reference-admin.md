@@ -8,7 +8,7 @@
 
 ## Conventions
 
-Admin routes accept the bootstrap admin bearer token until Cloudflare Access is provisioned; once Access configuration is stored, every human admin request must carry a valid Access JWT, and bearer credentials work only during break-glass recovery. "Admin authentication" below means this guard. Once Access is configured, each verified caller resolves to a console **role** — `admin` or read-only `user` — from their Access groups and email ([security.md](security.md#role-based-console-access)); "any console role" below means the reader guard both roles pass, while "admin authentication" requires the `admin` role. Admin routes never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity, and do not implement a dedicated Origin-header gate. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-009](../../sdd/spec/security.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
+Admin routes accept the bootstrap admin bearer token until Cloudflare Access is provisioned; once Access configuration is stored, every human admin request must carry a valid Access JWT, and bearer credentials work only during break-glass recovery. "Admin authentication" below means this guard. Once Access is configured, each verified caller resolves to a console **role** — `admin` or read-only `user` — from their Access groups and email ([security.md](security.md#role-based-console-access)); "any console role" below means the reader guard both roles pass, while "admin authentication" requires the `admin` role. Admin routes never accept provider tokens, node tokens, setup tokens, or Worker-to-node upstream tokens as admin identity. Cookie-backed Access admin mutations require same-origin browser evidence: `Origin` or `Referer` matching the request origin, or `Sec-Fetch-Site: same-origin` / `none`. Bearer bootstrap, recovery, and automation credentials are exempt. ([REQ-ADM-002](../../sdd/spec/setup-admin.md)) ([REQ-SEC-009](../../sdd/spec/security.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-SEC-001](../../sdd/spec/security.md))
 
 Any admin route can also return `500` with body `{ "error": "internal_error", "requestId": string }` when the Worker's top-level handler catches an uncaught exception (commonly a transient D1 cold-start); the per-route Response tables below list only route-specific statuses and omit this shared catch-all. `POST /admin/cloudflare/gateway/sync` is the one admin route that no longer relies on this shared catch-all for Cloudflare-rejection failures — see its own Response table. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
@@ -72,7 +72,7 @@ POST /admin/setup
 
 **Authentication:** none until first setup; admin bearer token after setup
 
-**Origin check:** n/a
+**Origin check:** n/a (bearer/bootstrap or recovery credential path; Access-cookie admin mutation guard does not apply).
 
 **Request body:** No required body fields in the current implementation.
 
@@ -97,7 +97,7 @@ POST /admin/login
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** n/a (bearer/bootstrap or recovery credential path; Access-cookie admin mutation guard does not apply).
 
 **Request body:** No required body fields in the current implementation.
 
@@ -120,7 +120,7 @@ POST /admin/recovery/reset
 
 **Authentication:** recovery token in `Authorization: Bearer <ADMIN_RECOVERY_TOKEN>`
 
-**Origin check:** n/a
+**Origin check:** n/a (bearer/bootstrap or recovery credential path; Access-cookie admin mutation guard does not apply).
 
 **Request body:** None.
 
@@ -191,7 +191,7 @@ POST /admin/playground/chat
 
 **Authentication:** any console role (admin or read-only user)
 
-**Origin check:** n/a
+**Origin check:** n/a (console inference action; it does not write admin configuration).
 
 **Request body:** JSON body with `gatewayId` (the target gateway) and `route` (the dynamic route to forward as `dynamic/<route>`), plus `messages` (chat message array) and, for direct llama.cpp-backed routes, `user` in the grammar `user:<id>|session:<id>`. The Admin console supplies a stable browser-session `user` automatically. Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer generation cap) are forwarded to the upstream route as `tools` and `max_tokens` when supplied, so an agentic (tool-calling) request can be reproduced and a runaway response bounded; when absent, neither is sent. The body is optional — absent fields fall back to the resolved gateway defaults — but a present, malformed body is rejected with the shared `400` `invalid_json`. A non-admin (read-only user) caller's `gatewayId` and `route` are ignored and forced to the default gateway and route, so a viewer cannot target an arbitrary gateway.
 
@@ -218,7 +218,7 @@ POST /admin/playground/direct-chat
 
 **Authentication:** any console role (admin or read-only user)
 
-**Origin check:** n/a
+**Origin check:** n/a (console inference action; it does not write admin configuration).
 
 **Request body:** JSON body with `model` (an internal callable model), `messages`, and — for direct llama.cpp profiles — `user` in the grammar `user:<id>|session:<id>`. The Admin console supplies a stable browser-session value automatically. Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer cap, forwarded as `max_tokens`) are passed through when supplied. `model` is required; a present, malformed body is rejected with the shared `400` `invalid_json`.
 
@@ -245,7 +245,7 @@ POST /admin/playground/speed-test
 
 **Authentication:** any console role (admin or read-only user)
 
-**Origin check:** n/a
+**Origin check:** n/a (console inference action; it does not write admin configuration).
 
 **Request body:** Optional JSON body. `model` selects the callable model and defaults to `codeflare-mesh`. `promptTokens` bounds the synthetic prompt size from `64` to `8192` tokens and defaults to `2048`. `maxTokens` bounds generated output from `16` to `512` tokens and defaults to `160`.
 
@@ -271,7 +271,7 @@ POST /admin/setup-tokens
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** None.
 
@@ -320,7 +320,7 @@ POST /admin/nodes/{nodeId}/revoke
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Path parameters:** `nodeId` is the URL-encoded node identifier to revoke.
 
@@ -345,7 +345,7 @@ POST /admin/nodes/{nodeId}/config
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Path parameters:** `nodeId` is the URL-encoded node identifier to reconfigure.
 
@@ -372,7 +372,7 @@ POST /admin/nodes/{nodeId}/deactivate
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Path parameters:** `nodeId` is the URL-encoded node identifier to deactivate.
 
@@ -398,7 +398,7 @@ POST /admin/nodes/{nodeId}/activate
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Path parameters:** `nodeId` is the URL-encoded node identifier to activate.
 
@@ -422,11 +422,17 @@ Restart the node's `mesh-llm` runtime on demand (Force Reload), to recover a wed
 POST /admin/nodes/{nodeId}/reload
 ```
 
+**Authentication:** admin authentication
+
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
+
 **Path parameters:** `nodeId` is the URL-encoded node identifier to reload.
 
-**Responses:**
+**Request body:** None.
 
-| Status | Meaning | Body |
+**Response**
+
+| Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | A one-shot reload nonce is stamped on the node (`node_reload_requested` audit event) and carried on its next heartbeat; the node drains and restarts `mesh-llm` exactly once, then echoes the nonce back so the directive is retired. | `{ "ok": true, "reloadNonce": "<nonce>" }` |
 | `401` | The caller is not an admin (or, for the API twin, lacks a valid automation key). | `{ "error": "unauthorized" }` |
@@ -444,7 +450,7 @@ POST /admin/cloudflare/gateway/sync
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** Optional JSON with `accountId`, `gatewayId`, and `providerName` — all optional. The dynamic route name and forwarded model are fixed to the stable public model `codeflare-mesh` and are never read from the body. For `accountId`, `gatewayId`, and `providerName`, request body values override stored settings, then the environment defaults documented in [configuration.md](configuration.md) apply (`providerName` falls back to `AI_GATEWAY_PROVIDER_NAME`, else the hardcoded `Codeflare Inference Mesh`); the Setup wizard and Routing form additionally prefill the provider-name field with `Codeflare Inference Mesh` as a friendlier starting value. The Worker URL is resolved from the provisioned custom domain (or a stored explicit override) and is not a request input.
 
@@ -472,7 +478,7 @@ POST /admin/custom-domain/validate
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `hostname`; optional `zoneId` must be a 32-character hexadecimal Cloudflare zone ID when present.
 
@@ -498,7 +504,7 @@ POST /admin/setup/domain
 
 **Authentication:** admin authentication
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `hostname`; optional `zoneId`.
 
@@ -524,7 +530,7 @@ POST /admin/setup/access
 
 **Authentication:** admin authentication
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `adminEmails`, `adminGroups`, `userEmails`, and `userGroups` (arrays of strings; emails are trimmed, lowercased, deduplicated, and validated; group names are trimmed and deduplicated). A legacy `emails` field is accepted as an alias for `adminEmails`. At least one admin email or admin group is required. When both user fields are empty the allow policy opens to everyone and any Access-authenticated caller becomes a read-only user (`usersOpen: true`).
 
@@ -550,7 +556,7 @@ POST /admin/setup/complete
 
 **Authentication:** admin authentication
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** None.
 
@@ -646,7 +652,7 @@ POST /admin/profiles/rollout
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `profileId` and numeric `rolloutPercent`.
 
@@ -672,7 +678,7 @@ POST /admin/profiles/activate
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `profileId`.
 
@@ -697,7 +703,7 @@ POST /admin/profiles/add
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `modelRef` (required, trimmed, non-empty), `mode` (`single` or `split`, default `single`), `runtime` (`meshllm` or `llamacpp`, default `meshllm`), and optional `name` (display name; defaults to the model-file segment). Mode `split` builds a MeshLLM layer-package profile and forces `runtime: "meshllm"`; `runtime: "llamacpp"` is single-machine only and creates a direct cache-local profile. The profile id and public alias are derived from the reference.
 
@@ -722,7 +728,7 @@ POST /admin/profiles/config
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `profileId` (required) plus any of `runtime` (`meshllm` or `llamacpp`), `contextWindow`, `modelRef` (non-empty string), `maxVramGb` (MeshLLM-only number `≥ 0`, `0` = no cap), `name` (display name; non-blank), and `callName` (slugified callable alias; non-empty, not the reserved `codeflare-mesh`, not a collision). A changed call name keeps the shared alias. Each field besides `profileId` is optional; an omitted field is left unchanged. MeshLLM context window accepts `0` for Auto; direct llama.cpp context window must be at least `4096`.
 
@@ -750,7 +756,7 @@ POST /admin/profiles/delete
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `profileId`.
 
@@ -775,7 +781,7 @@ POST /admin/mesh/rotate
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `profileId`.
 
@@ -826,7 +832,7 @@ POST /admin/agent-version
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `version`.
 
@@ -873,7 +879,7 @@ POST /admin/runtime-versions
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with either or both of `meshllm` and `llamacpp`.
 
@@ -897,7 +903,7 @@ POST /admin/settings
 
 **Authentication:** admin bearer token
 
-**Origin check:** n/a
+**Origin check:** Conditional for Access-cookie admin writes; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
 **Request body:** JSON body with `offlinePruneSeconds` (non-negative integer; `0` disables pruning). A machine offline longer than this window is removed on the next admin status read and must re-enroll; the default when unset is 2592000 (30 days).
 

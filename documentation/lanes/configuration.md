@@ -133,7 +133,7 @@ Each model carries runtime-specific tunables, edited from the model's Manage dra
 | Setting | MeshLLM config key | Default | What it is / does |
 | --- | --- | --- | --- |
 | Context window | `model_fit.ctx_size` | Auto | Max tokens kept in context. Auto lets MeshLLM size it to the GPU and model. Pin a number (for example `262144`) to fix it; larger uses more GPU memory and can leave room for fewer lanes. |
-| Parallel lanes | `throughput.parallel` | `4` | Concurrent request slots. An omitted value does NOT auto-plan to 4 (MeshLLM may pick a single lane); `2` or more is required so the input cache runs in its shared unified-KV mode, and it lets concurrent requests avoid queuing behind a long prefill (a single busy lane returns `Model execution failed`). Lanes share one KV pool, so more lanes cost little extra memory. |
+| Parallel lanes | `throughput.parallel` | `4` | Concurrent request slots. `2` or more is required for the shared input cache; `4` is the custom-model default. |
 | KV cache type (keys) | `model_fit.cache_type_k` | `q8_0` | Precision of the cached keys. `q8_0` halves memory versus `f16` with negligible quality loss; `q4_0` quarters it to fit very large contexts. |
 | KV cache type (values) | `model_fit.cache_type_v` | `q8_0` | Precision of the cached values; same trade-off as the keys. |
 | Prefill batch | `model_fit.batch` | `2048` | Tokens processed per prefill step. Higher (for example `8192`) speeds long-prompt ingestion but uses more memory. |
@@ -142,6 +142,8 @@ Each model carries runtime-specific tunables, edited from the model's Manage dra
 | Max output tokens | `request_defaults.max_tokens` | `8192` | Cap on tokens generated per response, including reasoning tokens. Bounds runaway generations. Must stay above the reasoning budget so the model has room to answer. |
 | Reasoning | `request_defaults.reasoning_*` | On, `deepseek`, budget `4096` | Enables model thinking and caps its token budget. Applies only to reasoning-capable models. |
 | Input (prefix) cache | `model_fit.prefix_cache.*` (`enabled`, `payload_mode`, `max_entries`, `shared_stride_tokens`, `shared_record_limit`) | On; family-aware payload mode; `16` entries | Reuses the KV of a shared prompt prefix so follow-up turns prefill only new tokens. |
+
+Parallel lanes are explicit. An omitted value does not auto-plan to four lanes, so MeshLLM may pick a single busy lane and queue long prefills until callers see `Model execution failed`. Lanes share one KV pool, so more lanes cost little extra memory.
 
 Reasoning budget counts against max output tokens; keep it below that cap. Prefix-cache `payload_mode` is load-bearing: recurrent-hybrid families (`qwen35`, `qwen3.6`, `qwen3-next`, `falcon-h1`, `mamba`, `rwkv`) need `kv-recurrent`, while dense families use `resident-kv`. New custom models auto-set it from the model reference; correct an override if the architecture is misdetected. Prefix cache also needs `parallel >= 2` to run, and `max_entries` stays capped at `128` to avoid KV-cell exhaustion.
 
