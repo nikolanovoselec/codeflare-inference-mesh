@@ -1072,6 +1072,25 @@ describe('router worker behavioral contracts', () => {
     expect((await store.getNode('node-a'))?.inFlight).toBe(0)
   })
 
+  it('REQ-GWY-003 REQ-RTR-002 accepts AI Gateway dynamic route model names for MeshLLM profiles', async () => {
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture) })
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'dynamic/codeflare-mesh', user: 'user:admin-playground|session:gateway-session', messages: [{ role: 'user', content: 'test' }], stream: true })
+    }))
+    await response.text()
+    const forwarded = await capture.request!.json() as { model: string; user?: string }
+
+    expect(response.status).toBe(200)
+    expect(forwarded.model).toBe(SMOKE_UPSTREAM)
+    expect(forwarded.user).toBe('user:admin-playground|session:gateway-session')
+  })
+
   it('REQ-SCH-004 uses a provider-scoped fallback session when Gateway metadata is not forwarded', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
@@ -4010,6 +4029,31 @@ describe('control-plane API (/api/v1)', () => {
     // Seeded default profiles are visible to the snapshot.
     expect(body.models.total).toBeGreaterThan(0)
     expect(typeof body.models.active).toBe('number')
+  })
+
+  it('REQ-API-002 exposes detailed mesh roles, readiness, and stage ownership on request', async () => {
+    const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
+    const key = await mintKey(router)
+    await store.upsertNode(nodeFixture({
+      id: 'battlestation',
+      activeProfileIds: ['mesh-smoke-qwen25-1.5b'],
+      metrics: {
+        runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true,
+        activeRequests: 0, readyModels: [SMOKE_UPSTREAM], meshllmVersion: '0.72.2', runtimeDetail: '\u001b[33m WARN\u001b[0m failed closing path',
+        stageAssignments: [{ stageId: 'stage-0', stageIndex: 0, nodeId: 'battlestation', layerStart: 0, layerEnd: 15, state: 'ready', backend: 'metal', bindAddr: '100.64.1.10:4420' }]
+      }
+    }))
+
+    const res = await router(new Request('https://router.test/api/v1/status?detail=full', { headers: bearer(key.token) }))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { details?: { nodes: Array<{ id: string; runtimeInstall?: Record<string, unknown>; metrics?: Record<string, unknown> }>; profileReadiness: Array<Record<string, unknown>>; meshHealth: Array<{ profileId: string; coordinatorNodeId?: string; stageAssignments?: Array<Record<string, unknown>> }> } }
+    const node = body.details?.nodes.find((candidate) => candidate.id === 'battlestation')
+    expect(node?.metrics).toMatchObject({ meshRole: 'api-client', nodeState: 'standby' })
+    expect(node?.runtimeInstall).toMatchObject({ runtime: 'meshllm', desiredVersion: 'v0.72.2', installedVersion: '0.72.2', state: 'installed', error: null })
+    expect(body.details?.profileReadiness.find((entry) => entry.profileId === 'mesh-smoke-qwen25-1.5b')).toMatchObject({ ready: 1, downloading: 0, failed: 0 })
+    const mesh = body.details?.meshHealth.find((entry) => entry.profileId === 'mesh-smoke-qwen25-1.5b')
+    expect(mesh?.coordinatorNodeId).toBe('battlestation')
+    expect(mesh?.stageAssignments).toContainEqual(expect.objectContaining({ stageIndex: 0, nodeId: 'battlestation', layerStart: 0, layerEnd: 15, reportedByNodeId: 'battlestation' }))
   })
 
   it('REQ-API-002 exposes per-node runtime install status to automation callers', async () => {

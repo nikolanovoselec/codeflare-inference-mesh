@@ -21,6 +21,7 @@ const meshEntries: readonly MeshHealthEntry[] = [
     coordinatorNodeId: 'node-coord',
     peerNodeIds: ['node-peer-a', 'node-peer-b'],
     readyModels: ['qwen3.6:35b-a3b', 'codeflare-mesh'],
+    stageAssignments: [{ stageId: 'stage-0', stageIndex: 0, nodeId: 'node-coord', layerStart: 0, layerEnd: 15, state: 'ready', reportedByNodeId: 'node-coord' }],
     failedNodeIds: ['node-peer-b'],
     tokenCount: 2,
     secretAgeMs: 300_000,
@@ -213,6 +214,7 @@ describe('admin UI mesh operations contracts', () => {
     expect(card.dataset.meshRotation).toBe('3')
     expect(meshField(card, 'coordinator').textContent).toBe('coordinator: node-coord')
     expect(meshField(card, 'peers').textContent).toBe('peers: 2')
+    expect(meshField(card, 'stage-owners').textContent).toBe('stage owners: L0-15 → node-coord · ready')
     expect(meshField(card, 'ready-models').textContent).toBe('ready models: qwen3.6:35b-a3b, codeflare-mesh')
     expect(meshField(card, 'failed-nodes').textContent).toBe('failed nodes: node-peer-b')
     expect(meshField(card, 'last-error').textContent).toBe('last error: node-peer-b: mesh runner exited')

@@ -1,7 +1,7 @@
 import { bearerToken, verifyPlainOrHashed, verifyToken } from './auth'
 import { InvalidJsonBodyError } from './errors'
 import { decryptJson, encryptJson, importMeshStateKey, type EncryptedEnvelope } from './mesh-crypto'
-import type { HeartbeatRequest, MeshBootstrap, ModelProfile, NodeRecord, RouterEnv, Store } from './types'
+import type { HeartbeatRequest, MeshBootstrap, ModelProfile, NodeRecord, RouterEnv, StageAssignment, Store } from './types'
 
 export type MeshStateEnv = Pick<Partial<RouterEnv>, 'REGISTRY' | 'MESH_STATE_KEY' | 'ADMIN_TOKEN'>
 
@@ -34,6 +34,7 @@ export interface MeshHealthEntry {
   coordinatorNodeId?: string
   peerNodeIds: readonly string[]
   readyModels: readonly string[]
+  stageAssignments?: readonly StageAssignment[]
   failedNodeIds: readonly string[]
   /** Member nodes tainted deactivated (REQ-ADM-030): enrolled but running no model. */
   deactivatedNodeIds: readonly string[]
@@ -297,9 +298,11 @@ function selectedMeshProfile(profiles: readonly ModelProfile[], activeProfileIds
 function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: readonly NodeRecord[], now: number): MeshHealthEntry {
   const members = nodes.filter((node) => node.activeProfileIds.includes(profile.id))
   const byFreshness = (left: NodeRecord, right: NodeRecord): number => right.lastSeenAt - left.lastSeenAt
-  const coordinator = members.filter((node) => node.metrics?.meshRole === 'coordinator').sort(byFreshness)[0]
+  const explicitCoordinator = members.filter((node) => node.metrics?.meshRole === 'coordinator').sort(byFreshness)[0]
   const lastErrorNode = members.filter((node) => node.metrics?.lastError !== undefined).sort(byFreshness)[0]
   const readyModels = [...new Set(members.flatMap((node) => node.metrics?.readyModels ?? []))]
+  const stageAssignments = meshStageAssignments(members)
+  const coordinatorNodeId = explicitCoordinator?.id ?? stageAssignments.find((stage) => stage.stageIndex === 0)?.nodeId
   const failedNodeIds = members
     .filter((node) => ['failed', 'dependency-missing', 'stopped'].includes(node.metrics?.runtimeState ?? ''))
     .map((node) => node.id)
@@ -310,16 +313,28 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
     rotation: state.rotation,
     peerNodeIds: state.tokens.map((entry) => entry.nodeId),
     readyModels,
+    ...(stageAssignments.length > 0 ? { stageAssignments } : {}),
     failedNodeIds,
     deactivatedNodeIds,
     active: profile.active,
     tokenCount: state.tokens.length,
     ...(state.meshId !== null ? { meshId: state.meshId } : {}),
     ...(state.seedNodeId !== null ? { seedNodeId: state.seedNodeId } : {}),
-    ...(coordinator !== undefined ? { coordinatorNodeId: coordinator.id } : {}),
+    ...(coordinatorNodeId !== undefined && coordinatorNodeId !== '' ? { coordinatorNodeId } : {}),
     ...(oldestTokenAt !== undefined ? { secretAgeMs: now - oldestTokenAt } : {}),
     ...(lastErrorNode?.metrics?.lastError !== undefined ? { lastError: lastErrorNode.metrics.lastError } : {})
   }
+}
+
+function meshStageAssignments(nodes: readonly NodeRecord[]): readonly StageAssignment[] {
+  const byKey = new Map<string, StageAssignment>()
+  for (const node of nodes) {
+    for (const stage of node.metrics?.stageAssignments ?? []) {
+      const key = `${stage.stageId ?? ''}:${stage.stageIndex}:${stage.nodeId ?? ''}:${stage.layerStart}:${stage.layerEnd}`
+      if (!byKey.has(key)) byKey.set(key, { ...stage, reportedByNodeId: node.id })
+    }
+  }
+  return [...byKey.values()].sort((left, right) => left.stageIndex - right.stageIndex)
 }
 
 async function runElection(store: Store, env: MeshStateEnv, profileId: string, nodeId: string, now: number): Promise<void> {

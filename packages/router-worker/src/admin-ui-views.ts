@@ -132,7 +132,7 @@ function dashboardHero(): string {
 <div class="hero-copy">
 <p class="eyebrow">Operator console</p>
 <h1 id="dashboard-hero-title">Codeflare <span class="hero-accent" data-scramble>Inference Mesh</span></h1>
-<p>Direct llama.cpp speed, MeshLLM routing, and fleet state in one cache-aware control plane.</p>
+<p>Direct llama.cpp speed, MeshLLM routing, and fleet state in one operator console.</p>
 </div>
 <div class="tile-grid hero-stats" id="overview-tiles" data-output="status" aria-label="Fleet status"><p class="empty-note">Status loads automatically.</p></div>
 </section>`
@@ -305,12 +305,12 @@ ${output({ id: 'settings-output', kind: 'settings', pre: true })}</div>
 
 export function dashboardView(active: boolean): string {
   const navItems = [
-    navItem({ section: 'overview', label: 'Overview', hint: 'Fleet state', current: true }),
-    navItem({ section: 'nodes', label: 'Nodes', hint: 'Your machines' }),
-    navItem({ section: 'models', label: 'Models', hint: 'Your AI models' }),
-    navItem({ section: 'routing', label: 'Routing', hint: 'Address and gateway' }),
-    navItem({ section: 'playground', label: 'Playground', hint: 'Try a prompt' }),
-    navItem({ section: 'settings', label: 'Settings', hint: 'Version and activity' })
+    navItem({ section: 'overview', label: 'Overview', hint: 'Live mesh health', current: true }),
+    navItem({ section: 'nodes', label: 'Nodes', hint: 'Runtime roles' }),
+    navItem({ section: 'models', label: 'Models', hint: 'Profiles and splits' }),
+    navItem({ section: 'routing', label: 'Routing', hint: 'Gateway and domain' }),
+    navItem({ section: 'playground', label: 'Playground', hint: 'Probe a route' }),
+    navItem({ section: 'settings', label: 'Settings', hint: 'Versions and keys' })
   ].join('')
   return `<div class="view dash" id="view-dashboard"${active ? '' : ' hidden'}>
 ${dashboardHero()}

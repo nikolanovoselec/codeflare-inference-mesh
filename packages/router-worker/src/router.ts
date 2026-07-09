@@ -177,11 +177,16 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
 // direct llama.cpp profiles require a stable `body.user` and use session affinity so a
 // coding conversation stays on the same cache-warm node. REQ-SCH-002 / REQ-SCH-004.
 async function runInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }): Promise<Response> {
-  const publicModel = input.body.model as string
+  const publicModel = routablePublicModel(input.body.model as string)
   const profile = await deps.store.getProfileByPublicModel(publicModel)
   if (!profile) return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
-  if (profile.runtime === 'llamacpp') return runDirectLlamaCppInference(deps, { ...input, body: directSessionBody(input.body, input.requestHeaders) }, publicModel, profile)
-  return runMeshInference(deps, input)
+  const normalized = { ...input, body: { ...input.body, model: publicModel } }
+  if (profile.runtime === 'llamacpp') return runDirectLlamaCppInference(deps, { ...normalized, body: directSessionBody(normalized.body, input.requestHeaders) }, publicModel, profile)
+  return runMeshInference(deps, normalized)
+}
+
+function routablePublicModel(model: string): string {
+  return model.startsWith('dynamic/') ? model.slice('dynamic/'.length) : model
 }
 
 async function runMeshInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }): Promise<Response> {
@@ -502,23 +507,26 @@ function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: stri
   const desiredVersion = runtime === 'llamacpp' ? desired.llamacpp : desired.meshllm
   const installedVersion = runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion
   const error = metrics.lastError || metrics.runtimeDetail || undefined
+  const failed = metrics.runtimeState === 'dependency-missing' || Boolean(error && !installedVersion)
   const state = metrics.runtimeState === 'downloading'
     ? 'installing'
-    : (metrics.runtimeState === 'dependency-missing' || Boolean(error && !installedVersion) ? 'failed' : (installedVersion ? 'installed' : 'pending'))
+    : (failed ? 'failed' : (installedVersion ? 'installed' : 'pending'))
   return {
     runtime,
     desiredVersion,
     installedVersion: installedVersion ?? null,
     state,
-    error: error ?? null
+    error: state === 'failed' ? (error ?? null) : null
   }
 }
 
 function profileReadiness(profiles: readonly ModelProfile[], nodes: readonly NodeRecord[]): Array<{ profileId: string; version: number; ready: number; downloading: number; failed: number }> {
   return profiles.map((profile) => {
     const matching = nodes.filter((node) => node.activeProfileIds.includes(profile.id))
-    const ready = matching.filter((node) => nodeReadyForProfile(node, profile)).length
-    const downloading = matching.filter((node) => node.metrics?.runtimeState === 'downloading' || node.metrics?.runtimeState === 'starting').length
+    const readyNodes = matching.filter((node) => nodeReadyForProfile(node, profile))
+    const ready = readyNodes.length
+    const readyIds = new Set(readyNodes.map((node) => node.id))
+    const downloading = matching.filter((node) => !readyIds.has(node.id) && (node.metrics?.runtimeState === 'downloading' || node.metrics?.runtimeState === 'starting')).length
     const failed = matching.filter((node) => {
       const state = node.metrics?.runtimeState
       return state === 'failed' || state === 'dependency-missing' || state === 'stopped'
@@ -528,10 +536,12 @@ function profileReadiness(profiles: readonly ModelProfile[], nodes: readonly Nod
 }
 
 function nodeReadyForProfile(node: NodeRecord, profile: ModelProfile): boolean {
+  if (node.status !== 'online' || node.deactivated === true) return false
   const runtimeState = node.metrics?.runtimeState
-  if (runtimeState !== 'ready' && runtimeState !== 'running') return false
-  if (node.metrics?.apiReady !== true) return false
-  return node.metrics?.readyModels?.includes(profile.upstreamModel) === true
+  if (runtimeState === 'failed' || runtimeState === 'dependency-missing' || runtimeState === 'stopped') return false
+  const hasModel = node.metrics?.readyModels?.includes(profile.upstreamModel) === true
+  if (!hasModel) return false
+  return node.metrics?.apiReady === true || runtimeState === 'ready' || runtimeState === 'running' || profile.runtime === 'meshllm'
 }
 
 async function handleSetupToken(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -1838,18 +1848,29 @@ async function handleApiKeyRotate(request: Request, deps: RouterDeps, url: URL, 
 
 async function handleApiStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  const url = new URL(request.url)
+  const detailed = url.searchParams.get('detail') === 'full' || url.searchParams.get('include') === 'details'
   const nodes = await deps.store.listNodes(now)
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
   const runtimeVersions = await desiredRuntimeVersions(deps.store)
   const lastSpeedTest = await deps.store.getConfig<LastSpeedTestSummary>(LAST_SPEED_TEST_CONFIG_KEY)
+  const runtimeInstalls = nodes.map((node) => ({ nodeId: node.id, ...runtimeBinaryStatus(node, runtimeVersions) }))
   return json({
     generatedAt: now,
     nodes: { total: nodes.length, online: nodes.filter((node) => node.status === 'online').length },
     models: { total: profiles.length, active: profiles.filter((profile) => profile.active).length },
     runtimeVersions,
     ...(lastSpeedTest ? { lastSpeedTest } : {}),
-    runtimeInstalls: nodes.map((node) => ({ nodeId: node.id, ...runtimeBinaryStatus(node, runtimeVersions) })),
+    runtimeInstalls,
+    ...(detailed ? {
+      details: {
+        nodes: nodes.map((node) => toApiNode(node, runtimeVersions)),
+        profiles: profiles.map(toApiModel),
+        profileReadiness: profileReadiness(profiles, nodes),
+        meshHealth: await meshHealth(deps.store, deps.env, profiles, nodes, now)
+      }
+    } : {}),
     ...(desiredVersion !== undefined ? { agentVersion: desiredVersion } : {})
   }, 200, requestId)
 }

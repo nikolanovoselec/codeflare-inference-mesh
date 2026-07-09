@@ -92,6 +92,20 @@ export interface ModelProfile {
   readonly active: boolean
 }
 
+export interface StageAssignment {
+  readonly stageId?: string
+  readonly stageIndex: number
+  readonly nodeId?: string
+  readonly layerStart: number
+  readonly layerEnd: number
+  readonly state?: string
+  readonly backend?: string
+  readonly bindAddr?: string
+  readonly selectedDevice?: string
+  /** Codeflare node that reported this stage assignment. Present in aggregated mesh health only. */
+  readonly reportedByNodeId?: string
+}
+
 export interface NodeMetrics {
   readonly runtimeKind?: RuntimeKind
   readonly gpuName?: string
@@ -111,6 +125,7 @@ export interface NodeMetrics {
   readonly readyModels?: readonly string[]
   readonly splitEnabled?: boolean
   readonly stageCount?: number
+  readonly stageAssignments?: readonly StageAssignment[]
   readonly apiReady?: boolean
   readonly consoleReady?: boolean
   readonly meshllmVersion?: string

@@ -517,7 +517,7 @@ func TestREQNODE007HeartbeatMetricsCarryMeshState(t *testing.T) {
 	t.Run("REQ-NODE-007 REQ-OBS-003", func(t *testing.T) {
 		profile := agent.ModelProfile{ID: "p", UpstreamModel: "model-x", MeshLLM: agent.MeshLLMSettings{ModelRef: "model-x", Split: true, BindPort: 4300}}
 		base := agent.NodeMetrics{RuntimeState: "ready", LoadedModel: "model-x", LoadedProfileID: "p", LoadedProfileVersion: 3, ActiveRequests: 1}
-		status := agent.MeshLLMStatus{NodeID: "node-1", NodeState: "serving", MeshID: "mesh-1", Version: "0.72.2", PeerCount: 2, StageCount: 2, StageZeroNodeID: "node-9", TokPerSec: 42.5}
+		status := agent.MeshLLMStatus{NodeID: "node-1", NodeState: "serving", MeshID: "mesh-1", Version: "0.72.2", PeerCount: 2, StageCount: 2, StageZeroNodeID: "node-9", Stages: []agent.MeshLLMStage{{StageID: "stage-0", StageIndex: 0, NodeID: "node-9", LayerStart: 0, LayerEnd: 15, State: "ready"}}, TokPerSec: 42.5}
 
 		got := applyMeshStatusMetrics(base, profile, status, true, true, []string{"model-x", "other-model"})
 		if got.RuntimeState != "ready" {
@@ -528,6 +528,9 @@ func TestREQNODE007HeartbeatMetricsCarryMeshState(t *testing.T) {
 		}
 		if !got.SplitEnabled || !got.APIReady || !got.ConsoleReady || got.MeshLLMVersion != "0.72.2" || got.TokensPerSecond != 42.5 {
 			t.Fatalf("runtime status fields not carried: %#v", got)
+		}
+		if len(got.StageAssignments) != 1 || got.StageAssignments[0].LayerStart != 0 || got.StageAssignments[0].LayerEnd != 15 {
+			t.Fatalf("stage assignments not carried: %#v", got.StageAssignments)
 		}
 		if len(got.ReadyModels) != 2 || got.ReadyModels[0] != "model-x" {
 			t.Fatalf("ready models must come from the node's own /v1/models ids, got %v", got.ReadyModels)

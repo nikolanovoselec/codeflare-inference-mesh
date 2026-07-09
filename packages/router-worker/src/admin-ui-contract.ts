@@ -162,7 +162,7 @@ export const ADMIN_UI_TOKS_TRACE = {
 export const ADMIN_UI_MESH_HEALTH = {
   bannerId: 'mesh-key-banner',
   keyMissingError: 'mesh_state_key_missing',
-  fields: ['coordinator', 'peers', 'ready-models', 'failed-nodes', 'last-error', 'rotation', 'secret']
+  fields: ['coordinator', 'peers', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error', 'rotation', 'secret']
 } as const
 
 export const ADMIN_UI_AGENT_VERSION = {
@@ -191,6 +191,15 @@ export interface MeshHealthEntry {
   readonly seedNodeId?: string
   readonly coordinatorNodeId?: string
   readonly peerNodeIds: readonly string[]
+  readonly stageAssignments?: readonly {
+    readonly stageId?: string
+    readonly stageIndex: number
+    readonly nodeId?: string
+    readonly layerStart: number
+    readonly layerEnd: number
+    readonly state?: string
+    readonly reportedByNodeId?: string
+  }[]
   readonly readyModels?: readonly string[]
   readonly failedNodeIds?: readonly string[]
   readonly deactivatedNodeIds?: readonly string[]

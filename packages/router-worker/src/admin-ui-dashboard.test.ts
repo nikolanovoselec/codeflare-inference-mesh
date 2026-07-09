@@ -122,7 +122,9 @@ describe('dashboard overview contracts', () => {
     expect(html).toContain('data-scramble')
     expect(html).toContain('id="overview-tiles"')
     expect(html).toContain('data-nav-item="overview"')
-    expect(html).toContain('data-nav-hint="Fleet state"')
+    expect(html).toContain('data-nav-hint="Live mesh health"')
+    expect(html).toContain('data-nav-hint="Runtime roles"')
+    expect(html).toContain('data-nav-hint="Profiles and splits"')
   })
 
   it('REQ-ADM-034 renders endpoint chips inside command rows for action-heavy controls', () => {
@@ -210,6 +212,23 @@ describe('dashboard overview contracts', () => {
     expect(harness.byId('overview').dataset.active).toBe('false')
     expect(menu.hidden).toBe(true)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('REQ-OBS-010 counts split API-client participants as mesh-ready capacity', async () => {
+    const nodes = [
+      { id: 'battlestation', status: 'online', metrics: { runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], activeRequests: 0 } },
+      { id: 'linux-peer', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', meshRole: 'serving-peer', apiReady: true, consoleReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], stageCount: 1, activeRequests: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    const nodeTile = descendants(harness.byId('overview-tiles')).find((node) => node.dataset.stat === 'nodes')!
+    const value = descendants(nodeTile).find((node) => node.dataset.value !== undefined)!
+    expect(value.dataset.value).toBe('2/2')
+    expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).dataset.serving).toBe('2')
+    const battlestation = tableRows(harness).find((row) => row.dataset.nodeRow === 'battlestation')!
+    const statusCell = descendants(battlestation).find((node) => node.dataset.cell === 'status')!
+    expect(statusCell.dataset.meshRole).toBe('api-client')
+    expect(statusCell.dataset.statusDetail).toBe('standby')
+    expect(descendants(statusCell).find((node) => node.className === 'chip')?.dataset.tone).toBe('ok')
   })
 
   it('REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node', async () => {
@@ -491,8 +510,8 @@ describe('dashboard overview contracts', () => {
         runtimeState: 'starting', nodeState: 'loading model', runtimeDetail: 'cuda out of memory',
         meshRole: 'serving-peer', peerCount: 2, stageCount: 2, splitEnabled: true,
         apiReady: false, consoleReady: true, meshllmVersion: '0.72.2', activeRequests: 0, readyModels: [] } },
-      { id: 'node-healthy', status: 'online', metrics: {
-        runtimeState: 'ready', nodeState: 'serving', meshRole: 'coordinator', peerCount: 1,
+      { id: 'node-healthy', status: 'online', runtimeInstall: { runtime: 'meshllm', desiredVersion: 'v0.72.2', installedVersion: '0.72.2', state: 'installed', error: null }, metrics: {
+        runtimeState: 'ready', nodeState: 'serving', runtimeDetail: '\u001b[33m WARN\u001b[0m failed closing path', meshRole: 'coordinator', peerCount: 1,
         apiReady: true, consoleReady: true, meshllmVersion: '0.72.2', activeRequests: 0, readyModels: ['m'] } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
@@ -514,12 +533,15 @@ describe('dashboard overview contracts', () => {
     expect(textOf(field('reachability')!)).toContain('down / ready')
     expect(textOf(field('meshllm')!)).toContain('0.72.2')
 
-    // A healthy node shows node state but no runtime-error row and no split-stages row.
+    // A healthy node shows node state but stale stderr warnings are not rendered as current
+    // runtime/install errors, and semantically matching v-prefixed MeshLLM versions show no drift arrow.
     await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
     await harness.clickAction('node-detail', { nodeId: 'node-healthy' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(field('node-state')).toBeDefined()
     expect(fields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
+    expect(fields.some((node) => node.dataset.drawerField === 'runtime-install-error')).toBe(false)
+    expect(textOf(field('runtime-install')!)).not.toContain('→')
     expect(fields.some((node) => node.dataset.drawerField === 'stages')).toBe(false)
   })
 
@@ -1148,6 +1170,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(card.classList.contains('is-empty')).toBe(false)
     expect(chip, 'a provisioned domain shows a status chip').toBeDefined()
     expect(chip!.dataset.tone).toBe('ok')
+    expect(card.classList.contains('is-ok')).toBe(true)
   })
 
   it('REQ-ADM-005 renders an empty-state card when no custom domain is recorded', async () => {
@@ -1323,12 +1346,14 @@ describe('dashboard routing contracts', () => {
   })
 
   it('REQ-ADM-024 reads the connected gateway as a state card', async () => {
-    // The connected gateway renders as a prominent state card carrying the gateway id as its value.
+    // The connected gateway renders as a compact ok-toned status row carrying the gateway id as its value.
     const harness = await dashboardHarness()
     const card = harness.byId('gateway-current')
     const value = descendants(card).find((node) => node.className === 'state-value')
     expect(value!.textContent).toBe('inference-mesh')
     expect(card.classList.contains('is-empty')).toBe(false)
+    expect(card.classList.contains('is-ok')).toBe(true)
+    expect(descendants(card).find((node) => node.className === 'chip')?.dataset.tone).toBe('ok')
   })
 
   it('REQ-GWY-005 the gateway step renders a provider-name field and no route select', async () => {

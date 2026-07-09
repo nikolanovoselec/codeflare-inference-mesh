@@ -445,6 +445,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
     if (runtime === 'failed' || node.status === 'offline') return 'danger';
     if (node.deactivated) return 'warn';
+    if (nodeServingCapacity(node)) return 'ok';
     if (node.status === 'online' && (runtime === 'running' || runtime === 'ready')) return 'ok';
     return 'warn';
   };
@@ -489,15 +490,26 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const portHint = blocker.port ? 'WARP UDP ' + blocker.port : 'the mesh UDP port';
     return 'No MeshLLM peers discovered for this split profile. Start another node with the same model/split profile, or check ' + portHint + ' and the join token.';
   }
+  function versionKey(value) {
+    return String(value || '').replace(/^v/i, '');
+  }
+  function versionsMatch(left, right) {
+    return Boolean(left) && Boolean(right) && versionKey(left) === versionKey(right);
+  }
+  function currentRuntimeError(metrics) {
+    const state = metrics && metrics.runtimeState;
+    if (state === 'failed' || state === 'dependency-missing') return metrics.lastError || metrics.runtimeDetail || '';
+    return '';
+  }
   function runtimeInstallInfo(node) {
-    if (node.runtimeInstall) return node.runtimeInstall;
+    if (node.runtimeInstall) return { ...node.runtimeInstall, error: node.runtimeInstall.state === 'failed' ? node.runtimeInstall.error : null };
     const metrics = node.metrics || {};
     const runtime = metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp' ? 'llamacpp' : 'meshllm';
     const desired = lastStatus && lastStatus.desiredRuntimeVersions ? lastStatus.desiredRuntimeVersions[runtime] : '';
     const installed = runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion;
-    const error = metrics.lastError || metrics.runtimeDetail || '';
+    const error = currentRuntimeError(metrics);
     const state = metrics.runtimeState === 'downloading' ? 'installing' : ((metrics.runtimeState === 'dependency-missing' || (error && !installed)) ? 'failed' : (installed ? 'installed' : 'pending'));
-    return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: state, error: error || null };
+    return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: state, error: state === 'failed' ? (error || null) : null };
   }
   const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : 'MeshLLM';
   const runtimeInstallTone = (info) => info.state === 'failed' ? 'danger' : (info.state === 'installed' ? 'ok' : 'warn');
@@ -506,9 +518,22 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const desired = info.desiredVersion || 'selected';
     if (info.state === 'installing') return 'Installing ' + runtimeInstallLabel(info) + ' ' + desired;
     if (info.state === 'failed') return runtimeInstallLabel(info) + ' install failed';
-    if (info.installedVersion) return runtimeInstallLabel(info) + ' ' + info.installedVersion + (info.installedVersion === desired || !desired ? '' : ' → ' + desired);
+    if (info.installedVersion) return runtimeInstallLabel(info) + ' ' + info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? '' : ' → ' + desired);
     return runtimeInstallLabel(info) + ' pending ' + desired;
   };
+  function nodeMeshRoleLabel(metrics) {
+    if (!metrics || !metrics.meshRole) return '';
+    if (metrics.meshRole === 'api-client') return 'API client';
+    if (metrics.meshRole === 'serving-peer') return 'Serving peer';
+    if (metrics.meshRole === 'coordinator') return 'Coordinator';
+    return metrics.meshRole;
+  }
+  function nodeServingCapacity(node) {
+    if (node.status !== 'online' || node.deactivated) return false;
+    const metrics = node.metrics || {};
+    if (metrics.runtimeState === 'failed' || metrics.runtimeState === 'dependency-missing' || metrics.runtimeState === 'stopped') return false;
+    return nodeReady(node) || metrics.apiReady === true || metrics.consoleReady === true || (metrics.stageCount || 0) > 0;
+  }
   function nodeStatusText(node) {
     if (node.status === 'offline') { const age = nodeRelAge(node); return 'Offline' + (age ? ' · last seen ' + age : ''); }
     if (node.status === 'revoked') return 'Removed';
@@ -518,7 +543,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const rt = metrics.runtimeState || '';
     const stateDetail = metrics.nodeState || '';
     if (rt === 'failed' || rt === 'dependency-missing') return 'Failed' + (stateDetail ? ' · ' + stateDetail : '');
-    if (nodeReady(node)) return 'Ready';
+    const role = nodeMeshRoleLabel(metrics);
+    if (nodeServingCapacity(node)) return role ? role + (stateDetail ? ' · ' + stateDetail : '') : 'Ready';
     if (splitMeshBlocker(node)) return 'Mesh waiting for peers · no peers discovered';
     if (rt === 'downloading') return 'Starting · downloading runtime';
     if (rt === 'loading' || rt === 'starting') return stateDetail ? 'Starting · ' + stateDetail : 'Starting · loading model';
@@ -628,6 +654,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const blocker = splitMeshBlocker(node);
       if (blocker) statusCell.setAttribute('data-status-detail', 'split-mesh-peer-discovery');
       else if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
+      if (node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-mesh-role', node.metrics.meshRole);
       statusCell.appendChild(statusDot(blocker ? 'danger' : nodeTone(node), nodeStatusText(node)));
       const install = runtimeInstallInfo(node);
       const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));
@@ -658,11 +685,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const canvas = byId(config.topology.canvasId);
     const list = byId(config.topology.listId);
     const caption = byId(config.topology.captionId);
-    const serving = nodes.filter((node) => nodeTone(node) === 'ok').length;
+    const serving = nodes.filter(nodeServingCapacity).length;
     if (caption) {
       caption.dataset.nodes = String(nodes.length);
       caption.dataset.serving = String(serving);
-      caption.textContent = nodes.length + ' nodes \u00b7 ' + serving + ' serving';
+      caption.textContent = nodes.length + ' nodes \u00b7 ' + serving + ' mesh-ready';
     }
     if (canvas) {
       canvas.textContent = '';
@@ -785,8 +812,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     // Diagnostics: surface why a node is in its current state without SSH. The runtime error line is
     // captured from mesh-llm's own stderr and rides the heartbeat as runtimeDetail; node_state, mesh
     // role, peers, stages, and reachability come from the same metrics. REQ-OBS-011.
-    if (metrics.runtimeDetail) {
-      const errRow = drawerField('runtime-detail', 'Runtime error', metrics.runtimeDetail);
+    const runtimeError = currentRuntimeError(metrics);
+    if (runtimeError) {
+      const errRow = drawerField('runtime-detail', 'Runtime error', runtimeError);
       errRow.setAttribute('data-tone', 'danger');
       bodyEl.appendChild(errRow);
     }
@@ -1122,13 +1150,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     el.setAttribute('aria-live', 'polite');
     return el;
   }
-  // Prominent current-value display: an accented card that surfaces a configured
-  // value (custom domain, connected gateway) instead of burying it in helper text.
+  // Compact current-value display: neutral by default, ok only for confirmed
+  // connected/provisioned state so it never looks like a warning banner.
   function renderStateCard(el, parts) {
     if (!el) return;
     el.textContent = '';
     const present = Boolean(parts.value);
+    const ok = parts.state === 'ok' || parts.chipTone === 'ok';
     el.classList.toggle('is-empty', !present);
+    el.classList.toggle('is-ok', Boolean(present && ok));
     const label = document.createElement('span');
     label.className = 'state-label';
     label.textContent = parts.label;
@@ -1305,6 +1335,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // buildMeshCard renders one model's mesh detail (a plain summary plus the raw
   // fields behind a disclosure). It lives in that model's Manage drawer, since both
   // single-machine and split models form a mesh.
+  function stageOwnersText(entry) {
+    const stages = Array.isArray(entry.stageAssignments) ? entry.stageAssignments : [];
+    if (!stages.length) return 'none';
+    return stages.map((stage) => {
+      const owner = stage.nodeId || stage.reportedByNodeId || 'unassigned';
+      const layers = stage.layerStart != null && stage.layerEnd != null ? ('L' + stage.layerStart + '-' + stage.layerEnd) : ('stage ' + stage.stageIndex);
+      const state = stage.state ? ' · ' + stage.state : '';
+      return layers + ' → ' + owner + state;
+    }).join('; ');
+  }
   function buildMeshCard(entry) {
     const profilesById = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
     const card = document.createElement('div');
@@ -1334,6 +1374,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       let value = 'none';
       if (fieldName === 'coordinator') value = entry.coordinatorNodeId || 'none';
       else if (fieldName === 'peers') value = String((entry.peerNodeIds || []).length);
+      else if (fieldName === 'stage-owners') value = stageOwnersText(entry);
       else if (fieldName === 'ready-models') value = (entry.readyModels || []).join(', ') || 'none';
       else if (fieldName === 'failed-nodes') value = (entry.failedNodeIds || []).join(', ') || 'none';
       else if (fieldName === 'last-error') value = entry.lastError || 'none';
@@ -1421,10 +1462,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (tiles) {
       tiles.textContent = '';
       const domain = status.customDomain || {};
-      const serving = nodes.filter((node) => nodeTone(node) === 'ok').length;
+      const serving = nodes.filter(nodeServingCapacity).length;
       const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
       const speed = lastSpeedTest(status);
-      tiles.appendChild(tile('Nodes serving', serving + '/' + nodes.length, 'nodes'));
+      tiles.appendChild(tile('Mesh-ready nodes', serving + '/' + nodes.length, 'nodes'));
       tiles.appendChild(tile('Mesh VRAM GB', String(Math.round(vramMiB / 1024)), 'vram'));
       const speedTile = tile('Last speed test', speed ? lastSpeedLabel(speed) : 'not run', 'speed');
       if (speed) {
@@ -1464,10 +1505,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (gatewayCurrent) {
       const gateway = status.gateway || {};
       renderStateCard(gatewayCurrent, {
-        label: 'Connected gateway',
+        label: 'AI Gateway',
         value: gateway.gatewayId || '',
         placeholder: 'Not connected yet',
-        sub: gateway.gatewayId ? ('route ' + (gateway.routeName || STABLE_PUBLIC_MODEL)) : ''
+        sub: gateway.gatewayId ? ('route ' + (gateway.routeName || STABLE_PUBLIC_MODEL)) : '',
+        chip: gateway.gatewayId ? 'connected' : '',
+        chipTone: 'ok',
+        state: gateway.gatewayId ? 'ok' : ''
       });
     }
     const domainCurrent = byId('custom-domain-current');
@@ -1478,7 +1522,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         value: domain.hostname || '',
         placeholder: 'Not set yet',
         chip: domain.hostname ? (domain.status || 'unprovisioned') : '',
-        chipTone: domain.status === 'provisioned' ? 'ok' : 'warn'
+        chipTone: domain.status === 'provisioned' ? 'ok' : 'warn',
+        state: domain.status === 'provisioned' ? 'ok' : ''
       });
     }
     lastStatus = status;

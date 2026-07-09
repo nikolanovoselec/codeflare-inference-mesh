@@ -15,8 +15,8 @@ const fullStatusFixture = `{
 	"future_unknown_field": {"nested": [1, 2, 3]},
 	"runtime": {
 		"stages": [
-			{"node_id": "node-abc", "layers": "0-15", "future": true},
-			{"node_id": "node-def", "layers": "16-31"}
+			{"stage_id":"stage-0","stage_index":0,"node_id":"node-abc","layer_start":0,"layer_end":15,"state":"ready","backend":"llama.cpp","bind_addr":"100.96.0.26:4420","selected_device":{"backend_device":"cuda:0"},"future": true},
+			{"stage_id":"stage-1","stage_index":1,"node_id":"node-def","layer_start":16,"layer_end":31,"state":"ready","backend":"metal","bind_addr":"100.96.0.14:4420"}
 		],
 		"other": "ignored"
 	},
@@ -52,6 +52,10 @@ func TestREQOBS003ParsesMeshLLMStatus(t *testing.T) {
 				PeerCount:        2,
 				StageCount:       2,
 				StageZeroNodeID:  "node-abc",
+				Stages: []MeshLLMStage{
+					{StageID: "stage-0", StageIndex: 0, NodeID: "node-abc", LayerStart: 0, LayerEnd: 15, State: "ready", Backend: "llama.cpp", BindAddr: "100.96.0.26:4420", SelectedDevice: "cuda:0"},
+					{StageID: "stage-1", StageIndex: 1, NodeID: "node-def", LayerStart: 16, LayerEnd: 31, State: "ready", Backend: "metal", BindAddr: "100.96.0.14:4420"},
+				},
 				ServingModels:    []string{"unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S"},
 				TokPerSec:        20.6,
 				InflightRequests: 2,

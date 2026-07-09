@@ -797,6 +797,7 @@ func applyMeshStatusMetrics(metrics agent.NodeMetrics, profile agent.ModelProfil
 	metrics.ReadyModels = append([]string(nil), readyModels...)
 	metrics.SplitEnabled = profile.MeshLLM.Split
 	metrics.StageCount = status.StageCount
+	metrics.StageAssignments = append([]agent.MeshLLMStage(nil), status.Stages...)
 	metrics.APIReady = apiReady
 	metrics.ConsoleReady = consoleReady
 	metrics.MeshLLMVersion = status.Version

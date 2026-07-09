@@ -22,9 +22,10 @@ type NodeMetrics struct {
 	MeshRole                  string   `json:"meshRole,omitempty"`
 	PeerCount                 int      `json:"peerCount,omitempty"`
 	ReadyModels               []string `json:"readyModels,omitempty"`
-	SplitEnabled              bool     `json:"splitEnabled,omitempty"`
-	StageCount                int      `json:"stageCount,omitempty"`
-	APIReady                  bool     `json:"apiReady,omitempty"`
+	SplitEnabled              bool           `json:"splitEnabled,omitempty"`
+	StageCount                int            `json:"stageCount,omitempty"`
+	StageAssignments          []MeshLLMStage  `json:"stageAssignments,omitempty"`
+	APIReady                  bool           `json:"apiReady,omitempty"`
 	ConsoleReady              bool     `json:"consoleReady,omitempty"`
 	MeshLLMVersion            string   `json:"meshllmVersion,omitempty"`
 	LlamaCppVersion           string   `json:"llamacppVersion,omitempty"`
@@ -138,6 +139,9 @@ func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	}
 	if extra.StageCount != 0 {
 		merged.StageCount = extra.StageCount
+	}
+	if len(extra.StageAssignments) > 0 {
+		merged.StageAssignments = append([]MeshLLMStage(nil), extra.StageAssignments...)
 	}
 	if extra.APIReady {
 		merged.APIReady = true

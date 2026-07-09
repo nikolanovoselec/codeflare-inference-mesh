@@ -20,10 +20,23 @@ type MeshLLMStatus struct {
 	PeerCount        int
 	StageCount       int
 	StageZeroNodeID  string
+	Stages           []MeshLLMStage
 	ServingModels    []string
 	TokPerSec        float64
 	InflightRequests int
 	GPUs             []GPUStatus
+}
+
+type MeshLLMStage struct {
+	StageID        string `json:"stageId,omitempty"`
+	StageIndex     int    `json:"stageIndex"`
+	NodeID         string `json:"nodeId,omitempty"`
+	LayerStart     int    `json:"layerStart"`
+	LayerEnd       int    `json:"layerEnd"`
+	State          string `json:"state,omitempty"`
+	Backend        string `json:"backend,omitempty"`
+	BindAddr       string `json:"bindAddr,omitempty"`
+	SelectedDevice string `json:"selectedDevice,omitempty"`
 }
 
 // GPUStatus is the tolerant subset of a MeshLLM `gpus[]` entry the agent reads.
@@ -49,7 +62,20 @@ func ParseMeshLLMStatus(body []byte) (MeshLLMStatus, error) {
 		Token     string `json:"token"`
 		Version   string `json:"version"`
 		Runtime   struct {
-			Stages []json.RawMessage `json:"stages"`
+			Stages []struct {
+				StageID       string `json:"stage_id"`
+				StageIndex    int    `json:"stage_index"`
+				NodeID        string `json:"node_id"`
+				LayerStart    int    `json:"layer_start"`
+				LayerEnd      int    `json:"layer_end"`
+				State         string `json:"state"`
+				Backend       string `json:"backend"`
+				BindAddr      string `json:"bind_addr"`
+				SelectedDevice *struct {
+					BackendDevice string `json:"backend_device"`
+					StableID      string `json:"stable_id"`
+				} `json:"selected_device"`
+			} `json:"stages"`
 		} `json:"runtime"`
 		Peers            []json.RawMessage `json:"peers"`
 		ServingModels    []string          `json:"serving_models"`
@@ -79,13 +105,18 @@ func ParseMeshLLMStatus(body []byte) (MeshLLMStatus, error) {
 	for _, gpu := range payload.GPUs {
 		status.GPUs = append(status.GPUs, GPUStatus{Name: gpu.Name, RatedVRAMGB: gpu.RatedVRAMGB, UsedVRAMGB: gpu.UsedVRAMGB})
 	}
-	if len(payload.Runtime.Stages) > 0 {
-		var stage struct {
-			NodeID string `json:"node_id"`
+	for _, stage := range payload.Runtime.Stages {
+		selected := ""
+		if stage.SelectedDevice != nil {
+			selected = stage.SelectedDevice.BackendDevice
+			if selected == "" {
+				selected = stage.SelectedDevice.StableID
+			}
 		}
-		if err := json.Unmarshal(payload.Runtime.Stages[0], &stage); err == nil {
-			status.StageZeroNodeID = stage.NodeID
-		}
+		status.Stages = append(status.Stages, MeshLLMStage{StageID: stage.StageID, StageIndex: stage.StageIndex, NodeID: stage.NodeID, LayerStart: stage.LayerStart, LayerEnd: stage.LayerEnd, State: stage.State, Backend: stage.Backend, BindAddr: stage.BindAddr, SelectedDevice: selected})
+	}
+	if len(status.Stages) > 0 {
+		status.StageZeroNodeID = status.Stages[0].NodeID
 	}
 	return status, nil
 }

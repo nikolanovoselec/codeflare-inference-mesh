@@ -73,7 +73,7 @@ POST /v1/chat/completions
 
 **Origin check:** n/a
 
-**Request body:** JSON chat completion body with a public model alias. MeshLLM profiles need only `model` and messages. Direct llama.cpp profiles also use a session identity so the router can pin the coding session to one cache-local node without storing raw ids: callers may send OpenAI `user` in the grammar `user:<id>|session:<id>`, include metadata visible to the router (`cf-aig-metadata` if forwarded, or a JSON `metadata` body object) with `user` and optional `session` values, or rely on the provider-scoped fallback `ai-gateway/provider-default` when AI Gateway REST dynamic-route log metadata is observability-only and not forwarded.
+**Request body:** JSON chat completion body with a public model alias. AI Gateway dynamic-route calls may arrive as `model: "dynamic/codeflare-mesh"`; the router strips the `dynamic/` prefix before profile selection and forwards the active profile's upstream model to the node. MeshLLM profiles need only `model` and messages. Direct llama.cpp profiles also use a session identity so the router can pin the coding session to one cache-local node without storing raw ids: callers may send OpenAI `user` in the grammar `user:<id>|session:<id>`, include metadata visible to the router (`cf-aig-metadata` if forwarded, or a JSON `metadata` body object) with `user` and optional `session` values, or rely on the provider-scoped fallback `ai-gateway/provider-default` when AI Gateway REST dynamic-route log metadata is observability-only and not forwarded.
 
 **Response**
 
@@ -87,7 +87,7 @@ POST /v1/chat/completions
 | `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
 | `503` | No eligible node is ready to serve, or no upstream token is available. | `{ "error": "no_healthy_node" \| "upstream_token_missing", "requestId": string }` |
 
-**Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-SCH-005](../../sdd/spec/state-scheduling.md)
+**Implements:** [REQ-RTR-002](../../sdd/spec/router-worker.md), [REQ-RTR-003](../../sdd/spec/router-worker.md), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation), [REQ-SCH-003](../../sdd/spec/state-scheduling.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-SCH-005](../../sdd/spec/state-scheduling.md)
 
 ### POST /node/claim
 
@@ -149,7 +149,7 @@ POST /node/heartbeat
 
 - `meshRole` — `coordinator` when the node owns stage 0, else `serving-peer` or `api-client`.
 - `readyModels` — the model ids from the node's own `/v1/models` (the mesh-wide union).
-- `peerCount`, `splitEnabled`, `stageCount`, `apiReady`, `consoleReady`, and `meshllmVersion`.
+- `peerCount`, `splitEnabled`, `stageCount`, `stageAssignments[]` (`stageId`, `stageIndex`, `nodeId`, `layerStart`, `layerEnd`, `state`, optional backend/device fields), `apiReady`, `consoleReady`, and `meshllmVersion`.
 
 #### `meshBootstrap` envelope
 
@@ -484,10 +484,10 @@ GET /api/v1/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string }, "runtimeInstalls": RuntimeInstallStatus[], "lastSpeedTest"?: LastSpeedTestSummary, "agentVersion"?: string }`. |
+| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string }, "runtimeInstalls": RuntimeInstallStatus[], "lastSpeedTest"?: LastSpeedTestSummary, "agentVersion"?: string, "details"?: { "nodes": ApiNode[], "profiles": ApiModel[], "profileReadiness": ProfileReadiness[], "meshHealth": MeshHealthEntry[] } }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Notes:** `lastSpeedTest`, when present, carries `{ at, requestId, model, nodeId?, requestedPromptTokens, requestedMaxTokens, promptTokens, completionTokens, promptTokensEstimated, completionTokensEstimated, promptTokensPerSecond, generationTokensPerSecond, timeToFirstTokenMs, generationMs, totalMs, cacheTokens? }`.
+**Notes:** `lastSpeedTest`, when present, carries `{ at, requestId, model, nodeId?, requestedPromptTokens, requestedMaxTokens, promptTokens, completionTokens, promptTokensEstimated, completionTokensEstimated, promptTokensPerSecond, generationTokensPerSecond, timeToFirstTokenMs, generationMs, totalMs, cacheTokens? }`. Add `?detail=full` or `?include=details` to include the same redacted operational details the console needs for automation: per-node runtime installs/metrics, profile readiness, profile metadata, mesh health, and stage/layer ownership. The detailed shape still excludes secrets.
 
 **Implements:** [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status)
 
