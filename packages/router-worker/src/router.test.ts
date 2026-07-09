@@ -1315,7 +1315,10 @@ describe('router worker behavioral contracts', () => {
   })
 
   it('REQ-RTR-004 rejects node redirects instead of following a new destination', async () => {
-    const mesh = { fetch: async () => new Response(null, { status: 302, headers: { location: 'http://10.0.0.9:8080/v1/chat/completions' } }) } as Fetcher
+    const mesh = {
+      fetch: async () => new Response(null, { status: 302, headers: { location: 'http://10.0.0.9:8080/v1/chat/completions' } }),
+      connect() { throw new Error('connect is not used by inference forwarding') }
+    } as Fetcher
     const { router, store } = routerFixture({ mesh })
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture())
