@@ -1364,9 +1364,9 @@ async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: n
       const data = line.slice(5).trim()
       if (!data || data === '[DONE]') continue
       try {
-        const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }>; usage?: Record<string, unknown> }
+        const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }>; usage?: Record<string, unknown> }
         if (parsed.usage) usage = parsed.usage
-        const content = parsed.choices?.map((choice) => choice.delta?.content ?? '').join('') ?? ''
+        const content = parsed.choices?.map((choice) => choice.delta?.content ?? choice.delta?.reasoning_content ?? '').join('') ?? ''
         if (content) {
           if (firstTokenAt === 0) firstTokenAt = Date.now()
           chunks += 1

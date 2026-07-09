@@ -3193,7 +3193,7 @@ describe('Access-first setup and host gating contracts', () => {
     const capture: { request?: Request } = {}
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hello "}}]}\n\n'))
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"reasoning_content":"hello "}}]}\n\n'))
         controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"world"}}],"usage":{"prompt_tokens":256,"completion_tokens":2}}\n\n'))
         controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
         controller.close()
@@ -3215,7 +3215,7 @@ describe('Access-first setup and host gating contracts', () => {
       headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
       body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 256, maxTokens: 32 })
     }))
-    const measured = await response.json() as { tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number }
+    const measured = await response.json() as { tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number; chunks: number; outputChars: number }
     const forwarded = await capture.request!.json() as { model: string; user?: string; max_tokens?: number; messages: Array<{ role: string; content: string }> }
 
     expect(response.status).toBe(200)
@@ -3226,6 +3226,8 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.requestedPromptTokens).toBe(256)
     expect(measured.requestedMaxTokens).toBe(32)
     expect(measured.tokens).toMatchObject({ prompt: 256, completion: 2, promptEstimated: false, completionEstimated: false })
+    expect(measured.chunks).toBe(2)
+    expect(measured.outputChars).toBe(11)
     expect(measured.throughput.promptTokensPerSecond).toBeGreaterThan(0)
     expect(measured.throughput.generationTokensPerSecond).toBeGreaterThan(0)
   })
