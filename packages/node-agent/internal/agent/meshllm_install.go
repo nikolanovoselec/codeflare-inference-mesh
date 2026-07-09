@@ -424,6 +424,25 @@ func archiveEntryBase(name string) string {
 	return path.Base(strings.ReplaceAll(name, `\`, "/"))
 }
 
+func safeArchiveEntryBase(name string) (string, error) {
+	normalized := strings.ReplaceAll(name, `\`, "/")
+	if strings.TrimSpace(normalized) == "" {
+		return "", fmt.Errorf("empty path")
+	}
+	if strings.Contains(normalized, "\x00") {
+		return "", fmt.Errorf("nul byte in path")
+	}
+	cleaned := path.Clean(normalized)
+	if cleaned == "." || cleaned == ".." || path.IsAbs(cleaned) || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, "/../") {
+		return "", fmt.Errorf("path escapes archive root")
+	}
+	base := path.Base(cleaned)
+	if base == "." || base == ".." || base == "" || strings.ContainsAny(base, `/\`) || strings.Contains(base, ":") {
+		return "", fmt.Errorf("unsafe file name")
+	}
+	return base, nil
+}
+
 func downloadMeshLLMAsset(assetURL string) ([]byte, error) {
 	client := &http.Client{Timeout: 30 * time.Minute}
 	response, err := client.Get(assetURL)

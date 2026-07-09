@@ -161,18 +161,25 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 		return "", fmt.Errorf("%w: create bin dir: %v", ErrRuntimeDependencyMissing, err)
 	}
 	for name, file := range runtimeFiles {
+		safeName, err := safeArchiveEntryBase(name)
+		if err != nil || safeName != name {
+			if err == nil {
+				err = fmt.Errorf("path changed during sanitization")
+			}
+			return "", fmt.Errorf("%w: unsafe llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, name, err)
+		}
 		mode := os.FileMode(0o600)
-		if name == binaryName {
+		if safeName == binaryName {
 			mode = 0o700
 		}
-		dest := filepath.Join(binDir, name)
+		dest := filepath.Join(binDir, safeName)
 		tmp := dest + ".tmp"
 		if err := os.WriteFile(tmp, file, mode); err != nil {
-			return "", fmt.Errorf("%w: stage llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, name, err)
+			return "", fmt.Errorf("%w: stage llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, safeName, err)
 		}
 		if err := os.Rename(tmp, dest); err != nil {
 			_ = os.Remove(tmp)
-			return "", fmt.Errorf("%w: install llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, name, err)
+			return "", fmt.Errorf("%w: install llama.cpp runtime file %s: %v", ErrRuntimeDependencyMissing, safeName, err)
 		}
 	}
 	return target, nil
@@ -448,7 +455,10 @@ func extractLlamaCppTarGz(archive []byte, binaryName string) (map[string][]byte,
 		if err != nil {
 			return nil, fmt.Errorf("read llama.cpp archive: %w", err)
 		}
-		base := archiveEntryBase(header.Name)
+		base, err := safeArchiveEntryBase(header.Name)
+		if err != nil {
+			return nil, fmt.Errorf("unsafe llama.cpp archive entry %q: %w", header.Name, err)
+		}
 		if !isLlamaCppRuntimeFile(base, binaryName) {
 			continue
 		}
@@ -460,7 +470,11 @@ func extractLlamaCppTarGz(archive []byte, binaryName string) (map[string][]byte,
 			}
 			files[base] = data
 		case tar.TypeSymlink, tar.TypeLink:
-			links[base] = archiveEntryBase(header.Linkname)
+			target, err := safeArchiveEntryBase(header.Linkname)
+			if err != nil {
+				return nil, fmt.Errorf("unsafe llama.cpp archive link %q -> %q: %w", header.Name, header.Linkname, err)
+			}
+			links[base] = target
 		}
 	}
 	for link := range links {
@@ -499,7 +513,10 @@ func extractLlamaCppZip(archive []byte, binaryName string) (map[string][]byte, e
 	}
 	files := map[string][]byte{}
 	for _, file := range reader.File {
-		base := path.Base(strings.ReplaceAll(file.Name, `\`, "/"))
+		base, err := safeArchiveEntryBase(file.Name)
+		if err != nil {
+			return nil, fmt.Errorf("unsafe llama.cpp archive entry %q: %w", file.Name, err)
+		}
 		if file.FileInfo().IsDir() || !isLlamaCppRuntimeFile(base, binaryName) {
 			continue
 		}

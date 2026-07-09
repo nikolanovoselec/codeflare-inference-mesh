@@ -200,6 +200,22 @@ func TestREQNODE013EnsureLlamaCppInstallsManagedBinary(t *testing.T) {
 	}
 }
 
+func TestREQNODE013LlamaCppRejectsUnsafeTarArchiveEntry(t *testing.T) {
+	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "../../bin/llama-server", body: []byte("fake llama-server"), mode: 0o755}})
+	_, err := extractLlamaCppRuntime(archive, "llama-b1234-bin-ubuntu-x64.tar.gz", "llama-server")
+	if err == nil || !strings.Contains(err.Error(), "unsafe llama.cpp archive entry") {
+		t.Fatalf("expected unsafe tar entry rejection, got %v", err)
+	}
+}
+
+func TestREQNODE013LlamaCppRejectsUnsafeZipArchiveEntry(t *testing.T) {
+	archive := buildFakeMeshLLMZip(t, []fakeArchiveEntry{{name: `..\..\llama-server.exe`, body: []byte("fake llama-server"), mode: 0o755}})
+	_, err := extractLlamaCppRuntime(archive, "llama-b1234-bin-win-cpu-x64.zip", "llama-server.exe")
+	if err == nil || !strings.Contains(err.Error(), "unsafe llama.cpp archive entry") {
+		t.Fatalf("expected unsafe zip entry rejection, got %v", err)
+	}
+}
+
 func TestREQNODE013LlamaCppVersionQueryUsesRuntimeLibraryPath(t *testing.T) {
 	binDir := filepath.Join(t.TempDir(), "bin")
 	if err := os.MkdirAll(binDir, 0o700); err != nil {
