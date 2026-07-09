@@ -344,7 +344,7 @@ describe('dashboard overview contracts', () => {
     expect(cells.some((cell) => cell.dataset.cell === 'toks')).toBe(false)
     const bigVram = cells.find((cell) => cell.dataset.cell === 'vram')!
     expect(bigVram.dataset.value).toBe('24576')
-    expect(bigVram.textContent).toBe('195.3 GiB / 240 GiB')
+    expect(bigVram.textContent).toBe('19.5 GiB / 24 GiB')
     expect(cells.find((cell) => cell.dataset.cell === 'models')!.dataset.value).toBe('2')
   })
 
@@ -489,7 +489,7 @@ describe('dashboard overview contracts', () => {
     expect(field('status')).toBeDefined()
     expect(field('toks')).toBeUndefined()
     expect(field('vram')!.dataset.value).toBe('4000/8192')
-    expect(descendants(field('vram')!).map((node) => node.textContent).join(' ')).toContain('39.1 GiB / 80 GiB')
+    expect(descendants(field('vram')!).map((node) => node.textContent).join(' ')).toContain('3.9 GiB / 8 GiB')
     expect(field('version')!.dataset.reported).toBe('v1.2.0')
     expect(field('version')!.dataset.desiredMatch).toBe('false')
     const models = fields.filter((node) => node.dataset.drawerModel)
@@ -586,7 +586,7 @@ describe('dashboard overview contracts', () => {
     const battleVram = fields.find((node) => node.dataset.drawerField === 'vram')!
     expect(battleVram.dataset.vramSource).toBe('reported')
     expect(battleVram.dataset.value).toBe('18799/24576')
-    expect(descendants(battleVram).map((node) => node.textContent).join(' ')).toContain('183.6 GiB / 240 GiB')
+    expect(descendants(battleVram).map((node) => node.textContent).join(' ')).toContain('18.4 GiB / 24 GiB')
     const battleSplitReadiness = fields.find((node) => node.dataset.drawerField === 'split-readiness')!
     const battleCapacity = descendants(battleSplitReadiness).find((node) => node.dataset.participantLabel === 'battlestation')!
     expect(battleCapacity.dataset.participantCapacityGb).toBe('63.2')
@@ -718,7 +718,7 @@ describe('dashboard overview contracts', () => {
     expect(fields.some((node) => node.dataset.drawerField === 'peers')).toBe(false)
     expect(field('direct-parallel')!.dataset.value).toBe('4')
     expect(field('direct-parallel')!.dataset.activeSlots).toBeUndefined()
-    expect(textOf(field('vram')!)).toContain('38.2 GiB / 240 GiB')
+    expect(textOf(field('vram')!)).toContain('3.8 GiB / 24 GiB')
     expect(textOf(field('direct-parallel')!)).toContain('parallel 4')
     expect(textOf(field('direct-cached-tokens')!)).toContain('not reported')
   })
