@@ -238,13 +238,13 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 ### REQ-OBS-010: Live throughput surface
 
-**Intent:** The dashboard should feel live: headline fleet numbers and a throughput trace that move on their own, derived by smoothing periodic status polls rather than pretending to stream.
+**Intent:** The dashboard should feel live: headline fleet numbers, the last measured Speed Test throughput, and a throughput trace update from status polls without pretending to stream unreported runtime metrics.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. The Overview stats strip reports node counts, total mesh VRAM, and aggregate generation throughput from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 computes the stats strip aggregates from admin status) -->
+1. The Overview stats strip reports node counts, total mesh VRAM, and the latest Speed Test prompt/generation throughput from admin status when a summary exists. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 computes the stats strip aggregates from admin status) -->
 2. The dashboard refreshes status on an approximately five-second cadence while the page is visible. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_POLLING.intervalMs = 5000 --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 refreshes admin status on the poll interval) -->
 3. Status polling pauses while the page is hidden and resumes when it becomes visible. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 pauses polling while the tab is hidden and resumes with a fresh read) -->
 4. A live indicator reflects whether the latest poll succeeded within the freshness window. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 flips the live badge when a poll fails and recovers on the next success) -->

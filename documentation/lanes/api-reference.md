@@ -484,14 +484,16 @@ GET /api/v1/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string }, "runtimeInstalls": RuntimeInstallStatus[], "agentVersion"?: string }`. |
+| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string }, "runtimeInstalls": RuntimeInstallStatus[], "lastSpeedTest"?: LastSpeedTestSummary, "agentVersion"?: string }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Notes:** `lastSpeedTest`, when present, carries `{ at, requestId, model, nodeId?, requestedPromptTokens, requestedMaxTokens, promptTokens, completionTokens, promptTokensEstimated, completionTokensEstimated, promptTokensPerSecond, generationTokensPerSecond, timeToFirstTokenMs, generationMs, totalMs, cacheTokens? }`.
 
 **Implements:** [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status)
 
 ### POST /api/v1/speed-test
 
-Runs a bounded synthetic prompt through the router's direct scheduling path and returns prompt-ingestion and generation throughput for automation. This bypasses AI Gateway and measures the Worker → node-agent → runtime leg. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
+Runs a bounded synthetic prompt through the router's direct scheduling path, returns prompt-ingestion and generation throughput for automation, and stores the result as the latest Speed Test summary returned by status endpoints. This bypasses AI Gateway and measures the Worker → node-agent → runtime leg. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
 
 ```http
 POST /api/v1/speed-test
@@ -505,7 +507,7 @@ POST /api/v1/speed-test
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Speed test completed. | `{ model, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage, upstreamTimings }`. `timingsMs` is end-to-end wall-clock; `throughput` prefers llama.cpp upstream timing fields when present (`upstreamTimings.prompt_per_second` / `predicted_per_second`) and otherwise falls back to wall-clock estimates. |
+| `200` | Speed test completed. | `{ model, nodeId?, cacheTokens?, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage, upstreamTimings }`. `timingsMs` is end-to-end wall-clock; `throughput` prefers llama.cpp upstream timing fields when present (`upstreamTimings.prompt_per_second` / `predicted_per_second`) and otherwise falls back to wall-clock estimates. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No profile matched the model. | `no-profile` error body. |
 | `502` | The selected node could not be reached over Mesh transport. | `node_unreachable` error body. |

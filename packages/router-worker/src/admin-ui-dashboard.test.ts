@@ -39,6 +39,7 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
     profileReadiness: [],
     audit: [],
     generatedAt: 1_700_000_200_000,
+    lastSpeedTest: { at: 1_700_000_100_000, requestId: 'speed-a', model: 'codeflare-mesh', nodeId: 'node-big', requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100, cacheTokens: 0 },
     gateway: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' },
     customDomain: { hostname: 'router.test', status: 'provisioned' },
     desiredAgentVersion: 'v1.3.0',
@@ -98,7 +99,19 @@ describe('dashboard overview contracts', () => {
     }
     expect(stat('nodes')).toBe('2/3')
     expect(stat('vram')).toBe('32')
-    expect(stat('toks')).toBe('103.8')
+    expect(stat('speed')).toBeTruthy()
+    const speedTile = tiles.find((candidate) => candidate.dataset.stat === 'speed')!
+    expect(speedTile.dataset.promptTps).toBe('1800.5')
+    expect(speedTile.dataset.generationTps).toBe('67.2')
+    expect(speedTile.dataset.nodeId).toBe('node-big')
+  })
+
+  it('REQ-OBS-010 does not fabricate a last Speed Test before one is reported', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ lastSpeedTest: undefined }) })
+    const speedTile = descendants(harness.byId('overview-tiles')).find((node) => node.dataset.stat === 'speed')!
+
+    expect(speedTile.dataset.promptTps).toBeUndefined()
+    expect(speedTile.dataset.generationTps).toBeUndefined()
   })
 
   it('REQ-ADM-007 toggles mobile navigation from the top-bar menu and closes it after section changes', async () => {
@@ -815,8 +828,16 @@ describe('dashboard throughput trace and playground contracts', () => {
       tokens: { prompt: 2048, completion: 80, promptEstimated: false, completionEstimated: false },
       throughput: { promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2 }
     }
+    let lastSpeedTest: Record<string, unknown> | undefined
     const harness = await dashboardHarness({
-      respond: (path) => path === ADMIN_UI_PLAYGROUND.speedPath ? Response.json(result) : undefined
+      respond: (path) => {
+        if (path === ADMIN_UI_PLAYGROUND.speedPath) {
+          lastSpeedTest = { at: 1_700_000_300_000, requestId: 'speed-b', model: result.model, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100 }
+          return Response.json(result)
+        }
+        if (path === '/admin/status') return Response.json(statusFixture(lastSpeedTest ? { lastSpeedTest } : { lastSpeedTest: undefined }))
+        return undefined
+      }
     })
     harness.byId(ADMIN_UI_PLAYGROUND.selectId).value = 'qwen3.6:35b-a3b'
 
@@ -828,6 +849,9 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(payload.model).toBe('qwen3.6:35b-a3b')
     expect(rendered.tokens).toEqual(result.tokens)
     expect(rendered.throughput).toEqual(result.throughput)
+    const speedTile = descendants(harness.byId('overview-tiles')).find((node) => node.dataset.stat === 'speed')!
+    expect(speedTile.dataset.promptTps).toBe('1800.5')
+    expect(speedTile.dataset.generationTps).toBe('67.2')
   })
 
   it('REQ-ADM-029 forwards tools and a max-token cap and surfaces tool calls on the dynamic route', async () => {

@@ -329,9 +329,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     return el;
   };
   const nodeToks = (node) => (node.metrics && typeof node.metrics.tokensPerSecond === 'number') ? node.metrics.tokensPerSecond : null;
+  const speedNumber = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
+  const round1 = (value) => String(Math.round(value * 10) / 10);
+  const lastSpeedTest = (status) => status && status.lastSpeedTest && typeof status.lastSpeedTest === 'object' ? status.lastSpeedTest : null;
+  const lastSpeedLabel = (summary) => {
+    const prompt = speedNumber(summary && summary.promptTokensPerSecond);
+    const generation = speedNumber(summary && summary.generationTokensPerSecond);
+    return prompt == null || generation == null ? 'not run' : 'prompt ' + round1(prompt) + ' / gen ' + round1(generation) + ' tok/s';
+  };
   const nodeVramTotal = (node) => (node.metrics && node.metrics.gpuMemoryTotalMiB) || 0;
   const nodeModelCount = (node) => (node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0);
-  const round1 = (value) => String(Math.round(value * 10) / 10);
   const reportedText = (value) => value == null ? 'not reported' : String(value);
   const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
   const statusDot = (tone, label) => {
@@ -915,19 +922,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const reasoning = llamacpp.reasoning || {};
       const flashValue = llamacpp.flashAttn === true ? 'on' : llamacpp.flashAttn === false ? 'off' : '';
       const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
-      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel, placeholder: '4', hint: 'Concurrent direct slots for this node-local llama-server. The proven RTX 3090 profile uses 4; lower it if VRAM gets tight.' }));
-      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-gpu-layers', label: 'GPU layers (-ngl / --gpu-layers)', value: llamacpp.gpuLayers || '', placeholder: '99', hint: 'Max model layers stored in VRAM. The proven profile uses 99 for full offload; 0 means CPU-only; blank uses llama.cpp default auto.' }));
-      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-k', label: 'KV cache type (keys)', value: llamacpp.cacheTypeK || '', options: kvOptions, hint: 'llama.cpp --cache-type-k. q4_0 is the proven 262K-context setting; q8_0 uses more memory for higher precision.' }));
-      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-v', label: 'KV cache type (values)', value: llamacpp.cacheTypeV || '', options: kvOptions, hint: 'llama.cpp --cache-type-v. Match the key type; the proven 262K-context profile uses q4_0.' }));
-      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-batch', label: 'Prefill batch', value: llamacpp.batch, placeholder: '8192', hint: 'llama.cpp --batch-size. The proven profile uses 8192 for ~2K tok/s prompt ingestion.' }));
-      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-ubatch', label: 'Micro-batch', value: llamacpp.ubatch, placeholder: '2048', hint: 'llama.cpp --ubatch-size. The proven safe value is 2048; 4096 was faster to allocate but caused Gateway OOM on this 24 GB profile.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel, placeholder: '4', hint: 'Concurrent direct slots for this node-local llama-server. More slots can serve more overlapping requests but reserve more KV memory.' }));
+      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-gpu-layers', label: 'GPU layers (-ngl / --gpu-layers)', value: llamacpp.gpuLayers || '', placeholder: '99', hint: 'Max model layers stored in VRAM. Higher values usually improve generation speed; 0 means CPU-only; blank uses llama.cpp default auto.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-k', label: 'KV cache type (keys)', value: llamacpp.cacheTypeK || '', options: kvOptions, hint: 'llama.cpp --cache-type-k. Lower precision uses less KV memory and can fit larger contexts; higher precision uses more memory.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-v', label: 'KV cache type (values)', value: llamacpp.cacheTypeV || '', options: kvOptions, hint: 'llama.cpp --cache-type-v. Match the key type unless you are testing a specific memory/quality tradeoff.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-batch', label: 'Prefill batch', value: llamacpp.batch, placeholder: '8192', hint: 'llama.cpp --batch-size. Higher values can speed prompt ingestion but use more memory during prefill.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-ubatch', label: 'Micro-batch', value: llamacpp.ubatch, placeholder: '2048', hint: 'llama.cpp --ubatch-size. Higher values can improve prompt-loading speed but increase peak memory; lower it if requests fail under load.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-flash', label: 'Flash attention', value: flashValue, options: onOffOptions, hint: 'llama.cpp --flash-attn. Usually On for fast large-context serving.' }));
-      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-maxout', label: 'Generation cap (-n / --predict)', value: llamacpp.maxOutputTokens, placeholder: '16384', hint: 'llama.cpp server-side default/max tokens to predict. Requests may still pass max_tokens; the proven profile uses 16384 so an 8192 reasoning budget still leaves room to answer.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-maxout', label: 'Generation cap (-n / --predict)', value: llamacpp.maxOutputTokens, placeholder: '16384', hint: 'llama.cpp server-side default/max tokens to predict. Requests may still pass max_tokens; keep this above the reasoning budget so answers are not cut off.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-prompt', label: 'Prompt cache', value: llamacpp.cachePrompt === false ? 'off' : 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], hint: 'Keep on for coding-session KV reuse.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-cache-reuse', label: 'Cache reuse', value: llamacpp.cacheReuse, placeholder: '256', min: 0, hint: 'llama.cpp --cache-reuse value for prompt/KV reuse.' }));
-      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'llama.cpp --reasoning for thinking-capable chat templates. The proven Qwen profile has this On.' }));
-      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'llama.cpp --reasoning-format. Use deepseek for Qwen/DeepSeek-style thinking output.' }));
-      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '8192', hint: 'llama.cpp --reasoning-budget. Part of the output budget; the proven profile uses 8192 with a 16384 generation cap.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'llama.cpp --reasoning for thinking-capable chat templates. Turn it off for lower latency when a thinking trace is not needed.' }));
+      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'llama.cpp --reasoning-format. Use the format expected by the model template.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '8192', hint: 'llama.cpp --reasoning-budget. Part of the output budget; higher values allow longer thinking and can delay the final answer.' }));
     }
     const save = document.createElement('button');
     save.type = 'button';
@@ -1293,11 +1300,18 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const domain = status.customDomain || {};
       const serving = nodes.filter((node) => nodeTone(node) === 'ok').length;
       const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
-      const toksValues = nodes.map((node) => nodeToks(node)).filter((value) => value != null);
-      const toks = toksValues.reduce((total, value) => total + value, 0);
+      const speed = lastSpeedTest(status);
       tiles.appendChild(tile('Nodes serving', serving + '/' + nodes.length, 'nodes'));
       tiles.appendChild(tile('Mesh VRAM GB', String(Math.round(vramMiB / 1024)), 'vram'));
-      tiles.appendChild(tile('Tokens/s', toksValues.length ? round1(toks) : 'not reported', 'toks'));
+      const speedTile = tile('Last speed test', speed ? lastSpeedLabel(speed) : 'not run', 'speed');
+      if (speed) {
+        if (speed.promptTokensPerSecond != null) speedTile.dataset.promptTps = String(speed.promptTokensPerSecond);
+        if (speed.generationTokensPerSecond != null) speedTile.dataset.generationTps = String(speed.generationTokensPerSecond);
+        if (speed.cacheTokens != null) speedTile.dataset.cacheTokens = String(speed.cacheTokens);
+        if (speed.nodeId) speedTile.dataset.nodeId = speed.nodeId;
+        if (speed.at != null) speedTile.dataset.at = String(speed.at);
+      }
+      tiles.appendChild(speedTile);
       tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured', 'domain'));
       tiles.appendChild(tile('Agent version', status.desiredAgentVersion || 'not set', 'version'));
     }
@@ -1989,6 +2003,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const model = targetValue === config.playground.directValue && select && select.value ? select.value : STABLE_PUBLIC_MODEL;
       setOutput(out, 'Running speed test...');
       setOutput(out, await request(config.playground.speedPath, { method: 'POST', headers: headers(true), body: JSON.stringify({ model }) }));
+      await refreshStatus().catch(() => undefined);
     } else if (action === config.playground.sendAction) {
       const target = byId(config.playground.targetSelectId);
       const targetValue = target && target.value ? target.value : config.playground.directValue;

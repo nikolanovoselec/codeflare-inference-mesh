@@ -15,11 +15,12 @@ import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersion
 import { eligibleDirectNodes, meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { singleActiveActivation } from './store'
-import type { ClaimRequest, CredentialKind, HeartbeatRequest, LlamaCppProfileSettings, ModelProfile, NodeRecord, RouterEnv, RuntimeKind, Scheduler, Store, TokenRecord } from './types'
+import type { ClaimRequest, CredentialKind, HeartbeatRequest, LastSpeedTestSummary, LlamaCppProfileSettings, ModelProfile, NodeRecord, RouterEnv, RuntimeKind, Scheduler, Store, TokenRecord } from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024
 const SETUP_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
+const LAST_SPEED_TEST_CONFIG_KEY = 'last_speed_test'
 
 export interface RouterDeps {
   readonly store: Store
@@ -468,6 +469,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
   const runtimeVersions = await desiredRuntimeVersions(deps.store)
+  const lastSpeedTest = await deps.store.getConfig<LastSpeedTestSummary>(LAST_SPEED_TEST_CONFIG_KEY)
   const statusNodes = nodes.map((node) => ({ ...node, runtimeInstall: runtimeBinaryStatus(node, runtimeVersions) }))
   // The read-only user role sees the live operational picture (nodes, profiles,
   // mesh health, throughput) but never configuration state or the admin action log:
@@ -483,7 +485,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
         audit: await deps.store.listAudit(20)
       }
     : {}
-  const redacted = redactSecrets({ nodes: statusNodes, profiles, profileReadiness: profileReadiness(profiles, nodes), ...adminOnly, generatedAt: now }) as Record<string, unknown>
+  const redacted = redactSecrets({ nodes: statusNodes, profiles, profileReadiness: profileReadiness(profiles, nodes), ...(lastSpeedTest ? { lastSpeedTest } : {}), ...adminOnly, generatedAt: now }) as Record<string, unknown>
   // meshHealth is composed after redaction: its contract carries token presence/age/count
   // fields (never values), which the key-name redactor would otherwise blank out.
   return json({
@@ -1306,6 +1308,16 @@ interface SpeedTestBody {
   readonly maxTokens?: unknown
 }
 
+interface SpeedTestMeasurement {
+  readonly timingsMs: { readonly timeToFirstToken: number; readonly generation: number; readonly total: number }
+  readonly tokens: { readonly prompt: number; readonly completion: number; readonly promptEstimated: boolean; readonly completionEstimated: boolean }
+  readonly throughput: { readonly promptTokensPerSecond: number; readonly generationTokensPerSecond: number }
+  readonly chunks: number
+  readonly outputChars: number
+  readonly usage: Record<string, unknown> | null
+  readonly upstreamTimings: Record<string, unknown> | null
+}
+
 async function runSpeedTest(deps: RouterDeps, body: SpeedTestBody | undefined, requestHeaders: Headers, requestId: string, now: number): Promise<Response> {
   const model = cleanString(body?.model) ?? STABLE_PUBLIC_MODEL
   const promptTokens = boundedInt(body?.promptTokens, 64, 8192, 2048)
@@ -1328,7 +1340,32 @@ async function runSpeedTest(deps: RouterDeps, body: SpeedTestBody | undefined, r
     return new Response(upstream.body, { status: upstream.status, headers: upstream.headers })
   }
   const measured = await measureSpeedStream(upstream.body, startedAt, promptTokens)
-  return json({ model, promptChars: prompt.length, requestedPromptTokens: promptTokens, requestedMaxTokens: maxTokens, ...measured }, 200, requestId)
+  const nodeId = upstream.headers.get('x-inference-mesh-node') ?? upstream.headers.get('x-inference-mesh-session-node') ?? undefined
+  const cacheTokens = timingNumber(measured.upstreamTimings ?? undefined, 'cache_n')
+  const result = { model, ...(nodeId ? { nodeId } : {}), promptChars: prompt.length, requestedPromptTokens: promptTokens, requestedMaxTokens: maxTokens, ...(cacheTokens !== undefined ? { cacheTokens } : {}), ...measured }
+  await deps.store.putConfig(LAST_SPEED_TEST_CONFIG_KEY, speedTestSummary(result, now, requestId))
+  return json(result, 200, requestId)
+}
+
+function speedTestSummary(result: SpeedTestMeasurement & { readonly model: string; readonly nodeId?: string; readonly requestedPromptTokens: number; readonly requestedMaxTokens: number; readonly cacheTokens?: number }, now: number, requestId: string): LastSpeedTestSummary {
+  return {
+    at: now,
+    requestId,
+    model: result.model,
+    ...(result.nodeId ? { nodeId: result.nodeId } : {}),
+    requestedPromptTokens: result.requestedPromptTokens,
+    requestedMaxTokens: result.requestedMaxTokens,
+    promptTokens: result.tokens.prompt,
+    completionTokens: result.tokens.completion,
+    promptTokensEstimated: result.tokens.promptEstimated,
+    completionTokensEstimated: result.tokens.completionEstimated,
+    promptTokensPerSecond: result.throughput.promptTokensPerSecond,
+    generationTokensPerSecond: result.throughput.generationTokensPerSecond,
+    timeToFirstTokenMs: result.timingsMs.timeToFirstToken,
+    generationMs: result.timingsMs.generation,
+    totalMs: result.timingsMs.total,
+    ...(result.cacheTokens !== undefined ? { cacheTokens: result.cacheTokens } : {})
+  }
 }
 
 function boundedInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -1343,7 +1380,7 @@ function speedTestPrompt(targetTokens: number, nonce: string): string {
   return (prefix + unit.repeat(Math.max(1, Math.ceil(approxChars / unit.length)))).slice(0, approxChars) + '\nReturn a concise numbered list.'
 }
 
-async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: number, fallbackPromptTokens: number): Promise<Record<string, unknown>> {
+async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: number, fallbackPromptTokens: number): Promise<SpeedTestMeasurement> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffered = ''
@@ -1805,11 +1842,13 @@ async function handleApiStatus(request: Request, deps: RouterDeps, requestId: st
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
   const runtimeVersions = await desiredRuntimeVersions(deps.store)
+  const lastSpeedTest = await deps.store.getConfig<LastSpeedTestSummary>(LAST_SPEED_TEST_CONFIG_KEY)
   return json({
     generatedAt: now,
     nodes: { total: nodes.length, online: nodes.filter((node) => node.status === 'online').length },
     models: { total: profiles.length, active: profiles.filter((profile) => profile.active).length },
     runtimeVersions,
+    ...(lastSpeedTest ? { lastSpeedTest } : {}),
     runtimeInstalls: nodes.map((node) => ({ nodeId: node.id, ...runtimeBinaryStatus(node, runtimeVersions) })),
     ...(desiredVersion !== undefined ? { agentVersion: desiredVersion } : {})
   }, 200, requestId)

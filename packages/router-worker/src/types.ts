@@ -128,6 +128,25 @@ export interface NodeMetrics {
   readonly nodeState?: string
 }
 
+export interface LastSpeedTestSummary {
+  readonly at: number
+  readonly requestId: string
+  readonly model: string
+  readonly nodeId?: string
+  readonly requestedPromptTokens: number
+  readonly requestedMaxTokens: number
+  readonly promptTokens: number
+  readonly completionTokens: number
+  readonly promptTokensEstimated: boolean
+  readonly completionTokensEstimated: boolean
+  readonly promptTokensPerSecond: number
+  readonly generationTokensPerSecond: number
+  readonly timeToFirstTokenMs: number
+  readonly generationMs: number
+  readonly totalMs: number
+  readonly cacheTokens?: number
+}
+
 export interface NodeRecord {
   readonly id: string
   readonly displayName: string

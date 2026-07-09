@@ -10,7 +10,7 @@ import { buildCustomProfile, DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from 
 import { createRouter } from './router'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
 import { accessJwksFetcher, accessTestKey, MemoryStore, nodeFixture, signAccessJwt } from './test-helpers'
-import type { ModelProfile, NodeRecord } from './types'
+import type { LastSpeedTestSummary, ModelProfile, NodeRecord } from './types'
 
 function makeMesh(capture: { request?: Request } = {}): Fetcher {
   return {
@@ -3226,7 +3226,7 @@ describe('Access-first setup and host gating contracts', () => {
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"reasoning_content":"hello "}}]}\n\n'))
-        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"world"}}],"usage":{"prompt_tokens":256,"completion_tokens":2},"timings":{"prompt_n":256,"prompt_ms":128,"prompt_per_second":2000,"predicted_n":2,"predicted_ms":20,"predicted_per_second":100}}\n\n'))
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"world"}}],"usage":{"prompt_tokens":256,"completion_tokens":2},"timings":{"cache_n":0,"prompt_n":256,"prompt_ms":128,"prompt_per_second":2000,"predicted_n":2,"predicted_ms":20,"predicted_per_second":100}}\n\n'))
         controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
         controller.close()
       }
@@ -3247,8 +3247,9 @@ describe('Access-first setup and host gating contracts', () => {
       headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
       body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 256, maxTokens: 32 })
     }))
-    const measured = await response.json() as { tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number; chunks: number; outputChars: number; upstreamTimings: { prompt_per_second: number; predicted_per_second: number } }
+    const measured = await response.json() as { nodeId?: string; cacheTokens?: number; tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number; chunks: number; outputChars: number; upstreamTimings: { cache_n: number; prompt_per_second: number; predicted_per_second: number } }
     const forwarded = await capture.request!.json() as { model: string; user?: string; max_tokens?: number; messages: Array<{ role: string; content: string }> }
+    const stored = await store.getConfig<LastSpeedTestSummary>('last_speed_test')
 
     expect(response.status).toBe(200)
     expect(forwarded.model).toBe(SMOKE_UPSTREAM)
@@ -3261,9 +3262,12 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.tokens).toMatchObject({ prompt: 256, completion: 2, promptEstimated: false, completionEstimated: false })
     expect(measured.chunks).toBe(2)
     expect(measured.outputChars).toBe(11)
-    expect(measured.upstreamTimings).toMatchObject({ prompt_per_second: 2000, predicted_per_second: 100 })
+    expect(measured.nodeId).toBe('node-a')
+    expect(measured.cacheTokens).toBe(0)
+    expect(measured.upstreamTimings).toMatchObject({ cache_n: 0, prompt_per_second: 2000, predicted_per_second: 100 })
     expect(measured.throughput.promptTokensPerSecond).toBe(2000)
     expect(measured.throughput.generationTokensPerSecond).toBe(100)
+    expect(stored).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 256, completionTokens: 2, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, cacheTokens: 0 })
   })
 
   it('REQ-API-009 exposes the direct router speed test to automation callers', async () => {
@@ -3286,12 +3290,16 @@ describe('Access-first setup and host gating contracts', () => {
     const unauthorized = await router(new Request('https://router.test/api/v1/speed-test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh' }) }))
     const response = await router(new Request('https://router.test/api/v1/speed-test', { method: 'POST', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 64, maxTokens: 16 }) }))
     const measured = await response.json() as { tokens: { prompt: number; completion: number }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number } }
+    const status = await router(new Request('https://router.test/api/v1/status', { headers: bearer('auto-secret') }))
+    const statusBody = await status.json() as { lastSpeedTest?: LastSpeedTestSummary }
 
     expect(unauthorized.status).toBe(401)
     expect(response.status).toBe(200)
+    expect(status.status).toBe(200)
     expect(measured.tokens).toMatchObject({ prompt: 64, completion: 1 })
     expect(measured.throughput.promptTokensPerSecond).toBeGreaterThan(0)
     expect(measured.throughput.generationTokensPerSecond).toBeGreaterThan(0)
+    expect(statusBody.lastSpeedTest).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 64, completionTokens: 1 })
   })
 
   it('REQ-ADM-029 direct playground forwards the session user required by llama.cpp profiles', async () => {

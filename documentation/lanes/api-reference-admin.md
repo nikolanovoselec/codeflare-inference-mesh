@@ -151,12 +151,12 @@ GET /admin/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Router state is returned with credentials redacted. | Nodes (each with its reported `agentVersion`), profiles, profile readiness counts, `meshHealth` entries, setup/gateway/domain state, recent audit entries, the caller's `viewerRole` (`"admin"` or `"user"`), optional `desiredAgentVersion`, and generated timestamp. |
+| `200` | Router state is returned with credentials redacted. | Nodes (each with its reported `agentVersion`), profiles, profile readiness counts, `meshHealth` entries, optional `lastSpeedTest`, setup/gateway/domain state, recent audit entries, the caller's `viewerRole` (`"admin"` or `"user"`), optional `desiredAgentVersion`, and generated timestamp. |
 | `401` | No valid console role resolved for the caller. | Error object. |
 
 **Implements:** [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-007](../../sdd/spec/observability.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
-**Notes:** `viewerRole` lets the console tailor its surface — the read-only user role sees only the overview and playground, and configuration-mutating endpoints reject it server-side regardless of the surface ([REQ-ADM-017](../../sdd/spec/setup-admin.md)). `meshHealth` carries one entry per MeshLLM profile: `{ profileId, meshId?, rotation, seedNodeId?, coordinatorNodeId?, peerNodeIds, tokenCount, secretAgeMs?, lastError?, readyModels, failedNodeIds }`. Mesh secrets appear only as presence, age, and count (`tokenCount`, `secretAgeMs`); invite-token values are never included in any admin response. When the `MESH_STATE_KEY` Worker secret is not configured, each entry reports `lastError: "mesh_state_key_missing"`. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-007](../../sdd/spec/security.md))
+**Notes:** `viewerRole` lets the console tailor its surface — the read-only user role sees only the overview and playground, and configuration-mutating endpoints reject it server-side regardless of the surface ([REQ-ADM-017](../../sdd/spec/setup-admin.md)). `lastSpeedTest`, when present, carries `{ at, requestId, model, nodeId?, requestedPromptTokens, requestedMaxTokens, promptTokens, completionTokens, promptTokensEstimated, completionTokensEstimated, promptTokensPerSecond, generationTokensPerSecond, timeToFirstTokenMs, generationMs, totalMs, cacheTokens? }`. `meshHealth` carries one entry per MeshLLM profile: `{ profileId, meshId?, rotation, seedNodeId?, coordinatorNodeId?, peerNodeIds, tokenCount, secretAgeMs?, lastError?, readyModels, failedNodeIds }`. Mesh secrets appear only as presence, age, and count (`tokenCount`, `secretAgeMs`); invite-token values are never included in any admin response. When the `MESH_STATE_KEY` Worker secret is not configured, each entry reports `lastError: "mesh_state_key_missing"`. ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-SEC-007](../../sdd/spec/security.md))
 
 ### GET /admin/whoami
 
@@ -237,7 +237,7 @@ POST /admin/playground/direct-chat
 
 ### POST /admin/playground/speed-test
 
-Runs a bounded synthetic prompt through the router's direct scheduling path and returns timing measurements for prompt ingestion and generation. This bypasses AI Gateway so the result isolates Worker → node-agent → runtime behavior. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
+Runs a bounded synthetic prompt through the router's direct scheduling path, returns timing measurements for prompt ingestion and generation, and stores the result as the dashboard's latest Speed Test summary. This bypasses AI Gateway so the result isolates Worker → node-agent → runtime behavior. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
 
 ```http
 POST /admin/playground/speed-test
@@ -253,7 +253,7 @@ POST /admin/playground/speed-test
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Speed test completed. | `{ model, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage, upstreamTimings }`. `timingsMs` is end-to-end wall-clock; `throughput` prefers llama.cpp upstream timing fields when present (`upstreamTimings.prompt_per_second` / `predicted_per_second`) and otherwise falls back to wall-clock estimates. |
+| `200` | Speed test completed. | `{ model, nodeId?, cacheTokens?, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage, upstreamTimings }`. `timingsMs` is end-to-end wall-clock; `throughput` prefers llama.cpp upstream timing fields when present (`upstreamTimings.prompt_per_second` / `predicted_per_second`) and otherwise falls back to wall-clock estimates. |
 | `401` | No valid console role resolved for the caller. | Error object. |
 | `404` | No profile matched the model. | `{ "error": "no-profile", "requestId": string }` |
 | `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |
