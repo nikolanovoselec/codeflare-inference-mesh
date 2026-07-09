@@ -215,7 +215,7 @@ describe('dashboard overview contracts', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('REQ-OBS-010 counts split API-client participants as mesh-ready capacity', async () => {
+  it('REQ-OBS-010 counts split participants as available capacity', async () => {
     const nodes = [
       { id: 'battlestation', status: 'online', metrics: { runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], runtimeDetail: 'old Metal assert', activeRequests: 0 } },
       { id: 'linux-peer', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', meshRole: 'serving-peer', apiReady: true, consoleReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], stageCount: 1, activeRequests: 0 } }
@@ -322,6 +322,10 @@ describe('dashboard overview contracts', () => {
     expect(stats).toContain('version')
     expect(stats).not.toContain('models')
     expect(stats).not.toContain('gateway')
+    const labels = descendants(harness.byId('overview-tiles')).filter((node) => node.tagName === 'strong').map((node) => node.textContent)
+    expect(labels).toContain('Available machines')
+    expect(labels).toContain('Known VRAM')
+    expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).textContent).toContain('available')
   })
 
   it('REQ-ADM-015 sorts the nodes table by the clicked column and flips direction on repeat', async () => {
@@ -481,12 +485,13 @@ describe('dashboard overview contracts', () => {
     expect(field('status')).toBeDefined()
     expect(field('toks')).toBeUndefined()
     expect(field('vram')!.dataset.value).toBe('4000/8192')
+    expect(descendants(field('vram')!).map((node) => node.textContent).join(' ')).toContain('3.9 GiB / 8 GiB')
     expect(field('version')!.dataset.reported).toBe('v1.2.0')
     expect(field('version')!.dataset.desiredMatch).toBe('false')
     const models = fields.filter((node) => node.dataset.drawerModel)
-    // The node drawer lists the node's own ready-model refs verbatim (the upstream refs the runtime
-    // loaded, mirroring production /v1/models), not the public alias.
+    // The raw upstream ref stays as a contract value, but the primary drawer label is the model display name.
     expect(models.map((node) => node.dataset.drawerModel)).toEqual(['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'])
+    expect(models.map((node) => node.textContent)).toEqual(['Qwen3.6 35B'])
     const revoke = fields.find((node) => node.dataset.action === 'node-revoke')
     expect(revoke).toBeDefined()
     expect(revoke!.dataset.nodeId).toBe('node-small')

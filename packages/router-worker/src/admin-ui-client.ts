@@ -409,7 +409,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   const revealGatewayKey = (out, body) => {
     if (body && body.providerToken) revealKey(out, 'AI Gateway provider key', body.providerToken, body.byokInstruction || 'Paste this key into your AI Gateway custom provider.');
-    else setOutput(out, body);
+    else setOutput(out, 'Gateway provisioned.');
   };
 
   // --- renderers fed by /admin/status ----------------------------------------
@@ -444,6 +444,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const reportedText = (value) => value == null ? 'not reported' : String(value);
   const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
   const fmtGb = (value) => value == null ? 'not reported' : (Math.round(Number(value) * 10) / 10) + ' GB';
+  const fmtGibFromMiB = (value) => value == null || !Number.isFinite(Number(value)) || Number(value) <= 0 ? 'not reported' : (Math.round(Number(value) / 102.4) / 10) + ' GiB';
   const bytesToGb = (bytes) => bytes == null ? null : Number(bytes) / 1000000000;
   function splitReadinessIssue(report) {
     if (!report) return false;
@@ -501,6 +502,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   function nodeDisplayName(node) {
     return (node && (node.displayName || node.name || node.id)) || 'unknown node';
+  }
+  function modelLabelForRef(ref) {
+    const raw = String(ref || '');
+    const profiles = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
+    const profile = profiles.find((item) => item && (item.upstreamModel === raw || item.id === raw || (Array.isArray(item.publicAliases) && item.publicAliases.indexOf(raw) >= 0)));
+    return profile ? modelName(profile) : raw;
   }
   function nodeLabelForId(value, candidates) {
     const raw = String(value || '').trim();
@@ -826,7 +833,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       installChip.setAttribute('data-runtime-install-chip', node.id);
       installChip.setAttribute('data-runtime-install-state', install.state);
       statusCell.appendChild(installChip);
-      cell('vram', String(nodeVramTotal(node)), nodeReady(node) && nodeVramTotal(node) ? Math.round(nodeVramTotal(node) / 1024) + ' GB' : '\u2014');
+      cell('vram', String(nodeVramTotal(node)), nodeVramTotal(node) ? fmtGibFromMiB(nodeVramTotal(node)) : '\u2014');
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
       versionCell.appendChild(versionCode(node, desiredVersion));
@@ -851,7 +858,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (caption) {
       caption.dataset.nodes = String(nodes.length);
       caption.dataset.serving = String(serving);
-      caption.textContent = nodes.length + ' nodes \u00b7 ' + serving + ' mesh-ready';
+      caption.textContent = nodes.length + ' machines \u00b7 ' + serving + ' available';
     }
     if (canvas) {
       canvas.textContent = '';
@@ -960,7 +967,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const vramUsed = metrics.gpuMemoryUsedMiB;
     const vramTotal = metrics.gpuMemoryTotalMiB;
     bodyEl.appendChild(drawerField('status', 'Status', nodeStatusText(node)));
-    bodyEl.appendChild(drawerField('vram', 'VRAM MiB', vramUsed == null || vramTotal == null ? 'not reported' : (vramUsed + ' / ' + vramTotal), vramUsed == null || vramTotal == null ? '' : vramUsed + '/' + vramTotal));
+    bodyEl.appendChild(drawerField('vram', 'VRAM', vramUsed == null || vramTotal == null ? 'not reported' : (fmtGibFromMiB(vramUsed) + ' / ' + fmtGibFromMiB(vramTotal)), vramUsed == null || vramTotal == null ? '' : vramUsed + '/' + vramTotal));
     const activeProfile = activeProfileForNode(node);
     const profileBudget = activeProfile && activeProfile.meshllm ? activeProfile.meshllm.maxVramGb : undefined;
     if (profileBudget != null || node.maxVramGbOverride != null || metrics.meshMaxVramGb != null) {
@@ -1052,7 +1059,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const item = document.createElement('div');
       item.className = 'drawer-row';
       item.setAttribute('data-drawer-model', model);
-      item.textContent = model;
+      item.textContent = modelLabelForRef(model);
       bodyEl.appendChild(item);
     });
     const vramRow = document.createElement('label');
@@ -1575,7 +1582,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     addField('coordinator', 'Coordinator', entry.coordinatorNodeId ? nodeLabelForId(entry.coordinatorNodeId, ownerNodes) : (stageText ? 'not elected yet' : 'waiting for stage map'), !entry.coordinatorNodeId && !stageText ? (line) => annotateStageUnavailable(line, entry) : undefined);
     addField('peers', 'Machines', String(peers > 0 ? peers : 1));
     addField('stage-owners', 'Stage owners', stageText || stageUnavailableText(entry), stageText ? undefined : (line) => annotateStageUnavailable(line, entry));
-    addField('ready-models', 'Ready model', (entry.readyModels || []).join(', '));
+    addField('ready-models', 'Ready model', (entry.readyModels || []).map(modelLabelForRef).join(', '));
     addField('failed-nodes', 'Needs attention', (entry.failedNodeIds || []).map((id) => nodeLabelForId(id, ownerNodes)).join(', '));
     addField('last-error', 'Last error', entry.lastError || '');
     card.appendChild(details);
@@ -1660,8 +1667,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const serving = nodes.filter(nodeServingCapacity).length;
       const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
       const speed = lastSpeedTest(status);
-      tiles.appendChild(tile('Mesh-ready nodes', serving + '/' + nodes.length, 'nodes'));
-      tiles.appendChild(tile('Mesh VRAM GB', String(Math.round(vramMiB / 1024)), 'vram'));
+      tiles.appendChild(tile('Available machines', serving + '/' + nodes.length, 'nodes'));
+      tiles.appendChild(tile('Known VRAM', fmtGibFromMiB(vramMiB), 'vram'));
       const speedTile = tile('Last speed test', speed ? lastSpeedLabel(speed) : 'not run', 'speed');
       if (speed) {
         if (speed.promptTokensPerSecond != null) speedTile.dataset.promptTps = String(speed.promptTokensPerSecond);
@@ -2207,26 +2214,31 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       await refreshProvisionChip(rtSelect ? rtSelect.value : '').catch(() => undefined);
     } else if (action === 'custom-domain-validate') {
       // Hostname only; the owning zone is matched server-side from the runtime token.
-      setOutput(out, await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('custom-domain') }) }));
+      await request('/admin/custom-domain/validate', { method: 'POST', headers: headers(true), body: JSON.stringify({ hostname: readInput('custom-domain') }) });
+      setOutput(out, 'Domain provisioning requested.');
     } else if (action === 'node-revoke') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
-      setOutput(out, await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(false) }));
+      await request('/admin/nodes/' + nodeId + '/revoke', { method: 'POST', headers: headers(false) });
+      setOutput(out, 'Machine revoked.');
       await refreshStatus().catch(() => undefined);
     } else if (action === 'node-reload') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
-      setOutput(out, await request('/admin/nodes/' + nodeId + '/reload', { method: 'POST', headers: headers(false) }));
+      await request('/admin/nodes/' + nodeId + '/reload', { method: 'POST', headers: headers(false) });
+      setOutput(out, 'Force reload requested.');
       await refreshStatus().catch(() => undefined);
     } else if (action === 'node-deactivate' || action === 'node-activate') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
       const verb = action === 'node-deactivate' ? 'deactivate' : 'activate';
-      setOutput(out, await request('/admin/nodes/' + nodeId + '/' + verb, { method: 'POST', headers: headers(false) }));
+      await request('/admin/nodes/' + nodeId + '/' + verb, { method: 'POST', headers: headers(false) });
+      setOutput(out, action === 'node-activate' ? 'Machine activated.' : 'Machine deactivated.');
       await refreshStatus().catch(() => undefined);
     } else if (action === 'node-config-save') {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
       const raw = readInput('node-edit-vram');
       // Blank clears the override (revert to the model default); a number caps just this node.
       const payload = { maxVramGbOverride: raw === '' ? null : Number(raw) };
-      setOutput(out, await request('/admin/nodes/' + nodeId + '/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
+      await request('/admin/nodes/' + nodeId + '/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
+      setOutput(out, 'Machine settings saved.');
       toast('Node VRAM override saved');
       await refreshStatus().catch(() => undefined);
     } else if (action === 'model-toggle') {
@@ -2314,12 +2326,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
           payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw === '' ? null : fmtRaw, budget: budgetRaw === '' ? null : Number(budgetRaw) };
         }
       }
-      setOutput(out, await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
+      await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
+      setOutput(out, 'Model settings saved.');
       toast('Model settings saved');
       await refreshStatus().catch(() => undefined);
     } else if (action === 'model-delete') {
       const id = button.dataset.profileId || '';
-      setOutput(out, await request('/admin/profiles/delete', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id }) }));
+      await request('/admin/profiles/delete', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id }) });
+      setOutput(out, 'Model deleted.');
       closeDrawer();
       await refreshStatus().catch(() => undefined);
       toast('Model deleted');
@@ -2339,20 +2353,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       await loadVersions();
     } else if (action === 'agent-version-set') {
       const select = byId(config.agentVersion.selectId);
-      setOutput(out, await request('/admin/agent-version', { method: 'POST', headers: headers(true), body: JSON.stringify({ version: select ? select.value : '' }) }));
+      await request('/admin/agent-version', { method: 'POST', headers: headers(true), body: JSON.stringify({ version: select ? select.value : '' }) });
+      setOutput(out, 'Agent version saved.');
     } else if (action === 'runtime-versions-refresh') {
       await loadRuntimeVersions();
     } else if (action === 'runtime-versions-set') {
       const meshllm = byId(config.runtimeVersion.meshllmSelectId);
       const llamacpp = byId(config.runtimeVersion.llamacppSelectId);
-      setOutput(out, await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '' }) }));
+      await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '' }) });
+      setOutput(out, 'Runtime versions saved.');
     } else if (action === 'settings-save') {
-      setOutput(out, await request('/admin/settings', { method: 'POST', headers: headers(true), body: JSON.stringify({ offlinePruneSeconds: Number(readInput('prune-seconds')) }) }));
+      await request('/admin/settings', { method: 'POST', headers: headers(true), body: JSON.stringify({ offlinePruneSeconds: Number(readInput('prune-seconds')) }) });
+      setOutput(out, 'Settings saved.');
       toast('Settings saved');
     } else if (action === 'mesh-rotate') {
       // The reset control lives in a model's Manage drawer and carries its profile id.
       const profileId = button.dataset.profileId || '';
-      setOutput(out, await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId }) }));
+      await request('/admin/mesh/rotate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId }) });
+      setOutput(out, 'Sharing key reset.');
       await refreshStatus().catch(() => undefined);
     } else if (action === 'model-add') {
       const ref = readInput('model-add-ref');
@@ -2364,7 +2382,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const runtime = mode === 'split' ? 'meshllm' : (runtimeSelect && runtimeSelect.value ? runtimeSelect.value : 'meshllm');
       const payload = { modelRef: ref, mode: mode, runtime: runtime };
       if (name) payload.name = name;
-      setOutput(out, await request('/admin/profiles/add', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) }));
+      await request('/admin/profiles/add', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
+      setOutput(out, 'Model added.');
       await refreshStatus().catch(() => undefined);
       toast('Model added');
     } else if (action === config.playground.speedAction) {

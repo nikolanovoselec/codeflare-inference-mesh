@@ -395,7 +395,7 @@ describe('router worker behavioral contracts', () => {
     // Account id, worker url, route, and public model are all resolved/pinned server-side; the client
     // posts only the chosen gateway and the provider name, never a route or public model.
     expect(JSON.parse(String(harness.fetchCalls[0]!.init?.body))).toEqual({ gatewayId: 'gateway-admin', providerName: 'Mesh Provider' })
-    expect(JSON.parse(harness.byId('gateway-output').textContent) as { deploymentId: string }).toEqual({ deploymentId: 'deployment-a' })
+    expect(harness.byId('gateway-output').textContent).toBe('Gateway provisioned.')
   })
 
   it('REQ-GWY-002 gateway sync mints and reveals a fresh provider key, rotating prior ones', async () => {
@@ -492,7 +492,7 @@ describe('router worker behavioral contracts', () => {
     expect(harness.fetchCalls[0]!.path).toBe('/admin/nodes/node%2Fa/revoke')
     expect(revoke.dataset.armed).toBeUndefined()
     expect(revoke.textContent).toBe('Revoke')
-    expect(JSON.parse(harness.byId('node-output').textContent) as { revoked: boolean }).toEqual({ revoked: true })
+    expect(harness.byId('node-output').textContent).toBe('Machine revoked.')
   })
 
   it('REQ-ADM-006 reveals only the one-time bootstrap token at claim', async () => {
