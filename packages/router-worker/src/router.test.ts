@@ -711,18 +711,19 @@ describe('router worker behavioral contracts', () => {
     const claimAdmin = (await setupResponse.json() as { adminToken: string }).adminToken
     const setup = await (await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer(claimAdmin) }))).json() as { setupToken: string }
 
-    expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: bearer('provider-secret'), body: JSON.stringify({ nodeId: 'node-a' }) }))).status).toBe(404)
     expect((await router(new Request('https://router.test/v1/models', { headers: bearer('admin-secret') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/admin/status', { headers: bearer(setup.setupToken) }))).status).toBe(401)
-    expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: bearer(setup.setupToken), body: JSON.stringify({ nodeId: 'node-a' }) }))).status).not.toBe(200)
 
-    // Admin credentials must never authenticate a node heartbeat: claim a real node, then present the admin token as its identity.
+    // Non-node credentials must never authenticate a valid heartbeat for an existing node.
     const claimed = await (await router(new Request('https://router.test/node/claim', {
       method: 'POST',
       headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' },
       body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-smoke-qwen25-1.5b'], capacity: 1 })
     }))).json() as { nodeId: string }
-    expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ nodeId: claimed.nodeId }) }))).status).toBe(401)
+    const validHeartbeat = heartbeatBody({ nodeId: claimed.nodeId })
+    expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: { ...bearer('provider-secret'), 'content-type': 'application/json' }, body: validHeartbeat }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: validHeartbeat }))).status).toBe(401)
+    expect((await router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: { ...bearer(setup.setupToken), 'content-type': 'application/json' }, body: validHeartbeat }))).status).toBe(401)
   })
 
   it('REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API', async () => {
