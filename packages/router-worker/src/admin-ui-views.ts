@@ -131,7 +131,7 @@ function dashboardHero(): string {
   return `<section class="dashboard-hero" id="dashboard-hero" data-dashboard-hero="true" aria-labelledby="dashboard-hero-title">
 <div class="hero-copy">
 <p class="eyebrow">Operator console</p>
-<h1 id="dashboard-hero-title">Codeflare <span class="hero-accent" data-scramble>Inference Mesh</span></h1>
+<h1 id="dashboard-hero-title"><span class="hero-accent" data-scramble>Codeflare</span> Inference Mesh</h1>
 <p>Direct llama.cpp speed, MeshLLM routing, and fleet state in one operator console.</p>
 </div>
 <div class="tile-grid hero-stats" id="overview-tiles" data-output="status" aria-label="Fleet status"><p class="empty-note">Status loads automatically.</p></div>
@@ -171,7 +171,7 @@ function nodesSection(): string {
 <input class="node-search" id="node-search" type="search" name="nodeSearch" placeholder="Search machines…" data-node-search="true">
 </div>
 <div class="table-wrap"><table class="nodes-table" data-output="nodes-table">
-<thead><tr>${ADMIN_UI_NODES_TABLE.columns.map((column) => `<th scope="col"><button class="sort-btn" type="button" data-action="nodes-sort" data-sort="${column}">${column === 'toks' ? 'tok/s' : column === 'vram' ? 'VRAM' : column}</button></th>`).join('')}</tr></thead>
+<thead><tr>${ADMIN_UI_NODES_TABLE.columns.map((column) => `<th scope="col"><button class="sort-btn" type="button" data-action="nodes-sort" data-sort="${column}">${column === 'vram' ? 'VRAM' : column}</button></th>`).join('')}</tr></thead>
 <tbody id="${ADMIN_UI_NODES_TABLE.bodyId}"><tr><td class="empty-note" colspan="${ADMIN_UI_NODES_TABLE.columns.length}">Nodes appear here once enrolled.</td></tr></tbody>
 </table></div>
 ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}

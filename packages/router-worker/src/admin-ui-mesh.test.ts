@@ -206,6 +206,39 @@ describe('admin UI mesh operations contracts', () => {
     expect(healthy.byId(ADMIN_UI_MESH_HEALTH.bannerId).hidden).toBe(true)
   })
 
+  it('REQ-OBS-007 explains missing stage ownership instead of rendering useless none values', async () => {
+    const status = statusFixture({
+      nodes: [
+        { id: 'mac-100-96-0-14', status: 'online', agentVersion: 'v0.1.0-dev.94', activeProfileIds: ['mesh-default-qwen36-35b'], metrics: { runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, readyModels: ['qwen3.6:35b-a3b'] } }
+      ],
+      meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, peerNodeIds: ['mac-100-96-0-14'], readyModels: ['qwen3.6:35b-a3b'], failedNodeIds: [], tokenCount: 1 }]
+    })
+    const harness = await dashboardHarness(status)
+    const card = await meshCard(harness, 'mesh-default-qwen36-35b')
+    expect(meshField(card, 'coordinator').dataset.stageMap).toBe('unavailable')
+    expect(meshField(card, 'stage-owners').dataset.stageMap).toBe('unavailable')
+    expect(meshField(card, 'stage-owners').dataset.agentVersions).toBe('v0.1.0-dev.94')
+  })
+
+  it('REQ-OBS-007 renders split capacity shortfall in mesh technical details', async () => {
+    const splitReadiness = {
+      modelRef: 'meshllm/ERNIE-layers', verdict: 'insufficient_capacity',
+      capacityAdvice: { state: 'insufficient_capacity', reason: 'participant_split_capacity_insufficient', requiredBytes: 18_000_000_000, aggregateCapacityBytes: 16_000_000_000, shortfallBytes: 2_000_000_000, eligibleNodeCount: 2, splitCapable: true },
+      participants: [{ shortNodeId: 'Mac', vramBytes: 4_000_000_000 }, { shortNodeId: 'battle', vramBytes: 12_000_000_000 }],
+      blockers: [{ reason: 'split_capacity_shortfall', recommendation: 'Increase available VRAM.' }]
+    }
+    const status = statusFixture({
+      meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, peerNodeIds: ['mac', 'battle'], readyModels: [], failedNodeIds: [], tokenCount: 2, splitReadiness }]
+    })
+    const harness = await dashboardHarness(status)
+    const card = await meshCard(harness, 'mesh-default-qwen36-35b')
+    expect(card.dataset.splitReason).toBe('split_capacity_shortfall')
+    expect(meshField(card, 'split-readiness').dataset.splitReason).toBe('split_capacity_shortfall')
+    expect(meshField(card, 'capacity').dataset.requiredBytes).toBe('18000000000')
+    expect(meshField(card, 'capacity').dataset.aggregateBytes).toBe('16000000000')
+    expect(meshField(card, 'capacity').dataset.shortfallBytes).toBe('2000000000')
+  })
+
   it('REQ-OBS-007 renders the mesh health panel from admin status data', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')

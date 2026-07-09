@@ -106,6 +106,47 @@ func TestREQOBS003ParsesMeshLLMStatus(t *testing.T) {
 	}
 }
 
+func TestREQOBS007ParsesSplitReadinessCapacityShortfall(t *testing.T) {
+	body := `{
+		"model_ref":"meshllm/ERNIE-layers",
+		"verdict":"insufficient_capacity",
+		"participant_count":2,
+		"exclusion_count":0,
+		"active_topology_count":0,
+		"active_stage_count":0,
+		"capacity_advice":{
+			"state":"insufficient_capacity",
+			"reason":"participant_split_capacity_insufficient",
+			"required_bytes":18000000000,
+			"best_single_node_capacity_bytes":12000000000,
+			"aggregate_capacity_bytes":16000000000,
+			"shortfall_bytes":2000000000,
+			"eligible_node_count":2,
+			"split_capable":true
+		},
+		"participants":[
+			{"node_id":"mac-node","short_node_id":"Mac","source":"peer","role":"worker","vram_bytes":4000000000,"artifact_transfer_supported":true,"rtt_ms":36,"model_source_state":"available"},
+			{"node_id":"battle-node","short_node_id":"battle","source":"local","role":"worker","vram_bytes":12000000000,"artifact_transfer_supported":true,"model_source_state":"available"}
+		],
+		"blockers":[{"reason":"split_capacity_shortfall","count":2,"short_node_ids":["Mac","battle"],"recommendation":"Increase available VRAM."}],
+		"recommendations":["Increase max-vram or add another worker."]
+	}`
+
+	got, err := ParseMeshLLMSplitReadiness([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Verdict != "insufficient_capacity" || got.CapacityAdvice == nil || got.CapacityAdvice.ShortfallBytes != 2_000_000_000 {
+		t.Fatalf("capacity shortfall not decoded: %#v", got)
+	}
+	if len(got.Participants) != 2 || got.Participants[0].ShortNodeID != "Mac" || got.Participants[0].RTTMs == nil || *got.Participants[0].RTTMs != 36 {
+		t.Fatalf("participants not decoded: %#v", got.Participants)
+	}
+	if len(got.Blockers) != 1 || got.Blockers[0].Reason != "split_capacity_shortfall" {
+		t.Fatalf("blockers not decoded: %#v", got.Blockers)
+	}
+}
+
 func TestREQRUN005ParseModelsResponseExtractsIds(t *testing.T) {
 	cases := []struct {
 		name    string

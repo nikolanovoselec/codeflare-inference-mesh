@@ -106,6 +106,44 @@ export interface StageAssignment {
   readonly reportedByNodeId?: string
 }
 
+export interface SplitReadinessReport {
+  readonly modelRef?: string
+  readonly verdict?: string
+  readonly participantCount?: number
+  readonly exclusionCount?: number
+  readonly activeTopologyCount?: number
+  readonly activeStageCount?: number
+  readonly capacityAdvice?: {
+    readonly state?: string
+    readonly reason?: string
+    readonly requiredBytes?: number
+    readonly bestSingleNodeCapacityBytes?: number
+    readonly aggregateCapacityBytes?: number
+    readonly shortfallBytes?: number
+    readonly eligibleNodeCount?: number
+    readonly missingCapacityNodeCount?: number
+    readonly excludedClientNodeCount?: number
+    readonly splitCapable?: boolean
+  }
+  readonly participants?: readonly {
+    readonly nodeId?: string
+    readonly shortNodeId?: string
+    readonly source?: string
+    readonly role?: string
+    readonly vramBytes?: number
+    readonly artifactTransferSupported?: boolean
+    readonly rttMs?: number
+    readonly modelSourceState?: string
+  }[]
+  readonly blockers?: readonly {
+    readonly reason?: string
+    readonly count?: number
+    readonly shortNodeIds?: readonly string[]
+    readonly recommendation?: string
+  }[]
+  readonly recommendations?: readonly string[]
+}
+
 export interface NodeMetrics {
   readonly runtimeKind?: RuntimeKind
   readonly gpuName?: string
@@ -126,6 +164,8 @@ export interface NodeMetrics {
   readonly splitEnabled?: boolean
   readonly stageCount?: number
   readonly stageAssignments?: readonly StageAssignment[]
+  readonly meshMaxVramGb?: number
+  readonly splitReadiness?: SplitReadinessReport
   readonly apiReady?: boolean
   readonly consoleReady?: boolean
   readonly meshllmVersion?: string

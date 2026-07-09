@@ -149,7 +149,8 @@ POST /node/heartbeat
 
 - `meshRole` — `coordinator` when the node owns stage 0, else `serving-peer` or `api-client`.
 - `readyModels` — the model ids from the node's own `/v1/models` (the mesh-wide union).
-- `peerCount`, `splitEnabled`, `stageCount`, `stageAssignments[]` (`stageId`, `stageIndex`, `nodeId`, `layerStart`, `layerEnd`, `state`, optional backend/device fields), `apiReady`, `consoleReady`, and `meshllmVersion`.
+- `peerCount`, `splitEnabled`, `stageCount`, `stageAssignments[]` (`stageId`, `stageIndex`, `nodeId`, `layerStart`, `layerEnd`, `state`, optional backend/device fields), `apiReady`, `consoleReady`, `meshllmVersion`, and `meshMaxVramGb` (the launched MeshLLM `--max-vram` budget).
+- `splitReadiness` for split profiles when MeshLLM reports diagnostics: `verdict`, `capacityAdvice` (`requiredBytes`, `aggregateCapacityBytes`, `shortfallBytes`, `eligibleNodeCount`), `participants[]`, `blockers[]`, and `recommendations[]`. This distinguishes peer/download problems from planner capacity shortfalls.
 
 #### `meshBootstrap` envelope
 

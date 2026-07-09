@@ -428,6 +428,46 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const nodeModelCount = (node) => (node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0);
   const reportedText = (value) => value == null ? 'not reported' : String(value);
   const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
+  const fmtGb = (value) => value == null ? 'not reported' : (Math.round(Number(value) * 10) / 10) + 'GB';
+  const bytesToGb = (bytes) => bytes == null ? null : Number(bytes) / 1000000000;
+  function splitReadinessIssue(report) {
+    if (!report) return false;
+    if (Array.isArray(report.blockers) && report.blockers.length > 0) return true;
+    return Boolean(report.verdict && report.verdict !== 'ready');
+  }
+  function splitReadinessReason(report) {
+    if (!report) return '';
+    const blockers = Array.isArray(report.blockers) ? report.blockers : [];
+    if (blockers.length && blockers[0].reason) return blockers[0].reason;
+    return (report.capacityAdvice && report.capacityAdvice.reason) || report.verdict || '';
+  }
+  function splitCapacity(report) {
+    return report && report.capacityAdvice ? report.capacityAdvice : {};
+  }
+  function annotateSplitReadiness(element, report) {
+    if (!element || !report) return;
+    const reason = splitReadinessReason(report);
+    const capacity = splitCapacity(report);
+    if (reason) element.setAttribute('data-split-reason', reason);
+    if (report.verdict) element.setAttribute('data-split-verdict', report.verdict);
+    if (capacity.requiredBytes != null) element.setAttribute('data-required-bytes', String(capacity.requiredBytes));
+    if (capacity.aggregateCapacityBytes != null) element.setAttribute('data-aggregate-bytes', String(capacity.aggregateCapacityBytes));
+    if (capacity.shortfallBytes != null) element.setAttribute('data-shortfall-bytes', String(capacity.shortfallBytes));
+  }
+  function splitReadinessText(report) {
+    if (!report) return '';
+    const reason = splitReadinessReason(report);
+    const capacity = splitCapacity(report);
+    const title = reason === 'split_capacity_shortfall' || capacity.state === 'insufficient_capacity' ? 'Split capacity shortfall' : ('Split readiness: ' + (report.verdict || reason || 'not ready'));
+    const required = bytesToGb(capacity.requiredBytes);
+    const aggregate = bytesToGb(capacity.aggregateCapacityBytes);
+    const shortfall = bytesToGb(capacity.shortfallBytes);
+    const parts = [title];
+    if (required != null || aggregate != null || shortfall != null) parts.push(fmtGb(required) + ' required / ' + fmtGb(aggregate) + ' usable' + (shortfall ? ' / ' + fmtGb(shortfall) + ' short' : ''));
+    const participants = Array.isArray(report.participants) ? report.participants.map((item) => (item.shortNodeId || item.nodeId || 'node') + ' ' + fmtGb(bytesToGb(item.vramBytes))).join(', ') : '';
+    if (participants) parts.push('participants: ' + participants);
+    return parts.join(' · ');
+  }
   const statusDot = (tone, label) => {
     const wrap = document.createElement('span');
     wrap.className = 'chip';
@@ -443,6 +483,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
   const nodeTone = (node) => {
     const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
+    if (splitReadinessIssue(node.metrics && node.metrics.splitReadiness)) return 'warn';
     if (runtime === 'failed' || node.status === 'offline') return 'danger';
     if (node.deactivated) return 'warn';
     if (nodeServingCapacity(node)) return 'ok';
@@ -477,6 +518,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const splitProfile = Boolean(metrics.splitEnabled || (profile && profile.meshllm && profile.meshllm.split));
     const meshRuntime = metrics.runtimeKind === 'meshllm' || node.runtime === 'meshllm' || (profile && profile.runtime === 'meshllm');
     if (!meshRuntime || !splitProfile || node.status !== 'online' || nodeReady(node)) return undefined;
+    if (splitReadinessIssue(metrics.splitReadiness)) return { profile: profile, splitReadiness: metrics.splitReadiness, peerCount: metrics.peerCount, stageCount: metrics.stageCount, port: profile && profile.meshllm && profile.meshllm.bindPort ? String(profile.meshllm.bindPort) : '' };
     const noPeers = metrics.peerCount === 0;
     const noStages = metrics.stageCount === 0;
     const standby = metrics.nodeState === 'standby' || metrics.runtimeState === 'starting';
@@ -487,6 +529,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   function meshBlockerText(node) {
     const blocker = splitMeshBlocker(node);
     if (!blocker) return '';
+    if (blocker.splitReadiness) return splitReadinessText(blocker.splitReadiness);
     const portHint = blocker.port ? 'WARP UDP ' + blocker.port : 'the mesh UDP port';
     return 'No MeshLLM peers discovered for this split profile. Start another node with the same model/split profile, or check ' + portHint + ' and the join token.';
   }
@@ -497,9 +540,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     return Boolean(left) && Boolean(right) && versionKey(left) === versionKey(right);
   }
   function currentRuntimeError(metrics) {
-    const state = metrics && metrics.runtimeState;
-    if (state === 'ready' || state === 'running') return '';
-    return metrics && (metrics.lastError || metrics.runtimeDetail) || '';
+    if (!metrics) return '';
+    const state = metrics.runtimeState;
+    if (splitReadinessIssue(metrics.splitReadiness)) return splitReadinessText(metrics.splitReadiness);
+    if (state === 'ready' || state === 'running' || (metrics.apiReady === true && metrics.consoleReady === true && metrics.meshRole)) return '';
+    return metrics.lastError || metrics.runtimeDetail || '';
   }
   function runtimeInstallInfo(node) {
     if (node.runtimeInstall) return { ...node.runtimeInstall, error: node.runtimeInstall.state === 'failed' ? node.runtimeInstall.error : null };
@@ -531,6 +576,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   function nodeServingCapacity(node) {
     if (node.status !== 'online' || node.deactivated) return false;
     const metrics = node.metrics || {};
+    if (splitReadinessIssue(metrics.splitReadiness)) return false;
     if (metrics.runtimeState === 'failed' || metrics.runtimeState === 'dependency-missing' || metrics.runtimeState === 'stopped') return false;
     return nodeReady(node) || metrics.apiReady === true || metrics.consoleReady === true || (metrics.stageCount || 0) > 0;
   }
@@ -543,8 +589,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const rt = metrics.runtimeState || '';
     const stateDetail = metrics.nodeState || '';
     if (rt === 'failed' || rt === 'dependency-missing') return 'Failed' + (stateDetail ? ' · ' + stateDetail : '');
+    if (splitReadinessIssue(metrics.splitReadiness)) return splitReadinessText(metrics.splitReadiness);
     const role = nodeMeshRoleLabel(metrics);
-    if (nodeServingCapacity(node)) return role ? role + (stateDetail ? ' · ' + stateDetail : '') : 'Ready';
+    if (nodeServingCapacity(node)) return role || 'Ready';
     if (splitMeshBlocker(node)) return 'Mesh waiting for peers · no peers discovered';
     if (rt === 'downloading') return 'Starting · downloading runtime';
     if (rt === 'loading' || rt === 'starting') return stateDetail ? 'Starting · ' + stateDetail : 'Starting · loading model';
@@ -584,13 +631,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
   const nodeSortValue = (node, key) => {
     if (key === 'status') { const tone = nodeTone(node); return tone === 'ok' ? 2 : tone === 'warn' ? 1 : 0; }
-    if (key === 'toks') return !nodeReady(node) || nodeToks(node) == null ? -1 : nodeToks(node);
     if (key === 'vram') return nodeVramTotal(node);
     if (key === 'models') return nodeModelCount(node);
     if (key === 'version') return node.agentVersion || '';
     return node.id;
   };
-  const nodeCellLabel = { id: 'Machine', status: 'Status', toks: 'tok/s', vram: 'VRAM', models: 'Models', version: 'Version' };
+  const nodeCellLabel = { id: 'Machine', status: 'Status', vram: 'VRAM', models: 'Models', version: 'Version' };
   function renderNodesTable(nodes, desiredVersion) {
     const bodyEl = byId(config.nodesTable.bodyId);
     if (!bodyEl) return;
@@ -652,18 +698,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       idCell.appendChild(idButton);
       const statusCell = cell('status', nodeCategory(node), undefined);
       const blocker = splitMeshBlocker(node);
-      if (blocker) statusCell.setAttribute('data-status-detail', 'split-mesh-peer-discovery');
+      if (blocker && blocker.splitReadiness) statusCell.setAttribute('data-status-detail', splitReadinessReason(blocker.splitReadiness));
+      else if (blocker) statusCell.setAttribute('data-status-detail', 'split-mesh-peer-discovery');
       else if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
       if (node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-mesh-role', node.metrics.meshRole);
-      statusCell.appendChild(statusDot(blocker ? 'danger' : nodeTone(node), nodeStatusText(node)));
+      if (node.metrics && node.metrics.splitReadiness) annotateSplitReadiness(statusCell, node.metrics.splitReadiness);
+      if (nodeServingCapacity(node) && node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-status-label-kind', 'mesh-role');
+      const statusTone = blocker && !blocker.splitReadiness ? 'danger' : nodeTone(node);
+      statusCell.appendChild(statusDot(statusTone, nodeStatusText(node)));
       const install = runtimeInstallInfo(node);
       const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));
       installChip.setAttribute('data-runtime-install-chip', node.id);
       installChip.setAttribute('data-runtime-install-state', install.state);
       statusCell.appendChild(installChip);
-      const toks = nodeToks(node);
-      const toksReady = nodeReady(node) && toks != null;
-      cell('toks', toksReady ? String(toks) : '', nodeReady(node) ? (toks == null ? 'not reported' : round1(toks)) : '\u2014');
       cell('vram', String(nodeVramTotal(node)), nodeReady(node) && nodeVramTotal(node) ? Math.round(nodeVramTotal(node) / 1024) + ' GB' : '\u2014');
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
@@ -795,12 +842,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!bodyEl) return;
     const metrics = node.metrics || {};
     const isDirectRuntime = node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp';
-    const toks = nodeToks(node);
     const vramUsed = metrics.gpuMemoryUsedMiB;
     const vramTotal = metrics.gpuMemoryTotalMiB;
     bodyEl.appendChild(drawerField('status', 'Status', nodeStatusText(node)));
-    bodyEl.appendChild(drawerField('toks', 'Tokens/s', toks == null ? 'not reported' : round1(toks), toks == null ? '' : String(toks)));
     bodyEl.appendChild(drawerField('vram', 'VRAM MiB', vramUsed == null || vramTotal == null ? 'not reported' : (vramUsed + ' / ' + vramTotal), vramUsed == null || vramTotal == null ? '' : vramUsed + '/' + vramTotal));
+    const activeProfile = activeProfileForNode(node);
+    const profileBudget = activeProfile && activeProfile.meshllm ? activeProfile.meshllm.maxVramGb : undefined;
+    if (profileBudget != null || node.maxVramGbOverride != null || metrics.meshMaxVramGb != null) {
+      const budget = drawerField('mesh-vram-budget', 'Mesh VRAM budget', 'profile ' + fmtGb(profileBudget) + ' / node override ' + fmtGb(node.maxVramGbOverride) + ' / launched --max-vram ' + fmtGb(metrics.meshMaxVramGb), metrics.meshMaxVramGb == null ? '' : String(metrics.meshMaxVramGb));
+      if (profileBudget != null) budget.setAttribute('data-profile-budget', String(profileBudget));
+      if (node.maxVramGbOverride != null) budget.setAttribute('data-node-override', String(node.maxVramGbOverride));
+      if (metrics.meshMaxVramGb != null) budget.setAttribute('data-launched-budget', String(metrics.meshMaxVramGb));
+      bodyEl.appendChild(budget);
+    }
     if (metrics.gpuName) bodyEl.appendChild(drawerField('gpu', 'GPU', metrics.gpuName));
     const desired = lastStatus ? lastStatus.desiredAgentVersion : undefined;
     const reported = node.agentVersion || 'unreported';
@@ -816,6 +870,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (runtimeError) {
       const errRow = drawerField('runtime-detail', 'Runtime error', runtimeError);
       errRow.setAttribute('data-tone', 'danger');
+      if (metrics.splitReadiness) annotateSplitReadiness(errRow, metrics.splitReadiness);
       bodyEl.appendChild(errRow);
     }
     const install = runtimeInstallInfo(node);
@@ -838,6 +893,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       row.setAttribute('data-tone', 'danger');
       if (blocker && blocker.peerCount != null) row.setAttribute('data-peer-count', String(blocker.peerCount));
       if (blocker && blocker.stageCount != null) row.setAttribute('data-stage-count', String(blocker.stageCount));
+      if (blocker && blocker.splitReadiness) annotateSplitReadiness(row, blocker.splitReadiness);
       bodyEl.appendChild(row);
     }
     if (metrics.nodeState) bodyEl.appendChild(drawerField('node-state', 'Node state', metrics.nodeState));
@@ -1321,29 +1377,45 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // carries; a runtime failure or mesh error reads "needs attention".
   function meshStatusSuffix(entry) {
     if (entry.active === false) return ' · deactivated';
-    if (entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return ' · needs attention';
+    if (splitReadinessIssue(entry.splitReadiness) || entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return ' · needs attention';
     return entry.tokenCount > 0 ? ' · ready' : ' · forming';
   }
   // meshStatusTone maps the same entry to a status-dot tone: grey for a switched-off
   // model, danger for a failure, ok only when it is active and holds a mesh secret.
   function meshStatusTone(entry) {
     if (entry.active === false) return 'idle';
-    if (entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return 'danger';
+    if (splitReadinessIssue(entry.splitReadiness) || entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return 'danger';
     return entry.tokenCount > 0 ? 'ok' : 'idle';
   }
 
   // buildMeshCard renders one model's mesh detail (a plain summary plus the raw
   // fields behind a disclosure). It lives in that model's Manage drawer, since both
   // single-machine and split models form a mesh.
+  function meshNodesForEntry(entry) {
+    const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
+    return nodes.filter((node) => Array.isArray(node.activeProfileIds) && node.activeProfileIds.indexOf(entry.profileId) >= 0);
+  }
   function stageOwnersText(entry) {
     const stages = Array.isArray(entry.stageAssignments) ? entry.stageAssignments : [];
-    if (!stages.length) return 'none';
+    if (!stages.length) return '';
     return stages.map((stage) => {
       const owner = stage.nodeId || stage.reportedByNodeId || 'unassigned';
       const layers = stage.layerStart != null && stage.layerEnd != null ? ('L' + stage.layerStart + '-' + stage.layerEnd) : ('stage ' + stage.stageIndex);
       const state = stage.state ? ' · ' + stage.state : '';
       return layers + ' → ' + owner + state;
     }).join('; ');
+  }
+  function stageUnavailableVersions(entry) {
+    return [...new Set(meshNodesForEntry(entry).map((node) => node.agentVersion).filter(Boolean))];
+  }
+  function annotateStageUnavailable(element, entry) {
+    const versions = stageUnavailableVersions(entry);
+    element.setAttribute('data-stage-map', 'unavailable');
+    if (versions.length) element.setAttribute('data-agent-versions', versions.join(','));
+  }
+  function stageUnavailableText(entry) {
+    const versions = stageUnavailableVersions(entry);
+    return 'Stage map unavailable from current heartbeats' + (versions.length ? ' · agent ' + versions.join(', ') : '') + '. Update or restart node agents so they report MeshLLM stages.';
   }
   function buildMeshCard(entry) {
     const profilesById = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
@@ -1352,6 +1424,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     card.setAttribute('data-mesh-entry', entry.profileId);
     card.setAttribute('data-mesh-rotation', String(entry.rotation));
     card.setAttribute('data-secret-present', entry.tokenCount > 0 ? 'true' : 'false');
+    if (entry.splitReadiness) annotateSplitReadiness(card, entry.splitReadiness);
     const profile = profilesById.find((candidate) => candidate.id === entry.profileId);
     const title = document.createElement('strong');
     title.textContent = profile ? modelName(profile) : entry.profileId;
@@ -1372,14 +1445,26 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const line = document.createElement('code');
       line.setAttribute('data-mesh-field', fieldName);
       let value = 'none';
-      if (fieldName === 'coordinator') value = entry.coordinatorNodeId || 'none';
+      if (fieldName === 'coordinator') {
+        value = entry.coordinatorNodeId || (stageOwnersText(entry) ? 'unknown' : 'waiting for stage map');
+        if (!entry.coordinatorNodeId && !stageOwnersText(entry)) annotateStageUnavailable(line, entry);
+      }
       else if (fieldName === 'peers') value = String((entry.peerNodeIds || []).length);
-      else if (fieldName === 'stage-owners') value = stageOwnersText(entry);
+      else if (fieldName === 'split-readiness') value = entry.splitReadiness ? splitReadinessText(entry.splitReadiness) : 'not reported';
+      else if (fieldName === 'capacity') {
+        const capacity = entry.splitReadiness && entry.splitReadiness.capacityAdvice;
+        value = capacity ? (fmtGb(bytesToGb(capacity.requiredBytes)) + ' required / ' + fmtGb(bytesToGb(capacity.aggregateCapacityBytes)) + ' usable' + (capacity.shortfallBytes ? ' / ' + fmtGb(bytesToGb(capacity.shortfallBytes)) + ' short' : '')) : 'not reported';
+      }
+      else if (fieldName === 'stage-owners') {
+        value = stageOwnersText(entry) || stageUnavailableText(entry);
+        if (!stageOwnersText(entry)) annotateStageUnavailable(line, entry);
+      }
       else if (fieldName === 'ready-models') value = (entry.readyModels || []).join(', ') || 'none';
       else if (fieldName === 'failed-nodes') value = (entry.failedNodeIds || []).join(', ') || 'none';
       else if (fieldName === 'last-error') value = entry.lastError || 'none';
       else if (fieldName === 'rotation') value = 'r' + entry.rotation;
       else if (fieldName === 'secret') value = entry.tokenCount > 0 ? 'present' + (entry.secretAgeMs != null ? ' · ' + fmtAge(entry.secretAgeMs) : '') : 'absent';
+      if ((fieldName === 'split-readiness' || fieldName === 'capacity') && entry.splitReadiness) annotateSplitReadiness(line, entry.splitReadiness);
       line.textContent = fieldName.replace(/-/g, ' ') + ': ' + value;
       details.appendChild(line);
     });

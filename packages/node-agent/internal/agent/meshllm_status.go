@@ -49,6 +49,54 @@ type GPUStatus struct {
 	UsedVRAMGB  float64
 }
 
+// MeshLLMSplitReadiness is the tolerant subset of MeshLLM's
+// `GET /api/diagnostics/split-readiness?model_ref=...` report. It carries the
+// operator-facing reason a split model is not serving, especially capacity shortfalls
+// that are invisible in the generic /api/status runtime state.
+type MeshLLMSplitReadiness struct {
+	ModelRef            string                         `json:"modelRef,omitempty"`
+	Verdict             string                         `json:"verdict,omitempty"`
+	ParticipantCount    int                            `json:"participantCount,omitempty"`
+	ExclusionCount      int                            `json:"exclusionCount,omitempty"`
+	ActiveTopologyCount int                            `json:"activeTopologyCount,omitempty"`
+	ActiveStageCount    int                            `json:"activeStageCount,omitempty"`
+	CapacityAdvice      *MeshLLMSplitCapacityAdvice    `json:"capacityAdvice,omitempty"`
+	Participants        []MeshLLMSplitParticipant      `json:"participants,omitempty"`
+	Blockers            []MeshLLMSplitReadinessBlocker `json:"blockers,omitempty"`
+	Recommendations     []string                       `json:"recommendations,omitempty"`
+}
+
+type MeshLLMSplitCapacityAdvice struct {
+	State                       string `json:"state,omitempty"`
+	Reason                      string `json:"reason,omitempty"`
+	RequiredBytes               uint64 `json:"requiredBytes,omitempty"`
+	BestSingleNodeCapacityBytes uint64 `json:"bestSingleNodeCapacityBytes,omitempty"`
+	AggregateCapacityBytes      uint64 `json:"aggregateCapacityBytes,omitempty"`
+	ShortfallBytes              uint64 `json:"shortfallBytes,omitempty"`
+	EligibleNodeCount           int    `json:"eligibleNodeCount,omitempty"`
+	MissingCapacityNodeCount    int    `json:"missingCapacityNodeCount,omitempty"`
+	ExcludedClientNodeCount     int    `json:"excludedClientNodeCount,omitempty"`
+	SplitCapable                bool   `json:"splitCapable,omitempty"`
+}
+
+type MeshLLMSplitParticipant struct {
+	NodeID                    string `json:"nodeId,omitempty"`
+	ShortNodeID               string `json:"shortNodeId,omitempty"`
+	Source                    string `json:"source,omitempty"`
+	Role                      string `json:"role,omitempty"`
+	VRAMBytes                 uint64 `json:"vramBytes,omitempty"`
+	ArtifactTransferSupported bool   `json:"artifactTransferSupported,omitempty"`
+	RTTMs                     *int   `json:"rttMs,omitempty"`
+	ModelSourceState          string `json:"modelSourceState,omitempty"`
+}
+
+type MeshLLMSplitReadinessBlocker struct {
+	Reason         string   `json:"reason,omitempty"`
+	Count          int      `json:"count,omitempty"`
+	ShortNodeIDs   []string `json:"shortNodeIds,omitempty"`
+	Recommendation string   `json:"recommendation,omitempty"`
+}
+
 // ParseMeshLLMStatus decodes a console status body into the tolerant
 // subset. Unknown fields are ignored, missing optional fields keep zero
 // values, and non-JSON input returns an error. Stage 0 is the first entry
@@ -140,6 +188,95 @@ func ParseModelsResponse(body []byte) ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// ParseMeshLLMSplitReadiness decodes the MeshLLM split diagnostic endpoint into
+// the camelCase heartbeat shape the router and Admin UI consume.
+func ParseMeshLLMSplitReadiness(body []byte) (MeshLLMSplitReadiness, error) {
+	var payload struct {
+		ModelRef            string `json:"model_ref"`
+		Verdict             string `json:"verdict"`
+		ParticipantCount    int    `json:"participant_count"`
+		ExclusionCount      int    `json:"exclusion_count"`
+		ActiveTopologyCount int    `json:"active_topology_count"`
+		ActiveStageCount    int    `json:"active_stage_count"`
+		CapacityAdvice      *struct {
+			State                       string `json:"state"`
+			Reason                      string `json:"reason"`
+			RequiredBytes               uint64 `json:"required_bytes"`
+			BestSingleNodeCapacityBytes uint64 `json:"best_single_node_capacity_bytes"`
+			AggregateCapacityBytes      uint64 `json:"aggregate_capacity_bytes"`
+			ShortfallBytes              uint64 `json:"shortfall_bytes"`
+			EligibleNodeCount           int    `json:"eligible_node_count"`
+			MissingCapacityNodeCount    int    `json:"missing_capacity_node_count"`
+			ExcludedClientNodeCount     int    `json:"excluded_client_node_count"`
+			SplitCapable                bool   `json:"split_capable"`
+		} `json:"capacity_advice"`
+		Participants []struct {
+			NodeID                    string `json:"node_id"`
+			ShortNodeID               string `json:"short_node_id"`
+			Source                    string `json:"source"`
+			Role                      string `json:"role"`
+			VRAMBytes                 uint64 `json:"vram_bytes"`
+			ArtifactTransferSupported bool   `json:"artifact_transfer_supported"`
+			RTTMs                     *int   `json:"rtt_ms"`
+			ModelSourceState          string `json:"model_source_state"`
+		} `json:"participants"`
+		Blockers []struct {
+			Reason         string   `json:"reason"`
+			Count          int      `json:"count"`
+			ShortNodeIDs   []string `json:"short_node_ids"`
+			Recommendation string   `json:"recommendation"`
+		} `json:"blockers"`
+		Recommendations []string `json:"recommendations"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return MeshLLMSplitReadiness{}, fmt.Errorf("parse meshllm split readiness: %w", err)
+	}
+	report := MeshLLMSplitReadiness{
+		ModelRef:            payload.ModelRef,
+		Verdict:             payload.Verdict,
+		ParticipantCount:    payload.ParticipantCount,
+		ExclusionCount:      payload.ExclusionCount,
+		ActiveTopologyCount: payload.ActiveTopologyCount,
+		ActiveStageCount:    payload.ActiveStageCount,
+		Recommendations:     append([]string(nil), payload.Recommendations...),
+	}
+	if payload.CapacityAdvice != nil {
+		report.CapacityAdvice = &MeshLLMSplitCapacityAdvice{
+			State:                       payload.CapacityAdvice.State,
+			Reason:                      payload.CapacityAdvice.Reason,
+			RequiredBytes:               payload.CapacityAdvice.RequiredBytes,
+			BestSingleNodeCapacityBytes: payload.CapacityAdvice.BestSingleNodeCapacityBytes,
+			AggregateCapacityBytes:      payload.CapacityAdvice.AggregateCapacityBytes,
+			ShortfallBytes:              payload.CapacityAdvice.ShortfallBytes,
+			EligibleNodeCount:           payload.CapacityAdvice.EligibleNodeCount,
+			MissingCapacityNodeCount:    payload.CapacityAdvice.MissingCapacityNodeCount,
+			ExcludedClientNodeCount:     payload.CapacityAdvice.ExcludedClientNodeCount,
+			SplitCapable:                payload.CapacityAdvice.SplitCapable,
+		}
+	}
+	for _, participant := range payload.Participants {
+		report.Participants = append(report.Participants, MeshLLMSplitParticipant{
+			NodeID:                    participant.NodeID,
+			ShortNodeID:               participant.ShortNodeID,
+			Source:                    participant.Source,
+			Role:                      participant.Role,
+			VRAMBytes:                 participant.VRAMBytes,
+			ArtifactTransferSupported: participant.ArtifactTransferSupported,
+			RTTMs:                     participant.RTTMs,
+			ModelSourceState:          participant.ModelSourceState,
+		})
+	}
+	for _, blocker := range payload.Blockers {
+		report.Blockers = append(report.Blockers, MeshLLMSplitReadinessBlocker{
+			Reason:         blocker.Reason,
+			Count:          blocker.Count,
+			ShortNodeIDs:   append([]string(nil), blocker.ShortNodeIDs...),
+			Recommendation: blocker.Recommendation,
+		})
+	}
+	return report, nil
 }
 
 // MapMeshLLMState maps console node state onto the agent runtime state

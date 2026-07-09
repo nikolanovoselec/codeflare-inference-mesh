@@ -119,7 +119,7 @@ describe('dashboard overview contracts', () => {
     expect(heroAt).toBeGreaterThan(-1)
     expect(navAt).toBeGreaterThan(heroAt)
     expect(html).toContain('data-dashboard-hero="true"')
-    expect(html).toContain('data-scramble')
+    expect(html).toContain('<span class="hero-accent" data-scramble>Codeflare</span> Inference Mesh')
     expect(html).toContain('id="overview-tiles"')
     expect(html).toContain('data-nav-item="overview"')
     expect(html).toContain('data-nav-hint="Live mesh health"')
@@ -143,11 +143,11 @@ describe('dashboard overview contracts', () => {
     const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
     const harness = adminUiHarness(html, () => Response.json(statusFixture()), { sessionToken: 'admin-secret' })
     const target = harness.query('[data-scramble]')
-    target.textContent = 'Inference Mesh'
+    target.textContent = 'Codeflare'
 
     harness.run()
 
-    expect(target.textContent).toBe('Inference Mesh')
+    expect(target.textContent).toBe('Codeflare')
     expect(target.children.filter((child) => child.className === 'scramble-word')).toHaveLength(0)
   })
 
@@ -158,17 +158,17 @@ describe('dashboard overview contracts', () => {
     const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
     const harness = adminUiHarness(html, () => Response.json(statusFixture()), { sessionToken: 'admin-secret' })
     const target = harness.query('[data-scramble]')
-    target.textContent = 'Inference Mesh'
+    target.textContent = 'Codeflare'
 
     harness.run()
     const words = target.children.filter((child) => child.className === 'scramble-word')
-    expect(words.map((word) => word.textContent)).toEqual(['Inference', 'Mesh'])
-    expect(target.children.some((child) => child.nodeType === 3 && child.textContent === ' ')).toBe(true)
+    expect(words.map((word) => word.textContent)).toEqual(['Codeflare'])
+    expect(target.children.some((child) => child.nodeType === 3 && child.textContent === ' ')).toBe(false)
 
     vi.advanceTimersByTime(3_400)
-    expect(words.some((word) => word.textContent !== 'Inference' && word.textContent !== 'Mesh')).toBe(true)
+    expect(words.some((word) => word.textContent !== 'Codeflare')).toBe(true)
     vi.advanceTimersByTime(3_600)
-    expect(words.map((word) => word.textContent)).toEqual(['Inference', 'Mesh'])
+    expect(words.map((word) => word.textContent)).toEqual(['Codeflare'])
   })
 
   it('REQ-OBS-010 computes the stats strip aggregates from admin status', async () => {
@@ -216,7 +216,7 @@ describe('dashboard overview contracts', () => {
 
   it('REQ-OBS-010 counts split API-client participants as mesh-ready capacity', async () => {
     const nodes = [
-      { id: 'battlestation', status: 'online', metrics: { runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], activeRequests: 0 } },
+      { id: 'battlestation', status: 'online', metrics: { runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], runtimeDetail: 'old Metal assert', activeRequests: 0 } },
       { id: 'linux-peer', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', meshRole: 'serving-peer', apiReady: true, consoleReady: true, readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], stageCount: 1, activeRequests: 0 } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
@@ -228,7 +228,42 @@ describe('dashboard overview contracts', () => {
     const statusCell = descendants(battlestation).find((node) => node.dataset.cell === 'status')!
     expect(statusCell.dataset.meshRole).toBe('api-client')
     expect(statusCell.dataset.statusDetail).toBe('standby')
-    expect(descendants(statusCell).find((node) => node.className === 'chip')?.dataset.tone).toBe('ok')
+    const chip = descendants(statusCell).find((node) => node.className === 'chip')!
+    expect(chip.dataset.tone).toBe('ok')
+    expect(statusCell.dataset.statusLabelKind).toBe('mesh-role')
+    await harness.clickAction('node-detail', { nodeId: 'battlestation' })
+    const drawerFields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    expect(drawerFields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
+  })
+
+  it('REQ-OBS-007 surfaces split capacity shortfall instead of marking standby API clients green', async () => {
+    const profile = { id: 'custom-ernie-split', displayName: 'ERNIE split', publicAliases: ['codeflare-mesh'], upstreamModel: 'meshllm/ERNIE-layers', active: true, rolloutPercent: 100, runtime: 'meshllm', meshllm: { split: true, modelRef: 'meshllm/ERNIE-layers', bindPort: 4420, maxVramGb: 16 } }
+    const splitReadiness = {
+      modelRef: 'meshllm/ERNIE-layers', verdict: 'insufficient_capacity', participantCount: 2,
+      capacityAdvice: { state: 'insufficient_capacity', reason: 'participant_split_capacity_insufficient', requiredBytes: 18_000_000_000, aggregateCapacityBytes: 16_000_000_000, shortfallBytes: 2_000_000_000, eligibleNodeCount: 2, splitCapable: true },
+      participants: [{ shortNodeId: 'Mac', vramBytes: 4_000_000_000 }, { shortNodeId: 'battle', vramBytes: 12_000_000_000 }],
+      blockers: [{ reason: 'split_capacity_shortfall', recommendation: 'Increase available VRAM.' }]
+    }
+    const nodes = [{ id: 'battlestation', status: 'online', maxVramGbOverride: 16, activeProfileIds: ['custom-ernie-split'], metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, splitEnabled: true, stageCount: 0, meshllmVersion: '0.72.2', meshMaxVramGb: 12, splitReadiness } }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles: [profile], nodes }) })
+    const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'battlestation')!
+    const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
+    const chip = descendants(statusCell).find((node) => node.className === 'chip')!
+    expect(chip.dataset.tone).toBe('warn')
+    expect(statusCell.dataset.statusDetail).toBe('split_capacity_shortfall')
+    expect(statusCell.dataset.splitReason).toBe('split_capacity_shortfall')
+    expect(statusCell.dataset.requiredBytes).toBe('18000000000')
+    expect(statusCell.dataset.aggregateBytes).toBe('16000000000')
+    expect(statusCell.dataset.shortfallBytes).toBe('2000000000')
+
+    await harness.clickAction('node-detail', { nodeId: 'battlestation' })
+    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const field = (name: string) => fields.find((node) => node.dataset.drawerField === name)!
+    expect(field('runtime-detail').dataset.splitReason).toBe('split_capacity_shortfall')
+    expect(field('runtime-detail').dataset.shortfallBytes).toBe('2000000000')
+    expect(field('mesh-vram-budget').dataset.profileBudget).toBe('16')
+    expect(field('mesh-vram-budget').dataset.nodeOverride).toBe('16')
+    expect(field('mesh-vram-budget').dataset.launchedBudget).toBe('12')
   })
 
   it('REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node', async () => {
@@ -291,15 +326,13 @@ describe('dashboard overview contracts', () => {
     expect(rowOrder(harness)).toEqual(['node-big', 'node-small', 'node-down'])
 
     const sortButton = (key: string) => harness.clickAction('nodes-sort', { sort: key })
-    await sortButton('toks')
-    expect(rowOrder(harness)).toEqual(['node-small', 'node-big', 'node-down'])
-    await sortButton('toks')
-    expect(rowOrder(harness)).toEqual(['node-down', 'node-big', 'node-small'])
+    await sortButton('vram')
+    expect(rowOrder(harness)).toEqual(['node-down', 'node-small', 'node-big'])
     await sortButton('vram')
     expect(rowOrder(harness)).toEqual(['node-big', 'node-small', 'node-down'])
 
     const cells = descendants(tableRows(harness)[0]!)
-    expect(cells.find((cell) => cell.dataset.cell === 'toks')!.dataset.value).toBe('42.5')
+    expect(cells.some((cell) => cell.dataset.cell === 'toks')).toBe(false)
     expect(cells.find((cell) => cell.dataset.cell === 'vram')!.dataset.value).toBe('24576')
     expect(cells.find((cell) => cell.dataset.cell === 'models')!.dataset.value).toBe('2')
   })
@@ -323,9 +356,8 @@ describe('dashboard overview contracts', () => {
     expect(statusOf('loading-node').detail).toBe('loading model next-upstream')
     expect(statusOf('failed-node').category).toBe('active')
     expect(statusOf('failed-node').detail).toBe('loading model next-upstream')
-    // A metric that is not yet real reads as an em dash, never a misleading 0.
-    const loadingToks = descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'loading-node')!).find((cell) => cell.dataset.cell === 'toks')!
-    expect(loadingToks.textContent).toBe('—')
+    // Live per-node throughput is not a reliable MeshLLM table field; the Nodes table omits it entirely.
+    expect(descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'loading-node')!).some((cell) => cell.dataset.cell === 'toks')).toBe(false)
     // The offline node drops the frozen "starting" substate entirely.
     const gone = statusOf('gone-node')
     expect(gone.category).toBe('offline')
@@ -444,7 +476,7 @@ describe('dashboard overview contracts', () => {
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const field = (name: string) => fields.find((node) => node.dataset.drawerField === name)
     expect(field('status')).toBeDefined()
-    expect(field('toks')!.dataset.value).toBe('61.25')
+    expect(field('toks')).toBeUndefined()
     expect(field('vram')!.dataset.value).toBe('4000/8192')
     expect(field('version')!.dataset.reported).toBe('v1.2.0')
     expect(field('version')!.dataset.desiredMatch).toBe('false')
@@ -559,9 +591,8 @@ describe('dashboard overview contracts', () => {
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const field = (name: string) => fields.find((node) => node.dataset.drawerField === name)
 
-    const toksCell = descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'direct-node')!).find((cell) => cell.dataset.cell === 'toks')!
-    expect(toksCell.textContent).toBe('not reported')
-    expect(textOf(field('toks')!)).toContain('not reported')
+    expect(descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'direct-node')!).some((cell) => cell.dataset.cell === 'toks')).toBe(false)
+    expect(field('toks')).toBeUndefined()
     expect(field('reachability')!.dataset.value).toBe('api:ready')
     expect(textOf(field('reachability')!)).not.toContain('down')
     expect(fields.some((node) => node.dataset.drawerField === 'mesh-role')).toBe(false)
@@ -1247,7 +1278,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((child) => child.dataset.nodeRow)
     expect(row, 'a node row should render').toBeDefined()
     // Every cell carries a data-label so the mobile card layout prints "Label: value" without side-scroll.
-    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'tok/s', 'VRAM', 'Models', 'Version'])
+    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'VRAM', 'Models', 'Version'])
   })
 })
 

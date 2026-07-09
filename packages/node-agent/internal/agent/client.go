@@ -152,7 +152,7 @@ func ApplyDesiredProfiles(cfg Config, desired []ModelProfile, path string) (Conf
 		return Config{}, false, false, err
 	}
 	after, hasAfter := SelectedProfile(next)
-	restart := hadBefore != hasAfter || (hadBefore && hasAfter && (before.ID != after.ID || before.Version != after.Version))
+	restart := hadBefore != hasAfter || (hadBefore && hasAfter && !reflect.DeepEqual(before, after))
 	return next, true, restart, nil
 }
 

@@ -1,7 +1,7 @@
 import { bearerToken, verifyPlainOrHashed, verifyToken } from './auth'
 import { InvalidJsonBodyError } from './errors'
 import { decryptJson, encryptJson, importMeshStateKey, type EncryptedEnvelope } from './mesh-crypto'
-import type { HeartbeatRequest, MeshBootstrap, ModelProfile, NodeRecord, RouterEnv, StageAssignment, Store } from './types'
+import type { HeartbeatRequest, MeshBootstrap, ModelProfile, NodeRecord, RouterEnv, SplitReadinessReport, StageAssignment, Store } from './types'
 
 export type MeshStateEnv = Pick<Partial<RouterEnv>, 'REGISTRY' | 'MESH_STATE_KEY' | 'ADMIN_TOKEN'>
 
@@ -35,6 +35,7 @@ export interface MeshHealthEntry {
   peerNodeIds: readonly string[]
   readyModels: readonly string[]
   stageAssignments?: readonly StageAssignment[]
+  splitReadiness?: SplitReadinessReport
   failedNodeIds: readonly string[]
   /** Member nodes tainted deactivated (REQ-ADM-030): enrolled but running no model. */
   deactivatedNodeIds: readonly string[]
@@ -300,6 +301,7 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
   const byFreshness = (left: NodeRecord, right: NodeRecord): number => right.lastSeenAt - left.lastSeenAt
   const explicitCoordinator = members.filter((node) => node.metrics?.meshRole === 'coordinator').sort(byFreshness)[0]
   const lastErrorNode = members.filter((node) => node.metrics?.lastError !== undefined).sort(byFreshness)[0]
+  const splitReadinessNode = members.filter((node) => node.metrics?.splitReadiness !== undefined).sort(byFreshness)[0]
   const readyModels = [...new Set(members.flatMap((node) => node.metrics?.readyModels ?? []))]
   const stageAssignments = meshStageAssignments(members)
   const coordinatorNodeId = explicitCoordinator?.id ?? stageAssignments.find((stage) => stage.stageIndex === 0)?.nodeId
@@ -314,6 +316,7 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
     peerNodeIds: state.tokens.map((entry) => entry.nodeId),
     readyModels,
     ...(stageAssignments.length > 0 ? { stageAssignments } : {}),
+    ...(splitReadinessNode?.metrics?.splitReadiness !== undefined ? { splitReadiness: splitReadinessNode.metrics.splitReadiness } : {}),
     failedNodeIds,
     deactivatedNodeIds,
     active: profile.active,

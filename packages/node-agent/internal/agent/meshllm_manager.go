@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,6 +106,12 @@ func NewMeshLLMManager(in MeshLLMRenderInput, contextWindow int, dataDir string,
 }
 
 func (m *MeshLLMManager) Runtime() string { return "meshllm" }
+
+func (m *MeshLLMManager) MaxVramGb() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.input.MaxVramGb
+}
 
 func (m *MeshLLMManager) TargetURL() string {
 	m.mu.Lock()
@@ -369,6 +376,9 @@ func (m *MeshLLMManager) NeedsRestart(b *MeshBootstrap) bool {
 	if !m.runningLocked() {
 		return false
 	}
+	if m.state == "failed" && strings.Contains(m.lastError, "readiness deadline exceeded") {
+		return true
+	}
 	if b.Rotation != m.launchedRotation {
 		return true
 	}
@@ -613,6 +623,29 @@ func fetchMeshLLMModels(ctx context.Context, client *http.Client, port int) ([]s
 		return nil, false
 	}
 	return models, true
+}
+
+func (m *MeshLLMManager) PollSplitReadiness(ctx context.Context, modelRef string) (MeshLLMSplitReadiness, bool) {
+	m.mu.Lock()
+	client := m.httpClient
+	consolePort := m.input.ConsolePort
+	m.mu.Unlock()
+	return fetchMeshLLMSplitReadiness(ctx, client, consolePort, modelRef)
+}
+
+func fetchMeshLLMSplitReadiness(ctx context.Context, client *http.Client, port int, modelRef string) (MeshLLMSplitReadiness, bool) {
+	if modelRef == "" {
+		return MeshLLMSplitReadiness{}, false
+	}
+	body, ok := fetchLocalBody(ctx, client, port, "/api/diagnostics/split-readiness?model_ref="+url.QueryEscape(modelRef))
+	if !ok {
+		return MeshLLMSplitReadiness{}, false
+	}
+	report, err := ParseMeshLLMSplitReadiness(body)
+	if err != nil {
+		return MeshLLMSplitReadiness{}, false
+	}
+	return report, true
 }
 
 func fetchLocalBody(ctx context.Context, client *http.Client, port int, path string) ([]byte, bool) {

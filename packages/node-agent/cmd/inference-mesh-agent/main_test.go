@@ -34,9 +34,12 @@ type fakeMeshRuntime struct {
 	restarts       int
 	events         []string
 	counter        *agent.ActiveCounter
-	restarted      chan struct{}
-	restartBlock   bool
-	runtimeDetail  string
+	restarted        chan struct{}
+	restartBlock     bool
+	runtimeDetail    string
+	maxVramGb        float64
+	splitReadiness   agent.MeshLLMSplitReadiness
+	splitReadinessOK bool
 }
 
 func newFakeMeshRuntime(counter *agent.ActiveCounter) *fakeMeshRuntime {
@@ -92,6 +95,18 @@ func (f *fakeMeshRuntime) Stop(context.Context) error { f.record("stop"); return
 func (f *fakeMeshRuntime) Runtime() string { return "meshllm" }
 
 func (f *fakeMeshRuntime) TargetURL() string { return "http://127.0.0.1:9337" }
+
+func (f *fakeMeshRuntime) MaxVramGb() float64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.maxVramGb
+}
+
+func (f *fakeMeshRuntime) PollSplitReadiness(context.Context, string) (agent.MeshLLMSplitReadiness, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.splitReadiness, f.splitReadinessOK
+}
 
 func (f *fakeMeshRuntime) Restart(context.Context) error {
 	f.recordRestart(nil)
@@ -290,6 +305,37 @@ func TestREQOBS011RuntimeDetailAndNodeStateRideHeartbeat(t *testing.T) {
 	}
 }
 
+func TestREQOBS007CollectCarriesSplitReadinessAndLaunchedBudget(t *testing.T) {
+	// Split planner blockers must ride heartbeat metrics so the control plane can say
+	// "capacity shortfall" instead of only showing api-client/standby. REQ-OBS-007.
+	profile := agent.ModelProfile{
+		ID: "split-p", UpstreamModel: "meshllm/model-layers", Version: 1, Runtime: "meshllm",
+		MeshLLM: agent.MeshLLMSettings{ModelRef: "meshllm/model-layers", Split: true, BindPort: 4420, MaxVramGb: 16},
+	}
+	cfg := agent.Config{RuntimeModel: profile.UpstreamModel, ActiveProfileIDs: []string{profile.ID}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	manager.maxVramGb = 16
+	manager.status = agent.MeshLLMStatus{NodeState: "standby", NodeID: "node-1"}
+	manager.splitReadinessOK = true
+	manager.splitReadiness = agent.MeshLLMSplitReadiness{
+		ModelRef: profile.MeshLLM.ModelRef,
+		Verdict:  "insufficient_capacity",
+		CapacityAdvice: &agent.MeshLLMSplitCapacityAdvice{State: "insufficient_capacity", Reason: "participant_split_capacity_insufficient", RequiredBytes: 18_000_000_000, AggregateCapacityBytes: 16_000_000_000, ShortfallBytes: 2_000_000_000, EligibleNodeCount: 2, SplitCapable: true},
+		Blockers: []agent.MeshLLMSplitReadinessBlocker{{Reason: "split_capacity_shortfall", Recommendation: "Add capacity."}},
+		Participants: []agent.MeshLLMSplitParticipant{{ShortNodeID: "mac", VRAMBytes: 4_000_000_000}, {ShortNodeID: "battle", VRAMBytes: 12_000_000_000}},
+	}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+
+	metrics, _ := loop.collect(context.Background(), cfg)
+	if metrics.MeshMaxVramGb != 16 {
+		t.Fatalf("launched mesh max-vram budget must ride heartbeat metrics, got %v", metrics.MeshMaxVramGb)
+	}
+	if metrics.SplitReadiness == nil || metrics.SplitReadiness.Blockers[0].Reason != "split_capacity_shortfall" {
+		t.Fatalf("split readiness blocker missing from heartbeat metrics: %#v", metrics.SplitReadiness)
+	}
+}
+
 func TestREQRUN010RestartLatchReleasedWhenRuntimeHangs(t *testing.T) {
 	// A runtime restart whose Stop blocks (a mesh-llm ignoring SIGTERM) must not strand the
 	// restart-pending latch. The bounded restart timeout unblocks it so a later heartbeat can
@@ -384,13 +430,37 @@ func TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall(t *testing.T) {
 	}
 }
 
+func TestREQRUN003ProfileContentChangeRestartsWithUpdatedRenderInput(t *testing.T) {
+	// Same ID/version with changed launch settings is still a different runtime target. The heartbeat
+	// handler must restart with the updated render input, otherwise a saved maxVramGb change leaves
+	// mesh-llm running the old --max-vram until the agent process itself restarts. REQ-RUN-003.
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	oldProfile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "u1", MaxVramGb: 12}}
+	newProfile := oldProfile
+	newProfile.MeshLLM.MaxVramGb = 16
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{oldProfile}}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.loadState.Set(oldProfile)
+
+	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, DesiredProfiles: []agent.ModelProfile{newProfile}})
+	select {
+	case <-manager.restarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("selected profile content change did not restart runtime")
+	}
+	if len(manager.restartInputs) != 1 || manager.restartInputs[0].MaxVramGb != 16 {
+		t.Fatalf("runtime must restart with updated maxVramGb, got inputs %#v", manager.restartInputs)
+	}
+}
+
 func TestREQNODE012ForceReloadRestartsOncePerNonce(t *testing.T) {
 	// A Force Reload directive (a new ReloadNonce in the heartbeat response) drains and restarts
 	// the current runtime exactly once per nonce, records the applied nonce so it is echoed back
 	// for the router to retire, and never re-fires the same nonce. REQ-NODE-012.
 	counter := &agent.ActiveCounter{}
 	manager := newFakeMeshRuntime(counter)
-	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1}
+	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "u1", MaxVramGb: 16}}
 	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{profile}}
 	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
 	// Mark the profile already loaded so a profile-change restart does not fire: the reload branch
@@ -405,6 +475,9 @@ func TestREQNODE012ForceReloadRestartsOncePerNonce(t *testing.T) {
 	}
 	if loop.lastReloadNonce != "n1" {
 		t.Fatalf("expected applied nonce n1 recorded for ack, got %q", loop.lastReloadNonce)
+	}
+	if len(manager.restartInputs) != 1 || manager.restartInputs[0].MaxVramGb != 16 {
+		t.Fatalf("Force Reload must restart from current selected profile config, got inputs %#v", manager.restartInputs)
 	}
 
 	loop.handleResponse(context.Background(), agent.HeartbeatResponse{OK: true, ReloadNonce: "n1"})

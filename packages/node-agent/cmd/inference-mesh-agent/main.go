@@ -315,6 +315,14 @@ type runtimeTargetFunc func() string
 
 func (f runtimeTargetFunc) TargetURL() string { return f() }
 
+type splitReadinessPoller interface {
+	PollSplitReadiness(ctx context.Context, modelRef string) (agent.MeshLLMSplitReadiness, bool)
+}
+
+type meshRuntimeBudgetReporter interface {
+	MaxVramGb() float64
+}
+
 type meshRuntime interface {
 	agent.RuntimeController
 	Runtime() string
@@ -420,6 +428,20 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 			status, consoleReady := s.manager.PollStatus(ctx)
 			profile, _ := agent.SelectedProfile(current)
 			metrics = applyMeshStatusMetrics(metrics, profile, status, consoleReady, s.manager.APIReady(), s.manager.ReadyModels())
+			if budget, ok := s.manager.(meshRuntimeBudgetReporter); ok {
+				metrics.MeshMaxVramGb = budget.MaxVramGb()
+			}
+			if profile.MeshLLM.Split {
+				modelRef := profile.MeshLLM.ModelRef
+				if modelRef == "" {
+					modelRef = profile.UpstreamModel
+				}
+				if poller, ok := s.manager.(splitReadinessPoller); ok {
+					if report, ok := poller.PollSplitReadiness(ctx, modelRef); ok {
+						metrics.SplitReadiness = &report
+					}
+				}
+			}
 			identity.MeshID = s.manager.CurrentMeshID()
 			identity.MeshToken = s.manager.CurrentToken()
 		}
@@ -495,10 +517,14 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 			}
 			go s.finishProfileRestart(ctx, next, "downloading")
 		} else if reloadRequested && beginRestart(&s.restartMu, &s.restartPending) {
-			// Force Reload: drain and restart the current profile on operator demand. REQ-NODE-012.
-			go s.finishBootstrapRestart(ctx)
+			// Force Reload: drain and restart from the current selected profile config on operator demand.
+			// This must not reuse the manager's previous render input, otherwise changed runtime tunables
+			// such as maxVramGb keep relaunching with stale argv. REQ-NODE-012 / REQ-RUN-003.
+			go s.finishProfileRestart(ctx, next, "starting")
 		} else if s.manager.NeedsRestart(response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
-			go s.finishBootstrapRestart(ctx)
+			// Mesh bootstrap changes and readiness self-heal also relaunch from the current selected
+			// profile config, so a restart cannot preserve stale render inputs.
+			go s.finishProfileRestart(ctx, next, "starting")
 		}
 	}
 	s.maybeSelfUpdate(ctx, response.DesiredAgentVersion)
@@ -567,19 +593,6 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 	}
 	if hasProfile && s.manager.State() == "ready" {
 		s.loadState.Set(profile)
-	}
-}
-
-func (s *serviceLoop) finishBootstrapRestart(ctx context.Context) {
-	defer finishRestart(&s.restartMu, &s.restartPending)
-	ctx, cancel := s.restartCtx(ctx)
-	defer cancel()
-	if err := waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout); err != nil {
-		s.manager.SetFailure(err)
-		return
-	}
-	if err := s.manager.Restart(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
-		s.manager.SetFailure(err)
 	}
 }
 
@@ -891,7 +904,28 @@ func selectedProfileKey(cfg agent.Config) string {
 }
 
 func profileKey(profile agent.ModelProfile) string {
-	return fmt.Sprintf("%s:%s:%d", profile.Runtime, profile.ID, profile.Version)
+	launch := struct {
+		Runtime       string
+		ID            string
+		Version       int
+		UpstreamModel string
+		ContextWindow int
+		MeshLLM       agent.MeshLLMSettings
+		LlamaCpp      agent.LlamaCppSettings
+	}{
+		Runtime:       profile.Runtime,
+		ID:            profile.ID,
+		Version:       profile.Version,
+		UpstreamModel: profile.UpstreamModel,
+		ContextWindow: profile.ContextWindow,
+		MeshLLM:       profile.MeshLLM,
+		LlamaCpp:      profile.LlamaCpp,
+	}
+	encoded, err := json.Marshal(launch)
+	if err != nil {
+		return fmt.Sprintf("%s:%s:%d", profile.Runtime, profile.ID, profile.Version)
+	}
+	return string(encoded)
 }
 
 func waitForDrain(ctx context.Context, activeRequests *agent.ActiveCounter, manager meshRuntime, timeout time.Duration) error {

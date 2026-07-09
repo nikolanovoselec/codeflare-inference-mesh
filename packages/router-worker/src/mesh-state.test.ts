@@ -395,6 +395,23 @@ describe('mesh state core', () => {
     expect(keyed.status).toBe(200)
   })
 
+  it('REQ-OBS-007 carries split readiness blockers into mesh health', async () => {
+    const report = {
+      modelRef: UPSTREAM_MODEL,
+      verdict: 'insufficient_capacity',
+      capacityAdvice: { state: 'insufficient_capacity', reason: 'participant_split_capacity_insufficient', requiredBytes: 18_000_000_000, aggregateCapacityBytes: 16_000_000_000, shortfallBytes: 2_000_000_000, eligibleNodeCount: 2, splitCapable: true },
+      participants: [{ shortNodeId: 'Mac', vramBytes: 4_000_000_000 }, { shortNodeId: 'battle', vramBytes: 12_000_000_000 }],
+      blockers: [{ reason: 'split_capacity_shortfall', recommendation: 'Increase available VRAM.' }]
+    }
+    const nodeA = meshNode('node-a', { lastSeenAt: NOW, metrics: { runtimeState: 'starting', activeRequests: 0, splitReadiness: report } })
+    const { store, env, profile } = await meshFixture(nodeA)
+    await reportToken(store, env, nodeA, 'invite-token-node-a', 'mesh-1', NOW)
+
+    const entries = await meshHealth(store, env, [profile], [nodeA], NOW)
+    expect(entries[0]?.splitReadiness?.blockers?.[0]?.reason).toBe('split_capacity_shortfall')
+    expect(entries[0]?.splitReadiness?.capacityAdvice?.shortfallBytes).toBe(2_000_000_000)
+  })
+
   it('REQ-SEC-006 distributes join tokens only to live non-revoked nodes', async () => {
     const nodeA = meshNode('node-a')
     const { store, env, profile } = await meshFixture(nodeA)

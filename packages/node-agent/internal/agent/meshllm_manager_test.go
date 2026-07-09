@@ -529,6 +529,9 @@ func TestREQRUN005LoadingStateExtendsReadinessDeadline(t *testing.T) {
 			if last := fixture.manager.LastError(); !strings.Contains(last, "deadline") {
 				t.Fatalf("deadline failure should be reported, got %q", last)
 			}
+			if !fixture.manager.NeedsRestart(&MeshBootstrap{Action: "create"}) {
+				t.Fatal("readiness deadline failure must self-heal by requesting a restart on the next heartbeat")
+			}
 		})
 	})
 }

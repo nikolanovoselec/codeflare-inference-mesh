@@ -125,7 +125,7 @@ export const ADMIN_UI_POLLING = {
 export const ADMIN_UI_NODES_TABLE = {
   bodyId: 'nodes-table-body',
   sortAttribute: 'data-sort',
-  columns: ['id', 'status', 'toks', 'vram', 'models', 'version']
+  columns: ['id', 'status', 'vram', 'models', 'version']
 } as const
 
 /**
@@ -162,7 +162,7 @@ export const ADMIN_UI_TOKS_TRACE = {
 export const ADMIN_UI_MESH_HEALTH = {
   bannerId: 'mesh-key-banner',
   keyMissingError: 'mesh_state_key_missing',
-  fields: ['coordinator', 'peers', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error', 'rotation', 'secret']
+  fields: ['coordinator', 'peers', 'split-readiness', 'capacity', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error', 'rotation', 'secret']
 } as const
 
 export const ADMIN_UI_AGENT_VERSION = {
@@ -201,6 +201,21 @@ export interface MeshHealthEntry {
     readonly reportedByNodeId?: string
   }[]
   readonly readyModels?: readonly string[]
+  readonly splitReadiness?: {
+    readonly modelRef?: string
+    readonly verdict?: string
+    readonly capacityAdvice?: {
+      readonly state?: string
+      readonly reason?: string
+      readonly requiredBytes?: number
+      readonly aggregateCapacityBytes?: number
+      readonly shortfallBytes?: number
+      readonly eligibleNodeCount?: number
+    }
+    readonly participants?: readonly { readonly nodeId?: string; readonly shortNodeId?: string; readonly role?: string; readonly vramBytes?: number }[]
+    readonly blockers?: readonly { readonly reason?: string; readonly recommendation?: string }[]
+    readonly recommendations?: readonly string[]
+  }
   readonly failedNodeIds?: readonly string[]
   readonly deactivatedNodeIds?: readonly string[]
   readonly active?: boolean
@@ -236,9 +251,12 @@ export interface MeshUiStatusNode {
   readonly id: string
   readonly status?: string
   readonly agentVersion?: string
+  readonly maxVramGbOverride?: number | null
+  readonly activeProfileIds?: readonly string[]
   readonly metrics?: {
     readonly runtimeState?: string
     readonly readyModels?: readonly string[]
+    readonly meshMaxVramGb?: number
   }
 }
 

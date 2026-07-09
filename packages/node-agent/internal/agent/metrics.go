@@ -21,12 +21,14 @@ type NodeMetrics struct {
 	MeshID                    string   `json:"meshId,omitempty"`
 	MeshRole                  string   `json:"meshRole,omitempty"`
 	PeerCount                 int      `json:"peerCount,omitempty"`
-	ReadyModels               []string `json:"readyModels,omitempty"`
-	SplitEnabled              bool           `json:"splitEnabled,omitempty"`
-	StageCount                int            `json:"stageCount,omitempty"`
-	StageAssignments          []MeshLLMStage  `json:"stageAssignments,omitempty"`
-	APIReady                  bool           `json:"apiReady,omitempty"`
-	ConsoleReady              bool     `json:"consoleReady,omitempty"`
+	ReadyModels               []string                `json:"readyModels,omitempty"`
+	SplitEnabled              bool                    `json:"splitEnabled,omitempty"`
+	StageCount                int                     `json:"stageCount,omitempty"`
+	StageAssignments          []MeshLLMStage          `json:"stageAssignments,omitempty"`
+	MeshMaxVramGb             float64                 `json:"meshMaxVramGb,omitempty"`
+	SplitReadiness            *MeshLLMSplitReadiness  `json:"splitReadiness,omitempty"`
+	APIReady                  bool                    `json:"apiReady,omitempty"`
+	ConsoleReady              bool                    `json:"consoleReady,omitempty"`
 	MeshLLMVersion            string   `json:"meshllmVersion,omitempty"`
 	LlamaCppVersion           string   `json:"llamacppVersion,omitempty"`
 	CtxSize                   int      `json:"ctxSize,omitempty"`
@@ -142,6 +144,13 @@ func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	}
 	if len(extra.StageAssignments) > 0 {
 		merged.StageAssignments = append([]MeshLLMStage(nil), extra.StageAssignments...)
+	}
+	if extra.MeshMaxVramGb != 0 {
+		merged.MeshMaxVramGb = extra.MeshMaxVramGb
+	}
+	if extra.SplitReadiness != nil {
+		report := *extra.SplitReadiness
+		merged.SplitReadiness = &report
 	}
 	if extra.APIReady {
 		merged.APIReady = true

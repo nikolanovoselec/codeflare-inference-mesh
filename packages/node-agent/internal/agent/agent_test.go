@@ -470,6 +470,50 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 	})
 }
 
+func TestREQRUN003DesiredProfileContentChangeRestartsRuntime(t *testing.T) {
+	// Runtime-launch inputs such as maxVramGb live inside the selected profile. A change to those
+	// fields must restart mesh-llm even when the profile ID/version are unchanged; otherwise Force
+	// Reload and ordinary heartbeats keep relaunching stale --max-vram values. REQ-RUN-003.
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := DefaultConfig(t.TempDir())
+	cfg.Profiles = []ModelProfile{{
+		ID:             "split-profile",
+		PublicAliases:  []string{"codeflare-mesh"},
+		UpstreamModel:  "meshllm/model-layers",
+		SourceMode:     "meshllm-ref",
+		ContextWindow:  131072,
+		Runtime:        "meshllm",
+		MeshLLM:        MeshLLMSettings{ModelRef: "meshllm/model-layers", Split: true, BindPort: 4420, MaxVramGb: 12},
+		Version:        7,
+		RolloutPercent: 100,
+		Active:         true,
+	}}
+	cfg.ActiveProfileIDs = []string{"split-profile"}
+	desired := []ModelProfile{{
+		ID:             "split-profile",
+		PublicAliases:  []string{"codeflare-mesh"},
+		UpstreamModel:  "meshllm/model-layers",
+		SourceMode:     "meshllm-ref",
+		ContextWindow:  131072,
+		Runtime:        "meshllm",
+		MeshLLM:        MeshLLMSettings{ModelRef: "meshllm/model-layers", Split: true, BindPort: 4420, MaxVramGb: 16},
+		Version:        7,
+		RolloutPercent: 100,
+		Active:         true,
+	}}
+
+	next, changed, restart, err := ApplyDesiredProfiles(cfg, desired, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || !restart {
+		t.Fatalf("selected profile content change must require restart, changed=%v restart=%v", changed, restart)
+	}
+	if got := next.Profiles[0].MeshLLM.MaxVramGb; got != 16 {
+		t.Fatalf("expected updated maxVramGb persisted in selected profile, got %v", got)
+	}
+}
+
 func TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(t *testing.T) {
 	t.Run("REQ-NODE-003", func(t *testing.T) {
 		counter := &ActiveCounter{}
