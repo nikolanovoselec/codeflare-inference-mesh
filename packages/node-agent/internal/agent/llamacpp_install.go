@@ -128,7 +128,7 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 		return pathBinary, nil
 	}
 
-	target := filepath.Join(dataDir, "bin", binaryName)
+	target := llamaCppManagedTarget(dataDir, binaryName, options.backend)
 	if _, err := os.Stat(target); err == nil {
 		if out, versionErr := options.queryVersion(target); versionErr == nil && llamaCppVersionMatches(out, version) {
 			return target, nil
@@ -251,6 +251,15 @@ func llamaCppAssetNames(version, goos, goarch string, backend string) ([]string,
 	default:
 		return nil, fmt.Errorf("no llama.cpp asset for %s/%s", goos, goarch)
 	}
+}
+
+func llamaCppManagedTarget(dataDir string, binaryName string, backend string) string {
+	backend = strings.TrimSpace(strings.ToLower(backend))
+	if backend == "" || backend == "cpu" || backend == "metal" {
+		return filepath.Join(dataDir, "bin", binaryName)
+	}
+	backend = strings.NewReplacer("/", "-", "\\", "-", ":", "-", " ", "-").Replace(backend)
+	return filepath.Join(dataDir, "bin", "llamacpp-"+backend, binaryName)
 }
 
 func findMatchingLlamaCppHostBinary(binaryName string, version string, options llamaCppInstallOptions) (string, bool) {
