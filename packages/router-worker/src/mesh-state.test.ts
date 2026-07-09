@@ -422,7 +422,8 @@ describe('mesh state core', () => {
     await reportToken(store, env, nodeA, 'invite-token-node-a', 'mesh-1', NOW)
 
     const [entry] = await meshHealth(store, env, [profile], [nodeA, nodeB], NOW)
-    expect(entry.stageAssignments).toEqual([
+    expect(entry).toBeDefined()
+    expect(entry!.stageAssignments).toEqual([
       expect.objectContaining({ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26, state: 'ready', reportedByNodeId: 'linux-node' }),
       expect.objectContaining({ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready', reportedByNodeId: 'mac-node' })
     ])
