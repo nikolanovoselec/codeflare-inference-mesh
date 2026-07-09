@@ -120,7 +120,7 @@ func TestREQNODE013EnsureLlamaCppDoesNotReuseGenericBinaryForGpuBackend(t *testi
 			return "", errors.New("not installed")
 		}),
 		WithLlamaCppReleaseFetcher(func(version string) ([]LlamaCppReleaseAsset, error) {
-			return []LlamaCppReleaseAsset{{Name: "llama-b9928-bin-ubuntu-vulkan-x64.tar.gz", Digest: "sha256:" + meshLLMSHA256Hex(archive), BrowserDownloadURL: "https://example.invalid/llama-vulkan.tar.gz"}}
+			return []LlamaCppReleaseAsset{{Name: "llama-b9928-bin-ubuntu-vulkan-x64.tar.gz", Digest: "sha256:" + meshLLMSHA256Hex(archive), BrowserDownloadURL: "https://example.invalid/llama-vulkan.tar.gz"}}, nil
 		}),
 		WithLlamaCppDownload(func(assetURL string) ([]byte, error) { return archive, nil }))
 	if err != nil {
