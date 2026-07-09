@@ -813,7 +813,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.status).toBe(201)
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false, rolloutPercent: 0 })
-    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 1, cacheTypeK: 'q8_0', cacheTypeV: 'q8_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192 })
+    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 4, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
   })
 
   it('REQ-RUN-011 rejects direct llama.cpp for split models', async () => {
@@ -4338,12 +4338,12 @@ describe('control-plane API (/api/v1)', () => {
     const key = await mintKey(router)
     const res = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single', 'llamacpp')
     expect(res.status).toBe(201)
-    const body = await res.json() as { model: { id: string; runtime: string; tunables: unknown; llamacpp?: { cachePrompt: boolean; cacheReuse: number; parallel: number } } }
+    const body = await res.json() as { model: { id: string; runtime: string; tunables: unknown; llamacpp?: { cachePrompt: boolean; cacheReuse: number; parallel: number; gpuLayers?: string; cacheTypeK?: string; cacheTypeV?: string; batch?: number; ubatch?: number; maxOutputTokens?: number; reasoning?: { enabled?: boolean; format?: string; budget?: number } } } }
     const created = (await store.listProfiles()).find((profile) => profile.id === body.model.id)
 
     expect(body.model.runtime).toBe('llamacpp')
     expect(body.model.tunables).toBeNull()
-    expect(body.model.llamacpp).toMatchObject({ cachePrompt: true, cacheReuse: 256, parallel: 1 })
+    expect(body.model.llamacpp).toMatchObject({ cachePrompt: true, cacheReuse: 256, parallel: 4, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false })
   })
 

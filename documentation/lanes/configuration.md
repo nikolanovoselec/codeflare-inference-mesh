@@ -140,24 +140,24 @@ Each model carries runtime-specific tunables, edited from the model's Manage dra
 | Reasoning | `request_defaults.reasoning_*` | On, `deepseek`, budget `4096` | Enables the model's thinking phase (`reasoning_enabled`) and caps its length (`reasoning_budget`) with a format tag (`reasoning_format`). The reasoning budget is part of the output budget, so keep it below max output tokens (the default 8192 / 4096 is a 2:1 split). Applies only to reasoning-capable models. |
 | Input (prefix) cache | `model_fit.prefix_cache.*` (`enabled`, `payload_mode`, `max_entries`, `shared_stride_tokens`, `shared_record_limit`) | On; `payload_mode` auto-set per family; `16` entries | Reuses the KV of a shared prompt prefix so a follow-up turn prefills only the new tokens; this is what populates `prompt_tokens_details.cached_tokens`. **`payload_mode` is load-bearing:** left Auto, MeshLLM matches the `qwen3` substring and picks `resident-kv`, which silently no-ops for recurrent-hybrid architectures (`qwen35`, `qwen3.6`, `qwen3-next`, `falcon-h1`, `mamba`, `rwkv`) — those must pin `kv-recurrent`, while dense families use `resident-kv`. New custom models auto-set it from the model reference; correct an override per model if the architecture is misdetected. It is not enabled by parallel lanes but needs `2` or more to run. `max_entries` is capped at `128` (the fallback overruns the KV cell pool → HTTP 502 `llama_decode failed`). |
 
-Context window defaults to Auto so MeshLLM sizes it to the GPU; pinning a small context on a large model collapses the lane count. Parallel lanes and the input cache default on (not Auto): an omitted parallel lets MeshLLM pick a single lane, and an omitted cache defers to family auto-detection that leaves it off for uncertified families, which together is why input caching never engaged. To reproduce a proven high-throughput single-GPU profile (a 262K-context MoE on a 24 GB GPU), set context window `262144`, parallel lanes `2` or more, KV cache types `q4_0` (which is what lets the large context fit), prefill batch `8192`, micro-batch `4096`, flash attention on, the input cache on, max output tokens `8192`, and reasoning on / `deepseek` / `4096`. Raising the batch sizes and the context both cost GPU memory, so size them to the node.
+Context window defaults to Auto so MeshLLM sizes it to the GPU; pinning a small context on a large model collapses the lane count. Parallel lanes and the input cache default on (not Auto): an omitted parallel lets MeshLLM pick a single lane, and an omitted cache defers to family auto-detection that leaves it off for uncertified families, which together is why input caching never engaged. The proven direct llama.cpp RTX 3090 profile for the 262K-context MoE uses context window `262144`, parallel slots `4`, KV cache types `q4_0`, prefill batch `8192`, micro-batch `2048`, flash attention on, prompt cache on, cache reuse `256`, generation cap `16384`, and reasoning on / `deepseek` / `8192`. Raising context, parallelism, batch, or micro-batch costs GPU memory; `4096` micro-batch caused Gateway OOM on this 24 GB profile.
 
 Direct llama.cpp profiles use these settings:
 
 | Setting | llama-server flag | Default | What it is / does |
 | --- | --- | --- | --- |
 | Context window | `--ctx-size` | `262144` | Direct profiles require a pinned context window (`>= 4096`) so coding-session KV reuse has a stable cache budget. |
-| Parallel slots | `--parallel` | `1` | Number of concurrent llama.cpp slots for the node-local runtime. |
-| GPU layers | `-ngl` / `--gpu-layers` / `--n-gpu-layers` | Auto (unset) | Max layers stored in VRAM. `99` forces full offload for most GGUF models; `0` is CPU-only; `all` and `auto` follow llama.cpp's documented values. |
-| KV cache type (keys) | `--cache-type-k` | `q8_0` | Precision of cached keys. Use `q8_0` as the balanced default; `q4_0` can fit larger contexts. |
-| KV cache type (values) | `--cache-type-v` | `q8_0` | Precision of cached values. Match the key type unless testing a specific tradeoff. |
+| Parallel slots | `--parallel` | `4` | Number of concurrent llama.cpp slots for the node-local runtime. The proven RTX 3090 profile uses 4; lower it if VRAM gets tight. |
+| GPU layers | `-ngl` / `--gpu-layers` / `--n-gpu-layers` | `99` | Max layers stored in VRAM. `99` forces full offload for most GGUF models; `0` is CPU-only; `all` and `auto` follow llama.cpp's documented values. |
+| KV cache type (keys) | `--cache-type-k` | `q4_0` | Precision of cached keys. `q4_0` is the proven 262K-context setting; `q8_0` uses more memory for higher precision. |
+| KV cache type (values) | `--cache-type-v` | `q4_0` | Precision of cached values. Match the key type unless testing a specific tradeoff. |
 | Prefill batch | `--batch-size` | `8192` | Logical prefill batch. Raising it can speed long-prompt ingestion if GPU memory allows. |
 | Micro-batch | `--ubatch-size` | `2048` | Physical prefill sub-batch. Raise carefully when the node has headroom; lower it if the runtime fails to load. |
 | Flash attention | `--flash-attn` | On | Fast/memory-efficient attention for large-context direct serving. |
-| Generation cap | `-n` / `--predict` / `--n-predict` | `8192` | Server-side default/max tokens to predict. Requests may still pass `max_tokens`; this maps to `-n N` / `--predict N` and should stay above the reasoning budget. |
+| Generation cap | `-n` / `--predict` / `--n-predict` | `16384` | Server-side default/max tokens to predict. Requests may still pass `max_tokens`; the proven profile uses `16384` so an `8192` reasoning budget still leaves room to answer. |
 | Prompt cache | `--cache-prompt` | On | Keeps prompt/KV reuse enabled; leave on for cache-local coding sessions. |
 | Cache reuse | `--cache-reuse` | `256` | llama.cpp reuse window for prompt/KV cache matching. |
-| Reasoning | `--reasoning`, `--reasoning-format`, `--reasoning-budget` | Auto unless set | Thinking-mode controls for reasoning-capable chat templates. |
+| Reasoning | `--reasoning`, `--reasoning-format`, `--reasoning-budget` | On, `deepseek`, budget `8192` | Thinking-mode controls for reasoning-capable chat templates. The reasoning budget is part of the generation cap. |
 | Bind port | `--port` | derived per profile | The node-local llama.cpp API port; reserved mesh/proxy ports are rejected. |
 
 ## GitHub secrets

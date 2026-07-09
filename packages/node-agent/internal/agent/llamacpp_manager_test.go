@@ -17,21 +17,21 @@ func TestREQLLAMACPPRenderArgsIncludesCacheAndAlias(t *testing.T) {
 			Quant:           "Q4_K_M",
 			BindPort:        4300,
 			ContextWindow:   262144,
-			Parallel:        2,
+			Parallel:        4,
 			CachePrompt:     true,
 			CacheReuse:      256,
-			CacheTypeK:      "q8_0",
-			CacheTypeV:      "q8_0",
+			CacheTypeK:      "q4_0",
+			CacheTypeV:      "q4_0",
 			Batch:           8192,
 			Ubatch:          2048,
 			FlashAttn:       &flash,
-			MaxOutputTokens: 8192,
+			MaxOutputTokens: 16384,
 			GPULayers:       "99",
-			Reasoning:       &ReasoningSettings{Enabled: &enabled, Format: "deepseek", Budget: 4096},
+			Reasoning:       &ReasoningSettings{Enabled: &enabled, Format: "deepseek", Budget: 8192},
 		},
 	})
 	joined := joinArgs(args)
-	for _, want := range []string{"--alias unsloth/Code-Model-GGUF:Q4_K_M", "--hf-repo unsloth/Code-Model-GGUF:Q4_K_M", "--ctx-size 262144", "--parallel 2", "--cache-type-k q8_0", "--cache-type-v q8_0", "--batch-size 8192", "--ubatch-size 2048", "--flash-attn on", "--predict 8192", "--gpu-layers 99", "--cache-prompt", "--cache-reuse 256", "--slots", "--metrics", "--jinja", "--reasoning on", "--reasoning-format deepseek", "--reasoning-budget 4096"} {
+	for _, want := range []string{"--alias unsloth/Code-Model-GGUF:Q4_K_M", "--hf-repo unsloth/Code-Model-GGUF:Q4_K_M", "--ctx-size 262144", "--parallel 4", "--cache-type-k q4_0", "--cache-type-v q4_0", "--batch-size 8192", "--ubatch-size 2048", "--flash-attn on", "--predict 16384", "--gpu-layers 99", "--cache-prompt", "--cache-reuse 256", "--slots", "--metrics", "--jinja", "--reasoning on", "--reasoning-format deepseek", "--reasoning-budget 8192"} {
 		if !containsArgSequence(joined, want) {
 			t.Fatalf("rendered args missing %q in %q", want, joined)
 		}

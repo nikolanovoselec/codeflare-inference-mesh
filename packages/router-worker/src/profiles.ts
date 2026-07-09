@@ -75,15 +75,17 @@ const BIND_PORT_STEP = 10
 
 export const LLAMACPP_PROFILE_DEFAULTS = {
   contextWindow: 262144,
-  parallel: 1,
+  parallel: 4,
   cachePrompt: true,
   cacheReuse: 256,
-  cacheTypeK: 'q8_0',
-  cacheTypeV: 'q8_0',
+  cacheTypeK: 'q4_0',
+  cacheTypeV: 'q4_0',
   batch: 8192,
   ubatch: 2048,
   flashAttn: true,
-  maxOutputTokens: 8192
+  maxOutputTokens: 16384,
+  gpuLayers: '99',
+  reasoning: { enabled: true, format: 'deepseek', budget: 8192 }
 } as const
 
 // Per-model mesh-llm runtime tunable defaults (REQ-RUN-002 / REQ-RUN-003),
@@ -195,6 +197,8 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
         ubatch: LLAMACPP_PROFILE_DEFAULTS.ubatch,
         flashAttn: LLAMACPP_PROFILE_DEFAULTS.flashAttn,
         maxOutputTokens: LLAMACPP_PROFILE_DEFAULTS.maxOutputTokens,
+        gpuLayers: LLAMACPP_PROFILE_DEFAULTS.gpuLayers,
+        reasoning: { ...LLAMACPP_PROFILE_DEFAULTS.reasoning },
         alias: ref
       }
     }
