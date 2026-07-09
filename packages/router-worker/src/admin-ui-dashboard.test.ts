@@ -569,8 +569,10 @@ describe('dashboard overview contracts', () => {
     expect(macBudget.dataset.budgetStale).toBe('true')
     expect(macBudget.dataset.runningBudget).toBe('6')
     expect(macBudget.dataset.nodeOverride).toBeUndefined()
-    const macCapacity = descendants(fields.find((node) => node.dataset.drawerField === 'split-readiness')!).find((node) => node.dataset.participantLabel === 'Mac')!
+    const macSplitReadiness = fields.find((node) => node.dataset.drawerField === 'split-readiness')!
+    const macCapacity = descendants(macSplitReadiness).find((node) => node.dataset.participantLabel === 'Mac')!
     expect(macCapacity.dataset.participantCapacityGb).toBe('5.7')
+    expect(descendants(macSplitReadiness).map((node) => node.textContent).join(' ')).not.toContain('5.7 GB')
     const macStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
     expect(macStage.dataset.value).toBe('mesh-mac:27:28:ready')
     expect(fields.some((node) => node.dataset.drawerField === 'stages')).toBe(false)
@@ -581,8 +583,10 @@ describe('dashboard overview contracts', () => {
     const battleVram = fields.find((node) => node.dataset.drawerField === 'vram')!
     expect(battleVram.dataset.vramSource).toBe('reported')
     expect(battleVram.dataset.value).toBe('24576')
-    const battleCapacity = descendants(fields.find((node) => node.dataset.drawerField === 'split-readiness')!).find((node) => node.dataset.participantLabel === 'battlestation')!
+    const battleSplitReadiness = fields.find((node) => node.dataset.drawerField === 'split-readiness')!
+    const battleCapacity = descendants(battleSplitReadiness).find((node) => node.dataset.participantLabel === 'battlestation')!
     expect(battleCapacity.dataset.participantCapacityGb).toBe('63.2')
+    expect(descendants(battleSplitReadiness).map((node) => node.textContent).join(' ')).not.toContain('63.2 GB')
     const battleStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
     expect(battleStage.dataset.value).toBe('mesh-host:0:26:ready')
 
@@ -590,6 +594,27 @@ describe('dashboard overview contracts', () => {
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const modelStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
     expect(descendants(modelStage).map((node) => node.textContent).join(' ')).toContain('L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
+  })
+
+  it('REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status', async () => {
+    const splitReadiness = { verdict: 'model_size_unknown', blockers: [{ reason: 'model_size_unknown' }], participants: [{ routerNodeId: 'linux-node', displayName: 'Arch Linux', vramBytes: 63_200_000_000 }] }
+    const nodes = [{ id: 'linux-node', displayName: 'Arch Linux', status: 'online', activeProfileIds: ['mesh-default-qwen36-35b'], metrics: { runtimeKind: 'meshllm', runtimeState: 'ready', nodeState: 'serving', meshRole: 'coordinator', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-linux', readyModels: ['codeflare-mesh'], splitReadiness, stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26, state: 'ready' }] } }]
+    const meshHealth = [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, coordinatorNodeId: 'linux-node', peerNodeIds: ['linux-node'], readyModels: ['codeflare-mesh'], failedNodeIds: [], tokenCount: 1, splitReadiness, stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26, state: 'ready' }] }]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshHealth }) })
+    const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'linux-node')!
+    const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
+    expect(descendants(statusCell).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
+    expect(statusCell.dataset.statusLabelKind).toBe('mesh-role')
+
+    await harness.clickAction('node-detail', { nodeId: 'linux-node' })
+    let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    expect(fields.some((node) => node.dataset.drawerField === 'split-readiness')).toBe(false)
+    expect(fields.find((node) => node.dataset.drawerField === 'stage-ownership')!.dataset.value).toBe('mesh-linux:0:26:ready')
+
+    await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
+    fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
+    expect(fields.find((node) => node.dataset.drawerField === 'stage-ownership')!.textContent).toContain('L0-26 → Arch Linux · Ready')
   })
 
   it('REQ-ADM-030 the drawer Deactivate/Activate control posts to the node taint endpoint', async () => {

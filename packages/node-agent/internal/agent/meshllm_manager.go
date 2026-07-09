@@ -320,9 +320,9 @@ func (m *MeshLLMManager) RuntimeErrorDetail() string {
 	return m.stderrLog.Detail()
 }
 
-// PollStatus performs the per-tick poll: one console /api/status request
-// (capturing the invite token and mesh id for heartbeats) plus one API
-// /v1/models request refreshing the ready-model set. The returned bool is
+// PollStatus performs the per-tick poll: console /api/status (capturing the invite
+// token and mesh id for heartbeats), console /api/runtime/stages (full split-stage
+// topology), plus API /v1/models refreshing the ready-model set. The returned bool is
 // console reachability. Ready models fail closed when the API is unreachable.
 func (m *MeshLLMManager) PollStatus(ctx context.Context) (MeshLLMStatus, bool) {
 	m.mu.Lock()
@@ -332,6 +332,13 @@ func (m *MeshLLMManager) PollStatus(ctx context.Context) (MeshLLMStatus, bool) {
 	m.mu.Unlock()
 
 	status, consoleReachable := fetchMeshLLMStatus(ctx, client, consolePort)
+	if consoleReachable {
+		if stages, ok := fetchMeshLLMRuntimeStages(ctx, client, consolePort); ok && len(stages) > 0 {
+			status.Stages = stages
+			status.StageCount = len(stages)
+			status.StageZeroNodeID = stages[0].NodeID
+		}
+	}
 	models, apiReachable := fetchMeshLLMModels(ctx, client, apiPort)
 
 	m.mu.Lock()
@@ -611,6 +618,18 @@ func fetchMeshLLMStatus(ctx context.Context, client *http.Client, port int) (Mes
 		return MeshLLMStatus{}, false
 	}
 	return status, true
+}
+
+func fetchMeshLLMRuntimeStages(ctx context.Context, client *http.Client, port int) ([]MeshLLMStage, bool) {
+	body, ok := fetchLocalBody(ctx, client, port, "/api/runtime/stages")
+	if !ok {
+		return nil, false
+	}
+	stages, err := ParseMeshLLMRuntimeStages(body)
+	if err != nil {
+		return nil, false
+	}
+	return stages, true
 }
 
 func fetchMeshLLMModels(ctx context.Context, client *http.Client, port int) ([]string, bool) {

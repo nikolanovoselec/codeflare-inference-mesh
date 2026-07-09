@@ -169,6 +169,134 @@ func ParseMeshLLMStatus(body []byte) (MeshLLMStatus, error) {
 	return status, nil
 }
 
+// ParseMeshLLMRuntimeStages decodes `GET /api/runtime/stages`, which carries the full
+// planned stage topology even when `/api/status` only exposes the local node's stage.
+// Topology rows provide ownership and layer ranges; status rows add live state/device when present.
+func ParseMeshLLMRuntimeStages(body []byte) ([]MeshLLMStage, error) {
+	var payload struct {
+		Stages     []runtimeStagePayload `json:"stages"`
+		Statuses   []runtimeStagePayload `json:"statuses"`
+		Topologies []struct {
+			Stages []runtimeStagePayload `json:"stages"`
+		} `json:"topologies"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("parse meshllm runtime stages: %w", err)
+	}
+	statusByKey := map[string]runtimeStagePayload{}
+	for _, status := range append(payload.Statuses, payload.Stages...) {
+		for _, key := range runtimeStageKeys(status) {
+			if _, ok := statusByKey[key]; !ok {
+				statusByKey[key] = status
+			}
+		}
+	}
+	var stages []MeshLLMStage
+	for _, topology := range payload.Topologies {
+		for _, stage := range topology.Stages {
+			stages = append(stages, mergeRuntimeStagePayload(stage, runtimeStageStatusFor(stage, statusByKey)))
+		}
+	}
+	if len(stages) == 0 {
+		for _, stage := range append(payload.Statuses, payload.Stages...) {
+			stages = append(stages, mergeRuntimeStagePayload(stage, runtimeStagePayload{}))
+		}
+	}
+	return stages, nil
+}
+
+type runtimeStagePayload struct {
+	StageID        string `json:"stage_id"`
+	StageIndex     int    `json:"stage_index"`
+	NodeID         string `json:"node_id"`
+	LayerStart     *int   `json:"layer_start"`
+	LayerEnd       *int   `json:"layer_end"`
+	State          string `json:"state"`
+	Backend        string `json:"backend"`
+	BindAddr       string `json:"bind_addr"`
+	SelectedDevice *struct {
+		BackendDevice string `json:"backend_device"`
+		StableID      string `json:"stable_id"`
+	} `json:"selected_device"`
+	Endpoint *struct {
+		BindAddr string `json:"bind_addr"`
+	} `json:"endpoint"`
+}
+
+func runtimeStageKeys(stage runtimeStagePayload) []string {
+	keys := []string{fmt.Sprintf("exact:%s:%d:%s:%d:%d", stage.StageID, stage.StageIndex, stage.NodeID, runtimeLayerValue(stage.LayerStart), runtimeLayerValue(stage.LayerEnd))}
+	if stage.StageID != "" {
+		keys = append(keys, "id:"+stage.StageID)
+	}
+	if stage.NodeID != "" {
+		keys = append(keys, fmt.Sprintf("index-node:%d:%s", stage.StageIndex, stage.NodeID))
+		keys = append(keys, fmt.Sprintf("node-layer:%s:%d:%d", stage.NodeID, runtimeLayerValue(stage.LayerStart), runtimeLayerValue(stage.LayerEnd)))
+	}
+	return keys
+}
+
+func runtimeStageStatusFor(stage runtimeStagePayload, statuses map[string]runtimeStagePayload) runtimeStagePayload {
+	for _, key := range runtimeStageKeys(stage) {
+		if status, ok := statuses[key]; ok {
+			return status
+		}
+	}
+	return runtimeStagePayload{}
+}
+
+func runtimeLayerValue(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func mergeRuntimeStagePayload(stage runtimeStagePayload, status runtimeStagePayload) MeshLLMStage {
+	selected := ""
+	if status.SelectedDevice != nil {
+		selected = status.SelectedDevice.BackendDevice
+		if selected == "" {
+			selected = status.SelectedDevice.StableID
+		}
+	}
+	bindAddr := stage.BindAddr
+	if bindAddr == "" && stage.Endpoint != nil {
+		bindAddr = stage.Endpoint.BindAddr
+	}
+	if bindAddr == "" {
+		bindAddr = status.BindAddr
+	}
+	return MeshLLMStage{
+		StageID:        firstNonEmpty(stage.StageID, status.StageID),
+		StageIndex:     stage.StageIndex,
+		NodeID:         firstNonEmpty(stage.NodeID, status.NodeID),
+		LayerStart:     runtimeLayerFirst(stage.LayerStart, status.LayerStart),
+		LayerEnd:       runtimeLayerFirst(stage.LayerEnd, status.LayerEnd),
+		State:          firstNonEmpty(status.State, stage.State),
+		Backend:        firstNonEmpty(status.Backend, stage.Backend),
+		BindAddr:       bindAddr,
+		SelectedDevice: selected,
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func runtimeLayerFirst(values ...*int) int {
+	for _, value := range values {
+		if value != nil {
+			return *value
+		}
+	}
+	return 0
+}
+
 // ParseModelsResponse extracts the model ids from an OpenAI-compatible
 // `/v1/models` response body (`data[].id`). Entries without an id are
 // skipped; non-JSON input returns an error.

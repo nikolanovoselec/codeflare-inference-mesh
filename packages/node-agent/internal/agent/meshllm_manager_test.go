@@ -153,14 +153,19 @@ func (f *fakeLaunch) record(index int) launchRecord {
 }
 
 type consoleFixture struct {
-	mu     sync.Mutex
-	status map[string]any
-	hits   int
+	mu            sync.Mutex
+	status        map[string]any
+	runtimeStages any
+	hits          int
 }
 
 func (c *consoleFixture) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if r.URL.Path == "/api/runtime/stages" && c.runtimeStages != nil {
+		_ = json.NewEncoder(w).Encode(c.runtimeStages)
+		return
+	}
 	if r.URL.Path != "/api/status" {
 		http.NotFound(w, r)
 		return
@@ -746,6 +751,40 @@ func TestREQRUN006PollStatusCapturesTokenAndMeshID(t *testing.T) {
 			t.Fatalf("ready models must fail closed when the API is unreachable, got %v", ready)
 		}
 	})
+}
+
+func TestREQOBS011PollStatusUsesRuntimeStagesTopology(t *testing.T) {
+	statusBody := statusPayload("serving", "mesh-xyz", "tok-abc")
+	statusBody["runtime"] = map[string]any{"stages": []map[string]any{{"stage_id": "stage-1", "stage_index": 1, "node_id": "mesh-mac", "layer_start": 27, "layer_end": 28, "state": "ready"}}}
+	console := &consoleFixture{
+		status: statusBody,
+		runtimeStages: map[string]any{
+			"topologies": []map[string]any{{
+				"stages": []map[string]any{
+					{"stage_id": "stage-0", "stage_index": 0, "node_id": "mesh-linux", "layer_start": 0, "layer_end": 26},
+					{"stage_id": "stage-1", "stage_index": 1, "node_id": "mesh-mac", "layer_start": 27, "layer_end": 28},
+				},
+			}},
+			"stages": []map[string]any{{"stage_id": "stage-1", "stage_index": 1, "node_id": "mesh-mac", "layer_start": 27, "layer_end": 28, "state": "ready"}},
+		},
+	}
+	consoleServer := httptest.NewServer(console)
+	defer consoleServer.Close()
+	models := &modelsFixture{ids: []string{"target-model"}}
+	modelsServer := httptest.NewServer(models)
+	defer modelsServer.Close()
+
+	fixture := newMeshManagerForTest(t, MeshLLMRenderInput{ModelRef: "target-model", APIPort: serverPort(t, modelsServer), ConsolePort: serverPort(t, consoleServer)}, 0)
+	status, reachable := fixture.manager.PollStatus(context.Background())
+	if !reachable {
+		t.Fatal("console should be reachable")
+	}
+	if status.StageCount != 2 || len(status.Stages) != 2 {
+		t.Fatalf("runtime stages topology was not used: %#v", status.Stages)
+	}
+	if status.Stages[0].NodeID != "mesh-linux" || status.Stages[0].LayerStart != 0 || status.Stages[0].LayerEnd != 26 {
+		t.Fatalf("missing linux stage from runtime topology: %#v", status.Stages)
+	}
 }
 
 func TestREQRUN006PollStatusClearsStaleMeshIDWhenConsoleReportsNone(t *testing.T) {

@@ -337,10 +337,36 @@ function meshStageAssignments(nodes: readonly NodeRecord[]): readonly StageAssig
   for (const node of nodes) {
     for (const stage of node.metrics?.stageAssignments ?? []) {
       const key = `${stage.stageId ?? ''}:${stage.stageIndex}:${stage.nodeId ?? ''}:${stage.layerStart}:${stage.layerEnd}`
-      if (!byKey.has(key)) byKey.set(key, { ...stage, reportedByNodeId: node.id })
+      const candidate = { ...stage, reportedByNodeId: node.id }
+      const current = byKey.get(key)
+      byKey.set(key, preferStageAssignment(current, candidate))
     }
   }
   return [...byKey.values()].sort((left, right) => left.stageIndex - right.stageIndex)
+}
+
+function preferStageAssignment(current: StageAssignment | undefined, candidate: StageAssignment): StageAssignment {
+  if (current === undefined) return candidate
+  return stageStateRank(candidate.state) > stageStateRank(current.state) ? candidate : current
+}
+
+function stageStateRank(state: string | undefined): number {
+  switch ((state ?? '').toLowerCase()) {
+    case 'ready':
+    case 'serving':
+      return 4
+    case 'loading':
+    case 'running':
+      return 3
+    case 'pending':
+    case 'standby':
+      return 2
+    case 'failed':
+    case 'error':
+      return 0
+    default:
+      return 1
+  }
 }
 
 function splitReadinessWithDisplayNames(report: SplitReadinessReport, stages: readonly StageAssignment[], nodes: readonly NodeRecord[]): SplitReadinessReport {

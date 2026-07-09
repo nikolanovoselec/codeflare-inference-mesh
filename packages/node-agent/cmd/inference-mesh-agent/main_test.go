@@ -488,6 +488,37 @@ func TestREQRUN005WaitingForPeersSelfHealsWithOneRestart(t *testing.T) {
 	}
 }
 
+func TestREQRUN005ModelSizeUnknownSelfHealsOnlyWhenNotServing(t *testing.T) {
+	profile := agent.ModelProfile{ID: "split", UpstreamModel: "u1", Version: 1, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "u1", Split: true, BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"split"}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.loadState.Set(profile)
+	loop.lastMetrics = agent.NodeMetrics{RuntimeKind: "meshllm", RuntimeState: "starting", NodeState: "standby", SplitEnabled: true, ActiveRequests: 0, SplitReadiness: &agent.MeshLLMSplitReadiness{Verdict: "model_size_unknown"}}
+	response := agent.HeartbeatResponse{OK: true, MeshBootstrap: &agent.MeshBootstrap{Action: "create", Rotation: 9}}
+
+	loop.handleResponse(context.Background(), response)
+	loop.handleResponse(context.Background(), response)
+	select {
+	case <-manager.restarted:
+	case <-time.After(time.Second):
+		t.Fatal("model_size_unknown without serving evidence did not self-heal")
+	}
+
+	serving := newFakeMeshRuntime(counter)
+	servingLoop := newLoopForTest(t, cfg, counter, serving, &fakeUpdater{}, nil)
+	servingLoop.loadState.Set(profile)
+	servingLoop.lastMetrics = agent.NodeMetrics{RuntimeKind: "meshllm", RuntimeState: "ready", NodeState: "serving", SplitEnabled: true, ActiveRequests: 0, APIReady: true, ConsoleReady: true, StageCount: 2, ReadyModels: []string{"u1"}, SplitReadiness: &agent.MeshLLMSplitReadiness{Verdict: "model_size_unknown"}}
+	servingLoop.handleResponse(context.Background(), response)
+	servingLoop.handleResponse(context.Background(), response)
+	select {
+	case <-serving.restarted:
+		t.Fatal("model_size_unknown must not relaunch a serving split runtime")
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
 func TestREQNODE012ForceReloadRestartsOncePerNonce(t *testing.T) {
 	// A Force Reload directive (a new ReloadNonce in the heartbeat response) drains and restarts
 	// the current runtime exactly once per nonce, records the applied nonce so it is echoed back

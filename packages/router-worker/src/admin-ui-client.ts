@@ -468,6 +468,23 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (blockers.length && blockers[0].reason) return blockers[0].reason;
     return (report.capacityAdvice && report.capacityAdvice.reason) || report.verdict || '';
   }
+  function splitReadinessModelSizeUnknown(report) {
+    const reason = splitReadinessReason(report);
+    return reason === 'model_size_unknown' || reason === 'model size unknown';
+  }
+  function runtimeServingEvidence(metrics) {
+    return Boolean(metrics && ((Array.isArray(metrics.readyModels) && metrics.readyModels.length > 0) || ((metrics.stageCount || 0) > 0 && metrics.apiReady === true && metrics.consoleReady === true)));
+  }
+  function splitReadinessBlocksRuntime(report, metrics) {
+    if (!splitReadinessIssue(report)) return false;
+    return !(splitReadinessModelSizeUnknown(report) && runtimeServingEvidence(metrics));
+  }
+  function splitReadinessBlocksMesh(entry) {
+    if (!splitReadinessIssue(entry && entry.splitReadiness)) return false;
+    const hasStages = Array.isArray(entry.stageAssignments) && entry.stageAssignments.length > 0;
+    const hasReadyModels = Array.isArray(entry.readyModels) && entry.readyModels.length > 0;
+    return !(splitReadinessModelSizeUnknown(entry.splitReadiness) && (hasStages || hasReadyModels));
+  }
   function splitCapacity(report) {
     return report && report.capacityAdvice ? report.capacityAdvice : {};
   }
@@ -499,14 +516,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   function splitCapacityText(report) {
     const capacity = splitCapacity(report);
-    const required = bytesToGb(capacity.requiredBytes);
-    const aggregate = bytesToGb(capacity.aggregateCapacityBytes);
     const shortfall = bytesToGb(capacity.shortfallBytes);
-    const parts = [];
-    if (aggregate != null) parts.push(fmtGb(aggregate) + ' usable');
-    if (required != null) parts.push(fmtGb(required) + ' required');
-    if (shortfall != null && shortfall > 0) parts.push(fmtGb(shortfall) + ' short');
-    return parts.join(' · ');
+    if (shortfall != null && shortfall > 0) return 'Capacity shortfall';
+    return '';
   }
   function allStatusNodes() {
     return lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
@@ -547,8 +559,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const names = [node.id, node.displayName, node.name, node.metrics && node.metrics.meshNodeId].filter(Boolean).map(String);
     return names.some((name) => name === raw || name.indexOf(raw) === 0 || raw.indexOf(name) === 0);
   }
+  function nodeForStage(stage, candidates) {
+    if (!stage) return undefined;
+    const nodes = Array.isArray(candidates) && candidates.length ? candidates : allStatusNodes();
+    const owner = nodes.find((node) => idMatchesNode(stage.nodeId, node));
+    if (owner) return owner;
+    return nodes.find((node) => idMatchesNode(stage.reportedByNodeId, node));
+  }
   function stageOwnedByNode(stage, node) {
-    return idMatchesNode(stage && stage.nodeId, node) || (!stage || !stage.nodeId ? idMatchesNode(stage && stage.reportedByNodeId, node) : false);
+    const owner = nodeForStage(stage, allStatusNodes());
+    return owner ? owner.id === node.id : idMatchesNode(stage && stage.nodeId, node);
   }
   function stageKey(stage) {
     return [stage.stageId || '', stage.stageIndex == null ? '' : stage.stageIndex, stage.nodeId || '', stage.layerStart == null ? '' : stage.layerStart, stage.layerEnd == null ? '' : stage.layerEnd].join(':');
@@ -587,7 +607,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   function stageDetailText(stage, candidates, includeOwner) {
     const layers = stage.layerStart != null && stage.layerEnd != null ? ('L' + stage.layerStart + '-' + stage.layerEnd) : ('stage ' + stage.stageIndex);
-    const owner = includeOwner ? (' → ' + nodeLabelForId(stage.nodeId || stage.reportedByNodeId || '', candidates)) : '';
+    const ownerNode = nodeForStage(stage, candidates);
+    const owner = includeOwner ? (' → ' + (ownerNode ? nodeDisplayName(ownerNode) : nodeLabelForId(stage.nodeId || stage.reportedByNodeId || '', candidates))) : '';
     const state = stage.state ? ' · ' + humanizeKey(stage.state) : '';
     return layers + owner + state;
   }
@@ -631,7 +652,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         chip.setAttribute('data-participant-label', participant.label);
         if (participant.raw) chip.setAttribute('data-participant-id', participant.raw);
         if (participant.capacity != null) chip.setAttribute('data-participant-capacity-gb', String(participant.capacity));
-        chip.textContent = participant.label + (participant.capacity != null ? ' · ' + fmtGb(participant.capacity) + ' capacity' : '');
+        chip.textContent = participant.label;
         chips.appendChild(chip);
       });
       row.append(label, chips);
@@ -656,7 +677,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
     if (node.status === 'offline') return 'danger';
     if (node.deactivated) return 'warn';
-    if (splitReadinessIssue(node.metrics && node.metrics.splitReadiness)) return 'warn';
+    if (splitReadinessBlocksRuntime(node.metrics && node.metrics.splitReadiness, node.metrics || {})) return 'warn';
     if (runtime === 'failed') return 'danger';
     if (nodeServingCapacity(node)) return 'ok';
     if (node.status === 'online' && (runtime === 'running' || runtime === 'ready')) return 'ok';
@@ -690,7 +711,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const splitProfile = Boolean(metrics.splitEnabled || (profile && profile.meshllm && profile.meshllm.split));
     const meshRuntime = metrics.runtimeKind === 'meshllm' || node.runtime === 'meshllm' || (profile && profile.runtime === 'meshllm');
     if (!meshRuntime || !splitProfile || node.status !== 'online' || nodeReady(node)) return undefined;
-    if (splitReadinessIssue(metrics.splitReadiness)) return { profile: profile, splitReadiness: metrics.splitReadiness, peerCount: metrics.peerCount, stageCount: metrics.stageCount, port: profile && profile.meshllm && profile.meshllm.bindPort ? String(profile.meshllm.bindPort) : '' };
+    if (splitReadinessBlocksRuntime(metrics.splitReadiness, metrics)) return { profile: profile, splitReadiness: metrics.splitReadiness, peerCount: metrics.peerCount, stageCount: metrics.stageCount, port: profile && profile.meshllm && profile.meshllm.bindPort ? String(profile.meshllm.bindPort) : '' };
     const noPeers = metrics.peerCount === 0;
     const noStages = metrics.stageCount === 0;
     const standby = metrics.nodeState === 'standby' || metrics.runtimeState === 'starting';
@@ -714,7 +735,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   function currentRuntimeError(metrics) {
     if (!metrics) return '';
     const state = metrics.runtimeState;
-    if (splitReadinessIssue(metrics.splitReadiness)) return splitReadinessText(metrics.splitReadiness);
+    if (splitReadinessBlocksRuntime(metrics.splitReadiness, metrics)) return splitReadinessText(metrics.splitReadiness);
     if (state === 'ready' || state === 'running' || (metrics.apiReady === true && metrics.consoleReady === true && metrics.meshRole)) return '';
     return metrics.lastError || metrics.runtimeDetail || '';
   }
@@ -762,7 +783,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   function nodeServingCapacity(node) {
     if (node.status !== 'online' || node.deactivated) return false;
     const metrics = node.metrics || {};
-    if (splitReadinessIssue(metrics.splitReadiness)) return false;
+    if (splitReadinessBlocksRuntime(metrics.splitReadiness, metrics)) return false;
     if (nodeReady(node) || ((metrics.stageCount || 0) > 0 && metrics.apiReady === true && metrics.consoleReady === true)) return true;
     if (metrics.runtimeState === 'failed' || metrics.runtimeState === 'dependency-missing' || metrics.runtimeState === 'stopped') return false;
     return metrics.apiReady === true || metrics.consoleReady === true;
@@ -776,7 +797,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const rt = metrics.runtimeState || '';
     const stateDetail = metrics.nodeState || '';
     if (rt === 'failed' || rt === 'dependency-missing') return 'Failed' + (stateDetail ? ' · ' + stateDetail : '');
-    if (splitReadinessIssue(metrics.splitReadiness)) return splitReadinessText(metrics.splitReadiness);
+    if (splitReadinessBlocksRuntime(metrics.splitReadiness, metrics)) return splitReadinessText(metrics.splitReadiness);
     const role = nodeMeshRoleLabel(metrics);
     if (nodeServingCapacity(node)) return role && role !== 'No stage assigned' ? role : (nodeWorkState(metrics) || 'Runtime online');
     if (splitMeshBlocker(node)) return 'Mesh waiting for peers · no peers discovered';
@@ -1065,7 +1086,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     // captured from mesh-llm's own stderr and rides the heartbeat as runtimeDetail; node_state, mesh
     // role, peers, stages, and reachability come from the same metrics. REQ-OBS-011.
     const runtimeError = currentRuntimeError(metrics);
-    if (metrics.splitReadiness) {
+    if (metrics.splitReadiness && (splitReadinessBlocksRuntime(metrics.splitReadiness, metrics) || !splitReadinessModelSizeUnknown(metrics.splitReadiness))) {
       const splitBlock = splitReadinessBlock(metrics.splitReadiness, allStatusNodes());
       splitBlock.setAttribute('data-drawer-field', 'split-readiness');
       bodyEl.appendChild(splitBlock);
@@ -1594,14 +1615,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // carries; a runtime failure or mesh error reads "needs attention".
   function meshStatusSuffix(entry) {
     if (entry.active === false) return ' · deactivated';
-    if (splitReadinessIssue(entry.splitReadiness) || entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return ' · needs attention';
+    if (splitReadinessBlocksMesh(entry) || entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return ' · needs attention';
     return entry.tokenCount > 0 ? ' · ready' : ' · forming';
   }
   // meshStatusTone maps the same entry to a status-dot tone: grey for a switched-off
   // model, danger for a failure, ok only when it is active and holds a mesh secret.
   function meshStatusTone(entry) {
     if (entry.active === false) return 'idle';
-    if (splitReadinessIssue(entry.splitReadiness) || entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return 'danger';
+    if (splitReadinessBlocksMesh(entry) || entry.lastError || (entry.failedNodeIds && entry.failedNodeIds.length > 0)) return 'danger';
     return entry.tokenCount > 0 ? 'ok' : 'idle';
   }
 
@@ -1612,15 +1633,22 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
     return nodes.filter((node) => Array.isArray(node.activeProfileIds) && node.activeProfileIds.indexOf(entry.profileId) >= 0);
   }
+  function stageMapPartial(entry) {
+    const stages = Array.isArray(entry.stageAssignments) ? entry.stageAssignments : [];
+    if (!stages.length) return false;
+    return !stages.some((stage) => Number(stage.layerStart) === 0);
+  }
   function stageOwnersText(entry, candidates) {
     const stages = Array.isArray(entry.stageAssignments) ? entry.stageAssignments : [];
     if (!stages.length) return '';
-    return stages.map((stage) => {
-      const owner = nodeLabelForId(stage.nodeId || stage.reportedByNodeId || '', candidates);
+    const text = stages.map((stage) => {
+      const ownerNode = nodeForStage(stage, candidates);
+      const owner = ownerNode ? nodeDisplayName(ownerNode) : nodeLabelForId(stage.nodeId || stage.reportedByNodeId || '', candidates);
       const layers = stage.layerStart != null && stage.layerEnd != null ? ('L' + stage.layerStart + '-' + stage.layerEnd) : ('stage ' + stage.stageIndex);
       const state = stage.state ? ' · ' + humanizeKey(stage.state) : '';
       return layers + ' → ' + owner + state;
     }).join('; ');
+    return stageMapPartial(entry) ? 'Partial stage map: ' + text : text;
   }
   function stageUnavailableVersions(entry) {
     return [...new Set(meshNodesForEntry(entry).map((node) => node.agentVersion).filter(Boolean))];
@@ -1654,7 +1682,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       ? (peers + ' machine' + (peers === 1 ? '' : 's') + ' in this mesh' + meshStatusSuffix(entry))
       : 'One machine in this mesh';
     card.appendChild(summary);
-    if (entry.splitReadiness) card.appendChild(splitReadinessBlock(entry.splitReadiness, meshNodesForEntry(entry)));
+    if (entry.splitReadiness && (splitReadinessBlocksMesh(entry) || !splitReadinessModelSizeUnknown(entry.splitReadiness))) card.appendChild(splitReadinessBlock(entry.splitReadiness, meshNodesForEntry(entry)));
     const details = document.createElement('details');
     const detailsSummary = document.createElement('summary');
     detailsSummary.textContent = 'Technical details';
@@ -1671,7 +1699,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const stageText = stageOwnersText(entry, ownerNodes);
     addField('coordinator', 'Coordinator', entry.coordinatorNodeId ? nodeLabelForId(entry.coordinatorNodeId, ownerNodes) : (stageText ? 'not elected yet' : 'waiting for stage map'), !entry.coordinatorNodeId && !stageText ? (line) => annotateStageUnavailable(line, entry) : undefined);
     addField('peers', 'Machines', String(peers > 0 ? peers : 1));
-    addField('stage-owners', 'Stage owners', stageText || stageUnavailableText(entry), stageText ? undefined : (line) => annotateStageUnavailable(line, entry));
+    addField('stage-owners', 'Stage owners', stageText || stageUnavailableText(entry), stageText ? (stageMapPartial(entry) ? (line) => line.setAttribute('data-stage-map', 'partial') : undefined) : (line) => annotateStageUnavailable(line, entry));
     addField('ready-models', 'Ready model', (entry.readyModels || []).map(modelLabelForRef).join(', '));
     addField('failed-nodes', 'Needs attention', (entry.failedNodeIds || []).map((id) => nodeLabelForId(id, ownerNodes)).join(', '));
     addField('last-error', 'Last error', entry.lastError || '');

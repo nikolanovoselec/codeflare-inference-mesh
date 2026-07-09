@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-07-09
+
+- Fixed MeshLLM split-stage visibility by polling `/api/runtime/stages` for full topology, preserving legitimate layer `0` ranges when merging live stage status, resolving MeshLLM node IDs back to Codeflare machine names, suppressing stale `model_size_unknown` blockers when serving/stage evidence exists, and keeping planner capacity byte totals out of visible operator copy while retaining structured diagnostics for tests and automation. Non-serving `model_size_unknown` now follows the same one-shot self-heal path as `waiting_for_peers`. ([REQ-OBS-007](observability.md#req-obs-007-mesh-health-surface), [REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface), [REQ-RUN-005](runtime-profiles.md#req-run-005-health-and-recovery))
+
 ## 2026-07-08
 
 - Fixed split MeshLLM convergence for existing nodes that start before receiving router mesh bootstrap: a tokenless running process now drains and restarts when a later heartbeat returns join tokens, and the Admin UI now surfaces split profiles stuck at standby/no peers as a mesh peer-discovery blocker with the next checks instead of only `Starting · standby`. ([REQ-RUN-006](runtime-profiles.md#req-run-006-private-mesh-formation), [REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface))

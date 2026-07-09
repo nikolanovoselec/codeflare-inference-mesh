@@ -415,6 +415,19 @@ describe('mesh state core', () => {
     expect(entries[0]?.splitReadiness?.participants?.map((item) => item.displayName)).toEqual(['Mac', 'battlestation'])
   })
 
+  it('REQ-OBS-011 aggregates full stage ownership and prefers ready duplicate reports', async () => {
+    const nodeA = meshNode('linux-node', { displayName: 'Arch Linux', lastSeenAt: NOW, metrics: { runtimeState: 'ready', activeRequests: 0, meshNodeId: 'mesh-linux', stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26, state: 'ready' }] } })
+    const nodeB = meshNode('mac-node', { displayName: 'Macbook Air', lastSeenAt: NOW, metrics: { runtimeState: 'ready', activeRequests: 0, meshNodeId: 'mesh-mac', stageAssignments: [{ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'failed' }, { stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] } })
+    const { store, env, profile } = await meshFixture(nodeA, nodeB)
+    await reportToken(store, env, nodeA, 'invite-token-node-a', 'mesh-1', NOW)
+
+    const [entry] = await meshHealth(store, env, [profile], [nodeA, nodeB], NOW)
+    expect(entry.stageAssignments).toEqual([
+      expect.objectContaining({ stageIndex: 0, nodeId: 'mesh-linux', layerStart: 0, layerEnd: 26, state: 'ready', reportedByNodeId: 'linux-node' }),
+      expect.objectContaining({ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready', reportedByNodeId: 'mac-node' })
+    ])
+  })
+
   it('REQ-SEC-006 distributes join tokens only to live non-revoked nodes', async () => {
     const nodeA = meshNode('node-a')
     const { store, env, profile } = await meshFixture(nodeA)

@@ -589,8 +589,11 @@ func meshWaitStuck(metrics agent.NodeMetrics) bool {
 		reason := ""
 		if len(metrics.SplitReadiness.Blockers) > 0 {
 			reason = strings.ToLower(metrics.SplitReadiness.Blockers[0].Reason)
+		} else if metrics.SplitReadiness.CapacityAdvice != nil {
+			reason = strings.ToLower(metrics.SplitReadiness.CapacityAdvice.Reason)
 		}
-		if verdict == "waiting_for_peers" || reason == "waiting_for_peers" {
+		servingEvidence := len(metrics.ReadyModels) > 0 || (metrics.StageCount > 0 && metrics.APIReady && metrics.ConsoleReady)
+		if verdict == "waiting_for_peers" || reason == "waiting_for_peers" || ((verdict == "model_size_unknown" || reason == "model_size_unknown") && !servingEvidence) {
 			return true
 		}
 	}

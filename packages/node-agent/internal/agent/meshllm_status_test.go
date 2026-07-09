@@ -106,6 +106,30 @@ func TestREQOBS003ParsesMeshLLMStatus(t *testing.T) {
 	}
 }
 
+func TestREQOBS011ParsesRuntimeStagesTopology(t *testing.T) {
+	body := `{
+		"stages":[
+			{"stage_id":"stage-0","stage_index":0,"node_id":"mesh-linux","layer_start":3,"layer_end":26,"state":"ready","backend":"cuda","selected_device":{"backend_device":"cuda:0"}},
+			{"stage_id":"stage-1","stage_index":1,"node_id":"mesh-mac","layer_start":27,"layer_end":28,"state":"ready","backend":"metal","selected_device":{"backend_device":"metal:0"}}
+		],
+		"topologies":[{"stages":[
+			{"stage_id":"stage-0","stage_index":0,"node_id":"mesh-linux","layer_start":0,"layer_end":26,"endpoint":{"bind_addr":"100.96.0.26:4420"}},
+			{"stage_id":"stage-1","stage_index":1,"node_id":"mesh-mac","layer_start":27,"layer_end":28,"endpoint":{"bind_addr":"100.96.0.14:4420"}}
+		]}]
+	}`
+	got, err := ParseMeshLLMRuntimeStages([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []MeshLLMStage{
+		{StageID: "stage-0", StageIndex: 0, NodeID: "mesh-linux", LayerStart: 0, LayerEnd: 26, State: "ready", Backend: "cuda", BindAddr: "100.96.0.26:4420", SelectedDevice: "cuda:0"},
+		{StageID: "stage-1", StageIndex: 1, NodeID: "mesh-mac", LayerStart: 27, LayerEnd: 28, State: "ready", Backend: "metal", BindAddr: "100.96.0.14:4420", SelectedDevice: "metal:0"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("runtime stages mismatch\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestREQOBS007ParsesSplitReadinessCapacityShortfall(t *testing.T) {
 	body := `{
 		"model_ref":"meshllm/ERNIE-layers",

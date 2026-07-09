@@ -239,9 +239,12 @@ describe('admin UI mesh operations contracts', () => {
     expect(capacity.dataset.requiredBytes).toBe('18000000000')
     expect(capacity.dataset.aggregateBytes).toBe('16000000000')
     expect(capacity.dataset.shortfallBytes).toBe('2000000000')
-    const participantLabels = descendants(splitBlock).filter((node) => node.dataset.participantLabel).map((node) => node.dataset.participantLabel)
+    expect(descendants(capacity).map((node) => node.textContent).join(' ')).not.toContain('16 GB')
+    const participantChips = descendants(splitBlock).filter((node) => node.dataset.participantLabel)
+    const participantLabels = participantChips.map((node) => node.dataset.participantLabel)
     expect(participantLabels).toEqual(['Mac', 'battlestation'])
     expect(participantLabels).not.toContain('mesh-mac-hash')
+    expect(participantChips.map((node) => node.textContent).join(' ')).not.toContain('GB capacity')
   })
 
   it('REQ-OBS-007 renders stage owners with machine names instead of MeshLLM hashes', async () => {
@@ -250,11 +253,11 @@ describe('admin UI mesh operations contracts', () => {
         { id: 'linux-node', displayName: 'battlestation', status: 'online', activeProfileIds: ['mesh-default-qwen36-35b'], metrics: { runtimeState: 'ready', meshNodeId: 'mesh-linux-abcdef', readyModels: ['codeflare-mesh'] } },
         { id: 'mac-100-96-0-14', displayName: 'Mac', status: 'online', activeProfileIds: ['mesh-default-qwen36-35b'], metrics: { runtimeState: 'ready', meshNodeId: 'mesh-mac-123456' } }
       ],
-      meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, coordinatorNodeId: 'linux-node', peerNodeIds: ['linux-node', 'mac-100-96-0-14'], readyModels: ['codeflare-mesh'], failedNodeIds: [], tokenCount: 2, stageAssignments: [{ stageIndex: 1, nodeId: 'mesh-mac-123456', layerStart: 27, layerEnd: 28, state: 'ready' }] }]
+      meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, coordinatorNodeId: 'linux-node', peerNodeIds: ['linux-node', 'mac-100-96-0-14'], readyModels: ['codeflare-mesh'], failedNodeIds: [], tokenCount: 2, stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-linux-abcdef', layerStart: 0, layerEnd: 26, state: 'ready' }, { stageIndex: 1, nodeId: 'mesh-mac-123456', layerStart: 27, layerEnd: 28, state: 'ready' }] }]
     })
     const harness = await dashboardHarness(status)
     const card = await meshCard(harness, 'mesh-default-qwen36-35b')
-    expect(meshField(card, 'stage-owners').textContent).toBe('Stage owners: L27-28 → Mac · Ready')
+    expect(meshField(card, 'stage-owners').textContent).toBe('Stage owners: L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
   })
 
   it('REQ-OBS-007 renders the mesh health panel from admin status data', async () => {
