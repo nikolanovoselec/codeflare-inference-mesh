@@ -111,6 +111,48 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     return '';
   };
 
+  // --- hero progressive enhancement ----------------------------------------
+  const scrambleChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@$%&*';
+  function randomScrambleChar() { return scrambleChars[Math.floor(Math.random() * scrambleChars.length)] || 'A'; }
+  function reduceMotion() {
+    try { return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_error) { return false; }
+  }
+  function scrambleValue(target, phase) {
+    if (phase < 60 || phase >= 132) return target;
+    if (phase < 88) return target.replace(/\S/g, randomScrambleChar);
+    const revealed = Math.min(target.length, Math.max(0, phase - 88));
+    return target.split('').map((char, index) => {
+      if (char === ' ') return ' ';
+      return index < revealed ? char : randomScrambleChar();
+    }).join('');
+  }
+  function initScramble() {
+    if (reduceMotion()) return;
+    Array.prototype.slice.call(document.querySelectorAll('[data-scramble]')).forEach((target) => {
+      const source = (target.textContent || '').trim();
+      if (!source) return;
+      target.textContent = '';
+      const words = source.split(/\s+/).map((word) => {
+        const span = document.createElement('span');
+        span.className = 'scramble-word';
+        span.dataset.target = word;
+        span.textContent = word;
+        target.appendChild(span);
+        if (span.style && typeof span.getBoundingClientRect === 'function') {
+          const width = span.getBoundingClientRect().width;
+          if (width) span.style.width = width + 'px';
+        }
+        return span;
+      });
+      let frame = 0;
+      setInterval(() => {
+        words.forEach((span) => { span.textContent = scrambleValue(span.dataset.target || '', frame % 140); });
+        frame += 1;
+      }, 50);
+    });
+  }
+  initScramble();
+
   // --- view + section state -------------------------------------------------
   const setMobileMenu = (open) => {
     const sheet = byId('mobile-menu');

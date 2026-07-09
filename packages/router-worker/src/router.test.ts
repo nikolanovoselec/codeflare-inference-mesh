@@ -305,7 +305,7 @@ describe('router worker behavioral contracts', () => {
     expect(html).not.toContain('data-mobile-tabs=')
     expect(html).not.toContain('class="tab-item"')
     expect([...html.matchAll(/data-active="true"/g)]).toHaveLength(1)
-    expect(html).toMatch(/data-nav="overview" aria-current="page"/)
+    expect(html).toMatch(/<a[^>]*data-nav="overview"[^>]*aria-current="page"/)
   })
 
   it('REQ-ADM-007 labels every dashboard control visibly', async () => {

@@ -103,7 +103,33 @@ export interface NavItemOptions {
 }
 
 export function navItem(options: NavItemOptions): string {
-  return `<a class="nav-item" href="#${escapeHtml(options.section)}" data-nav="${escapeHtml(options.section)}"${options.current === true ? ' aria-current="page"' : ''}><span>${escapeHtml(options.label)}</span><small>${escapeHtml(options.hint)}</small></a>`
+  return `<a class="nav-item" href="#${escapeHtml(options.section)}" data-nav="${escapeHtml(options.section)}" data-nav-item="${escapeHtml(options.section)}" data-nav-hint="${escapeHtml(options.hint)}"${options.current === true ? ' aria-current="page"' : ''}><span>${escapeHtml(options.label)}</span><small>${escapeHtml(options.hint)}</small></a>`
+}
+
+export interface CommandChipOptions {
+  readonly kind: 'endpoint' | 'scope' | 'status'
+  readonly label: string
+}
+
+export interface CommandRowOptions {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly chips?: readonly CommandChipOptions[]
+  readonly actions: string
+}
+
+export function commandChip(options: CommandChipOptions): string {
+  const attr = options.kind === 'endpoint' ? `data-endpoint-chip="${escapeHtml(options.label)}"` : options.kind === 'scope' ? `data-scope-chip="${escapeHtml(options.label)}"` : `data-status-chip="${escapeHtml(options.label)}"`
+  return `<span class="endpoint-chip" ${attr}>${escapeHtml(options.label)}</span>`
+}
+
+export function commandRow(options: CommandRowOptions): string {
+  const chips = options.chips && options.chips.length > 0 ? `<div class="command-chips">${options.chips.map(commandChip).join('')}</div>` : ''
+  return `<div class="command-row" data-command-row="${escapeHtml(options.id)}">
+<div class="command-copy"><strong>${escapeHtml(options.title)}</strong><span>${escapeHtml(options.description)}</span>${chips}</div>
+<div class="command-actions">${options.actions}</div>
+</div>`
 }
 
 export interface WizardStepOptions {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
 import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
@@ -89,6 +89,83 @@ function rowOrder(harness: AdminUiHarness): string[] {
 }
 
 describe('dashboard overview contracts', () => {
+  afterEach(() => {
+    try { vi.clearAllTimers() } catch (_error) { /* fake timers were not enabled */ }
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    delete (globalThis as { matchMedia?: unknown }).matchMedia
+  })
+
+  it('REQ-ADM-007 uses the official Codeflare shell tokens', () => {
+    const css = adminUiCss()
+
+    expect(css).toContain("--font-sans:'Inter'")
+    expect(css).toContain('--accent:#ff5c3c')
+    expect(css).toContain('--accent-hover:#ff734f')
+    expect(css).toContain('--accent-ink:#160a06')
+    expect(css).toContain('--flare-gradient:linear-gradient(96deg,#ff8a3d 0%,#ff5c3c 52%,#ff3f7c 100%)')
+    expect(css).toContain('body{')
+    expect(css).toContain('font:var(--fs-md)/1.55 var(--font-sans)')
+    expect(css).toContain('code,pre,.metric-value,.endpoint-chip{font-family:var(--font-mono)')
+  })
+
+  it('REQ-ADM-007 renders a Codeflare operator-console hero and nav rail contracts', () => {
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const heroAt = html.indexOf('id="dashboard-hero"')
+    const navAt = html.indexOf('class="side-nav"')
+
+    expect(heroAt).toBeGreaterThan(-1)
+    expect(navAt).toBeGreaterThan(heroAt)
+    expect(html).toContain('data-dashboard-hero="true"')
+    expect(html).toContain('data-scramble')
+    expect(html).toContain('id="overview-tiles"')
+    expect(html).toContain('data-nav-item="overview"')
+    expect(html).toContain('data-nav-hint="Fleet state"')
+  })
+
+  it('REQ-ADM-034 renders endpoint chips inside command rows for action-heavy controls', () => {
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const rowAt = html.indexOf('data-command-row="playground-speed"')
+    const endpointAt = html.indexOf('data-endpoint-chip="POST /admin/playground/speed-test"')
+    const authAt = html.indexOf('data-scope-chip="admin"', rowAt)
+
+    expect(rowAt).toBeGreaterThan(-1)
+    expect(endpointAt).toBeGreaterThan(rowAt)
+    expect(authAt).toBeGreaterThan(rowAt)
+  })
+
+  it('REQ-ADM-007 leaves the scramble phrase static under reduced motion', () => {
+    ;(globalThis as { matchMedia?: unknown }).matchMedia = () => ({ matches: true })
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const harness = adminUiHarness(html, () => Response.json(statusFixture()), { sessionToken: 'admin-secret' })
+    const target = harness.query('[data-scramble]')
+    target.textContent = 'Inference Mesh'
+
+    harness.run()
+
+    expect(target.textContent).toBe('Inference Mesh')
+    expect(target.children.filter((child) => child.className === 'scramble-word')).toHaveLength(0)
+  })
+
+  it('REQ-ADM-007 scrambles the hero phrase and converges back to the target', () => {
+    vi.useFakeTimers()
+    ;(globalThis as { matchMedia?: unknown }).matchMedia = () => ({ matches: false })
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const harness = adminUiHarness(html, () => Response.json(statusFixture()), { sessionToken: 'admin-secret' })
+    const target = harness.query('[data-scramble]')
+    target.textContent = 'Inference Mesh'
+
+    harness.run()
+    const words = target.children.filter((child) => child.className === 'scramble-word')
+    expect(words.map((word) => word.textContent)).toEqual(['Inference', 'Mesh'])
+
+    vi.advanceTimersByTime(3_400)
+    expect(words.some((word) => word.textContent !== 'Inference' && word.textContent !== 'Mesh')).toBe(true)
+    vi.advanceTimersByTime(3_600)
+    expect(words.map((word) => word.textContent)).toEqual(['Inference', 'Mesh'])
+  })
+
   it('REQ-OBS-010 computes the stats strip aggregates from admin status', async () => {
     const harness = await dashboardHarness()
     const tiles = harness.byId('overview-tiles').children

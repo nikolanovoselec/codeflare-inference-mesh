@@ -11,7 +11,7 @@ import {
   ADMIN_UI_TOPOLOGY,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
-import { button, escapeHtml, field, navItem, output, sectionPanel, stepper, textInput, wizardStep } from './admin-ui-components'
+import { button, commandRow, escapeHtml, field, navItem, output, sectionPanel, stepper, textInput, wizardStep } from './admin-ui-components'
 
 /**
  * The three entry views. Pure composition: structure comes from
@@ -127,6 +127,17 @@ ${output({ id: 'wizard-complete-output', kind: 'setup-complete', pre: true })}`
 </section>`
 }
 
+function dashboardHero(): string {
+  return `<section class="dashboard-hero" id="dashboard-hero" data-dashboard-hero="true" aria-labelledby="dashboard-hero-title">
+<div class="hero-copy">
+<p class="eyebrow">Operator console</p>
+<h1 id="dashboard-hero-title">Codeflare <span class="hero-accent" data-scramble>Inference Mesh</span></h1>
+<p>Direct llama.cpp speed, MeshLLM routing, and fleet state in one cache-aware control plane.</p>
+</div>
+<div class="tile-grid hero-stats" id="overview-tiles" data-output="status" aria-label="Fleet status"><p class="empty-note">Status loads automatically.</p></div>
+</section>`
+}
+
 function overviewSection(): string {
   return sectionPanel({
     id: 'overview',
@@ -134,8 +145,7 @@ function overviewSection(): string {
     description: 'Live state of the router, mesh, and recent activity.',
     actions: button({ action: 'status-refresh', label: 'Refresh' }),
     active: true,
-    body: `<div class="tile-grid" id="overview-tiles" data-output="status"><p class="empty-note">Status loads automatically.</p></div>
-<div class="topology" id="${ADMIN_UI_TOPOLOGY.containerId}">
+    body: `<div class="topology" id="${ADMIN_UI_TOPOLOGY.containerId}">
 <p class="topo-caption" id="${ADMIN_UI_TOPOLOGY.captionId}" data-output="topology-caption"></p>
 <div class="toks-trace" id="${ADMIN_UI_TOKS_TRACE.containerId}" data-output="toks-trace" role="img" aria-label="Tokens per second, rolling window"></div>
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
@@ -236,7 +246,8 @@ ${field({ id: ADMIN_UI_PLAYGROUND.selectId, label: 'Model or route', control: em
 ${field({ id: ADMIN_UI_PLAYGROUND.promptId, label: 'Prompt', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.promptId}" name="prompt" rows="4" placeholder="Ask the mesh something to verify the full path."></textarea>` })}
 ${field({ id: ADMIN_UI_PLAYGROUND.toolsId, label: 'Tools (JSON, optional)', control: `<textarea class="prompt-input" id="${ADMIN_UI_PLAYGROUND.toolsId}" name="tools" rows="3" placeholder='[{"type":"function","function":{"name":"get_weather","parameters":{}}}]'></textarea>`, hint: 'Paste an OpenAI-format tools array to reproduce an agentic (tool-calling) request on the real route. Leave blank for a plain chat.' })}
 ${field({ id: ADMIN_UI_PLAYGROUND.maxTokensId, label: 'Max tokens', control: textInput({ id: ADMIN_UI_PLAYGROUND.maxTokensId, name: 'maxTokens', type: 'number', min: 1, placeholder: '2048' }), hint: 'Cap on the response length so a runaway generation is bounded. Blank uses the model default.' })}
-<div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}${button({ action: ADMIN_UI_PLAYGROUND.speedAction, label: 'Speed test', variant: 'ghost', out: ADMIN_UI_PLAYGROUND.speedOutputId })}${button({ action: ADMIN_UI_PLAYGROUND.stopAction, label: 'Stop', variant: 'ghost', out: ADMIN_UI_PLAYGROUND.outputId })}</div>
+<div class="form-actions">${button({ action: ADMIN_UI_PLAYGROUND.sendAction, label: 'Send prompt', variant: 'primary', out: ADMIN_UI_PLAYGROUND.outputId })}${button({ action: ADMIN_UI_PLAYGROUND.stopAction, label: 'Stop', variant: 'ghost', out: ADMIN_UI_PLAYGROUND.outputId })}</div>
+${commandRow({ id: 'playground-speed', title: 'Direct router Speed Test', description: 'Runs one bounded request against the inference router, then refreshes the hero throughput summary.', chips: [{ kind: 'endpoint', label: 'POST /admin/playground/speed-test' }, { kind: 'scope', label: 'admin' }, { kind: 'status', label: 'direct' }], actions: button({ action: ADMIN_UI_PLAYGROUND.speedAction, label: 'Speed test', variant: 'ghost', out: ADMIN_UI_PLAYGROUND.speedOutputId }) })}
 ${output({ id: ADMIN_UI_PLAYGROUND.outputId, kind: 'playground', pre: true })}
 ${output({ id: ADMIN_UI_PLAYGROUND.speedOutputId, kind: 'playground-speed', pre: true })}`
   })
@@ -294,7 +305,7 @@ ${output({ id: 'settings-output', kind: 'settings', pre: true })}</div>
 
 export function dashboardView(active: boolean): string {
   const navItems = [
-    navItem({ section: 'overview', label: 'Overview', hint: 'Health and activity', current: true }),
+    navItem({ section: 'overview', label: 'Overview', hint: 'Fleet state', current: true }),
     navItem({ section: 'nodes', label: 'Nodes', hint: 'Your machines' }),
     navItem({ section: 'models', label: 'Models', hint: 'Your AI models' }),
     navItem({ section: 'routing', label: 'Routing', hint: 'Address and gateway' }),
@@ -302,6 +313,7 @@ export function dashboardView(active: boolean): string {
     navItem({ section: 'settings', label: 'Settings', hint: 'Version and activity' })
   ].join('')
   return `<div class="view dash" id="view-dashboard"${active ? '' : ' hidden'}>
+${dashboardHero()}
 <nav class="side-nav" aria-label="Console sections" data-nav-sections="${escapeHtml(ADMIN_UI_NAV.sections.join(' '))}">${navItems}</nav>
 <div class="mobile-menu" id="mobile-menu" aria-label="Console sections" data-mobile-menu="${escapeHtml(ADMIN_UI_NAV.sections.join(' '))}" hidden>${navItems}</div>
 <div class="sections">${overviewSection()}${nodesSection()}${modelsSection()}${routingSection()}${playgroundSection()}${settingsSection()}</div>
