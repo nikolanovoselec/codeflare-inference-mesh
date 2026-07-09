@@ -22,10 +22,10 @@ Production deployment is automatic after a merged `main` push has green PR Check
 
 | Check group | Required behavior | REQs |
 | --- | --- | --- |
-| Router | Install, lint, behavioral tests, type-check, Wrangler types, dry-run deploy. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
-| Agent | Go tests, vet, race tests, and command build. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
-| Packaging | Build one archive, generate checksums, verify hash, run staged version command. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
-| Security | npm audit, Go vulnerability check, dependency review where available. | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
+| Router | Lockfile install, lint, behavioral tests, type-check, Wrangler types, dry-run deploy. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
+| Agent | Go tests, vet, race tests, and command build; Go dependency cache points at `packages/node-agent/go.mod`. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
+| Packaging | Build one archive, generate checksums, verify hash, run staged version command; Go dependency cache points at `packages/node-agent/go.mod`. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
+| Security | Lockfile npm audit, Go vulnerability check, dependency review where available, weekly Dependabot pull requests for npm, Go modules, and GitHub Actions, pinned workflow actions, and least-privilege workflow tokens. | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
 | Fuzz | Bounded router and agent fuzz targets run for pull requests and post-merge `main` pushes. | [REQ-REL-004](../../sdd/spec/release-ci.md) |
 
 ## Deploy workflow
@@ -34,7 +34,7 @@ Production deployment is automatic after a merged `main` push has green PR Check
 | --- | --- | --- |
 | Resolve target | Production comes from the green `main` merge SHA; integration uses the manually selected branch. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Check gates | Production waits for exact-head Security and Fuzz success after PR Checks succeeds. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
-| Repeat checks | Critical router and agent checks pass before state changes. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+| Repeat checks | Critical router and agent checks pass after lockfile dependency install and before state changes. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | Prepare D1 | The production or integration database is created or resolved and migrations are applied. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | Set runtime secrets | `SESSION_AFFINITY_KEY` is sent with the runtime secret bulk update and `MESH_STATE_KEY` is set separately; the workflow fails closed when either required secret is absent. | [REQ-SEC-006](../../sdd/spec/security.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity) |
 | Build artifacts | Agent archives for linux/amd64, linux/arm64, windows/amd64, and darwin/arm64 (darwin/amd64 is not built) embed the release tag via `-X main.version`; checksums, signature, and manifest exist; raw binaries are removed before release upload. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
@@ -120,6 +120,7 @@ GitHub Actions is authoritative for full suites, builds, lint, type-checks, depl
 | Manual integration deploy | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/deploy.yml::REL002ManualIntegrationDeploy` <!-- @impl: .github/workflows/deploy.yml::REL002ManualIntegrationDeploy --> |
 | Release artifacts | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/deploy.yml::REL003ReleaseArtifacts` <!-- @impl: .github/workflows/deploy.yml::REL003ReleaseArtifacts --> |
 | Bounded fuzz | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/workflows/fuzz.yml::REL004FuzzWorkflows` <!-- @impl: .github/workflows/fuzz.yml::REL004FuzzWorkflows --> |
+| Dependency updates | [release-ci.md](../../sdd/spec/release-ci.md) | `.github/dependabot.yml` <!-- @impl: .github/dependabot.yml --> |
 | Workflow contract tests | [release-ci.md](../../sdd/spec/release-ci.md) | `packages/router-worker/src/workflows.test.ts::workflow` <!-- @impl: packages/router-worker/src/workflows.test.ts::workflow --> |
 | Service install | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/service.go::ServiceInstallPlan` <!-- @impl: packages/node-agent/internal/agent/service.go::ServiceInstallPlan --> |
 | Runtime command | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs` <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> |

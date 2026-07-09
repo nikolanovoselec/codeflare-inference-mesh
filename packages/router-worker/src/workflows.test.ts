@@ -7,6 +7,15 @@ import { describe, expect, it } from 'vitest'
 import YAML from 'yaml'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+const ACTION_CHECKOUT = 'actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0'
+const ACTION_SETUP_NODE = 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e'
+const ACTION_SETUP_GO = 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16'
+const ACTION_UPLOAD_ARTIFACT = 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a'
+const ACTION_DEPENDENCY_REVIEW = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294'
+const ACTION_CODEQL_INIT = 'github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
+const ACTION_CODEQL_ANALYZE = 'github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
+const ACTION_CODEQL_UPLOAD_SARIF = 'github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
+const ACTION_SCORECARD = 'ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a'
 
 type Step = {
   readonly name?: string
@@ -91,6 +100,17 @@ function runShellBlockWithFiles(block: string, env: Record<string, string>, file
 }
 
 describe('workflow contract values', () => {
+  it('REQ-REL-001 opens dependency update pull requests for supported package ecosystems', () => {
+    const dependabot = YAML.parse(readFileSync(resolve(repoRoot, '.github/dependabot.yml'), 'utf8')) as { readonly version: number; readonly updates: readonly { readonly 'package-ecosystem': string; readonly directory: string; readonly schedule: { readonly interval: string }; readonly 'open-pull-requests-limit': number }[] }
+
+    expect(dependabot.version).toBe(2)
+    expect(dependabot.updates.map((entry) => ({ ecosystem: entry['package-ecosystem'], directory: entry.directory, interval: entry.schedule.interval, limit: entry['open-pull-requests-limit'] }))).toEqual([
+      { ecosystem: 'npm', directory: '/', interval: 'weekly', limit: 5 },
+      { ecosystem: 'gomod', directory: '/packages/node-agent', interval: 'weekly', limit: 5 },
+      { ecosystem: 'github-actions', directory: '/', interval: 'weekly', limit: 5 }
+    ])
+  })
+
   it('REQ-REL-001 runs PR, main-push, manual, router, agent, packaging, security, and aggregate test checks', () => {
     const ci = workflow('ci.yml')
 
@@ -99,17 +119,23 @@ describe('workflow contract values', () => {
     expect(ci.on.pull_request).toEqual({ branches: ['main', 'develop'] })
     expect(ci.on.push).toEqual({ branches: ['main'] })
     expect(Object.keys(ci.jobs).sort()).toEqual(['agent', 'dependency-review', 'packaging', 'router', 'test', 'vulnerability-checks'])
+    expect(ci.permissions).toEqual({ contents: 'read' })
     expect(ci.jobs.test!.needs).toEqual(['router', 'agent', 'packaging', 'dependency-review', 'vulnerability-checks'])
 
-    expect(stepUses(ci.jobs.router!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'actions/setup-node@v6.4.0']))
-    expect(ci.jobs.router!.steps.find((step) => step.uses === 'actions/setup-node@v6.4.0')?.with).toEqual({ 'node-version': '24' })
+    expect(stepUses(ci.jobs.router!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SETUP_NODE]))
+    expect(ci.jobs.router!.steps.find((step) => step.uses === ACTION_SETUP_NODE)?.with).toEqual({ 'node-version': '24' })
+    expect(stepByName(ci.jobs.router!, 'Install dependencies')?.run).toBe('npm ci')
     expect(ci.jobs.router!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Install dependencies', 'Lint router', 'Test router behavior', 'Type-check router', 'Generate Wrangler types', 'Worker dry-run deploy']))
-    expect(stepUses(ci.jobs.agent!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'actions/setup-go@v6.5.0']))
-    expect(ci.jobs.agent!.steps.find((step) => step.uses === 'actions/setup-go@v6.5.0')?.with).toEqual({ 'go-version': '1.26.5' })
+    expect(stepUses(ci.jobs.agent!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SETUP_GO]))
+    expect(ci.jobs.agent!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.5', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs.packaging!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.5', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs['vulnerability-checks']!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.5', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs['dependency-review']!.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' })
     expect(ci.jobs.agent!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Go test', 'Go vet', 'Go race tests', 'Build command']))
-    expect(ci.jobs.packaging!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Build staged binary', 'Create archive and checksums', 'Version command', 'actions/upload-artifact@v7.0.1']))
-    expect(stepUses(ci.jobs.packaging!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
-    expect(stepUses(ci.jobs['dependency-review']!)).toEqual(expect.arrayContaining(['actions/dependency-review-action@v5.0.0']))
+    expect(ci.jobs.packaging!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Build staged binary', 'Create archive and checksums', 'Version command', ACTION_UPLOAD_ARTIFACT]))
+    expect(stepUses(ci.jobs.packaging!)).toEqual(expect.arrayContaining([ACTION_UPLOAD_ARTIFACT]))
+    expect(stepUses(ci.jobs['dependency-review']!)).toEqual(expect.arrayContaining([ACTION_DEPENDENCY_REVIEW]))
+    expect(stepByName(ci.jobs['vulnerability-checks']!, 'npm audit')?.run).toBe('npm ci && npm audit --audit-level=high --omit=dev')
     expect(ci.jobs['vulnerability-checks']!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['npm audit', 'Go vulnerability check']))
   })
 
@@ -125,17 +151,21 @@ describe('workflow contract values', () => {
     expect(deploy.concurrency).toMatchObject({ 'cancel-in-progress': true })
     expect(deployJob['timeout-minutes']).toBe(45)
     expect(deployJob.if).toBeDefined()
+    expect(deploy.permissions).toEqual({ contents: 'read' })
+    expect(deployJob.permissions).toEqual({ contents: 'write', actions: 'read' })
     expect(deployJob.env).toBeUndefined()
-    expect(deployJob.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}', 'persist-credentials': false })
+    expect(deployJob.steps.find((step) => step.uses === ACTION_CHECKOUT)?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}', 'persist-credentials': false })
     const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
-    expect(stepNames.indexOf('Guard deploy source')).toBeLessThan(stepNames.indexOf('actions/checkout@v7.0.0'))
+    expect(stepNames.indexOf('Guard deploy source')).toBeLessThan(stepNames.indexOf(ACTION_CHECKOUT))
     const guardRun = stepByName(deployJob, 'Guard deploy source')!.run!
     const guardEnv = { WORKFLOW_RUN_CONCLUSION: '', WORKFLOW_RUN_EVENT: '', WORKFLOW_RUN_REPOSITORY: '', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }
     expect(runShellBlock(guardRun, { ...guardEnv, EVENT_NAME: 'workflow_dispatch', INPUT_ENVIRONMENT: 'integration', GITHUB_REF: 'refs/heads/feature' }).status).toBe(0)
     expect(runShellBlock(guardRun, { ...guardEnv, EVENT_NAME: 'workflow_dispatch', INPUT_ENVIRONMENT: 'production', GITHUB_REF: 'refs/heads/feature' }).status).toBe(1)
     expect(runShellBlock(guardRun, { EVENT_NAME: 'workflow_run', INPUT_ENVIRONMENT: '', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_CONCLUSION: 'success', WORKFLOW_RUN_EVENT: 'push', WORKFLOW_RUN_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }).status).toBe(0)
     expect(runShellBlock(guardRun, { EVENT_NAME: 'workflow_run', INPUT_ENVIRONMENT: '', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_CONCLUSION: 'success', WORKFLOW_RUN_EVENT: 'pull_request', WORKFLOW_RUN_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }).status).toBe(1)
-    expect(stepNames.indexOf('Resolve deploy settings')).toBeGreaterThan(stepNames.indexOf('actions/checkout@v7.0.0'))
+    expect(deployJob.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.5', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(stepByName(deployJob, 'Install router dependencies')?.run).toBe('npm ci')
+    expect(stepNames.indexOf('Resolve deploy settings')).toBeGreaterThan(stepNames.indexOf(ACTION_CHECKOUT))
     expect(stepNames.indexOf('Publish GitHub Release')).toBeGreaterThan(-1)
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(stepByName(deployJob, 'Resolve deploy settings')).toMatchObject({
@@ -271,7 +301,7 @@ describe('workflow contract values', () => {
     const deployJob = deploy.jobs.deploy!
     const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
 
-    expect(stepNames).toEqual(expect.arrayContaining(['Build release artifacts and manifest', 'Sign checksums when signing is configured', 'Publish GitHub Release', 'Deploy Worker', 'actions/upload-artifact@v7.0.1']))
+    expect(stepNames).toEqual(expect.arrayContaining(['Build release artifacts and manifest', 'Sign checksums when signing is configured', 'Publish GitHub Release', 'Deploy Worker', ACTION_UPLOAD_ARTIFACT]))
     const buildStep = stepByName(deployJob, 'Build release artifacts and manifest')!
     expect(buildStep).toMatchObject({ 'working-directory': 'packages/node-agent' })
     // Linux binaries build with CGO disabled so they link statically and run across glibc distributions (Arch, Debian, Ubuntu, RHEL).
@@ -312,7 +342,7 @@ describe('workflow contract values', () => {
     expect(stepByName(deployJob, 'Publish GitHub Release')).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { GH_TOKEN: '${{ github.token }}' } })
     expect(stepByName(deployJob, 'Resolve or create D1 database')?.env).toMatchObject({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' })
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
-    expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
+    expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining([ACTION_UPLOAD_ARTIFACT]))
   })
 
   it('REQ-SEC-006 pushes the MESH_STATE_KEY Worker secret during deploy and fails closed when the GitHub secret is absent', () => {
@@ -365,6 +395,7 @@ describe('workflow contract values', () => {
     const fuzz = workflow('fuzz.yml')
 
     expect(Object.keys(security.on).sort()).toEqual(['pull_request', 'push', 'schedule', 'workflow_dispatch'])
+    expect(security.permissions).toEqual({ contents: 'read' })
     expect(security.on.pull_request).toEqual({ branches: ['main', 'develop'] })
     expect(security.on.push).toEqual({ branches: ['main'] })
     expect(security.jobs['workflow-safety']!['timeout-minutes']).toBe(5)
@@ -375,8 +406,9 @@ describe('workflow contract values', () => {
     expect(security.jobs.scorecard!['timeout-minutes']).toBe(10)
     expect(security.jobs.security!.needs).toEqual(['workflow-safety', 'codeql'])
     expect(security.jobs.security!['timeout-minutes']).toBe(5)
-    expect(stepUses(security.jobs.codeql!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'github/codeql-action/init@v4.36.2', 'github/codeql-action/analyze@v4.36.2']))
-    expect(stepUses(security.jobs.scorecard!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'ossf/scorecard-action@v2.4.3', 'github/codeql-action/upload-sarif@v4.36.2']))
+    expect(stepUses(security.jobs.codeql!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_CODEQL_INIT, ACTION_CODEQL_ANALYZE]))
+    expect(stepUses(security.jobs.scorecard!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SCORECARD, ACTION_CODEQL_UPLOAD_SARIF]))
+    expect(security.jobs.codeql).toHaveProperty('permissions.security-events', 'write')
     expect(security.jobs.scorecard).toHaveProperty('permissions.security-events', 'write')
     expect(fuzz.on.pull_request).toEqual({ branches: ['main', 'develop'] })
     expect(fuzz.on.push).toEqual({ branches: ['main'] })
@@ -385,8 +417,10 @@ describe('workflow contract values', () => {
     expect(fuzz.jobs.fuzz!['timeout-minutes']).toBe(5)
     expect(fuzz.jobs['router-fuzz']!['timeout-minutes']).toBe(10)
     expect(fuzz.jobs['agent-fuzz']!['timeout-minutes']).toBe(10)
+    expect(stepByName(fuzz.jobs['router-fuzz']!, 'Install dependencies')?.run).toBe('npm ci')
     expect(stepByName(fuzz.jobs['router-fuzz']!, 'Run router fuzz corpus')).toMatchObject({ 'working-directory': 'packages/router-worker' })
     expect(fuzz.jobs['agent-fuzz']).toHaveProperty('defaults.run.working-directory', 'packages/node-agent')
+    expect(fuzz.jobs['agent-fuzz']!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.4', 'cache-dependency-path': 'packages/node-agent/go.mod' })
     expect(stepByName(fuzz.jobs['agent-fuzz']!, 'Run agent fuzz targets')).toBeDefined()
   })
 

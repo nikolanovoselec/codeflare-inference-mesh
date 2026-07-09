@@ -12,8 +12,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 jobs:
   workflow-safety:
@@ -21,7 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Validate workflow safety structurally
         run: node packages/router-worker/scripts/workflow-safety.mjs .github/workflows
 
@@ -29,17 +27,20 @@ jobs:
     name: CodeQL
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
     if: github.repository_visibility == 'public'
     strategy:
       fail-fast: false
       matrix:
         language: [javascript-typescript, go]
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: github/codeql-action/init@v4.36.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           languages: ${{ matrix.language }}
-      - uses: github/codeql-action/analyze@v4.36.2
+      - uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
 
   scorecard:
     name: OpenSSF Scorecard
@@ -51,13 +52,13 @@ jobs:
       security-events: write
       id-token: write
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: ossf/scorecard-action@v2.4.3
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
         with:
           results_file: scorecard.sarif
           results_format: sarif
           publish_results: false
-      - uses: github/codeql-action/upload-sarif@v4.36.2
+      - uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: scorecard.sarif
 
