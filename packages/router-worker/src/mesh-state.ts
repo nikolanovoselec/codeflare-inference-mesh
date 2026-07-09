@@ -358,11 +358,16 @@ function splitReadinessWithDisplayNames(report: SplitReadinessReport, stages: re
     })
     return stage?.reportedByNodeId ? nodesById.get(stage.reportedByNodeId) : undefined
   }
+  if (report.participants === undefined) return report
   return {
     ...report,
-    participants: report.participants?.map((participant) => {
+    participants: report.participants.map((participant) => {
       const node = nodeForParticipant(participant.nodeId ?? participant.shortNodeId)
-      return node ? { ...participant, routerNodeId: node.id, displayName: node.displayName } : participant
+      return node ? {
+        ...participant,
+        routerNodeId: node.id,
+        ...(node.displayName !== undefined ? { displayName: node.displayName } : {})
+      } : participant
     })
   }
 }
