@@ -347,11 +347,19 @@ func splitHFModelRef(ref string) (repo, quant string, ok bool) {
 }
 
 // DeriveMeshRole derives the reported mesh role: coordinator exactly when
-// this node owns stage 0 in console status, otherwise serving-peer while
-// serving or loading a model, else api-client.
+// this node owns stage 0 in console status, stage owner when it owns any
+// other stage, otherwise serving-peer while serving or loading a model, else
+// api-client.
 func DeriveMeshRole(st MeshLLMStatus, ownNodeID string) string {
 	if ownNodeID != "" && st.StageZeroNodeID == ownNodeID {
 		return "coordinator"
+	}
+	if ownNodeID != "" {
+		for _, stage := range st.Stages {
+			if stage.NodeID == ownNodeID {
+				return "serving-peer"
+			}
+		}
 	}
 	switch st.NodeState {
 	case "serving", "loading":

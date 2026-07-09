@@ -162,7 +162,7 @@ export const ADMIN_UI_TOKS_TRACE = {
 export const ADMIN_UI_MESH_HEALTH = {
   bannerId: 'mesh-key-banner',
   keyMissingError: 'mesh_state_key_missing',
-  fields: ['coordinator', 'peers', 'split-readiness', 'capacity', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error', 'rotation', 'secret']
+  fields: ['coordinator', 'peers', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error']
 } as const
 
 export const ADMIN_UI_AGENT_VERSION = {
@@ -212,7 +212,7 @@ export interface MeshHealthEntry {
       readonly shortfallBytes?: number
       readonly eligibleNodeCount?: number
     }
-    readonly participants?: readonly { readonly nodeId?: string; readonly shortNodeId?: string; readonly role?: string; readonly vramBytes?: number }[]
+    readonly participants?: readonly { readonly nodeId?: string; readonly shortNodeId?: string; readonly routerNodeId?: string; readonly displayName?: string; readonly role?: string; readonly vramBytes?: number }[]
     readonly blockers?: readonly { readonly reason?: string; readonly recommendation?: string }[]
     readonly recommendations?: readonly string[]
   }
@@ -249,6 +249,7 @@ export interface RuntimeVersionsView {
 /** Structural subset of an admin-status node used by the client renderers. */
 export interface MeshUiStatusNode {
   readonly id: string
+  readonly displayName?: string
   readonly status?: string
   readonly agentVersion?: string
   readonly maxVramGbOverride?: number | null
@@ -256,6 +257,7 @@ export interface MeshUiStatusNode {
   readonly metrics?: {
     readonly runtimeState?: string
     readonly readyModels?: readonly string[]
+    readonly meshNodeId?: string
     readonly meshMaxVramGb?: number
   }
 }

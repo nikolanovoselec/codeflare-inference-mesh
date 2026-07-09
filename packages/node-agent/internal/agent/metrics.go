@@ -19,6 +19,7 @@ type NodeMetrics struct {
 	PromptTokensPerSecond     float64  `json:"promptTokensPerSecond,omitempty"`
 	GenerationTokensPerSecond float64  `json:"generationTokensPerSecond,omitempty"`
 	MeshID                    string   `json:"meshId,omitempty"`
+	MeshNodeID                string   `json:"meshNodeId,omitempty"`
 	MeshRole                  string   `json:"meshRole,omitempty"`
 	PeerCount                 int      `json:"peerCount,omitempty"`
 	ReadyModels               []string                `json:"readyModels,omitempty"`
@@ -126,6 +127,9 @@ func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	}
 	if extra.MeshID != "" {
 		merged.MeshID = extra.MeshID
+	}
+	if extra.MeshNodeID != "" {
+		merged.MeshNodeID = extra.MeshNodeID
 	}
 	if extra.MeshRole != "" {
 		merged.MeshRole = extra.MeshRole

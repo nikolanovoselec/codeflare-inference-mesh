@@ -128,6 +128,8 @@ export interface SplitReadinessReport {
   readonly participants?: readonly {
     readonly nodeId?: string
     readonly shortNodeId?: string
+    readonly routerNodeId?: string
+    readonly displayName?: string
     readonly source?: string
     readonly role?: string
     readonly vramBytes?: number
@@ -158,6 +160,7 @@ export interface NodeMetrics {
   readonly loadedProfileId?: string
   readonly loadedProfileVersion?: number
   readonly meshId?: string
+  readonly meshNodeId?: string
   readonly meshRole?: 'coordinator' | 'serving-peer' | 'api-client'
   readonly peerCount?: number
   readonly readyModels?: readonly string[]

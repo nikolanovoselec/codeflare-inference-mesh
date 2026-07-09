@@ -175,8 +175,23 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         words.forEach((word) => { if (word.span.style) word.span.style.width = ''; word.span.textContent = word.text; });
         words.forEach((word) => {
           if (word.span.style && typeof word.span.getBoundingClientRect === 'function') {
-            const width = word.span.getBoundingClientRect().width;
+            const finalWidth = word.span.getBoundingClientRect().width;
+            const probe = document.createElement('span');
+            probe.className = 'scramble-word';
+            probe.textContent = 'W'.repeat(word.text.length);
+            probe.setAttribute('aria-hidden', 'true');
+            if (probe.style) {
+              probe.style.position = 'absolute';
+              probe.style.visibility = 'hidden';
+              probe.style.pointerEvents = 'none';
+            }
+            target.appendChild(probe);
+            const wideWidth = typeof probe.getBoundingClientRect === 'function' ? probe.getBoundingClientRect().width : 0;
+            if (probe.parentNode && typeof probe.parentNode.removeChild === 'function') probe.parentNode.removeChild(probe);
+            else if (target.removeChild) target.removeChild(probe);
+            const width = Math.max(finalWidth || 0, wideWidth || 0);
             if (width) word.span.style.width = width.toFixed(2) + 'px';
+            word.span.setAttribute('data-width-lock', 'wide-probe');
           }
         });
       };
@@ -428,7 +443,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const nodeModelCount = (node) => (node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0);
   const reportedText = (value) => value == null ? 'not reported' : String(value);
   const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
-  const fmtGb = (value) => value == null ? 'not reported' : (Math.round(Number(value) * 10) / 10) + 'GB';
+  const fmtGb = (value) => value == null ? 'not reported' : (Math.round(Number(value) * 10) / 10) + ' GB';
   const bytesToGb = (bytes) => bytes == null ? null : Number(bytes) / 1000000000;
   function splitReadinessIssue(report) {
     if (!report) return false;
@@ -454,19 +469,103 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (capacity.aggregateCapacityBytes != null) element.setAttribute('data-aggregate-bytes', String(capacity.aggregateCapacityBytes));
     if (capacity.shortfallBytes != null) element.setAttribute('data-shortfall-bytes', String(capacity.shortfallBytes));
   }
-  function splitReadinessText(report) {
+  function humanizeKey(value) {
+    return String(value || '').replace(/^participant_/, '').replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+  function splitReadinessLabel(report) {
     if (!report) return '';
     const reason = splitReadinessReason(report);
     const capacity = splitCapacity(report);
-    const title = reason === 'split_capacity_shortfall' || capacity.state === 'insufficient_capacity' ? 'Split capacity shortfall' : ('Split readiness: ' + (report.verdict || reason || 'not ready'));
+    const verdict = report.verdict || '';
+    if (reason === 'split_capacity_shortfall' || capacity.state === 'insufficient_capacity' || verdict === 'insufficient_capacity') return 'Split capacity shortfall';
+    if (verdict === 'ready') return 'Split ready';
+    if (verdict === 'waiting_for_peers' || reason === 'waiting_for_peers') return 'Waiting for peers';
+    return humanizeKey(reason || verdict || 'split not ready');
+  }
+  function splitReadinessText(report) {
+    return splitReadinessLabel(report);
+  }
+  function splitCapacityText(report) {
+    const capacity = splitCapacity(report);
     const required = bytesToGb(capacity.requiredBytes);
     const aggregate = bytesToGb(capacity.aggregateCapacityBytes);
     const shortfall = bytesToGb(capacity.shortfallBytes);
-    const parts = [title];
-    if (required != null || aggregate != null || shortfall != null) parts.push(fmtGb(required) + ' required / ' + fmtGb(aggregate) + ' usable' + (shortfall ? ' / ' + fmtGb(shortfall) + ' short' : ''));
-    const participants = Array.isArray(report.participants) ? report.participants.map((item) => (item.shortNodeId || item.nodeId || 'node') + ' ' + fmtGb(bytesToGb(item.vramBytes))).join(', ') : '';
-    if (participants) parts.push('participants: ' + participants);
+    const parts = [];
+    if (aggregate != null) parts.push(fmtGb(aggregate) + ' usable');
+    if (required != null) parts.push(fmtGb(required) + ' required');
+    if (shortfall != null && shortfall > 0) parts.push(fmtGb(shortfall) + ' short');
     return parts.join(' · ');
+  }
+  function allStatusNodes() {
+    return lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
+  }
+  function nodeDisplayName(node) {
+    return (node && (node.displayName || node.name || node.id)) || 'unknown node';
+  }
+  function nodeLabelForId(value, candidates) {
+    const raw = String(value || '').trim();
+    if (!raw) return 'unknown node';
+    const nodes = (Array.isArray(candidates) && candidates.length ? candidates : allStatusNodes());
+    const exact = nodes.find((node) => node && (node.id === raw || node.displayName === raw || node.name === raw || (node.metrics && node.metrics.meshNodeId === raw)));
+    if (exact) return nodeDisplayName(exact);
+    const prefix = nodes.find((node) => {
+      const meshNodeId = node && node.metrics ? node.metrics.meshNodeId : '';
+      return node && ((node.id && (node.id.indexOf(raw) === 0 || raw.indexOf(node.id) === 0)) || (meshNodeId && (meshNodeId.indexOf(raw) === 0 || raw.indexOf(meshNodeId) === 0)));
+    });
+    if (prefix) return nodeDisplayName(prefix);
+    const loose = nodes.find((node) => node && raw.length >= 6 && ((node.id && node.id.indexOf(raw) >= 0) || (node.metrics && node.metrics.meshNodeId && node.metrics.meshNodeId.indexOf(raw) >= 0)));
+    if (loose) return nodeDisplayName(loose);
+    return raw.length > 12 ? raw.slice(0, 10) + '…' : raw;
+  }
+  function splitParticipants(report, candidates) {
+    return Array.isArray(report && report.participants) ? report.participants.map((item) => {
+      const raw = item.routerNodeId || item.nodeId || item.shortNodeId || '';
+      return { label: item.displayName || nodeLabelForId(raw, candidates), raw: raw, vram: bytesToGb(item.vramBytes) };
+    }) : [];
+  }
+  function splitReadinessBlock(report, candidates) {
+    const wrap = document.createElement('div');
+    wrap.className = 'split-readiness-block';
+    annotateSplitReadiness(wrap, report);
+    const status = document.createElement('div');
+    status.className = 'split-readiness-row';
+    status.setAttribute('data-split-field', 'status');
+    status.appendChild(statusDot(splitReadinessIssue(report) ? 'warn' : 'ok', splitReadinessLabel(report)));
+    wrap.appendChild(status);
+    const capacity = splitCapacityText(report);
+    if (capacity) {
+      const row = document.createElement('div');
+      row.className = 'split-readiness-row';
+      row.setAttribute('data-split-field', 'capacity');
+      annotateSplitReadiness(row, report);
+      const label = document.createElement('strong');
+      label.textContent = 'Capacity';
+      const value = document.createElement('span');
+      value.textContent = capacity;
+      row.append(label, value);
+      wrap.appendChild(row);
+    }
+    const participants = splitParticipants(report, candidates);
+    if (participants.length) {
+      const row = document.createElement('div');
+      row.className = 'split-readiness-row split-participants';
+      row.setAttribute('data-split-field', 'participants');
+      const label = document.createElement('strong');
+      label.textContent = 'Participants';
+      const chips = document.createElement('span');
+      chips.className = 'split-participant-list';
+      participants.forEach((participant) => {
+        const chip = document.createElement('span');
+        chip.className = 'mini-chip';
+        chip.setAttribute('data-participant-label', participant.label);
+        if (participant.raw) chip.setAttribute('data-participant-id', participant.raw);
+        chip.textContent = participant.label + (participant.vram != null ? ' · ' + fmtGb(participant.vram) : '');
+        chips.appendChild(chip);
+      });
+      row.append(label, chips);
+      wrap.appendChild(row);
+    }
+    return wrap;
   }
   const statusDot = (tone, label) => {
     const wrap = document.createElement('span');
@@ -563,22 +662,35 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const desired = info.desiredVersion || 'selected';
     if (info.state === 'installing') return 'Installing ' + runtimeInstallLabel(info) + ' ' + desired;
     if (info.state === 'failed') return runtimeInstallLabel(info) + ' install failed';
-    if (info.installedVersion) return runtimeInstallLabel(info) + ' ' + info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? '' : ' → ' + desired);
+    if (info.installedVersion) return info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? ' installed' : ' → ' + desired);
     return runtimeInstallLabel(info) + ' pending ' + desired;
   };
   function nodeMeshRoleLabel(metrics) {
-    if (!metrics || !metrics.meshRole) return '';
-    if (metrics.meshRole === 'api-client') return 'API client';
+    if (!metrics) return '';
+    if ((metrics.stageCount || 0) > 0 && metrics.meshRole !== 'coordinator') return 'Stage owner';
+    if (!metrics.meshRole) return '';
+    if (metrics.meshRole === 'api-client') return 'No stage assigned';
     if (metrics.meshRole === 'serving-peer') return 'Serving peer';
     if (metrics.meshRole === 'coordinator') return 'Coordinator';
-    return metrics.meshRole;
+    return humanizeKey(metrics.meshRole);
+  }
+  function nodeWorkState(metrics) {
+    if (!metrics) return '';
+    if ((metrics.stageCount || 0) > 0 && metrics.apiReady === true && metrics.consoleReady === true) return 'Serving split stage';
+    if (Array.isArray(metrics.readyModels) && metrics.readyModels.length > 0) return 'Serving model';
+    if (metrics.apiReady === true || metrics.consoleReady === true) return 'Runtime online';
+    if (metrics.runtimeState === 'downloading') return 'Installing runtime';
+    if (metrics.runtimeState === 'starting' || metrics.runtimeState === 'loading') return 'Starting model';
+    if (metrics.runtimeState === 'failed' || metrics.runtimeState === 'dependency-missing') return 'Needs attention';
+    return metrics.runtimeState ? humanizeKey(metrics.runtimeState) : '';
   }
   function nodeServingCapacity(node) {
     if (node.status !== 'online' || node.deactivated) return false;
     const metrics = node.metrics || {};
     if (splitReadinessIssue(metrics.splitReadiness)) return false;
+    if (nodeReady(node) || ((metrics.stageCount || 0) > 0 && metrics.apiReady === true && metrics.consoleReady === true)) return true;
     if (metrics.runtimeState === 'failed' || metrics.runtimeState === 'dependency-missing' || metrics.runtimeState === 'stopped') return false;
-    return nodeReady(node) || metrics.apiReady === true || metrics.consoleReady === true || (metrics.stageCount || 0) > 0;
+    return metrics.apiReady === true || metrics.consoleReady === true;
   }
   function nodeStatusText(node) {
     if (node.status === 'offline') { const age = nodeRelAge(node); return 'Offline' + (age ? ' · last seen ' + age : ''); }
@@ -591,7 +703,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (rt === 'failed' || rt === 'dependency-missing') return 'Failed' + (stateDetail ? ' · ' + stateDetail : '');
     if (splitReadinessIssue(metrics.splitReadiness)) return splitReadinessText(metrics.splitReadiness);
     const role = nodeMeshRoleLabel(metrics);
-    if (nodeServingCapacity(node)) return role || 'Ready';
+    if (nodeServingCapacity(node)) return role && role !== 'No stage assigned' ? role : (nodeWorkState(metrics) || 'Runtime online');
     if (splitMeshBlocker(node)) return 'Mesh waiting for peers · no peers discovered';
     if (rt === 'downloading') return 'Starting · downloading runtime';
     if (rt === 'loading' || rt === 'starting') return stateDetail ? 'Starting · ' + stateDetail : 'Starting · loading model';
@@ -694,18 +806,21 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       idButton.className = 'link-btn';
       idButton.dataset.action = 'node-detail';
       idButton.dataset.nodeId = node.id;
-      idButton.textContent = node.id;
+      idButton.textContent = nodeDisplayName(node);
       idCell.appendChild(idButton);
       const statusCell = cell('status', nodeCategory(node), undefined);
       const blocker = splitMeshBlocker(node);
       if (blocker && blocker.splitReadiness) statusCell.setAttribute('data-status-detail', splitReadinessReason(blocker.splitReadiness));
       else if (blocker) statusCell.setAttribute('data-status-detail', 'split-mesh-peer-discovery');
       else if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
-      if (node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-mesh-role', node.metrics.meshRole);
+      if (node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-mesh-role', nodeMeshRoleLabel(node.metrics));
       if (node.metrics && node.metrics.splitReadiness) annotateSplitReadiness(statusCell, node.metrics.splitReadiness);
-      if (nodeServingCapacity(node) && node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-status-label-kind', 'mesh-role');
+      const statusLabel = nodeStatusText(node);
+      const roleLabel = node.metrics ? nodeMeshRoleLabel(node.metrics) : '';
+      if (nodeServingCapacity(node) && roleLabel && statusLabel === roleLabel) statusCell.setAttribute('data-status-label-kind', 'mesh-role');
+      else if (nodeServingCapacity(node)) statusCell.setAttribute('data-status-label-kind', 'work-state');
       const statusTone = blocker && !blocker.splitReadiness ? 'danger' : nodeTone(node);
-      statusCell.appendChild(statusDot(statusTone, nodeStatusText(node)));
+      statusCell.appendChild(statusDot(statusTone, statusLabel));
       const install = runtimeInstallInfo(node);
       const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));
       installChip.setAttribute('data-runtime-install-chip', node.id);
@@ -725,7 +840,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     button.className = 'topo-node tone-' + nodeTone(node);
     button.dataset.action = 'node-detail';
     button.dataset.nodeId = node.id;
-    button.textContent = node.id;
+    button.textContent = nodeDisplayName(node);
     return button;
   };
   function renderTopology(nodes) {
@@ -838,7 +953,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
     const node = nodes.find((candidate) => candidate.id === nodeId);
     if (!node) return;
-    const bodyEl = openDrawer(node.id);
+    const bodyEl = openDrawer(nodeDisplayName(node));
     if (!bodyEl) return;
     const metrics = node.metrics || {};
     const isDirectRuntime = node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp';
@@ -867,10 +982,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     // captured from mesh-llm's own stderr and rides the heartbeat as runtimeDetail; node_state, mesh
     // role, peers, stages, and reachability come from the same metrics. REQ-OBS-011.
     const runtimeError = currentRuntimeError(metrics);
-    if (runtimeError) {
+    if (metrics.splitReadiness) {
+      const splitBlock = splitReadinessBlock(metrics.splitReadiness, allStatusNodes());
+      splitBlock.setAttribute('data-drawer-field', 'split-readiness');
+      bodyEl.appendChild(splitBlock);
+    } else if (runtimeError) {
       const errRow = drawerField('runtime-detail', 'Runtime error', runtimeError);
       errRow.setAttribute('data-tone', 'danger');
-      if (metrics.splitReadiness) annotateSplitReadiness(errRow, metrics.splitReadiness);
       bodyEl.appendChild(errRow);
     }
     const install = runtimeInstallInfo(node);
@@ -889,15 +1007,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const blockerText = meshBlockerText(node);
     if (blockerText) {
       const blocker = splitMeshBlocker(node);
-      const row = drawerField('mesh-discovery-blocker', 'Mesh blocker', blockerText);
-      row.setAttribute('data-tone', 'danger');
-      if (blocker && blocker.peerCount != null) row.setAttribute('data-peer-count', String(blocker.peerCount));
-      if (blocker && blocker.stageCount != null) row.setAttribute('data-stage-count', String(blocker.stageCount));
-      if (blocker && blocker.splitReadiness) annotateSplitReadiness(row, blocker.splitReadiness);
-      bodyEl.appendChild(row);
+      if (!blocker || !blocker.splitReadiness) {
+        const row = drawerField('mesh-discovery-blocker', 'Mesh blocker', blockerText);
+        row.setAttribute('data-tone', 'danger');
+        if (blocker && blocker.peerCount != null) row.setAttribute('data-peer-count', String(blocker.peerCount));
+        if (blocker && blocker.stageCount != null) row.setAttribute('data-stage-count', String(blocker.stageCount));
+        bodyEl.appendChild(row);
+      }
     }
-    if (metrics.nodeState) bodyEl.appendChild(drawerField('node-state', 'Node state', metrics.nodeState));
-    if (!isDirectRuntime || metrics.meshRole) bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', metrics.meshRole || 'not reported'));
+    const workState = nodeWorkState(metrics);
+    if (workState) bodyEl.appendChild(drawerField('work-state', 'Work state', workState, workState));
+    if (!isDirectRuntime || metrics.meshRole || (metrics.stageCount || 0) > 0) bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', nodeMeshRoleLabel(metrics) || 'not reported'));
     if (!isDirectRuntime || metrics.peerCount != null) bodyEl.appendChild(drawerField('peers', 'Peers', reportedText(metrics.peerCount), metrics.peerCount == null ? '' : String(metrics.peerCount)));
     if (metrics.splitEnabled || metrics.stageCount) bodyEl.appendChild(drawerField('stages', 'Stages', reportedText(metrics.stageCount), metrics.stageCount == null ? '' : String(metrics.stageCount)));
     const apiState = readinessText(metrics.apiReady);
@@ -907,8 +1027,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const consoleState = readinessText(metrics.consoleReady);
       bodyEl.appendChild(drawerField('reachability', 'API / console', apiState + ' / ' + consoleState, 'api:' + apiState + ';console:' + consoleState));
     }
-    if (metrics.meshllmVersion) bodyEl.appendChild(drawerField('meshllm', 'mesh-llm', metrics.meshllmVersion));
-    if (metrics.llamacppVersion) bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion));
+    if (metrics.meshllmVersion && !(install.runtime === 'meshllm' && install.installedVersion)) bodyEl.appendChild(drawerField('meshllm', 'mesh-llm', metrics.meshllmVersion));
+    if (metrics.llamacppVersion && !(install.runtime === 'llamacpp' && install.installedVersion)) bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion));
     if (isDirectRuntime) {
       bodyEl.appendChild(drawerField('direct-context', 'Direct context tokens', reportedText(metrics.ctxSize), metrics.ctxSize != null ? String(metrics.ctxSize) : ''));
       const slotsCapacity = metrics.slotCount != null ? metrics.slotCount : metrics.parallel;
@@ -1172,7 +1292,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const item = document.createElement('div');
       item.className = 'drawer-row';
       item.setAttribute('data-drawer-serving-node', node.id);
-      item.textContent = node.id;
+      item.textContent = nodeDisplayName(node);
       bodyEl.appendChild(item);
     });
     // Mesh detail lives with the model it belongs to: both a single-machine model
@@ -1395,13 +1515,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
     return nodes.filter((node) => Array.isArray(node.activeProfileIds) && node.activeProfileIds.indexOf(entry.profileId) >= 0);
   }
-  function stageOwnersText(entry) {
+  function stageOwnersText(entry, candidates) {
     const stages = Array.isArray(entry.stageAssignments) ? entry.stageAssignments : [];
     if (!stages.length) return '';
     return stages.map((stage) => {
-      const owner = stage.nodeId || stage.reportedByNodeId || 'unassigned';
+      const owner = nodeLabelForId(stage.nodeId || stage.reportedByNodeId || '', candidates);
       const layers = stage.layerStart != null && stage.layerEnd != null ? ('L' + stage.layerStart + '-' + stage.layerEnd) : ('stage ' + stage.stageIndex);
-      const state = stage.state ? ' · ' + stage.state : '';
+      const state = stage.state ? ' · ' + humanizeKey(stage.state) : '';
       return layers + ' → ' + owner + state;
     }).join('; ');
   }
@@ -1415,7 +1535,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   function stageUnavailableText(entry) {
     const versions = stageUnavailableVersions(entry);
-    return 'Stage map unavailable from current heartbeats' + (versions.length ? ' · agent ' + versions.join(', ') : '') + '. Update or restart node agents so they report MeshLLM stages.';
+    return 'Waiting for stage map' + (versions.length ? ' · agent ' + versions.join(', ') : '');
   }
   function buildMeshCard(entry) {
     const profilesById = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
@@ -1437,37 +1557,27 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       ? (peers + ' machine' + (peers === 1 ? '' : 's') + ' in this mesh' + meshStatusSuffix(entry))
       : 'One machine in this mesh';
     card.appendChild(summary);
+    if (entry.splitReadiness) card.appendChild(splitReadinessBlock(entry.splitReadiness, meshNodesForEntry(entry)));
     const details = document.createElement('details');
     const detailsSummary = document.createElement('summary');
     detailsSummary.textContent = 'Technical details';
     details.appendChild(detailsSummary);
-    config.meshHealth.fields.forEach((fieldName) => {
+    const addField = (fieldName, label, value, annotate) => {
+      if (!value) return;
       const line = document.createElement('code');
       line.setAttribute('data-mesh-field', fieldName);
-      let value = 'none';
-      if (fieldName === 'coordinator') {
-        value = entry.coordinatorNodeId || (stageOwnersText(entry) ? 'unknown' : 'waiting for stage map');
-        if (!entry.coordinatorNodeId && !stageOwnersText(entry)) annotateStageUnavailable(line, entry);
-      }
-      else if (fieldName === 'peers') value = String((entry.peerNodeIds || []).length);
-      else if (fieldName === 'split-readiness') value = entry.splitReadiness ? splitReadinessText(entry.splitReadiness) : 'not reported';
-      else if (fieldName === 'capacity') {
-        const capacity = entry.splitReadiness && entry.splitReadiness.capacityAdvice;
-        value = capacity ? (fmtGb(bytesToGb(capacity.requiredBytes)) + ' required / ' + fmtGb(bytesToGb(capacity.aggregateCapacityBytes)) + ' usable' + (capacity.shortfallBytes ? ' / ' + fmtGb(bytesToGb(capacity.shortfallBytes)) + ' short' : '')) : 'not reported';
-      }
-      else if (fieldName === 'stage-owners') {
-        value = stageOwnersText(entry) || stageUnavailableText(entry);
-        if (!stageOwnersText(entry)) annotateStageUnavailable(line, entry);
-      }
-      else if (fieldName === 'ready-models') value = (entry.readyModels || []).join(', ') || 'none';
-      else if (fieldName === 'failed-nodes') value = (entry.failedNodeIds || []).join(', ') || 'none';
-      else if (fieldName === 'last-error') value = entry.lastError || 'none';
-      else if (fieldName === 'rotation') value = 'r' + entry.rotation;
-      else if (fieldName === 'secret') value = entry.tokenCount > 0 ? 'present' + (entry.secretAgeMs != null ? ' · ' + fmtAge(entry.secretAgeMs) : '') : 'absent';
-      if ((fieldName === 'split-readiness' || fieldName === 'capacity') && entry.splitReadiness) annotateSplitReadiness(line, entry.splitReadiness);
-      line.textContent = fieldName.replace(/-/g, ' ') + ': ' + value;
+      line.textContent = label + ': ' + value;
+      if (annotate) annotate(line);
       details.appendChild(line);
-    });
+    };
+    const ownerNodes = meshNodesForEntry(entry);
+    const stageText = stageOwnersText(entry, ownerNodes);
+    addField('coordinator', 'Coordinator', entry.coordinatorNodeId ? nodeLabelForId(entry.coordinatorNodeId, ownerNodes) : (stageText ? 'not elected yet' : 'waiting for stage map'), !entry.coordinatorNodeId && !stageText ? (line) => annotateStageUnavailable(line, entry) : undefined);
+    addField('peers', 'Machines', String(peers > 0 ? peers : 1));
+    addField('stage-owners', 'Stage owners', stageText || stageUnavailableText(entry), stageText ? undefined : (line) => annotateStageUnavailable(line, entry));
+    addField('ready-models', 'Ready model', (entry.readyModels || []).join(', '));
+    addField('failed-nodes', 'Needs attention', (entry.failedNodeIds || []).map((id) => nodeLabelForId(id, ownerNodes)).join(', '));
+    addField('last-error', 'Last error', entry.lastError || '');
     card.appendChild(details);
     return card;
   }
@@ -1892,22 +2002,30 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     toggleNewField(ids.gwNew, gatewayValue === '__new__');
     if (scope === 'routing') refreshProvisionChip(gatewayValue).catch(() => undefined);
   }
-  // The Routing chip reflects the *selected* gateway's live provisioning (mesh route +
-  // canonical provider), verified server-side. It stays hidden unless that gateway is
-  // actually provisioned, so it can never imply a connection that is not there.
+  // The Routing card reflects the *selected* gateway's live provisioning (mesh route +
+  // canonical provider), verified server-side. Route status belongs in that card, not
+  // as a dangling chip above the action button.
   async function refreshProvisionChip(gatewayId) {
-    const chip = byId('rt-route-chip');
-    if (!chip) return;
-    const state = byId('rt-route-state');
+    const card = byId('gateway-current');
     const target = gatewayId && gatewayId !== '__new__' ? gatewayId : '';
-    if (!target) { chip.hidden = true; return; }
+    if (!card) return;
+    if (!target) {
+      renderStateCard(card, { label: 'AI Gateway', value: '', placeholder: 'Not connected yet', state: 'empty' });
+      return;
+    }
     try {
       const status = await request('/admin/cloudflare/gateway/provision-status?gateway=' + encodeURIComponent(target), { headers: headers(false) });
-      chip.hidden = !status.provisioned;
-      chip.classList.toggle('operational', Boolean(status.provisioned));
-      if (state) state.textContent = status.provisioned ? 'provisioned' : 'not connected';
+      renderStateCard(card, {
+        label: 'AI Gateway',
+        value: target,
+        placeholder: 'Not connected yet',
+        sub: status.provisioned ? 'route ' + (status.routeName || STABLE_PUBLIC_MODEL) : 'route not provisioned',
+        chip: status.provisioned ? 'connected' : 'needs provisioning',
+        chipTone: status.provisioned ? 'ok' : 'warn',
+        state: status.provisioned ? 'ok' : 'empty'
+      });
     } catch (error) {
-      chip.hidden = true;
+      renderStateCard(card, { label: 'AI Gateway', value: target, placeholder: 'Not connected yet', sub: 'route status unavailable', chip: 'check failed', chipTone: 'warn', state: 'empty' });
     }
   }
   // Read the chosen (or newly named) gateway and the provider name from a
@@ -2051,7 +2169,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       }
     } else if (action === 'gateway-provision-default') {
       revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
-      await loadGatewayOptions('').catch(() => undefined);
+      await loadGatewayOptions('', out === 'gateway-output' ? 'routing' : 'wizard').catch(() => undefined);
     } else if (action === 'nodes-sort') {
       const key = button.dataset.sort || 'id';
       nodeSort = { key: key, dir: nodeSort.key === key ? -nodeSort.dir : -1 };
@@ -2083,8 +2201,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       await loadInstaller(prefix);
     } else if (action === 'gateway-sync') {
       revealGatewayKey(out, await request('/admin/cloudflare/gateway/sync', { method: 'POST', headers: headers(true), body: JSON.stringify(gatewayPayload(prefix)) }));
-      // Refresh the chip for the currently selected gateway only; a brand-new gateway
-      // (select still on create-new) makes no extra call and updates on the next routing view.
+      // Refresh the selected gateway card only; a brand-new gateway (select still on
+      // create-new) makes no extra call and updates on the next routing view.
       const rtSelect = byId('rt-gateway-select');
       await refreshProvisionChip(rtSelect ? rtSelect.value : '').catch(() => undefined);
     } else if (action === 'custom-domain-validate') {
@@ -2451,6 +2569,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const ids = gatewayScopeIds(scope);
       toggleNewField(ids.gwNew, gatewaySelect.value === '__new__');
       if (gatewaySelect.value !== '__new__') loadGatewayOptions(gatewaySelect.value, scope).catch(() => undefined);
+      else if (scope === 'routing') refreshProvisionChip('').catch(() => undefined);
       return;
     }
   });

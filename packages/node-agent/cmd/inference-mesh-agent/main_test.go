@@ -588,7 +588,7 @@ func TestREQRUN005RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
 
 func TestREQNODE007HeartbeatMetricsCarryMeshState(t *testing.T) {
 	t.Run("REQ-NODE-007 REQ-OBS-003", func(t *testing.T) {
-		profile := agent.ModelProfile{ID: "p", UpstreamModel: "model-x", MeshLLM: agent.MeshLLMSettings{ModelRef: "model-x", Split: true, BindPort: 4300}}
+		profile := agent.ModelProfile{ID: "p", UpstreamModel: "model-x", Version: 3, MeshLLM: agent.MeshLLMSettings{ModelRef: "model-x", Split: true, BindPort: 4300}}
 		base := agent.NodeMetrics{RuntimeState: "ready", LoadedModel: "model-x", LoadedProfileID: "p", LoadedProfileVersion: 3, ActiveRequests: 1}
 		status := agent.MeshLLMStatus{NodeID: "node-1", NodeState: "serving", MeshID: "mesh-1", Version: "0.72.2", PeerCount: 2, StageCount: 2, StageZeroNodeID: "node-9", Stages: []agent.MeshLLMStage{{StageID: "stage-0", StageIndex: 0, NodeID: "node-9", LayerStart: 0, LayerEnd: 15, State: "ready"}}, TokPerSec: 42.5}
 
@@ -596,7 +596,7 @@ func TestREQNODE007HeartbeatMetricsCarryMeshState(t *testing.T) {
 		if got.RuntimeState != "ready" {
 			t.Fatalf("model routable via own /v1/models must keep the runtime ready, got %q", got.RuntimeState)
 		}
-		if got.MeshID != "mesh-1" || got.MeshRole != "serving-peer" || got.PeerCount != 2 || got.StageCount != 2 {
+		if got.MeshID != "mesh-1" || got.MeshNodeID != "node-1" || got.MeshRole != "serving-peer" || got.PeerCount != 2 || got.StageCount != 2 {
 			t.Fatalf("mesh fields not carried: %#v", got)
 		}
 		if !got.SplitEnabled || !got.APIReady || !got.ConsoleReady || got.MeshLLMVersion != "0.72.2" || got.TokensPerSecond != 42.5 {
@@ -607,6 +607,11 @@ func TestREQNODE007HeartbeatMetricsCarryMeshState(t *testing.T) {
 		}
 		if len(got.ReadyModels) != 2 || got.ReadyModels[0] != "model-x" {
 			t.Fatalf("ready models must come from the node's own /v1/models ids, got %v", got.ReadyModels)
+		}
+
+		staleStopped := applyMeshStatusMetrics(agent.NodeMetrics{RuntimeState: "stopped"}, profile, status, true, true, []string{"model-x"})
+		if staleStopped.RuntimeState != "ready" || staleStopped.LoadedModel != "model-x" || staleStopped.LoadedProfileID != "p" || staleStopped.LoadedProfileVersion != 3 {
+			t.Fatalf("live MeshLLM readiness must override stale stopped manager state, got %#v", staleStopped)
 		}
 
 		coordinator := status

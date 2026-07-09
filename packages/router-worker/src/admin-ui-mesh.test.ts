@@ -107,20 +107,20 @@ describe('admin UI mesh operations contracts', () => {
     expect([...html.matchAll(/data-action="status-refresh"/g)].length).toBeGreaterThanOrEqual(2)
   })
 
-  it('REQ-ADM-006 shows mesh invite tokens as presence, status, and age only', async () => {
+  it('REQ-ADM-006 keeps mesh invite token state out of visible operator rows', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('status-refresh')
 
     // Opening a model's drawer replaces the body, so assert the present card fully first.
     const present = await meshCard(harness, 'mesh-default-qwen36-35b')
     expect(present.dataset.secretPresent).toBe('true')
-    expect(meshField(present, 'secret').textContent).toBe('secret: present · 5m')
     const renderedFields = descendants(present).map((node) => node.dataset.meshField).filter(Boolean)
     expect(renderedFields).toEqual([...ADMIN_UI_MESH_HEALTH.fields])
+    expect(renderedFields).not.toContain('secret')
 
     const absent = await meshCard(harness, 'mesh-split-qwen36-35b')
     expect(absent.dataset.secretPresent).toBe('false')
-    expect(meshField(absent, 'secret').textContent).toBe('secret: absent')
+    expect(descendants(absent).some((node) => node.dataset.meshField === 'secret')).toBe(false)
   })
 
   it('REQ-ADM-009 wires the one-click rotate action to the mesh rotate endpoint', async () => {
@@ -220,11 +220,11 @@ describe('admin UI mesh operations contracts', () => {
     expect(meshField(card, 'stage-owners').dataset.agentVersions).toBe('v0.1.0-dev.94')
   })
 
-  it('REQ-OBS-007 renders split capacity shortfall in mesh technical details', async () => {
+  it('REQ-OBS-007 renders split capacity shortfall as structured mesh detail', async () => {
     const splitReadiness = {
       modelRef: 'meshllm/ERNIE-layers', verdict: 'insufficient_capacity',
       capacityAdvice: { state: 'insufficient_capacity', reason: 'participant_split_capacity_insufficient', requiredBytes: 18_000_000_000, aggregateCapacityBytes: 16_000_000_000, shortfallBytes: 2_000_000_000, eligibleNodeCount: 2, splitCapable: true },
-      participants: [{ shortNodeId: 'Mac', vramBytes: 4_000_000_000 }, { shortNodeId: 'battle', vramBytes: 12_000_000_000 }],
+      participants: [{ shortNodeId: 'mesh-mac-hash', routerNodeId: 'mac', displayName: 'Mac', vramBytes: 4_000_000_000 }, { shortNodeId: 'mesh-battle-hash', routerNodeId: 'battle', displayName: 'battlestation', vramBytes: 12_000_000_000 }],
       blockers: [{ reason: 'split_capacity_shortfall', recommendation: 'Increase available VRAM.' }]
     }
     const status = statusFixture({
@@ -233,10 +233,28 @@ describe('admin UI mesh operations contracts', () => {
     const harness = await dashboardHarness(status)
     const card = await meshCard(harness, 'mesh-default-qwen36-35b')
     expect(card.dataset.splitReason).toBe('split_capacity_shortfall')
-    expect(meshField(card, 'split-readiness').dataset.splitReason).toBe('split_capacity_shortfall')
-    expect(meshField(card, 'capacity').dataset.requiredBytes).toBe('18000000000')
-    expect(meshField(card, 'capacity').dataset.aggregateBytes).toBe('16000000000')
-    expect(meshField(card, 'capacity').dataset.shortfallBytes).toBe('2000000000')
+    const splitBlock = descendants(card).find((node) => node.className === 'split-readiness-block')!
+    expect(splitBlock.dataset.splitReason).toBe('split_capacity_shortfall')
+    const capacity = descendants(splitBlock).find((node) => node.dataset.splitField === 'capacity')!
+    expect(capacity.dataset.requiredBytes).toBe('18000000000')
+    expect(capacity.dataset.aggregateBytes).toBe('16000000000')
+    expect(capacity.dataset.shortfallBytes).toBe('2000000000')
+    const participantLabels = descendants(splitBlock).filter((node) => node.dataset.participantLabel).map((node) => node.dataset.participantLabel)
+    expect(participantLabels).toEqual(['Mac', 'battlestation'])
+    expect(participantLabels).not.toContain('mesh-mac-hash')
+  })
+
+  it('REQ-OBS-007 renders stage owners with machine names instead of MeshLLM hashes', async () => {
+    const status = statusFixture({
+      nodes: [
+        { id: 'linux-node', displayName: 'battlestation', status: 'online', activeProfileIds: ['mesh-default-qwen36-35b'], metrics: { runtimeState: 'ready', meshNodeId: 'mesh-linux-abcdef', readyModels: ['codeflare-mesh'] } },
+        { id: 'mac-100-96-0-14', displayName: 'Mac', status: 'online', activeProfileIds: ['mesh-default-qwen36-35b'], metrics: { runtimeState: 'ready', meshNodeId: 'mesh-mac-123456' } }
+      ],
+      meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, coordinatorNodeId: 'linux-node', peerNodeIds: ['linux-node', 'mac-100-96-0-14'], readyModels: ['codeflare-mesh'], failedNodeIds: [], tokenCount: 2, stageAssignments: [{ stageIndex: 1, nodeId: 'mesh-mac-123456', layerStart: 27, layerEnd: 28, state: 'ready' }] }]
+    })
+    const harness = await dashboardHarness(status)
+    const card = await meshCard(harness, 'mesh-default-qwen36-35b')
+    expect(meshField(card, 'stage-owners').textContent).toBe('Stage owners: L27-28 → Mac · Ready')
   })
 
   it('REQ-OBS-007 renders the mesh health panel from admin status data', async () => {
@@ -245,13 +263,14 @@ describe('admin UI mesh operations contracts', () => {
 
     const card = await meshCard(harness, 'mesh-default-qwen36-35b')
     expect(card.dataset.meshRotation).toBe('3')
-    expect(meshField(card, 'coordinator').textContent).toBe('coordinator: node-coord')
-    expect(meshField(card, 'peers').textContent).toBe('peers: 2')
-    expect(meshField(card, 'stage-owners').textContent).toBe('stage owners: L0-15 → node-coord · ready')
-    expect(meshField(card, 'ready-models').textContent).toBe('ready models: qwen3.6:35b-a3b, codeflare-mesh')
-    expect(meshField(card, 'failed-nodes').textContent).toBe('failed nodes: node-peer-b')
-    expect(meshField(card, 'last-error').textContent).toBe('last error: node-peer-b: mesh runner exited')
-    expect(meshField(card, 'rotation').textContent).toBe('rotation: r3')
+    expect(meshField(card, 'coordinator').textContent).toBe('Coordinator: node-coord')
+    expect(meshField(card, 'peers').textContent).toBe('Machines: 2')
+    expect(meshField(card, 'stage-owners').textContent).toBe('Stage owners: L0-15 → node-coord · Ready')
+    expect(meshField(card, 'ready-models').textContent).toBe('Ready model: qwen3.6:35b-a3b, codeflare-mesh')
+    expect(meshField(card, 'failed-nodes').textContent).toBe('Needs attention: node-peer-b')
+    expect(meshField(card, 'last-error').textContent).toBe('Last error: node-peer-b: mesh runner exited')
+    expect(descendants(card).some((node) => node.dataset.meshField === 'rotation')).toBe(false)
+    expect(descendants(card).some((node) => node.dataset.meshField === 'secret')).toBe(false)
   })
 
   it('REQ-OBS-007 shows a switched-off model as deactivated, never green ready', async () => {
@@ -278,8 +297,8 @@ describe('admin UI mesh operations contracts', () => {
     expect(summary, 'a plain summary is shown').toBeDefined()
     // Behavioral: the peers field carries the real peer count (2), and the raw internals
     // remain available behind a Technical details disclosure — no prose is pinned.
-    expect(meshField(card, 'peers').textContent).toBe('peers: 2')
-    expect(meshField(card, 'coordinator').textContent).toBe('coordinator: node-coord')
+    expect(meshField(card, 'peers').textContent).toBe('Machines: 2')
+    expect(meshField(card, 'coordinator').textContent).toBe('Coordinator: node-coord')
     expect(descendants(card).some((node) => node.tagName === 'details')).toBe(true)
   })
 

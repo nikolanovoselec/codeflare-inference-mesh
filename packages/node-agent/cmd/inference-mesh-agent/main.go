@@ -793,16 +793,23 @@ func runtimeVersionOrDefault(value string, fallback string) string {
 // cleared) unless the console still reports serving with the selected
 // profile's upstream model routable in the union of both model surfaces.
 func applyMeshStatusMetrics(metrics agent.NodeMetrics, profile agent.ModelProfile, status agent.MeshLLMStatus, consoleReady bool, apiReady bool, readyModels []string) agent.NodeMetrics {
-	if metrics.RuntimeState == "ready" {
-		unioned := agent.MeshStatusWithModels(status, readyModels)
-		if mapped := agent.MapMeshLLMState(unioned, profile.UpstreamModel, true, consoleReady); mapped != "ready" {
-			metrics.RuntimeState = mapped
-			metrics.LoadedModel = ""
-			metrics.LoadedProfileID = ""
-			metrics.LoadedProfileVersion = 0
-		}
+	unioned := agent.MeshStatusWithModels(status, readyModels)
+	mapped := agent.MapMeshLLMState(unioned, profile.UpstreamModel, true, consoleReady)
+	trustMeshProbe := metrics.RuntimeState == "ready" || consoleReady
+	if trustMeshProbe {
+		metrics.RuntimeState = mapped
+	}
+	if trustMeshProbe && mapped == "ready" {
+		metrics.LoadedModel = profile.UpstreamModel
+		metrics.LoadedProfileID = profile.ID
+		metrics.LoadedProfileVersion = profile.Version
+	} else if trustMeshProbe {
+		metrics.LoadedModel = ""
+		metrics.LoadedProfileID = ""
+		metrics.LoadedProfileVersion = 0
 	}
 	metrics.MeshID = status.MeshID
+	metrics.MeshNodeID = status.NodeID
 	if consoleReady {
 		metrics.MeshRole = agent.DeriveMeshRole(status, status.NodeID)
 	}

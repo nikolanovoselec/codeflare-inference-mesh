@@ -131,7 +131,7 @@ function dashboardHero(): string {
   return `<section class="dashboard-hero" id="dashboard-hero" data-dashboard-hero="true" aria-labelledby="dashboard-hero-title">
 <div class="hero-copy">
 <p class="eyebrow">Operator console</p>
-<h1 id="dashboard-hero-title"><span class="hero-accent" data-scramble>Codeflare</span> Inference Mesh</h1>
+<h1 id="dashboard-hero-title"><span data-scramble>Codeflare</span> <span class="hero-accent">Inference Mesh</span></h1>
 <p>Direct llama.cpp speed, MeshLLM routing, and fleet state in one operator console.</p>
 </div>
 <div class="tile-grid hero-stats" id="overview-tiles" data-output="status" aria-label="Fleet status"><p class="empty-note">Status loads automatically.</p></div>
@@ -215,14 +215,13 @@ function routingSection(): string {
     body: `<div class="subpanel"><h3>AI Gateway</h3>
 <div class="state-card is-empty" id="gateway-current"><span class="state-label">AI Gateway</span><span class="state-value">Not connected yet</span></div>
 <p class="field-hint">Choose the gateway that should expose <code>codeflare-mesh</code>. The route and provider stay managed by the router.</p>
-<div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Sync gateway route', variant: 'primary', out: 'gateway-output' })}</div>
+<div class="wizard-actions" id="rt-gateway-empty" hidden>${button({ action: 'gateway-provision-default', label: 'Provision Gateway', variant: 'primary', out: 'gateway-output' })}</div>
 <div class="form-grid" id="rt-gateway-selects">
 ${field({ id: 'rt-gateway-select', label: 'Gateway', control: '<span class="slot" id="rt-gateway-slot"><select id="rt-gateway-select" name="gatewayId" data-gateway-select="true" disabled></select></span>' })}
 ${field({ id: 'rt-gateway-provider-name', label: 'Provider name', control: textInput({ id: 'rt-gateway-provider-name', name: 'providerName', value: 'Codeflare Inference Mesh' }), hint: 'The provider created on your AI Gateway. Copy its API key below into the provider API Key field.' })}
 </div>
-<p class="route-status"><span class="route-chip" id="rt-route-chip" hidden><span class="route-dot"></span>route <code>codeflare-mesh</code> on this gateway · <span id="rt-route-state">not connected</span></span></p>
 <div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
-<div class="form-actions">${button({ action: 'gateway-sync', label: 'Sync gateway route', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
+<div class="form-actions">${button({ action: 'gateway-sync', label: 'Provision Gateway', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
 ${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}</div>
 <div class="subpanel"><h3>Custom domain</h3>
 <div class="state-card is-empty" id="custom-domain-current"><span class="state-label">Custom domain</span><span class="state-value">Not set yet</span></div>

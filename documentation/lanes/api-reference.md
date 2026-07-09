@@ -147,10 +147,11 @@ POST /node/heartbeat
 
 `metrics` carries the MeshLLM status fields alongside the existing runtime-state and throughput fields:
 
-- `meshRole` — `coordinator` when the node owns stage 0, else `serving-peer` or `api-client`.
+- `meshNodeId` — MeshLLM's own non-secret node id, used only to correlate split-readiness participants with enrolled Codeflare nodes.
+- `meshRole` — `coordinator` when the node owns stage 0, `serving-peer` when it owns another stage or MeshLLM reports serving/loading, else `api-client`.
 - `readyModels` — the model ids from the node's own `/v1/models` (the mesh-wide union).
 - `peerCount`, `splitEnabled`, `stageCount`, `stageAssignments[]` (`stageId`, `stageIndex`, `nodeId`, `layerStart`, `layerEnd`, `state`, optional backend/device fields), `apiReady`, `consoleReady`, `meshllmVersion`, and `meshMaxVramGb` (the launched MeshLLM `--max-vram` budget).
-- `splitReadiness` for split profiles when MeshLLM reports diagnostics: `verdict`, `capacityAdvice` (`requiredBytes`, `aggregateCapacityBytes`, `shortfallBytes`, `eligibleNodeCount`), `participants[]`, `blockers[]`, and `recommendations[]`. This distinguishes peer/download problems from planner capacity shortfalls.
+- `splitReadiness` for split profiles when MeshLLM reports diagnostics: `verdict`, `capacityAdvice` (`requiredBytes`, `aggregateCapacityBytes`, `shortfallBytes`, `eligibleNodeCount`), `participants[]`, `blockers[]`, and `recommendations[]`. Aggregated status adds `routerNodeId`/`displayName` to participants when `meshNodeId` can be matched, so operators see machine names instead of MeshLLM hashes. This distinguishes peer/download problems from planner capacity shortfalls.
 
 #### `meshBootstrap` envelope
 

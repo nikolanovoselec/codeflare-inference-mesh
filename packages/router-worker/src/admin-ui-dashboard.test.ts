@@ -107,7 +107,8 @@ describe('dashboard overview contracts', () => {
     expect(css).toContain('body{')
     expect(css).toContain('font:var(--fs-md)/1.55 var(--font-sans)')
     expect(css).toContain('code,pre,.metric-value,.endpoint-chip{font-family:var(--font-mono)')
-    expect(css).toContain('.scramble-word{display:inline-block;white-space:nowrap;text-align:left;vertical-align:baseline;background:var(--flare-gradient)')
+    expect(css).toContain('.hero-accent{display:inline-block;background:var(--flare-gradient)')
+    expect(css).toContain('.scramble-word{display:inline-block;white-space:nowrap;text-align:left;vertical-align:baseline;overflow:visible;color:inherit}')
     expect(css).not.toContain('.scramble-word+.scramble-word')
   })
 
@@ -119,7 +120,7 @@ describe('dashboard overview contracts', () => {
     expect(heroAt).toBeGreaterThan(-1)
     expect(navAt).toBeGreaterThan(heroAt)
     expect(html).toContain('data-dashboard-hero="true"')
-    expect(html).toContain('<span class="hero-accent" data-scramble>Codeflare</span> Inference Mesh')
+    expect(html).toContain('<span data-scramble>Codeflare</span> <span class="hero-accent">Inference Mesh</span>')
     expect(html).toContain('id="overview-tiles"')
     expect(html).toContain('data-nav-item="overview"')
     expect(html).toContain('data-nav-hint="Live mesh health"')
@@ -226,17 +227,18 @@ describe('dashboard overview contracts', () => {
     expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).dataset.serving).toBe('2')
     const battlestation = tableRows(harness).find((row) => row.dataset.nodeRow === 'battlestation')!
     const statusCell = descendants(battlestation).find((node) => node.dataset.cell === 'status')!
-    expect(statusCell.dataset.meshRole).toBe('api-client')
+    expect(statusCell.dataset.meshRole).toBe('No stage assigned')
     expect(statusCell.dataset.statusDetail).toBe('standby')
     const chip = descendants(statusCell).find((node) => node.className === 'chip')!
     expect(chip.dataset.tone).toBe('ok')
-    expect(statusCell.dataset.statusLabelKind).toBe('mesh-role')
+    expect(statusCell.dataset.statusLabelKind).toBe('work-state')
     await harness.clickAction('node-detail', { nodeId: 'battlestation' })
     const drawerFields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(drawerFields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
+    expect(drawerFields.find((node) => node.dataset.drawerField === 'work-state')?.textContent).toContain('Serving model')
   })
 
-  it('REQ-OBS-007 surfaces split capacity shortfall instead of marking standby API clients green', async () => {
+  it('REQ-OBS-007 surfaces split capacity shortfall instead of marking raw standby green', async () => {
     const profile = { id: 'custom-ernie-split', displayName: 'ERNIE split', publicAliases: ['codeflare-mesh'], upstreamModel: 'meshllm/ERNIE-layers', active: true, rolloutPercent: 100, runtime: 'meshllm', meshllm: { split: true, modelRef: 'meshllm/ERNIE-layers', bindPort: 4420, maxVramGb: 16 } }
     const splitReadiness = {
       modelRef: 'meshllm/ERNIE-layers', verdict: 'insufficient_capacity', participantCount: 2,
@@ -259,8 +261,9 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('node-detail', { nodeId: 'battlestation' })
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const field = (name: string) => fields.find((node) => node.dataset.drawerField === name)!
-    expect(field('runtime-detail').dataset.splitReason).toBe('split_capacity_shortfall')
-    expect(field('runtime-detail').dataset.shortfallBytes).toBe('2000000000')
+    expect(field('split-readiness').dataset.splitReason).toBe('split_capacity_shortfall')
+    expect(field('split-readiness').dataset.shortfallBytes).toBe('2000000000')
+    expect(descendants(field('split-readiness')).some((node) => node.dataset.splitField === 'participants')).toBe(true)
     expect(field('mesh-vram-budget').dataset.profileBudget).toBe('16')
     expect(field('mesh-vram-budget').dataset.nodeOverride).toBe('16')
     expect(field('mesh-vram-budget').dataset.launchedBudget).toBe('12')
@@ -523,6 +526,25 @@ describe('dashboard overview contracts', () => {
     expect(fields.some((node) => node.dataset.action === 'node-deactivate')).toBe(false)
   })
 
+  it('REQ-OBS-011 renders a split stage owner as active work, not standby/API client', async () => {
+    const nodes = [{
+      id: 'mac-100-96-0-14', displayName: 'Mac', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'], maxVramGbOverride: 4,
+      metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshllmVersion: '0.72.2', meshMaxVramGb: 4, gpuName: 'Apple M2', activeRequests: 0 }
+    }]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'mac-100-96-0-14')!
+    const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
+    expect(statusCell.dataset.meshRole).toBe('Stage owner')
+    expect(descendants(statusCell).find((node) => node.className === 'chip')?.textContent).toContain('Stage owner')
+
+    await harness.clickAction('node-detail', { nodeId: 'mac-100-96-0-14' })
+    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const textOf = (name: string) => descendants(fields.find((node) => node.dataset.drawerField === name)!).map((node) => node.textContent).join(' ')
+    expect(textOf('work-state')).toContain('Serving split stage')
+    expect(textOf('mesh-role')).toContain('Stage owner')
+    expect(fields.some((node) => node.dataset.drawerField === 'node-state')).toBe(false)
+  })
+
   it('REQ-ADM-030 the drawer Deactivate/Activate control posts to the node taint endpoint', async () => {
     const harness = await dashboardHarness()
     // Clicking Deactivate on an active node must POST to the deactivate endpoint (not silently no-op).
@@ -536,7 +558,7 @@ describe('dashboard overview contracts', () => {
     expect(activate?.init?.method).toBe('POST')
   })
 
-  it('REQ-OBS-011 the node drawer surfaces the runtime error, node state, and mesh diagnostics', async () => {
+  it('REQ-OBS-011 the node drawer surfaces runtime errors, work state, and mesh diagnostics', async () => {
     const nodes = [
       { id: 'node-wedged', status: 'online', agentVersion: 'v1.3.0', metrics: {
         runtimeState: 'starting', nodeState: 'loading model', runtimeDetail: 'cuda out of memory',
@@ -557,20 +579,21 @@ describe('dashboard overview contracts', () => {
     expect(err).toBeDefined()
     expect(err!.dataset.tone).toBe('danger')
     expect(textOf(err!)).toContain('cuda out of memory')
-    expect(textOf(field('node-state')!)).toContain('loading model')
-    expect(textOf(field('mesh-role')!)).toContain('serving-peer')
+    expect(textOf(field('work-state')!)).toContain('Starting model')
+    expect(textOf(field('mesh-role')!)).toContain('Stage owner')
     expect(field('peers')!.dataset.value).toBe('2')
     expect(field('stages')!.dataset.value).toBe('2')
     expect(field('reachability')!.dataset.value).toBe('api:down;console:ready')
     expect(textOf(field('reachability')!)).toContain('down / ready')
-    expect(textOf(field('meshllm')!)).toContain('0.72.2')
+    expect(textOf(field('runtime-install')!)).toContain('0.72.2 installed')
+    expect(fields.some((node) => node.dataset.drawerField === 'meshllm')).toBe(false)
 
-    // A healthy node shows node state but stale stderr warnings are not rendered as current
+    // A healthy node shows derived work state but stale stderr warnings are not rendered as current
     // runtime/install errors, and semantically matching v-prefixed MeshLLM versions show no drift arrow.
     await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
     await harness.clickAction('node-detail', { nodeId: 'node-healthy' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    expect(field('node-state')).toBeDefined()
+    expect(field('work-state')).toBeDefined()
     expect(fields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
     expect(fields.some((node) => node.dataset.drawerField === 'runtime-install-error')).toBe(false)
     expect(textOf(field('runtime-install')!)).not.toContain('→')
@@ -1307,25 +1330,25 @@ describe('dashboard routing contracts', () => {
     return undefined
   }
 
-  it('REQ-ADM-024 the route chip is operational only when the selected gateway is live-provisioned', async () => {
-    // Provisioned per the live check but zero nodes online: the chip is driven by provisioning
-    // state (route + provider), not node or serving health, so it still reads operational.
+  it('REQ-ADM-024 shows the selected gateway route inside the AI Gateway card', async () => {
+    // Provisioned per the live check but zero nodes online: the card is driven by provisioning
+    // state (route + provider), not node or serving health, so it still reads connected.
     const harness = await dashboardHarness({ status: statusFixture({ nodes: [] }), respond: routingRespond(true) })
     await harness.click(harness.query('[data-nav="routing"]'))
     await harness.flush(20)
-    expect(harness.byId('rt-route-chip').hidden).toBe(false)
-    expect(harness.byId('rt-route-chip').classList.contains('operational')).toBe(true)
-    expect(harness.byId('rt-route-state').textContent).not.toBe('not connected')
+    const card = harness.byId('gateway-current')
+    expect(descendants(card).find((node) => node.className === 'state-value')?.textContent).toBe('inference-mesh')
+    expect(descendants(card).find((node) => node.className === 'state-sub')?.textContent).toBe('route codeflare-mesh')
+    expect(descendants(card).find((node) => node.className === 'chip')?.textContent).toContain('connected')
   })
 
-  it('REQ-ADM-024 hides the route chip when the selected gateway is not provisioned', async () => {
-    // Default fixture nodes are online and serving, but the live check reports the selected
-    // gateway is not provisioned: the chip is hidden, never shown as a stale "not connected".
+  it('REQ-ADM-024 marks the AI Gateway card as needing provisioning when the selected route is missing', async () => {
     const harness = await dashboardHarness({ respond: routingRespond(false) })
     await harness.click(harness.query('[data-nav="routing"]'))
     await harness.flush(20)
-    expect(harness.byId('rt-route-chip').hidden).toBe(true)
-    expect(harness.byId('rt-route-chip').classList.contains('operational')).toBe(false)
+    const card = harness.byId('gateway-current')
+    expect(descendants(card).find((node) => node.className === 'state-sub')?.textContent).toBe('route not provisioned')
+    expect(descendants(card).find((node) => node.className === 'chip')?.textContent).toContain('needs provisioning')
   })
 
   it('REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key', async () => {
@@ -1357,23 +1380,11 @@ describe('dashboard routing contracts', () => {
     expect(warning!.textContent).toBe('server-provided paste instruction')
   })
 
-  it('REQ-ADM-024 defines the pulsing operational route-chip indicator centrally in the stylesheet', () => {
-    const css = adminUiCss()
-    expect(css).toContain('.route-chip.operational')
-    expect(css).toContain('animation:route-pulse')
-    expect(css).toContain('@keyframes route-pulse')
-  })
-
-  it('REQ-ADM-024 places the route chip with the Gateway selector', () => {
-    // The operational chip must sit with the gateway it describes: after the gateway select
-    // and before the Connect button, not stranded below it.
+  it('REQ-ADM-024 keeps route status inside the Gateway card and labels the action clearly', () => {
     const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
-    const selectAt = html.indexOf('id="rt-gateway-select"')
-    const chipAt = html.indexOf('id="rt-route-chip"')
-    const connectAt = html.lastIndexOf('data-action="gateway-sync"')
-    expect(selectAt).toBeGreaterThan(-1)
-    expect(chipAt).toBeGreaterThan(selectAt)
-    expect(connectAt).toBeGreaterThan(chipAt)
+    expect(html).not.toContain('id="rt-route-chip"')
+    expect(html).toContain('data-action="gateway-sync"')
+    expect(html).toContain('Provision Gateway')
   })
 
   it('REQ-ADM-024 reads the connected gateway as a state card', async () => {
@@ -1385,6 +1396,7 @@ describe('dashboard routing contracts', () => {
     expect(card.classList.contains('is-empty')).toBe(false)
     expect(card.classList.contains('is-ok')).toBe(true)
     expect(descendants(card).find((node) => node.className === 'chip')?.dataset.tone).toBe('ok')
+    expect(descendants(card).find((node) => node.className === 'state-sub')?.textContent).toBe('route codeflare-mesh')
   })
 
   it('REQ-GWY-005 the gateway step renders a provider-name field and no route select', async () => {

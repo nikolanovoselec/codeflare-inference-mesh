@@ -304,7 +304,10 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
   const splitReadinessNode = members.filter((node) => node.metrics?.splitReadiness !== undefined).sort(byFreshness)[0]
   const readyModels = [...new Set(members.flatMap((node) => node.metrics?.readyModels ?? []))]
   const stageAssignments = meshStageAssignments(members)
-  const coordinatorNodeId = explicitCoordinator?.id ?? stageAssignments.find((stage) => stage.stageIndex === 0)?.nodeId
+  const splitReadiness = splitReadinessNode?.metrics?.splitReadiness
+  const displaySplitReadiness = splitReadiness ? splitReadinessWithDisplayNames(splitReadiness, stageAssignments, members) : undefined
+  const stageZero = stageAssignments.find((stage) => stage.stageIndex === 0)
+  const coordinatorNodeId = explicitCoordinator?.id ?? stageZero?.reportedByNodeId ?? stageZero?.nodeId
   const failedNodeIds = members
     .filter((node) => ['failed', 'dependency-missing', 'stopped'].includes(node.metrics?.runtimeState ?? ''))
     .map((node) => node.id)
@@ -316,7 +319,7 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
     peerNodeIds: state.tokens.map((entry) => entry.nodeId),
     readyModels,
     ...(stageAssignments.length > 0 ? { stageAssignments } : {}),
-    ...(splitReadinessNode?.metrics?.splitReadiness !== undefined ? { splitReadiness: splitReadinessNode.metrics.splitReadiness } : {}),
+    ...(displaySplitReadiness !== undefined ? { splitReadiness: displaySplitReadiness } : {}),
     failedNodeIds,
     deactivatedNodeIds,
     active: profile.active,
@@ -338,6 +341,30 @@ function meshStageAssignments(nodes: readonly NodeRecord[]): readonly StageAssig
     }
   }
   return [...byKey.values()].sort((left, right) => left.stageIndex - right.stageIndex)
+}
+
+function splitReadinessWithDisplayNames(report: SplitReadinessReport, stages: readonly StageAssignment[], nodes: readonly NodeRecord[]): SplitReadinessReport {
+  const nodesById = new Map(nodes.map((node) => [node.id, node]))
+  const nodeForParticipant = (meshNodeId: string | undefined): NodeRecord | undefined => {
+    if (!meshNodeId) return undefined
+    const direct = nodes.find((node) => {
+      const nodeMeshId = node.metrics?.meshNodeId ?? ''
+      return nodeMeshId !== '' && (nodeMeshId === meshNodeId || nodeMeshId.startsWith(meshNodeId) || meshNodeId.startsWith(nodeMeshId))
+    })
+    if (direct) return direct
+    const stage = stages.find((item) => {
+      const stageNode = item.nodeId ?? ''
+      return stageNode !== '' && (stageNode === meshNodeId || stageNode.startsWith(meshNodeId) || meshNodeId.startsWith(stageNode))
+    })
+    return stage?.reportedByNodeId ? nodesById.get(stage.reportedByNodeId) : undefined
+  }
+  return {
+    ...report,
+    participants: report.participants?.map((participant) => {
+      const node = nodeForParticipant(participant.nodeId ?? participant.shortNodeId)
+      return node ? { ...participant, routerNodeId: node.id, displayName: node.displayName } : participant
+    })
+  }
 }
 
 async function runElection(store: Store, env: MeshStateEnv, profileId: string, nodeId: string, now: number): Promise<void> {

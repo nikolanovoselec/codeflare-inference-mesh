@@ -395,21 +395,24 @@ describe('mesh state core', () => {
     expect(keyed.status).toBe(200)
   })
 
-  it('REQ-OBS-007 carries split readiness blockers into mesh health', async () => {
+  it('REQ-OBS-007 carries split readiness blockers and machine names into mesh health', async () => {
     const report = {
       modelRef: UPSTREAM_MODEL,
       verdict: 'insufficient_capacity',
       capacityAdvice: { state: 'insufficient_capacity', reason: 'participant_split_capacity_insufficient', requiredBytes: 18_000_000_000, aggregateCapacityBytes: 16_000_000_000, shortfallBytes: 2_000_000_000, eligibleNodeCount: 2, splitCapable: true },
-      participants: [{ shortNodeId: 'Mac', vramBytes: 4_000_000_000 }, { shortNodeId: 'battle', vramBytes: 12_000_000_000 }],
+      participants: [{ shortNodeId: 'mesh-mac', vramBytes: 4_000_000_000 }, { shortNodeId: 'mesh-battle', vramBytes: 12_000_000_000 }],
       blockers: [{ reason: 'split_capacity_shortfall', recommendation: 'Increase available VRAM.' }]
     }
-    const nodeA = meshNode('node-a', { lastSeenAt: NOW, metrics: { runtimeState: 'starting', activeRequests: 0, splitReadiness: report } })
-    const { store, env, profile } = await meshFixture(nodeA)
+    const nodeA = meshNode('node-a', { displayName: 'battlestation', lastSeenAt: NOW, metrics: { runtimeState: 'starting', activeRequests: 0, meshNodeId: 'mesh-battlestation', splitReadiness: report } })
+    const nodeB = meshNode('node-b', { displayName: 'Mac', lastSeenAt: NOW, metrics: { runtimeState: 'ready', activeRequests: 0, meshNodeId: 'mesh-mac' } })
+    const nodeC = meshNode('node-c', { displayName: 'battlestation', lastSeenAt: NOW, metrics: { runtimeState: 'ready', activeRequests: 0, meshNodeId: 'mesh-battle' } })
+    const { store, env, profile } = await meshFixture(nodeA, nodeB, nodeC)
     await reportToken(store, env, nodeA, 'invite-token-node-a', 'mesh-1', NOW)
 
-    const entries = await meshHealth(store, env, [profile], [nodeA], NOW)
+    const entries = await meshHealth(store, env, [profile], [nodeA, nodeB, nodeC], NOW)
     expect(entries[0]?.splitReadiness?.blockers?.[0]?.reason).toBe('split_capacity_shortfall')
     expect(entries[0]?.splitReadiness?.capacityAdvice?.shortfallBytes).toBe(2_000_000_000)
+    expect(entries[0]?.splitReadiness?.participants?.map((item) => item.displayName)).toEqual(['Mac', 'battlestation'])
   })
 
   it('REQ-SEC-006 distributes join tokens only to live non-revoked nodes', async () => {

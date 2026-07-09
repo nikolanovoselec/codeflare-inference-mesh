@@ -366,6 +366,7 @@ func TestREQRUN007DerivesCoordinatorFromStageZeroOwnership(t *testing.T) {
 		stageZeroNodeID string
 		nodeState       string
 		ownNodeID       string
+		stages          []MeshLLMStage
 		want            string
 	}{
 		{
@@ -397,6 +398,14 @@ func TestREQRUN007DerivesCoordinatorFromStageZeroOwnership(t *testing.T) {
 			want:            "serving-peer",
 		},
 		{
+			name:            "standby stage owner is serving-peer",
+			stageZeroNodeID: "node-abc",
+			nodeState:       "standby",
+			ownNodeID:       "node-def",
+			stages:          []MeshLLMStage{{StageIndex: 1, NodeID: "node-def", LayerStart: 27, LayerEnd: 28, State: "ready"}},
+			want:            "serving-peer",
+		},
+		{
 			name:            "standby non-owner is api-client",
 			stageZeroNodeID: "node-abc",
 			nodeState:       "standby",
@@ -420,7 +429,7 @@ func TestREQRUN007DerivesCoordinatorFromStageZeroOwnership(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			st := MeshLLMStatus{StageZeroNodeID: tc.stageZeroNodeID, NodeState: tc.nodeState}
+			st := MeshLLMStatus{StageZeroNodeID: tc.stageZeroNodeID, NodeState: tc.nodeState, Stages: tc.stages}
 			got := DeriveMeshRole(st, tc.ownNodeID)
 			if got != tc.want {
 				t.Fatalf("DeriveMeshRole(stage0=%q, state=%s, own=%q) = %q, want %q",
