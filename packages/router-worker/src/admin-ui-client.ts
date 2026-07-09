@@ -1115,6 +1115,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       item.textContent = modelLabelForRef(model);
       bodyEl.appendChild(item);
     });
+    const nameRow = document.createElement('label');
+    nameRow.className = 'drawer-row';
+    nameRow.textContent = 'Machine name';
+    const nameInput = document.createElement('input');
+    nameInput.id = 'node-edit-name';
+    nameInput.type = 'text';
+    nameInput.value = nodeDisplayName(node);
+    nameInput.dataset.original = nodeDisplayName(node);
+    nameRow.appendChild(nameInput);
+    bodyEl.appendChild(nameRow);
     const vramRow = document.createElement('label');
     vramRow.className = 'drawer-row';
     vramRow.textContent = 'Max VRAM override (GB, blank = use model default)';
@@ -1130,7 +1140,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const saveVram = document.createElement('button');
     saveVram.type = 'button';
     saveVram.className = 'btn';
-    saveVram.textContent = 'Save VRAM override';
+    saveVram.textContent = 'Save machine settings';
     saveVram.dataset.action = 'node-config-save';
     saveVram.dataset.nodeId = node.id;
     saveVram.dataset.out = 'node-output';
@@ -2301,10 +2311,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const nodeId = encodeURIComponent(button.dataset.nodeId || '');
       const raw = readInput('node-edit-vram');
       // Blank clears the override (revert to the model default); a number caps just this node.
-      const payload = { maxVramGbOverride: raw === '' ? null : Number(raw) };
+      const payload = { displayName: readInput('node-edit-name'), maxVramGbOverride: raw === '' ? null : Number(raw) };
       await request('/admin/nodes/' + nodeId + '/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
       setOutput(out, 'Machine settings saved.');
-      toast('Node VRAM override saved');
+      toast('Machine settings saved');
       await refreshStatus().catch(() => undefined);
     } else if (action === 'model-toggle') {
       const id = button.dataset.profileId || '';

@@ -1460,26 +1460,30 @@ describe('router worker behavioral contracts', () => {
     expect(stored?.metrics?.readyModels).toEqual([QWEN_UPSTREAM])
   })
 
-  it('REQ-ADM-023 sets a per-node VRAM override that caps the node heartbeat and clears back to the model default', async () => {
+  it('REQ-ADM-023 persists node name and VRAM override across heartbeat', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode({ ...nodeFixture({ status: 'online' }), nodeTokenVerifier: await hashToken('node-secret') })
     const config = (body: unknown) => router(new Request('https://router.test/admin/nodes/node-a/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
     const heartbeat = () => router(new Request('https://router.test/node/heartbeat', { method: 'POST', headers: { ...bearer('node-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ nodeId: 'node-a', displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, localDashboardPort: 17777, status: 'online', publicModels: ['codeflare-mesh'], activeProfileIds: ['mesh-default-qwen36-35b'], capacity: 2, inFlight: 1, runtime: 'meshllm' }) }))
 
-    expect((await config({ maxVramGbOverride: 4 })).status).toBe(200)
+    expect((await config({ displayName: 'Battlestation', maxVramGbOverride: 4 })).status).toBe(200)
+    expect((await store.getNode('node-a'))?.displayName).toBe('Battlestation')
     expect((await store.getNode('node-a'))?.maxVramGbOverride).toBe(4)
-    // The node's heartbeat now carries the override on every desired profile, capping it below the global.
+    // The node's heartbeat now carries the override on every desired profile, capping it below the global,
+    // but its self-reported displayName no longer overwrites the operator's stored name.
     const capped = await (await heartbeat()).json() as { desiredProfiles: Array<{ meshllm: { maxVramGb?: number } }> }
     expect(capped.desiredProfiles.length).toBeGreaterThan(0)
     expect(capped.desiredProfiles.every((profile) => profile.meshllm!.maxVramGb === 4)).toBe(true)
+    expect((await store.getNode('node-a'))?.displayName).toBe('Battlestation')
 
     // Clearing removes the override so the node follows the model default again.
     expect((await config({ maxVramGbOverride: null })).status).toBe(200)
     expect((await store.getNode('node-a'))?.maxVramGbOverride).toBeUndefined()
 
-    // Boundary + auth: a negative override is 400, an unknown node 404, a non-admin 401.
+    // Boundary + auth: a negative override is 400, a blank name is 400, an unknown node 404, a non-admin 401.
     expect((await config({ maxVramGbOverride: -1 })).status).toBe(400)
+    expect((await config({ displayName: '   ' })).status).toBe(400)
     expect((await router(new Request('https://router.test/admin/nodes/ghost/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 4 }) }))).status).toBe(404)
     expect((await router(new Request('https://router.test/admin/nodes/node-a/config', { method: 'POST', headers: { ...bearer('not-admin'), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 4 }) }))).status).toBe(401)
   })
@@ -4288,14 +4292,14 @@ describe('control-plane API (/api/v1)', () => {
     expect(adminConfig.status).toBe(404)
   })
 
-  it('REQ-ADM-023 reconfigures a node VRAM override through the automation API', async () => {
+  it('REQ-ADM-023 reconfigures node name and VRAM override through the automation API', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     await store.upsertNode(nodeFixture({ id: 'node-weak' }))
-    const res = await router(new Request('https://router.test/api/v1/nodes/node-weak/reconfigure', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))
+    const res = await router(new Request('https://router.test/api/v1/nodes/node-weak/reconfigure', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'Mac mini', maxVramGbOverride: 6 }) }))
     expect(res.status).toBe(200)
-    expect((await res.json() as { node: { maxVramGbOverride: number } }).node.maxVramGbOverride).toBe(6)
-    expect((await store.getNode('node-weak'))?.maxVramGbOverride).toBe(6)
+    expect((await res.json() as { node: { displayName: string; maxVramGbOverride: number } }).node).toMatchObject({ displayName: 'Mac mini', maxVramGbOverride: 6 })
+    expect((await store.getNode('node-weak'))).toMatchObject({ displayName: 'Mac mini', maxVramGbOverride: 6 })
     // Unknown node is 404; a request without an automation key is 401.
     expect((await router(new Request('https://router.test/api/v1/nodes/node-ghost/reconfigure', { method: 'POST', headers: { ...bearer(key.token), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))).status).toBe(404)
     expect((await router(new Request('https://router.test/api/v1/nodes/node-weak/reconfigure', { method: 'POST', headers: { ...bearer('nope'), 'content-type': 'application/json' }, body: JSON.stringify({ maxVramGbOverride: 6 }) }))).status).toBe(401)

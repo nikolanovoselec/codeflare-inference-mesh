@@ -875,17 +875,19 @@ describe('dashboard overview contracts', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
   })
 
-  it('REQ-ADM-023 loads and saves a per-node VRAM override from the node drawer', async () => {
-    const nodes = [{ id: 'node-weak', status: 'online', agentVersion: 'v1.3.0', maxVramGbOverride: 4, metrics: { runtimeState: 'ready', readyModels: ['codeflare-mesh'], gpuMemoryTotalMiB: 8192, gpuMemoryUsedMiB: 4000, tokensPerSecond: 20, activeRequests: 0 } }]
+  it('REQ-ADM-023 loads and saves node name and VRAM settings from the node drawer', async () => {
+    const nodes = [{ id: 'node-weak', displayName: 'Old weak node', status: 'online', agentVersion: 'v1.3.0', maxVramGbOverride: 4, metrics: { runtimeState: 'ready', readyModels: ['codeflare-mesh'], gpuMemoryTotalMiB: 8192, gpuMemoryUsedMiB: 4000, tokensPerSecond: 20, activeRequests: 0 } }]
     const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
     await harness.clickAction('node-detail', { nodeId: 'node-weak' })
-    // The drawer loads the node's current override.
+    // The drawer loads the persisted operator name and current override.
+    expect(harness.byId('node-edit-name').value).toBe('Old weak node')
     expect(harness.byId('node-edit-vram').value).toBe('4')
-    // Saving posts the new override to the node config endpoint.
+    // Saving posts both operator-owned settings to the node config endpoint.
+    harness.byId('node-edit-name').value = 'Mac mini'
     harness.byId('node-edit-vram').value = '2'
     await harness.clickAction('node-config-save', { nodeId: 'node-weak', out: 'node-output' })
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/nodes/node-weak/config')
-    expect(JSON.parse(String(call?.init?.body)).maxVramGbOverride).toBe(2)
+    expect(JSON.parse(String(call?.init?.body))).toMatchObject({ displayName: 'Mac mini', maxVramGbOverride: 2 })
   })
 })
 

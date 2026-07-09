@@ -337,7 +337,7 @@ POST /admin/nodes/{nodeId}/revoke
 
 ### POST /admin/nodes/:nodeId/config
 
-Sets or clears a per-node VRAM override from the node detail drawer, capping that node's inference VRAM below the model's global budget.
+Sets a persistent node display name and/or sets or clears a per-node VRAM override from the node detail drawer, capping that node's inference VRAM below the model's global budget.
 
 ```http
 POST /admin/nodes/{nodeId}/config
@@ -349,18 +349,18 @@ POST /admin/nodes/{nodeId}/config
 
 **Path parameters:** `nodeId` is the URL-encoded node identifier to reconfigure.
 
-**Request body:** `{ "maxVramGbOverride": number | null }` — a number `≥ 0` caps this node (0 = uncapped on this node); a blank/`null` value clears the override so the node follows the model's global budget.
+**Request body:** `{ "displayName"?: string, "maxVramGbOverride"?: number | null }` — a non-blank `displayName` renames the node and is stored in the D1 node JSON so future heartbeats do not revert it; a number `≥ 0` caps this node (0 = uncapped on this node); a blank/`null` override clears the override so the node follows the model's global budget.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The node's VRAM override was set or cleared. | `{ "ok": true, "id": string, "maxVramGbOverride": number \| null }` |
-| `400` | The override was a negative or non-numeric value. | `{ "error": "invalid_max_vram", "requestId": string }` |
+| `200` | The node name and/or VRAM override was set or cleared. | `{ "ok": true, "id": string, "displayName": string, "maxVramGbOverride": number \| null }` |
+| `400` | The display name was blank/non-string, or the override was a negative or non-numeric value. | `{ "error": "invalid_display_name" \| "invalid_max_vram", "requestId": string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `404` | No node with that id exists, or the node is revoked. | `{ "error": "unknown_node", "requestId": string }` |
 
-**Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-vram-override)
+**Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-settings)
 
 ### POST /admin/nodes/:nodeId/deactivate
 

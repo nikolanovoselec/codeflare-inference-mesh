@@ -303,7 +303,7 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   if (!tokenOk) return json({ error: 'unauthorized' }, 401, requestId)
   const next = {
     ...node,
-    displayName: body.displayName,
+    displayName: node.displayName || body.displayName,
     meshIp: body.meshIp,
     inferencePort: body.inferencePort,
     localDashboardPort: body.localDashboardPort,
@@ -742,20 +742,22 @@ async function requestNodeReload(deps: RouterDeps, nodeId: string, actor: string
   return json({ ok: true, reloadNonce }, 200, requestId)
 }
 
-// handleNodeConfig sets or clears a node's per-node VRAM override from the admin console
-// (blank/`null` reverts to the model's global budget; a non-negative number caps this node).
+// handleNodeConfig updates operator-owned node settings from the admin console. The display name
+// is stored in the node JSON row and preserved across future heartbeats; blank/`null` VRAM override
+// reverts to the model default while a non-negative number caps this node.
 async function handleNodeConfig(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
   const nodeId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
   const node = await deps.store.getNode(nodeId)
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
-  const body = await readJson<{ maxVramGbOverride?: number | null }>(request)
-  const updated = nodeWithVramOverride(node, body?.maxVramGbOverride)
+  const body = await readJson<NodeConfigBody>(request)
+  const updated = nodeWithConfig(node, body)
   if (updated === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
+  if (updated === INVALID_NODE_NAME) return json({ error: 'invalid_display_name', requestId }, 400, requestId)
   await deps.store.upsertNode(updated)
-  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor, target: nodeId, detail: { maxVramGbOverride: updated.maxVramGbOverride ?? null } })
-  return json({ ok: true, id: nodeId, maxVramGbOverride: updated.maxVramGbOverride ?? null }, 200, requestId)
+  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor, target: nodeId, detail: { displayName: updated.displayName, maxVramGbOverride: updated.maxVramGbOverride ?? null } })
+  return json({ ok: true, id: nodeId, displayName: updated.displayName, maxVramGbOverride: updated.maxVramGbOverride ?? null }, 200, requestId)
 }
 
 async function handleProfileRollout(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -901,9 +903,20 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
   return { settings: next as unknown as LlamaCppProfileSettings }
 }
 
+type NodeConfigBody = { readonly maxVramGbOverride?: number | null; readonly displayName?: unknown; readonly name?: unknown }
+const INVALID_NODE_NAME = Symbol('invalid_node_name')
+
+function normalizeNodeDisplayName(value: unknown): string | undefined | typeof INVALID_NODE_NAME {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string') return INVALID_NODE_NAME
+  const trimmed = value.trim()
+  return trimmed.length > 0 && trimmed.length <= 80 ? trimmed : INVALID_NODE_NAME
+}
+
 // A node's VRAM override replaces the model's global maxVramGb for that node. `null` clears the
 // override (revert to the model default); a finite number >= 0 sets it (0 = uncapped on this node).
 function nodeWithVramOverride(node: NodeRecord, value: number | null | undefined): NodeRecord | typeof INVALID_MAX_VRAM {
+  if (value === undefined) return node
   if (value === null) {
     const { maxVramGbOverride, ...rest } = node
     void maxVramGbOverride
@@ -911,6 +924,15 @@ function nodeWithVramOverride(node: NodeRecord, value: number | null | undefined
   }
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return INVALID_MAX_VRAM
   return { ...node, maxVramGbOverride: value }
+}
+
+function nodeWithConfig(node: NodeRecord, body: NodeConfigBody | undefined): NodeRecord | typeof INVALID_MAX_VRAM | typeof INVALID_NODE_NAME {
+  let updated: NodeRecord | typeof INVALID_MAX_VRAM = nodeWithVramOverride(node, body?.maxVramGbOverride)
+  if (updated === INVALID_MAX_VRAM) return updated
+  const nextName = normalizeNodeDisplayName(body?.displayName ?? body?.name)
+  if (nextName === INVALID_NODE_NAME) return nextName
+  if (nextName !== undefined) updated = { ...updated, displayName: nextName }
+  return updated
 }
 
 // Apply a node's VRAM override to the profile set it will run, so the agent renders --max-vram
@@ -1935,19 +1957,20 @@ async function handleApiNodeGet(request: Request, deps: RouterDeps, url: URL, re
 }
 
 /** Decommission a node: revoke it and its node/mesh tokens so it must re-enroll. */
-// handleApiNodeReconfigure sets or clears a node's per-node VRAM override for an automation caller,
-// mirroring the admin console control so MDM/fleet tooling can cap weaker nodes.
+// handleApiNodeReconfigure updates a node's operator-owned settings for an automation caller,
+// mirroring the admin console control so MDM/fleet tooling can rename or cap weaker nodes.
 async function handleApiNodeReconfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
   const nodeId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
   const node = await deps.store.getNode(nodeId)
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
-  const body = await readJson<{ maxVramGbOverride?: number | null }>(request)
-  const updated = nodeWithVramOverride(node, body?.maxVramGbOverride)
+  const body = await readJson<NodeConfigBody>(request)
+  const updated = nodeWithConfig(node, body)
   if (updated === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
+  if (updated === INVALID_NODE_NAME) return json({ error: 'invalid_display_name', requestId }, 400, requestId)
   await deps.store.upsertNode(updated)
-  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: { maxVramGbOverride: updated.maxVramGbOverride ?? null } })
+  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: { displayName: updated.displayName, maxVramGbOverride: updated.maxVramGbOverride ?? null } })
   return json({ ok: true, node: toApiNode(updated, await desiredRuntimeVersions(deps.store)) }, 200, requestId)
 }
 

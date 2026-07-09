@@ -643,18 +643,18 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ---
 
-### REQ-ADM-023: Per-node VRAM override
+### REQ-ADM-023: Per-node settings
 
-**Intent:** A weaker machine may not fit a model at the model's global VRAM budget, so an admin must be able to cap the VRAM a specific node dedicates to inference below the model's global setting, after the node has registered, from both the console and the API (for example, a 16 GB global budget capped to 4 GB on a weak node).
+**Intent:** Operators need stable human names for machines and may need to cap a specific node's inference VRAM below a model's global budget, so the console and API must persist both settings after the node has registered.
 
 **Applies To:** Admin, Automation
 
 **Acceptance Criteria:**
 
-1. The node detail drawer exposes an editable "Max VRAM override (GB)" field populated from the node; saving posts to `POST /admin/nodes/{id}/config`, where a blank value clears the override and a number sets it. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-023 loads and saves a per-node VRAM override from the node drawer) -->
-2. `POST /admin/nodes/{id}/config` sets or clears a node's VRAM override, rejecting a negative value and returning `404` for an unknown or revoked node. <!-- @impl: packages/router-worker/src/router.ts::handleNodeConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 sets a per-node VRAM override that caps the node heartbeat and clears back to the model default) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 refuses reconfigure and admin config for a revoked node) -->
-3. When a node has an override, its heartbeat's desired profiles carry the override as `maxVramGb` in place of each model's global budget, so the node agent renders `--max-vram` at the node's ceiling. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 sets a per-node VRAM override that caps the node heartbeat and clears back to the model default) -->
-4. `POST /api/v1/nodes/{id}/reconfigure` sets or clears the same override for an automation caller, returns the node projection including it, and returns `404` for an unknown or revoked node. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeReconfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reconfigures a node VRAM override through the automation API) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 refuses reconfigure and admin config for a revoked node) -->
+1. The node detail drawer exposes editable Machine name and "Max VRAM override (GB)" fields populated from the node; saving posts to `POST /admin/nodes/{id}/config`, where a non-blank name renames the node and a blank VRAM override clears the override. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-023 loads and saves node name and VRAM settings from the node drawer) -->
+2. `POST /admin/nodes/{id}/config` persists a non-blank display name in the D1 node JSON, sets or clears a node's VRAM override, rejects a blank name or negative VRAM value, and returns `404` for an unknown or revoked node. <!-- @impl: packages/router-worker/src/router.ts::handleNodeConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 persists node name and VRAM override across heartbeat) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 refuses reconfigure and admin config for a revoked node) -->
+3. When a node has a stored display name, future heartbeats do not overwrite it; when it has a VRAM override, heartbeat desired profiles carry the override as `maxVramGb` in place of each model's global budget, so the node agent renders `--max-vram` at the node's ceiling. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 persists node name and VRAM override across heartbeat) -->
+4. `POST /api/v1/nodes/{id}/reconfigure` persists the same display name and VRAM override for an automation caller, returns the node projection including them, and returns `404` for an unknown or revoked node. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeReconfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reconfigures node name and VRAM override through the automation API) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 refuses reconfigure and admin config for a revoked node) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 

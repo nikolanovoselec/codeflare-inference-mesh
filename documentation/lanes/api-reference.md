@@ -609,7 +609,7 @@ DELETE /api/v1/nodes/{id}
 
 ### POST /api/v1/nodes/{id}/reconfigure
 
-Sets or clears a per-node VRAM override, capping that node's inference VRAM below the model's global budget. Requires an automation key. The override is applied to the desired profiles the node receives on its next heartbeat.
+Sets a persistent node display name and/or a per-node VRAM override, capping that node's inference VRAM below the model's global budget. Requires an automation key. The display name is stored in D1 and survives heartbeats; the override is applied to the desired profiles the node receives on its next heartbeat.
 
 ```http
 POST /api/v1/nodes/{id}/reconfigure
@@ -617,18 +617,18 @@ POST /api/v1/nodes/{id}/reconfigure
 
 **Authentication:** automation key
 
-**Request body:** `{ "maxVramGbOverride": number | null }` — a number `≥ 0` caps this node (0 = uncapped on this node); `null` clears the override so the node follows the model's global budget.
+**Request body:** `{ "displayName"?: string, "maxVramGbOverride"?: number | null }` — a non-blank `displayName` renames the node; a number `≥ 0` caps this node (0 = uncapped on this node); `null` clears the override so the node follows the model's global budget.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The node was reconfigured. | `{ "ok": true, "node": NodeProjection }` — the projection includes `maxVramGbOverride` (`null` when unset). |
-| `400` | The override was a negative or non-numeric value. | `invalid_max_vram` error body. |
+| `200` | The node was reconfigured. | `{ "ok": true, "node": NodeProjection }` — the projection includes `displayName` and `maxVramGbOverride` (`null` when unset). |
+| `400` | The display name was blank/non-string, or the override was a negative or non-numeric value. | `invalid_display_name` / `invalid_max_vram` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No node with that id exists, or the node is revoked (a revoked tombstone is treated as gone). | `unknown_node` error body. |
 
-**Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-vram-override)
+**Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-settings)
 
 ### POST /api/v1/nodes/{id}/deactivate
 
