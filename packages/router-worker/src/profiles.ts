@@ -80,8 +80,8 @@ export const LLAMACPP_PROFILE_DEFAULTS = {
   cacheReuse: 256,
   cacheTypeK: 'q8_0',
   cacheTypeV: 'q8_0',
-  batch: 2048,
-  ubatch: 512,
+  batch: 8192,
+  ubatch: 2048,
   flashAttn: true,
   maxOutputTokens: 8192
 } as const

@@ -1351,6 +1351,7 @@ async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: n
   let outputChars = 0
   let chunks = 0
   let usage: Record<string, unknown> | undefined
+  let upstreamTimings: Record<string, unknown> | undefined
   while (true) {
     const chunk = await reader.read()
     completedAt = Date.now()
@@ -1364,8 +1365,9 @@ async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: n
       const data = line.slice(5).trim()
       if (!data || data === '[DONE]') continue
       try {
-        const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }>; usage?: Record<string, unknown> }
+        const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }>; usage?: Record<string, unknown>; timings?: Record<string, unknown> }
         if (parsed.usage) usage = parsed.usage
+        if (parsed.timings) upstreamTimings = parsed.timings
         const content = parsed.choices?.map((choice) => choice.delta?.content ?? choice.delta?.reasoning_content ?? '').join('') ?? ''
         if (content) {
           if (firstTokenAt === 0) firstTokenAt = Date.now()
@@ -1378,22 +1380,40 @@ async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: n
     }
   }
   const reportedPromptTokens = usageNumber(usage, 'prompt_tokens')
-  const promptTokens = reportedPromptTokens ?? fallbackPromptTokens
+  const timingPromptTokens = timingNumber(upstreamTimings, 'prompt_n') ?? timingNumber(upstreamTimings, 'prompt_tokens')
+  const promptTokens = reportedPromptTokens ?? timingPromptTokens ?? fallbackPromptTokens
   const reportedCompletionTokens = usageNumber(usage, 'completion_tokens')
-  const completionTokens = reportedCompletionTokens ?? Math.max(1, Math.round(outputChars / 4))
+  const timingCompletionTokens = timingNumber(upstreamTimings, 'predicted_n') ?? timingNumber(upstreamTimings, 'completion_tokens')
+  const completionTokens = reportedCompletionTokens ?? timingCompletionTokens ?? Math.max(1, Math.round(outputChars / 4))
   const ttftMs = firstTokenAt > 0 ? firstTokenAt - startedAt : completedAt - startedAt
   const generationMs = firstTokenAt > 0 ? Math.max(1, completedAt - firstTokenAt) : Math.max(1, completedAt - startedAt)
+  const promptTps = timingNumber(upstreamTimings, 'prompt_per_second') ?? rateFromTiming(promptTokens, timingNumber(upstreamTimings, 'prompt_ms')) ?? rate(promptTokens, ttftMs)
+  const generationTps = timingNumber(upstreamTimings, 'predicted_per_second') ?? rateFromTiming(completionTokens, timingNumber(upstreamTimings, 'predicted_ms')) ?? rate(completionTokens, generationMs)
   return {
     timingsMs: { timeToFirstToken: ttftMs, generation: generationMs, total: completedAt - startedAt },
-    tokens: { prompt: promptTokens, completion: completionTokens, promptEstimated: reportedPromptTokens == null, completionEstimated: reportedCompletionTokens == null },
+    tokens: { prompt: promptTokens, completion: completionTokens, promptEstimated: reportedPromptTokens == null && timingPromptTokens == null, completionEstimated: reportedCompletionTokens == null && timingCompletionTokens == null },
     throughput: {
-      promptTokensPerSecond: Math.round((promptTokens / Math.max(0.001, ttftMs / 1000)) * 10) / 10,
-      generationTokensPerSecond: Math.round((completionTokens / Math.max(0.001, generationMs / 1000)) * 10) / 10
+      promptTokensPerSecond: promptTps,
+      generationTokensPerSecond: generationTps
     },
     chunks,
     outputChars,
-    usage: usage ?? null
+    usage: usage ?? null,
+    upstreamTimings: upstreamTimings ?? null
   }
+}
+
+function rate(tokens: number, ms: number): number {
+  return Math.round((tokens / Math.max(0.001, ms / 1000)) * 10) / 10
+}
+
+function rateFromTiming(tokens: number, ms: number | undefined): number | undefined {
+  return ms && ms > 0 ? rate(tokens, ms) : undefined
+}
+
+function timingNumber(timings: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = timings?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function usageNumber(usage: Record<string, unknown> | undefined, key: string): number | undefined {

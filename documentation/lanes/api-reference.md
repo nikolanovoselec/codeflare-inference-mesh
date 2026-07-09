@@ -505,7 +505,7 @@ POST /api/v1/speed-test
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Speed test completed. | `{ model, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage }`, where `throughput.promptTokensPerSecond` measures prompt ingestion from upstream usage when available (or the synthetic prompt size when `tokens.promptEstimated` is true) and `throughput.generationTokensPerSecond` measures completion generation. |
+| `200` | Speed test completed. | `{ model, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage, upstreamTimings }`. `timingsMs` is end-to-end wall-clock; `throughput` prefers llama.cpp upstream timing fields when present (`upstreamTimings.prompt_per_second` / `predicted_per_second`) and otherwise falls back to wall-clock estimates. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No profile matched the model. | `no-profile` error body. |
 | `502` | The selected node could not be reached over Mesh transport. | `node_unreachable` error body. |

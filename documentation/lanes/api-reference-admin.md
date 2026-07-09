@@ -253,7 +253,7 @@ POST /admin/playground/speed-test
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Speed test completed. | `{ model, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage }` where `throughput.promptTokensPerSecond` measures prompt ingestion from upstream usage when available (or the synthetic prompt size when `tokens.promptEstimated` is true), and `throughput.generationTokensPerSecond` measures completion generation. |
+| `200` | Speed test completed. | `{ model, promptChars, requestedPromptTokens, requestedMaxTokens, timingsMs, tokens, throughput, chunks, outputChars, usage, upstreamTimings }`. `timingsMs` is end-to-end wall-clock; `throughput` prefers llama.cpp upstream timing fields when present (`upstreamTimings.prompt_per_second` / `predicted_per_second`) and otherwise falls back to wall-clock estimates. |
 | `401` | No valid console role resolved for the caller. | Error object. |
 | `404` | No profile matched the model. | `{ "error": "no-profile", "requestId": string }` |
 | `502` | The selected node could not be reached over Mesh transport. | `{ "error": "node_unreachable", "requestId": string }` |

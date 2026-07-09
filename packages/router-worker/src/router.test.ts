@@ -813,7 +813,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.status).toBe(201)
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false, rolloutPercent: 0 })
-    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 1, cacheTypeK: 'q8_0', cacheTypeV: 'q8_0', batch: 2048, ubatch: 512, flashAttn: true, maxOutputTokens: 8192 })
+    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 1, cacheTypeK: 'q8_0', cacheTypeV: 'q8_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192 })
   })
 
   it('REQ-RUN-011 rejects direct llama.cpp for split models', async () => {
@@ -1701,6 +1701,24 @@ describe('router worker behavioral contracts', () => {
     // AdminStatusRedactionTestAnchor
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const directProfile = buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] })
+    await store.setProfile({
+      ...directProfile,
+      llamacpp: {
+        ...directProfile.llamacpp!,
+        parallel: 2,
+        gpuLayers: '99',
+        cacheTypeK: 'q4_0',
+        cacheTypeV: 'q8_0',
+        batch: 8192,
+        ubatch: 1024,
+        flashAttn: true,
+        maxOutputTokens: 99,
+        cachePrompt: true,
+        cacheReuse: 256,
+        reasoning: { enabled: true, format: 'deepseek', budget: 32 }
+      }
+    })
     await store.upsertNode({ ...nodeFixture(), upstreamTokenVerifier: 'sha256:hidden' })
     await store.upsertNode({ ...nodeFixture({ id: 'node-b', displayName: 'Node B', meshIp: '100.64.1.11', metrics: { runtimeState: 'dependency-missing', activeRequests: 0, lastError: 'missing runtime' } }) })
     await store.putConfig('setup_state', { completedAt: 1_700_000_000_000 })
@@ -1716,6 +1734,20 @@ describe('router worker behavioral contracts', () => {
       expect.objectContaining({ id: 'mesh-smoke-qwen25-1.5b', upstreamModel: SMOKE_UPSTREAM, sourceMode: 'meshllm-ref', version: 1, rolloutPercent: 100, active: true })
     ]))
     expect(body.profiles?.[0]).toHaveProperty('publicAliases')
+    const directStatusProfile = body.profiles?.find((profile) => profile.id === directProfile.id) as { llamacpp?: Record<string, unknown> } | undefined
+    expect(directStatusProfile?.llamacpp).toMatchObject({
+      parallel: 2,
+      gpuLayers: '99',
+      cacheTypeK: 'q4_0',
+      cacheTypeV: 'q8_0',
+      batch: 8192,
+      ubatch: 1024,
+      flashAttn: true,
+      maxOutputTokens: 99,
+      cachePrompt: true,
+      cacheReuse: 256,
+      reasoning: { enabled: true, format: 'deepseek', budget: 32 }
+    })
     expect(body.profileReadiness).toEqual(expect.arrayContaining([
       expect.objectContaining({ profileId: 'mesh-smoke-qwen25-1.5b', ready: 1, downloading: 0, failed: 1 })
     ]))
@@ -3194,7 +3226,7 @@ describe('Access-first setup and host gating contracts', () => {
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"reasoning_content":"hello "}}]}\n\n'))
-        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"world"}}],"usage":{"prompt_tokens":256,"completion_tokens":2}}\n\n'))
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"world"}}],"usage":{"prompt_tokens":256,"completion_tokens":2},"timings":{"prompt_n":256,"prompt_ms":128,"prompt_per_second":2000,"predicted_n":2,"predicted_ms":20,"predicted_per_second":100}}\n\n'))
         controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
         controller.close()
       }
@@ -3215,7 +3247,7 @@ describe('Access-first setup and host gating contracts', () => {
       headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
       body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 256, maxTokens: 32 })
     }))
-    const measured = await response.json() as { tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number; chunks: number; outputChars: number }
+    const measured = await response.json() as { tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number; chunks: number; outputChars: number; upstreamTimings: { prompt_per_second: number; predicted_per_second: number } }
     const forwarded = await capture.request!.json() as { model: string; user?: string; max_tokens?: number; messages: Array<{ role: string; content: string }> }
 
     expect(response.status).toBe(200)
@@ -3228,8 +3260,9 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.tokens).toMatchObject({ prompt: 256, completion: 2, promptEstimated: false, completionEstimated: false })
     expect(measured.chunks).toBe(2)
     expect(measured.outputChars).toBe(11)
-    expect(measured.throughput.promptTokensPerSecond).toBeGreaterThan(0)
-    expect(measured.throughput.generationTokensPerSecond).toBeGreaterThan(0)
+    expect(measured.upstreamTimings).toMatchObject({ prompt_per_second: 2000, predicted_per_second: 100 })
+    expect(measured.throughput.promptTokensPerSecond).toBe(2000)
+    expect(measured.throughput.generationTokensPerSecond).toBe(100)
   })
 
   it('REQ-API-009 exposes the direct router speed test to automation callers', async () => {
