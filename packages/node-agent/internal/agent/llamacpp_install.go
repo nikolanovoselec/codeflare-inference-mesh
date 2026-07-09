@@ -124,7 +124,7 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 	}
 
 	binaryName := llamaCppBinaryName(options.goos)
-	if pathBinary, ok := findMatchingLlamaCppHostBinary(binaryName, version, options); ok {
+	if pathBinary, ok := findUsableLlamaCppHostBinary(binaryName, version, options); ok {
 		return pathBinary, nil
 	}
 
@@ -262,16 +262,24 @@ func llamaCppManagedTarget(dataDir string, binaryName string, backend string) st
 	return filepath.Join(dataDir, "bin", "llamacpp-"+backend, binaryName)
 }
 
-func findMatchingLlamaCppHostBinary(binaryName string, version string, options llamaCppInstallOptions) (string, bool) {
+func findUsableLlamaCppHostBinary(binaryName string, version string, options llamaCppInstallOptions) (string, bool) {
 	seen := map[string]bool{}
+	usableFallback := ""
 	try := func(candidate string) (string, bool) {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "" || seen[candidate] {
 			return "", false
 		}
 		seen[candidate] = true
-		if out, versionErr := options.queryVersion(candidate); versionErr == nil && llamaCppVersionMatches(out, version) {
+		out, versionErr := options.queryVersion(candidate)
+		if versionErr != nil {
+			return "", false
+		}
+		if llamaCppVersionMatches(out, version) {
 			return candidate, true
+		}
+		if usableFallback == "" && strings.TrimSpace(out) != "" {
+			usableFallback = candidate
 		}
 		return "", false
 	}
@@ -285,7 +293,15 @@ func findMatchingLlamaCppHostBinary(binaryName string, version string, options l
 			return candidate, true
 		}
 	}
+	if usableFallback != "" && shouldPreferUsableHostLlama(options.backend) {
+		return usableFallback, true
+	}
 	return "", false
+}
+
+func shouldPreferUsableHostLlama(backend string) bool {
+	backend = strings.TrimSpace(strings.ToLower(backend))
+	return backend != "" && backend != "cpu" && backend != "metal"
 }
 
 func llamaCppHostCandidates(goos string) []string {

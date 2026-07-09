@@ -74,6 +74,31 @@ func TestREQNODE013EnsureLlamaCppDiscoversHostInstalledBinary(t *testing.T) {
 	}
 }
 
+func TestREQNODE013EnsureLlamaCppPrefersUsableHostGpuBinaryOverManagedFallback(t *testing.T) {
+	downloaded := false
+	path, err := EnsureLlamaCpp(t.TempDir(), "b9928",
+		WithLlamaCppPlatform("linux", "amd64"),
+		WithLlamaCppBackend("nvidia"),
+		WithLlamaCppLookPath(lookPathWith(map[string]string{})),
+		WithLlamaCppHostCandidates("/usr/local/bin/llama-server"),
+		WithLlamaCppVersionQuery(func(binaryPath string) (string, error) {
+			if binaryPath != "/usr/local/bin/llama-server" {
+				t.Fatalf("queried binary = %q", binaryPath)
+			}
+			return "llama.cpp build 10001", nil
+		}),
+		WithLlamaCppDownload(func(assetURL string) ([]byte, error) { downloaded = true; return nil, nil }))
+	if err != nil {
+		t.Fatalf("EnsureLlamaCpp returned error: %v", err)
+	}
+	if path != "/usr/local/bin/llama-server" {
+		t.Fatalf("path = %q", path)
+	}
+	if downloaded {
+		t.Fatalf("usable host GPU binary should beat managed fallback even when the build tag differs")
+	}
+}
+
 func TestREQNODE013EnsureLlamaCppDoesNotReuseGenericBinaryForGpuBackend(t *testing.T) {
 	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b9928/bin/llama-server", body: []byte("vulkan llama-server"), mode: 0o755}})
 	dataDir := t.TempDir()
