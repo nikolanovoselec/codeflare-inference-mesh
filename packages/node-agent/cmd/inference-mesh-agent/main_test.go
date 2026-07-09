@@ -454,6 +454,40 @@ func TestREQRUN003ProfileContentChangeRestartsWithUpdatedRenderInput(t *testing.
 	}
 }
 
+func TestREQRUN005WaitingForPeersSelfHealsWithOneRestart(t *testing.T) {
+	// A split node that keeps reporting waiting_for_peers should get the same automatic relaunch
+	// operators were doing with Force Reload, but only after consecutive stuck heartbeats and only
+	// once for the current mesh bootstrap/profile key.
+	profile := agent.ModelProfile{ID: "split", UpstreamModel: "u1", Version: 1, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "u1", Split: true, BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"split"}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.loadState.Set(profile)
+	loop.lastMetrics = agent.NodeMetrics{RuntimeKind: "meshllm", RuntimeState: "starting", NodeState: "standby", SplitEnabled: true, ActiveRequests: 0, SplitReadiness: &agent.MeshLLMSplitReadiness{Verdict: "waiting_for_peers"}}
+	response := agent.HeartbeatResponse{OK: true, MeshBootstrap: &agent.MeshBootstrap{Action: "create", Rotation: 7}}
+
+	loop.handleResponse(context.Background(), response)
+	if manager.restartCount() != 0 {
+		t.Fatalf("first waiting heartbeat should arm self-heal, not restart immediately: %d", manager.restartCount())
+	}
+	loop.handleResponse(context.Background(), response)
+	select {
+	case <-manager.restarted:
+	case <-time.After(time.Second):
+		t.Fatal("waiting_for_peers self-heal did not restart the runtime")
+	}
+	if manager.restartCount() != 1 {
+		t.Fatalf("expected one self-heal restart, got %d", manager.restartCount())
+	}
+	loop.handleResponse(context.Background(), response)
+	select {
+	case <-manager.restarted:
+		t.Fatal("self-heal must not restart repeatedly for the same bootstrap/profile key")
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
 func TestREQNODE012ForceReloadRestartsOncePerNonce(t *testing.T) {
 	// A Force Reload directive (a new ReloadNonce in the heartbeat response) drains and restarts
 	// the current runtime exactly once per nonce, records the applied nonce so it is echoed back

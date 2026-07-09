@@ -443,13 +443,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const metrics = (node && node.metrics) || {};
     const reportedTotal = Number(metrics.gpuMemoryTotalMiB || 0);
     const reportedUsed = metrics.gpuMemoryUsedMiB == null ? null : Number(metrics.gpuMemoryUsedMiB);
-    const splitBytes = nodeSplitVramBytes(node);
-    const splitTotal = splitBytes ? splitBytes / 1048576 : 0;
     return {
-      totalMiB: reportedTotal > 0 ? reportedTotal : splitTotal,
+      totalMiB: reportedTotal > 0 ? reportedTotal : 0,
       usedMiB: reportedUsed != null && Number.isFinite(reportedUsed) ? reportedUsed : null,
-      source: reportedTotal > 0 ? 'reported' : (splitTotal > 0 ? 'split-readiness' : 'none'),
-      splitBytes: splitBytes || null
+      source: reportedTotal > 0 ? 'reported' : 'none'
     };
   }
   const nodeVramTotal = (node) => nodeVramInfo(node).totalMiB || 0;
@@ -457,6 +454,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const reportedText = (value) => value == null ? 'not reported' : String(value);
   const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
   const fmtGb = (value) => value == null ? 'not reported' : (Math.round(Number(value) * 10) / 10) + ' GB';
+  const fmtVramLimit = (value) => value == null || Number(value) === 0 ? 'no limit' : fmtGb(value);
   const fmtGibFromMiB = (value) => value == null || !Number.isFinite(Number(value)) || Number(value) <= 0 ? 'not reported' : (Math.round(Number(value) / 102.4) / 10) + ' GiB';
   const bytesToGb = (bytes) => bytes == null ? null : Number(bytes) / 1000000000;
   function splitReadinessIssue(report) {
@@ -540,7 +538,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   function splitParticipants(report, candidates) {
     return Array.isArray(report && report.participants) ? report.participants.map((item) => {
       const raw = item.routerNodeId || item.nodeId || item.shortNodeId || '';
-      return { label: item.displayName || nodeLabelForId(raw, candidates), raw: raw, vram: bytesToGb(item.vramBytes) };
+      return { label: item.displayName || nodeLabelForId(raw, candidates), raw: raw, capacity: bytesToGb(item.vramBytes) };
     }) : [];
   }
   function idMatchesNode(value, node) {
@@ -549,35 +547,52 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const names = [node.id, node.displayName, node.name, node.metrics && node.metrics.meshNodeId].filter(Boolean).map(String);
     return names.some((name) => name === raw || name.indexOf(raw) === 0 || raw.indexOf(name) === 0);
   }
-  function participantMatchesNode(participant, node) {
-    if (!participant || !node) return false;
-    return idMatchesNode(participant.routerNodeId, node) || idMatchesNode(participant.nodeId, node) || idMatchesNode(participant.shortNodeId, node) || participant.displayName === nodeDisplayName(node);
-  }
-  function nodeSplitVramBytes(node) {
-    const reports = [];
-    if (node && node.metrics && node.metrics.splitReadiness) reports.push(node.metrics.splitReadiness);
-    if (lastStatus && Array.isArray(lastStatus.meshHealth)) lastStatus.meshHealth.forEach((entry) => { if (entry.splitReadiness) reports.push(entry.splitReadiness); });
-    const matches = reports.flatMap((report) => Array.isArray(report.participants) ? report.participants : []).filter((participant) => participantMatchesNode(participant, node) && participant.vramBytes != null);
-    return matches.reduce((max, participant) => Math.max(max, Number(participant.vramBytes) || 0), 0);
-  }
-  function stageMatchesNode(stage, node) {
-    return idMatchesNode(stage && stage.nodeId, node) || idMatchesNode(stage && stage.reportedByNodeId, node);
+  function stageOwnedByNode(stage, node) {
+    return idMatchesNode(stage && stage.nodeId, node) || (!stage || !stage.nodeId ? idMatchesNode(stage && stage.reportedByNodeId, node) : false);
   }
   function stageKey(stage) {
-    return [stage.stageId || '', stage.stageIndex == null ? '' : stage.stageIndex, stage.nodeId || '', stage.reportedByNodeId || '', stage.layerStart == null ? '' : stage.layerStart, stage.layerEnd == null ? '' : stage.layerEnd].join(':');
+    return [stage.stageId || '', stage.stageIndex == null ? '' : stage.stageIndex, stage.nodeId || '', stage.layerStart == null ? '' : stage.layerStart, stage.layerEnd == null ? '' : stage.layerEnd].join(':');
+  }
+  function stageStateRank(stage) {
+    const state = String(stage && stage.state || '').toLowerCase();
+    if (state === 'ready' || state === 'serving') return 4;
+    if (state === 'loading' || state === 'running') return 3;
+    if (state === 'pending' || state === 'standby') return 2;
+    if (state === 'failed' || state === 'error') return 0;
+    return 1;
+  }
+  function preferStage(current, candidate) {
+    if (!current) return candidate;
+    const currentPriority = current.__sourcePriority || 0;
+    const candidatePriority = candidate.__sourcePriority || 0;
+    if (candidatePriority !== currentPriority) return candidatePriority > currentPriority ? candidate : current;
+    return stageStateRank(candidate) > stageStateRank(current) ? candidate : current;
+  }
+  function cleanStage(stage) {
+    if (!stage) return stage;
+    const { __sourcePriority, ...cleaned } = stage;
+    void __sourcePriority;
+    return cleaned;
   }
   function nodeStageAssignments(node) {
     const byKey = new Map();
-    const add = (stage) => { if (stage && stageMatchesNode(stage, node)) byKey.set(stageKey(stage), stage); };
-    if (node && node.metrics && Array.isArray(node.metrics.stageAssignments)) node.metrics.stageAssignments.forEach(add);
-    if (lastStatus && Array.isArray(lastStatus.meshHealth)) lastStatus.meshHealth.forEach((entry) => (Array.isArray(entry.stageAssignments) ? entry.stageAssignments : []).forEach(add));
-    return [...byKey.values()].sort((left, right) => (left.stageIndex || 0) - (right.stageIndex || 0));
+    const add = (stage, sourcePriority) => {
+      if (!stage || !stageOwnedByNode(stage, node)) return;
+      const candidate = { ...stage, __sourcePriority: sourcePriority };
+      byKey.set(stageKey(candidate), preferStage(byKey.get(stageKey(candidate)), candidate));
+    };
+    if (node && node.metrics && Array.isArray(node.metrics.stageAssignments)) node.metrics.stageAssignments.forEach((stage) => add(stage, 2));
+    if (lastStatus && Array.isArray(lastStatus.meshHealth)) lastStatus.meshHealth.forEach((entry) => (Array.isArray(entry.stageAssignments) ? entry.stageAssignments : []).forEach((stage) => add(stage, 1)));
+    return [...byKey.values()].map(cleanStage).sort((left, right) => (left.stageIndex || 0) - (right.stageIndex || 0));
   }
   function stageDetailText(stage, candidates, includeOwner) {
     const layers = stage.layerStart != null && stage.layerEnd != null ? ('L' + stage.layerStart + '-' + stage.layerEnd) : ('stage ' + stage.stageIndex);
     const owner = includeOwner ? (' → ' + nodeLabelForId(stage.nodeId || stage.reportedByNodeId || '', candidates)) : '';
     const state = stage.state ? ' · ' + humanizeKey(stage.state) : '';
     return layers + owner + state;
+  }
+  function stageDataValue(stage) {
+    return [stage.nodeId || stage.reportedByNodeId || '', stage.layerStart == null ? '' : stage.layerStart, stage.layerEnd == null ? '' : stage.layerEnd, stage.state || ''].join(':');
   }
   function splitReadinessBlock(report, candidates) {
     const wrap = document.createElement('div');
@@ -615,7 +630,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         chip.className = 'mini-chip';
         chip.setAttribute('data-participant-label', participant.label);
         if (participant.raw) chip.setAttribute('data-participant-id', participant.raw);
-        chip.textContent = participant.label + (participant.vram != null ? ' · ' + fmtGb(participant.vram) : '');
+        if (participant.capacity != null) chip.setAttribute('data-participant-capacity-gb', String(participant.capacity));
+        chip.textContent = participant.label + (participant.capacity != null ? ' · ' + fmtGb(participant.capacity) + ' capacity' : '');
         chips.appendChild(chip);
       });
       row.append(label, chips);
@@ -1017,18 +1033,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const metrics = node.metrics || {};
     const isDirectRuntime = node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp';
     const vram = nodeVramInfo(node);
-    const vramValue = vram.totalMiB <= 0 ? 'not reported' : (vram.usedMiB == null ? (vram.splitBytes ? fmtGb(bytesToGb(vram.splitBytes)) + ' usable' : fmtGibFromMiB(vram.totalMiB)) : (fmtGibFromMiB(vram.usedMiB) + ' / ' + fmtGibFromMiB(vram.totalMiB)));
+    const vramValue = vram.totalMiB <= 0 ? 'not reported' : (vram.usedMiB == null ? fmtGibFromMiB(vram.totalMiB) : (fmtGibFromMiB(vram.usedMiB) + ' / ' + fmtGibFromMiB(vram.totalMiB)));
     bodyEl.appendChild(drawerField('status', 'Status', nodeStatusText(node)));
     const vramRow = drawerField('vram', 'VRAM', vramValue, vram.totalMiB > 0 ? (vram.usedMiB == null ? String(Math.round(vram.totalMiB)) : vram.usedMiB + '/' + Math.round(vram.totalMiB)) : '');
     vramRow.setAttribute('data-vram-source', vram.source);
     bodyEl.appendChild(vramRow);
     const activeProfile = activeProfileForNode(node);
     const profileBudget = activeProfile && activeProfile.meshllm ? activeProfile.meshllm.maxVramGb : undefined;
-    if (profileBudget != null || node.maxVramGbOverride != null || metrics.meshMaxVramGb != null) {
-      const budget = drawerField('mesh-vram-budget', 'Mesh VRAM budget', 'profile ' + fmtGb(profileBudget) + ' / node override ' + fmtGb(node.maxVramGbOverride) + ' / launched --max-vram ' + fmtGb(metrics.meshMaxVramGb), metrics.meshMaxVramGb == null ? '' : String(metrics.meshMaxVramGb));
+    const desiredBudget = node.maxVramGbOverride != null ? node.maxVramGbOverride : profileBudget;
+    const runningBudget = metrics.meshMaxVramGb;
+    const runningDiffers = runningBudget != null && Number(runningBudget) !== Number(desiredBudget || 0);
+    if (desiredBudget != null || runningDiffers) {
+      const desiredLabel = node.maxVramGbOverride != null ? 'desired node override ' : 'desired profile ';
+      const budgetText = desiredLabel + fmtVramLimit(desiredBudget) + (runningDiffers ? ' / running ' + fmtVramLimit(runningBudget) + ' until restart' : '');
+      const budget = drawerField('mesh-vram-budget', 'Mesh VRAM limit', budgetText, runningBudget == null ? '' : String(runningBudget));
       if (profileBudget != null) budget.setAttribute('data-profile-budget', String(profileBudget));
       if (node.maxVramGbOverride != null) budget.setAttribute('data-node-override', String(node.maxVramGbOverride));
-      if (metrics.meshMaxVramGb != null) budget.setAttribute('data-launched-budget', String(metrics.meshMaxVramGb));
+      if (runningBudget != null) budget.setAttribute('data-running-budget', String(runningBudget));
+      if (runningDiffers) budget.setAttribute('data-budget-stale', 'true');
       bodyEl.appendChild(budget);
     }
     if (metrics.gpuName) bodyEl.appendChild(drawerField('gpu', 'GPU', metrics.gpuName));
@@ -1081,7 +1103,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!isDirectRuntime || metrics.meshRole || (metrics.stageCount || 0) > 0) bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', nodeMeshRoleLabel(metrics) || 'not reported'));
     if (!isDirectRuntime || metrics.peerCount != null) bodyEl.appendChild(drawerField('peers', 'Peers', reportedText(metrics.peerCount), metrics.peerCount == null ? '' : String(metrics.peerCount)));
     const nodeStages = nodeStageAssignments(node);
-    if (nodeStages.length) bodyEl.appendChild(drawerField('stage-ownership', 'Stage ownership', nodeStages.map((stage) => stageDetailText(stage, allStatusNodes(), true)).join('; '), nodeStages.map(stageKey).join(',')));
+    if (nodeStages.length) bodyEl.appendChild(drawerField('stage-ownership', 'Stage ownership', nodeStages.map((stage) => stageDetailText(stage, allStatusNodes(), true)).join('; '), nodeStages.map(stageDataValue).join('|')));
     else if (metrics.splitEnabled || metrics.stageCount) bodyEl.appendChild(drawerField('stages', 'Stages', reportedText(metrics.stageCount), metrics.stageCount == null ? '' : String(metrics.stageCount)));
     const apiState = readinessText(metrics.apiReady);
     if (isDirectRuntime && typeof metrics.consoleReady !== 'boolean') {

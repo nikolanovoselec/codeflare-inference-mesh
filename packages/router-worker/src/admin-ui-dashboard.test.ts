@@ -541,11 +541,11 @@ describe('dashboard overview contracts', () => {
     const nodes = [
       {
         id: 'battlestation', displayName: 'battlestation', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'], maxVramGbOverride: 16,
-        metrics: { runtimeKind: 'meshllm', runtimeState: 'ready', nodeState: 'serving', meshRole: 'coordinator', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-host', meshMaxVramGb: 16, activeRequests: 0, splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 16_000_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 4_000_000_000 }] } }
+        metrics: { runtimeKind: 'meshllm', runtimeState: 'ready', nodeState: 'serving', meshRole: 'coordinator', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-host', meshMaxVramGb: 16, gpuName: 'NVIDIA GeForce RTX 3090', gpuMemoryTotalMiB: 24_576, activeRequests: 0, splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 63_200_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 5_700_000_000 }] } }
       },
       {
-        id: 'mac-100-96-0-14', displayName: 'Mac', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'], maxVramGbOverride: 4,
-        metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-mac', meshllmVersion: '0.72.2', meshMaxVramGb: 4, gpuName: 'Apple M2', activeRequests: 0, splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 16_000_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 4_000_000_000 }] }, stageAssignments: [{ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] }
+        id: 'mac-100-96-0-14', displayName: 'Mac', status: 'online', agentVersion: 'v0.1.0-dev.98', activeProfileIds: ['mesh-default-qwen36-35b'],
+        metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'standby', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 1, meshNodeId: 'mesh-mac', meshllmVersion: '0.72.2', meshMaxVramGb: 6, gpuName: 'Apple M2', activeRequests: 0, splitReadiness: { verdict: 'ready', participants: [{ routerNodeId: 'battlestation', displayName: 'battlestation', vramBytes: 63_200_000_000 }, { routerNodeId: 'mac-100-96-0-14', displayName: 'Mac', vramBytes: 5_700_000_000 }] }, stageAssignments: [{ stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'failed' }, { stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] }
       }
     ]
     const meshHealth = [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, coordinatorNodeId: 'mesh-host', peerNodeIds: ['mesh-host', 'mesh-mac'], readyModels: ['codeflare-mesh'], failedNodeIds: [], tokenCount: 2, stageAssignments: [{ stageIndex: 0, nodeId: 'mesh-host', layerStart: 0, layerEnd: 26, state: 'ready' }, { stageIndex: 1, nodeId: 'mesh-mac', layerStart: 27, layerEnd: 28, state: 'ready' }] }]
@@ -561,16 +561,29 @@ describe('dashboard overview contracts', () => {
     const textOf = (name: string) => descendants(fields.find((node) => node.dataset.drawerField === name)!).map((node) => node.textContent).join(' ')
     expect(textOf('work-state')).toContain('Serving split stage')
     expect(textOf('mesh-role')).toContain('Stage owner')
-    expect(textOf('vram')).toContain('4 GB usable')
-    expect(fields.find((node) => node.dataset.drawerField === 'vram')!.dataset.vramSource).toBe('split-readiness')
-    expect(textOf('stage-ownership')).toContain('L27-28 → Mac · Ready')
+    const macVram = fields.find((node) => node.dataset.drawerField === 'vram')!
+    expect(macVram.dataset.vramSource).toBe('none')
+    expect(macVram.dataset.value).toBe('')
+    const macBudget = fields.find((node) => node.dataset.drawerField === 'mesh-vram-budget')!
+    expect(macBudget.dataset.budgetStale).toBe('true')
+    expect(macBudget.dataset.runningBudget).toBe('6')
+    expect(macBudget.dataset.nodeOverride).toBeUndefined()
+    const macCapacity = descendants(fields.find((node) => node.dataset.drawerField === 'split-readiness')!).find((node) => node.dataset.participantLabel === 'Mac')!
+    expect(macCapacity.dataset.participantCapacityGb).toBe('5.7')
+    const macStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
+    expect(macStage.dataset.value).toBe('mesh-mac:27:28:ready')
     expect(fields.some((node) => node.dataset.drawerField === 'stages')).toBe(false)
     expect(fields.some((node) => node.dataset.drawerField === 'node-state')).toBe(false)
 
     await harness.clickAction('node-detail', { nodeId: 'battlestation' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    expect(textOf('vram')).toContain('16 GB usable')
-    expect(textOf('stage-ownership')).toContain('L0-26 → battlestation · Ready')
+    const battleVram = fields.find((node) => node.dataset.drawerField === 'vram')!
+    expect(battleVram.dataset.vramSource).toBe('reported')
+    expect(battleVram.dataset.value).toBe('24576')
+    const battleCapacity = descendants(fields.find((node) => node.dataset.drawerField === 'split-readiness')!).find((node) => node.dataset.participantLabel === 'battlestation')!
+    expect(battleCapacity.dataset.participantCapacityGb).toBe('63.2')
+    const battleStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
+    expect(battleStage.dataset.value).toBe('mesh-host:0:26:ready')
 
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
