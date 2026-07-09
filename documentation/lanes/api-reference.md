@@ -491,7 +491,7 @@ GET /api/v1/status
 
 ### POST /api/v1/speed-test
 
-Runs a bounded synthetic prompt through the router's direct scheduling path and returns prompt-ingestion and generation throughput for automation. This bypasses AI Gateway and measures the Worker → node-agent → runtime leg.
+Runs a bounded synthetic prompt through the router's direct scheduling path and returns prompt-ingestion and generation throughput for automation. This bypasses AI Gateway and measures the Worker → node-agent → runtime leg. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
 
 ```http
 POST /api/v1/speed-test

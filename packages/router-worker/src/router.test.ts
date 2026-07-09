@@ -3254,6 +3254,7 @@ describe('Access-first setup and host gating contracts', () => {
     expect(forwarded.model).toBe(SMOKE_UPSTREAM)
     expect(forwarded.user).toMatch(/^user:speed-test\|session:request-a$/)
     expect(forwarded.max_tokens).toBe(32)
+    expect(forwarded.messages[0]!.content).toMatch(/^Speed test nonce request-a\./)
     expect(forwarded.messages[0]!.content.length).toBeGreaterThan(900)
     expect(measured.requestedPromptTokens).toBe(256)
     expect(measured.requestedMaxTokens).toBe(32)

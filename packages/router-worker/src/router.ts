@@ -1310,7 +1310,7 @@ async function runSpeedTest(deps: RouterDeps, body: SpeedTestBody | undefined, r
   const model = cleanString(body?.model) ?? STABLE_PUBLIC_MODEL
   const promptTokens = boundedInt(body?.promptTokens, 64, 8192, 2048)
   const maxTokens = boundedInt(body?.maxTokens, 16, 512, 160)
-  const prompt = speedTestPrompt(promptTokens)
+  const prompt = speedTestPrompt(promptTokens, requestId)
   const startedAt = Date.now()
   const upstream = await runInference(deps, {
     body: {
@@ -1336,10 +1336,11 @@ function boundedInt(value: unknown, min: number, max: number, fallback: number):
   return Math.min(max, Math.max(min, value))
 }
 
-function speedTestPrompt(targetTokens: number): string {
+function speedTestPrompt(targetTokens: number, nonce: string): string {
   const unit = 'Measure inference speed with stable repeated technical text, preserving exact identifiers and dependency edges. '
   const approxChars = targetTokens * 4
-  return unit.repeat(Math.max(1, Math.ceil(approxChars / unit.length))).slice(0, approxChars) + '\nReturn a concise numbered list.'
+  const prefix = `Speed test nonce ${nonce}. `
+  return (prefix + unit.repeat(Math.max(1, Math.ceil(approxChars / unit.length)))).slice(0, approxChars) + '\nReturn a concise numbered list.'
 }
 
 async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: number, fallbackPromptTokens: number): Promise<Record<string, unknown>> {

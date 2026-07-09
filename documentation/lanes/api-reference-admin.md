@@ -237,7 +237,7 @@ POST /admin/playground/direct-chat
 
 ### POST /admin/playground/speed-test
 
-Runs a bounded synthetic prompt through the router's direct scheduling path and returns timing measurements for prompt ingestion and generation. This bypasses AI Gateway so the result isolates Worker → node-agent → runtime behavior.
+Runs a bounded synthetic prompt through the router's direct scheduling path and returns timing measurements for prompt ingestion and generation. This bypasses AI Gateway so the result isolates Worker → node-agent → runtime behavior. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
 
 ```http
 POST /admin/playground/speed-test
