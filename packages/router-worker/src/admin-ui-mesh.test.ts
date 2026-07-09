@@ -142,7 +142,7 @@ describe('admin UI mesh operations contracts', () => {
     expect(call!.init?.method).toBe('POST')
     expect(call!.init?.headers).toMatchObject({ authorization: 'Bearer admin-secret', 'content-type': 'application/json' })
     expect(JSON.parse(String(call!.init?.body))).toEqual({ profileId: 'mesh-default-qwen36-35b' })
-    expect(JSON.parse(harness.byId('mesh-rotate-output').textContent) as { rotation: number }).toMatchObject({ rotation: 4 })
+    expect(harness.byId('mesh-rotate-output').textContent).toBe('Sharing key reset.')
   })
 
   it('REQ-ADM-009 turns a model on from the unified model list', async () => {

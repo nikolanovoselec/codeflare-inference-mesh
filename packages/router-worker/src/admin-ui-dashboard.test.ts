@@ -181,7 +181,7 @@ describe('dashboard overview contracts', () => {
       return descendants(tile!).find((node) => node.dataset.value !== undefined)!.dataset.value
     }
     expect(stat('nodes')).toBe('2/3')
-    expect(stat('vram')).toBe('32')
+    expect(stat('vram')).toBe('32 GiB')
     expect(stat('speed')).toBeTruthy()
     const speedTile = tiles.find((candidate) => candidate.dataset.stat === 'speed')!
     expect(speedTile.dataset.promptTps).toBe('1800.5')

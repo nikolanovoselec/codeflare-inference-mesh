@@ -507,7 +507,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const raw = String(ref || '');
     const profiles = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
     const profile = profiles.find((item) => item && (item.upstreamModel === raw || item.id === raw || (Array.isArray(item.publicAliases) && item.publicAliases.indexOf(raw) >= 0)));
-    return profile ? modelName(profile) : raw;
+    return profile && profile.displayName ? String(profile.displayName) : raw;
   }
   function nodeLabelForId(value, candidates) {
     const raw = String(value || '').trim();
