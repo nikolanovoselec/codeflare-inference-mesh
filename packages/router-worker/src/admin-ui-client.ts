@@ -498,8 +498,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   function currentRuntimeError(metrics) {
     const state = metrics && metrics.runtimeState;
-    if (state === 'failed' || state === 'dependency-missing') return metrics.lastError || metrics.runtimeDetail || '';
-    return '';
+    if (state === 'ready' || state === 'running') return '';
+    return metrics && (metrics.lastError || metrics.runtimeDetail) || '';
   }
   function runtimeInstallInfo(node) {
     if (node.runtimeInstall) return { ...node.runtimeInstall, error: node.runtimeInstall.state === 'failed' ? node.runtimeInstall.error : null };
