@@ -108,11 +108,19 @@ input:focus-visible,select:focus-visible{border-color:var(--accent)}
 .health-pill[data-health=ok]{color:var(--ok);border-color:rgb(34 197 94/.35)}
 .health-pill[data-health=error]{color:var(--danger-text);border-color:var(--danger-line)}
 main{width:min(1120px,100%);max-width:100%;overflow:hidden;margin:0 auto;padding:1.25rem clamp(1rem,3vw,1.5rem) 4.5rem}
-.view-gate{display:grid;justify-items:center;padding-top:clamp(1rem,6vh,4rem)}
-.gate-flow{width:min(38rem,100%);display:grid;gap:1rem}
+.view-gate{display:block;padding-top:clamp(.75rem,3vh,1.25rem)}
+.gate-flow{width:min(1120px,100%);display:grid;gap:1.25rem}
+.setup-layout{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:1.25rem;align-items:start;min-width:0}
+.setup-rail{position:sticky;top:4.5rem;display:grid;gap:.75rem;min-width:0}
+.setup-panels{display:grid;gap:1rem;min-width:0}
+.dashboard-hero.setup-hero h1{max-width:12ch}
+.setup-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+.setup-stats [data-setup-stat=node]{grid-column:1/-1}
 .slot{display:contents}
-.gate-card{width:min(34rem,100%);display:grid;gap:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);padding:clamp(1.1rem,4vw,1.75rem)}
-.gate-card>p{color:var(--text-2);font-size:var(--fs-sm)}
+.gate-card{width:100%;display:grid;gap:1rem;border:1px solid var(--line);border-radius:var(--radius-lg);background:linear-gradient(180deg,rgb(var(--surface-rgb)/.95),var(--surface));box-shadow:0 12px 42px rgb(0 0 0/.16);padding:clamp(1rem,2.5vw,1.25rem);min-width:0}
+.gate-card h2{display:flex;align-items:center;gap:.55rem}
+.gate-card h2::before{content:"";width:.5rem;height:.5rem;border-radius:2px;background:var(--accent);flex:none}
+.gate-card>p{color:var(--text-2);font-size:var(--fs-sm);max-width:65ch}
 .gate-alt{color:var(--muted);font-size:var(--fs-sm)}
 .gate-alt a{color:var(--accent);text-decoration:underline}
 .stepper{display:flex;gap:.5rem;list-style:none;padding:0;margin:0 0 1rem}
@@ -123,6 +131,11 @@ main{width:min(1120px,100%);max-width:100%;overflow:hidden;margin:0 auto;padding
 .stepper li[data-done=true]{color:var(--text-2)}
 .stepper li[data-done=true]::before{background:var(--ok)}
 .stepper li span{display:block;font-size:var(--fs-sm);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.setup-rail .stepper{display:grid;gap:.2rem;margin:0}
+.setup-rail .stepper li{grid-template-columns:.7rem minmax(0,1fr);align-items:center;gap:.6rem;border-left:2px solid transparent;border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:.55rem .75rem;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px}
+.setup-rail .stepper li::before{width:.5rem;height:.5rem;border-radius:2px}
+.setup-rail .stepper li[aria-current=step]{border-left-color:var(--accent);background:var(--surface)}
+.setup-rail .stepper li[data-done=true]{color:var(--text-2)}
 .wizard-actions{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
 .email-chips{display:flex;flex-wrap:wrap;gap:.45rem;list-style:none;padding:0;margin:0}
 .email-chips:empty{display:none}
@@ -274,8 +287,13 @@ details summary{cursor:pointer;color:var(--text-2);font-size:var(--fs-sm);font-w
 .dash{grid-template-columns:1fr;grid-template-areas:"hero" "sections"}
 .dashboard-hero{grid-template-columns:1fr;align-items:start}
 .dashboard-hero h1{max-width:11ch}
-#overview-tiles{grid-template-columns:1fr}
-#overview-tiles [data-stat=domain],#overview-tiles [data-stat=version]{grid-column:auto}
+.setup-layout{grid-template-columns:1fr}
+.setup-rail{position:static}
+.setup-rail .stepper{display:flex;gap:.5rem}
+.setup-rail .stepper li{display:grid;grid-template-columns:1fr;border-left:0;border-radius:0;padding:.2rem 0;min-height:auto}
+.setup-rail .stepper li::before{width:100%;height:3px;border-radius:999px}
+#overview-tiles,.setup-stats{grid-template-columns:1fr}
+#overview-tiles [data-stat=domain],#overview-tiles [data-stat=version],.setup-stats [data-setup-stat=node]{grid-column:auto}
 .side-nav{display:none}
 .section-panel[data-active=false]{display:none}
 .brand-path{display:none}
