@@ -18,7 +18,7 @@ func ServiceInstallPlan(binaryPath string, configPath string, platform string) S
 	}
 	switch platform {
 	case "windows":
-		return ServiceInstall{Platform: platform, UnitName: "InferenceMeshAgent", Command: fmt.Sprintf("%s run --config %s", binaryPath, configPath), Config: "sc.exe create InferenceMeshAgent binPath= \"" + binaryPath + " run\" start= auto"}
+		return ServiceInstall{Platform: platform, UnitName: "InferenceMeshAgent", Command: fmt.Sprintf("%s run --config %s", binaryPath, configPath), Config: "sc.exe create InferenceMeshAgent binPath= \"" + binaryPath + " run\" start= auto && sc.exe failure InferenceMeshAgent reset= 0 actions= restart/5000/restart/5000/restart/5000 && sc.exe failureflag InferenceMeshAgent 1"}
 	case "darwin":
 		return ServiceInstall{Platform: platform, UnitName: "com.inference-mesh.agent", Command: fmt.Sprintf("%s run --config %s", binaryPath, configPath), Config: "launchd plist with KeepAlive=true and localhost dashboard"}
 	default:
@@ -26,4 +26,4 @@ func ServiceInstallPlan(binaryPath string, configPath string, platform string) S
 	}
 }
 
-const ServiceAnchors = "REQ-NODE-001"
+const ServiceAnchors = "REQ-NODE-001 REQ-NODE-005"

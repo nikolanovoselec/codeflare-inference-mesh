@@ -4,12 +4,19 @@ compatibility_date = "2026-06-01"
 workers_dev = true
 
 [vars]
-MAX_REQUEST_BYTES = "1048576"
+MAX_REQUEST_BYTES = "16777216"
 HEARTBEAT_TTL_SECONDS = "45"
+MESH_ALLOWED_CIDRS = "100.64.0.0/10"
+MESH_ALLOWED_PORTS = "8080,11434"
 AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
 AI_GATEWAY_ID = "inference-mesh"
+AI_GATEWAY_ROUTE_NAME = "codeflare-mesh"
+AI_GATEWAY_PROVIDER_NAME = "codeflare-inference-mesh"
+AI_GATEWAY_PUBLIC_MODEL = "codeflare-mesh"
+WORKER_NAME = "codeflare-inference-mesh-router"
 WORKER_BASE_URL = "https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev"
 GITHUB_REPOSITORY = "nikolanovoselec/codeflare-inference-mesh"
+AGENT_RELEASE_TAG = "agent-release-tag-placeholder"
 
 [[d1_databases]]
 binding = "DB"
@@ -19,6 +26,10 @@ database_id = "create-via-deploy-workflow"
 [[durable_objects.bindings]]
 name = "REGISTRY"
 class_name = "RegistryDO"
+
+[[durable_objects.bindings]]
+name = "SESSION_AFFINITY"
+class_name = "SessionAffinityDO"
 
 # Workers VPC / Cloudflare Mesh binding (required for real deploys).
 # Kept commented in source so CI dry-runs do not require an account with Workers VPC.
@@ -31,3 +42,148 @@ class_name = "RegistryDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RegistryDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionAffinityDO"]
+
+# Rate limiting on public endpoints. Limits are per Cloudflare location per 60s (period must be
+# 10 or 60); the effective global limit is higher across locations. Relaxed for normal operation,
+# tuned to cap floods. Adjust the `limit` values here to retune without code changes.
+[[ratelimits]]
+name = "RL_INFERENCE"
+namespace_id = "2001"
+  # High ceiling for the AI Gateway path (token-carrying /v1 traffic), sized for enterprise
+  # throughput; token-less /v1 hits use RL_PUBLIC instead.
+  [ratelimits.simple]
+  limit = 100000
+  period = 60
+
+[[ratelimits]]
+name = "RL_HEARTBEAT"
+namespace_id = "2002"
+  [ratelimits.simple]
+  limit = 120
+  period = 60
+
+[[ratelimits]]
+name = "RL_ENROLL"
+namespace_id = "2003"
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+[[ratelimits]]
+name = "RL_AUTH"
+namespace_id = "2004"
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+[[ratelimits]]
+name = "RL_PUBLIC"
+namespace_id = "2005"
+  [ratelimits.simple]
+  limit = 600
+  period = 60
+
+# Enterprise control-plane API (/api/v1/*), keyed by a hash of the automation
+# key so one caller's burst cannot spend another's budget. Sized for fleet-scale
+# enrollment minting (thousands of tokens per minute).
+[[ratelimits]]
+name = "RL_API"
+namespace_id = "2006"
+  [ratelimits.simple]
+  limit = 6000
+  period = 60
+
+[env.integration]
+name = "codeflare-inference-mesh-router-integration"
+workers_dev = true
+
+[env.integration.vars]
+MAX_REQUEST_BYTES = "16777216"
+HEARTBEAT_TTL_SECONDS = "45"
+MESH_ALLOWED_CIDRS = "100.64.0.0/10"
+MESH_ALLOWED_PORTS = "8080,11434"
+AI_GATEWAY_ACCOUNT_ID = "set-by-deploy-or-runtime-secret"
+AI_GATEWAY_ID = "inference-mesh-integration"
+AI_GATEWAY_ROUTE_NAME = "codeflare-mesh"
+AI_GATEWAY_PROVIDER_NAME = "codeflare-inference-mesh-integration"
+AI_GATEWAY_PUBLIC_MODEL = "codeflare-mesh"
+WORKER_NAME = "codeflare-inference-mesh-router-integration"
+WORKER_BASE_URL = "https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev"
+GITHUB_REPOSITORY = "nikolanovoselec/codeflare-inference-mesh"
+AGENT_RELEASE_TAG = "agent-release-tag-placeholder"
+
+[[env.integration.d1_databases]]
+binding = "DB"
+database_name = "codeflare-inference-mesh-integration"
+database_id = "create-via-deploy-workflow"
+
+[[env.integration.durable_objects.bindings]]
+name = "REGISTRY"
+class_name = "RegistryDO"
+
+[[env.integration.durable_objects.bindings]]
+name = "SESSION_AFFINITY"
+class_name = "SessionAffinityDO"
+
+# Workers VPC / Cloudflare Mesh binding for integration deploys.
+# The deploy workflow uncomments this block before `wrangler deploy --env integration`.
+# [[env.integration.vpc_networks]]
+# binding = "MESH"
+# network_id = "cf1:network"
+# remote = true
+
+[[env.integration.migrations]]
+tag = "v1"
+new_sqlite_classes = ["RegistryDO"]
+
+[[env.integration.migrations]]
+tag = "v2"
+new_sqlite_classes = ["SessionAffinityDO"]
+
+# Integration rate limits: same shape as production, distinct namespaces so the two
+# environments never share counters.
+[[env.integration.ratelimits]]
+name = "RL_INFERENCE"
+namespace_id = "2101"
+  [env.integration.ratelimits.simple]
+  limit = 100000
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_HEARTBEAT"
+namespace_id = "2102"
+  [env.integration.ratelimits.simple]
+  limit = 120
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_ENROLL"
+namespace_id = "2103"
+  [env.integration.ratelimits.simple]
+  limit = 60
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_AUTH"
+namespace_id = "2104"
+  [env.integration.ratelimits.simple]
+  limit = 30
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_PUBLIC"
+namespace_id = "2105"
+  [env.integration.ratelimits.simple]
+  limit = 600
+  period = 60
+
+[[env.integration.ratelimits]]
+name = "RL_API"
+namespace_id = "2106"
+  [env.integration.ratelimits.simple]
+  limit = 6000
+  period = 60

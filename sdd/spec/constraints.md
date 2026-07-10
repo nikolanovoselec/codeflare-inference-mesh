@@ -14,31 +14,31 @@ The router must build node URLs from validated Mesh IP and allowed port fields. 
 
 ## CON-SEC-001: Separate credential classes
 
-Client, provider, setup, node, upstream, admin, deploy, and runtime Cloudflare tokens are separate credentials with separate storage and rotation paths.
+Client, provider, setup, node, dashboard, upstream, admin, deploy, and runtime Cloudflare tokens are separate credentials with separate storage and rotation paths.
 
 ## CON-SEC-002: No plaintext durable secrets
 
-Durable state stores token hashes or encrypted values only. One-time display is allowed for generated credentials that cannot be recovered later.
+Durable token records avoid plaintext unless a component must recover and present that credential across its trust boundary.
+
+## CON-SEC-003: Mesh secret custody and rotation
+
+Mesh state, including invite tokens, is stored only AES-GCM envelope-encrypted via WebCrypto under the `MESH_STATE_KEY` Worker secret. A mesh token rotation must redistribute tokens and reform the mesh within two minutes under idle or short-stream load; model readiness restoration additionally depends on model reload time.
 
 ## CON-STATE-001: D1 is durable truth
 
 D1 stores setup state, Cloudflare resource IDs, model profiles, aliases, nodes, sessions, reservations, and audit records. Durable Objects may cache hot state but must rebuild from D1.
 
-## CON-SCHED-001: Serialized live reservations
+## CON-RUNTIME-001: Runtime boundaries
 
-A Durable Object owns scheduling decisions that modify in-flight counts, sticky session mappings, and node reservations.
-
-## CON-RUNTIME-001: llama.cpp first runtime
-
-The first managed runtime is `llama-server`. Ollama, LM Studio, and vLLM are adapter targets after the Mesh and llama.cpp path works.
+MeshLLM (`mesh-llm`) is the only managed runtime allowed to form a private multi-node mesh or split a model over WARP CGNAT unicast. Discovery is `nostr`: public relays carry rendezvous metadata only (peer identity + Mesh IP), never inference. Inference data rides iroh, pinned to the WARP overlay by `--bind-ip <MeshIP>` + `--disable-iroh-relays` (no public relay/STUN fallback), with a Cloudflare Gateway egress policy blocking any non-`100.96.0.0/12` iroh/QUIC flow as the network-layer backstop. Direct llama.cpp (`llama-server`) profiles are allowed only as single-node cache-local sessions routed by direct session affinity; they never participate in MeshLLM split/mesh state. Shipped profiles never enable public mesh publishing or inference egress.
 
 ## CON-MODEL-001: Stable Gateway aliases
 
-AI Gateway and clients use stable public aliases. The router owns internal profile selection, rollout, fallback, and request rewriting.
+The Gateway is bound to one stable public model id `codeflare-mesh`, carried as a shared alias by every model profile so the single active model always owns it. The router owns internal profile selection, rollout, fallback, and request rewriting, so the operator switches the underlying active model without changing the Gateway route or public model id.
 
 ## CON-REL-001: Release artifacts are verifiable
 
-Node-agent installers and self-update flows download platform-specific artifacts, verify checksums, verify signatures once signing is configured, and stage before replacing a service binary.
+Node-agent installers download platform-specific archives with checksums, and update candidates must be checksum-verified in a protected staging directory before an operator replaces a service binary.
 
 ## CON-CI-001: CI is the verification surface
 

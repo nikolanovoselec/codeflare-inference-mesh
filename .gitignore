@@ -14,3 +14,33 @@ packages/node-agent/*.test
 *.log
 .verify-anchors.json
 .phase-7b.json
+
+# graphify intermediates (regenerable; only graph.json, GRAPH_REPORT.md, graph.html, callflow.html, .graphify_labels.json are committed)
+graphify-out/cache/
+graphify-out/.cache/
+graphify-out/.chunks/
+graphify-out/manifest.json
+graphify-out/obsidian/
+.graphify_ast.json
+.graphify_semantic.json
+.graphify_semantic_new.json
+.graphify_extract.json
+.graphify_detect.json
+.graphify_analysis.json
+.graphify_cached.json
+.graphify_uncached.txt
+.graphify_chunk_*.txt
+.graphify_old.json
+.graphify_community_label_worklist.json
+.graphify_community_label_batches/
+.graphify_root
+/.graphify_labels.json
+
+# Impeccable critique snapshots (tool-local state)
+.impeccable/
+# graphify curated-graph backups
+graphify-out/20*/
+
+# Report-only review artifacts (must never be committed)
+documentation/.doc-coverage.md
+.review/

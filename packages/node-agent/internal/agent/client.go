@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -24,11 +25,21 @@ type ClaimRequest struct {
 	Capacity         int      `json:"capacity"`
 }
 
+type MeshBootstrap struct {
+	Action     string   `json:"action"`
+	Rotation   int      `json:"rotation"`
+	MeshID     string   `json:"meshId,omitempty"`
+	JoinTokens []string `json:"joinTokens,omitempty"`
+}
+
 type ClaimResponse struct {
-	NodeID        string         `json:"nodeId"`
-	NodeToken     string         `json:"nodeToken"`
-	UpstreamToken string         `json:"upstreamToken"`
-	Profiles      []ModelProfile `json:"profiles"`
+	NodeID                 string                `json:"nodeId"`
+	NodeToken              string                `json:"nodeToken"`
+	UpstreamToken          string                `json:"upstreamToken"`
+	Profiles               []ModelProfile        `json:"profiles"`
+	MeshBootstrap          *MeshBootstrap        `json:"meshBootstrap,omitempty"`
+	DesiredAgentVersion    string                `json:"desiredAgentVersion,omitempty"`
+	DesiredRuntimeVersions RuntimeBinaryVersions `json:"desiredRuntimeVersions,omitempty"`
 }
 
 type HeartbeatRequest struct {
@@ -44,12 +55,28 @@ type HeartbeatRequest struct {
 	InFlight           int         `json:"inFlight"`
 	Runtime            string      `json:"runtime"`
 	RuntimeModel       string      `json:"runtimeModel,omitempty"`
-	Metrics            NodeMetrics `json:"metrics"`
+	MeshID             string      `json:"meshId,omitempty"`
+	MeshToken          string      `json:"meshToken,omitempty"`
+	AgentVersion       string      `json:"agentVersion,omitempty"`
+	// ReloadNonce echoes the Force Reload directive the node has already applied so the
+	// router can retire the one-shot request (REQ-NODE-012).
+	ReloadNonce string      `json:"reloadNonce,omitempty"`
+	Metrics     NodeMetrics `json:"metrics"`
 }
 
 type HeartbeatResponse struct {
-	OK              bool           `json:"ok"`
-	DesiredProfiles []ModelProfile `json:"desiredProfiles"`
+	OK                     bool                  `json:"ok"`
+	DesiredProfiles        []ModelProfile        `json:"desiredProfiles"`
+	MeshBootstrap          *MeshBootstrap        `json:"meshBootstrap,omitempty"`
+	DesiredAgentVersion    string                `json:"desiredAgentVersion,omitempty"`
+	DesiredRuntimeVersions RuntimeBinaryVersions `json:"desiredRuntimeVersions,omitempty"`
+	// Deactivated tells a tainted node to run no model: it keeps heartbeating but tears down /
+	// never launches mesh-llm until the taint clears. REQ-NODE-011.
+	Deactivated bool `json:"deactivated,omitempty"`
+	// ReloadNonce is a one-shot Force Reload directive: when it differs from the nonce the
+	// node last applied, the node drains and restarts mesh-llm exactly once, then echoes it
+	// back on the next heartbeat so the router can retire it. REQ-NODE-012.
+	ReloadNonce string `json:"reloadNonce,omitempty"`
 }
 
 func (c Client) Claim(ctx context.Context, setupToken string, req ClaimRequest) (ClaimResponse, error) {
@@ -73,6 +100,16 @@ func ApplyClaim(cfg Config, claim ClaimResponse, path string) (Config, error) {
 	next.NodeID = claim.NodeID
 	next.NodeToken = claim.NodeToken
 	next.UpstreamToken = claim.UpstreamToken
+	next.Profiles = append([]ModelProfile(nil), claim.Profiles...)
+	next.RuntimeVersions = mergeRuntimeVersions(next.RuntimeVersions, claim.DesiredRuntimeVersions)
+	activeProfiles := activeDesiredProfiles(claim.Profiles)
+	if len(activeProfiles) > 0 {
+		next.ActiveProfileIDs = profileIDs(activeProfiles)
+		next.PublicModels = profileAliases(activeProfiles)
+	}
+	if selected, ok := SelectedProfile(next); ok {
+		next.RuntimeModel = selected.UpstreamModel
+	}
 	next.SetupToken = ""
 	if err := SaveConfig(path, next); err != nil {
 		return Config{}, err
@@ -80,7 +117,104 @@ func ApplyClaim(cfg Config, claim ClaimResponse, path string) (Config, error) {
 	return next, nil
 }
 
-func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int) HeartbeatRequest {
+func ApplyDesiredRuntimeVersions(cfg Config, desired RuntimeBinaryVersions, path string) (Config, bool, error) {
+	next := cfg
+	next.RuntimeVersions = mergeRuntimeVersions(next.RuntimeVersions, desired)
+	if reflect.DeepEqual(cfg.RuntimeVersions, next.RuntimeVersions) {
+		return cfg, false, nil
+	}
+	if err := SaveConfig(path, next); err != nil {
+		return Config{}, false, err
+	}
+	return next, true, nil
+}
+
+func ApplyDesiredProfiles(cfg Config, desired []ModelProfile, path string) (Config, bool, bool, error) {
+	if len(desired) == 0 {
+		return cfg, false, false, nil
+	}
+	before, hadBefore := SelectedProfile(cfg)
+	next := cfg
+	next.Profiles = append([]ModelProfile(nil), desired...)
+	activeProfiles := activeDesiredProfiles(desired)
+	if len(activeProfiles) > 0 {
+		next.ActiveProfileIDs = profileIDs(activeProfiles)
+		next.PublicModels = profileAliases(activeProfiles)
+	}
+	if selected, ok := SelectedProfile(next); ok {
+		next.RuntimeModel = selected.UpstreamModel
+	}
+	changed := !reflect.DeepEqual(cfg.Profiles, next.Profiles) || !reflect.DeepEqual(cfg.ActiveProfileIDs, next.ActiveProfileIDs) || !reflect.DeepEqual(cfg.PublicModels, next.PublicModels) || cfg.RuntimeModel != next.RuntimeModel
+	if !changed {
+		return cfg, false, false, nil
+	}
+	if err := SaveConfig(path, next); err != nil {
+		return Config{}, false, false, err
+	}
+	after, hasAfter := SelectedProfile(next)
+	restart := hadBefore != hasAfter || (hadBefore && hasAfter && !reflect.DeepEqual(before, after))
+	return next, true, restart, nil
+}
+
+func mergeRuntimeVersions(current RuntimeBinaryVersions, desired RuntimeBinaryVersions) RuntimeBinaryVersions {
+	next := current
+	if desired.MeshLLM != "" {
+		next.MeshLLM = desired.MeshLLM
+	}
+	if desired.LlamaCpp != "" {
+		next.LlamaCpp = desired.LlamaCpp
+	}
+	return next
+}
+
+func activeDesiredProfiles(profiles []ModelProfile) []ModelProfile {
+	active := make([]ModelProfile, 0, len(profiles))
+	for _, profile := range profiles {
+		if profile.Active {
+			active = append(active, profile)
+		}
+	}
+	return active
+}
+
+func profileIDs(profiles []ModelProfile) []string {
+	ids := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		ids = append(ids, profile.ID)
+	}
+	return ids
+}
+
+func profileAliases(profiles []ModelProfile) []string {
+	seen := map[string]bool{}
+	aliases := []string{}
+	for _, profile := range profiles {
+		for _, alias := range profile.PublicAliases {
+			if !seen[alias] {
+				seen[alias] = true
+				aliases = append(aliases, alias)
+			}
+		}
+	}
+	return aliases
+}
+
+// HeartbeatIdentity carries the values resent in every heartbeat request:
+// the node's current mesh id and invite token as last captured from the
+// MeshLLM console, plus the compiled-in agent version. Resending every tick
+// keeps token delivery idempotent so the router can upsert on change.
+type HeartbeatIdentity struct {
+	MeshID       string
+	MeshToken    string
+	AgentVersion string
+	ReloadNonce  string
+}
+
+func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int, identity HeartbeatIdentity) HeartbeatRequest {
+	runtimeKind := "meshllm"
+	if profile, ok := SelectedProfile(cfg); ok && profile.Runtime != "" {
+		runtimeKind = profile.Runtime
+	}
 	return HeartbeatRequest{
 		NodeID:             cfg.NodeID,
 		DisplayName:        cfg.DisplayName,
@@ -92,8 +226,12 @@ func HeartbeatFromConfig(cfg Config, metrics NodeMetrics, inFlight int) Heartbea
 		ActiveProfileIDs:   append([]string(nil), cfg.ActiveProfileIDs...),
 		Capacity:           cfg.Capacity,
 		InFlight:           inFlight,
-		Runtime:            "llama.cpp",
-		RuntimeModel:       cfg.RuntimeModel,
+		Runtime:            runtimeKind,
+		RuntimeModel:       metrics.LoadedModel,
+		MeshID:             identity.MeshID,
+		MeshToken:          identity.MeshToken,
+		AgentVersion:       identity.AgentVersion,
+		ReloadNonce:        identity.ReloadNonce,
 		Metrics:            metrics,
 	}
 }
@@ -127,4 +265,4 @@ func (c Client) post(ctx context.Context, path string, token string, req any, ou
 	return nil
 }
 
-const ClientAnchors = "REQ-NODE-002"
+const ClientAnchors = "REQ-NODE-002 REQ-RUN-003 REQ-RUN-006"

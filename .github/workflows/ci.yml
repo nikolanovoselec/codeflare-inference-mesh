@@ -1,30 +1,28 @@
-name: CI
+name: PR Checks
 # REL001PullRequestChecks
 # REL003PackageSmoke
 
 on:
-  pull_request:
-    branches: [main]
   push:
     branches: [main]
+  pull_request:
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 jobs:
   router:
     name: Router Worker checks
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24'
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Lint router
         run: npm run lint --workspace packages/router-worker
       - name: Test router behavior
@@ -43,10 +41,11 @@ jobs:
       run:
         working-directory: packages/node-agent
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-go@v6.5.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
+          cache-dependency-path: packages/node-agent/go.mod
       - name: Go test
         run: go test ./...
       - name: Go vet
@@ -63,12 +62,13 @@ jobs:
       run:
         working-directory: packages/node-agent
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-go@v6.5.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
+          cache-dependency-path: packages/node-agent/go.mod
       - name: Build staged binary
-        run: mkdir -p dist && GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=ci" -o dist/inference-mesh-agent-linux-amd64 ./cmd/inference-mesh-agent
+        run: mkdir -p dist && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=ci" -o dist/inference-mesh-agent-linux-amd64 ./cmd/inference-mesh-agent
       - name: Create archive and checksums
         run: |
           tar -C dist -czf dist/inference-mesh-agent-linux-amd64.tar.gz inference-mesh-agent-linux-amd64
@@ -76,7 +76,7 @@ jobs:
           sha256sum -c dist/checksums.txt
       - name: Version command
         run: ./dist/inference-mesh-agent-linux-amd64 version
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: inference-mesh-agent-linux-amd64
           path: packages/node-agent/dist/*
@@ -85,23 +85,27 @@ jobs:
     name: Dependency review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/dependency-review-action@v5.0.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
 
   vulnerability-checks:
     name: Vulnerability checks
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.0
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24'
-      - uses: actions/setup-go@v6.5.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: '1.26.4'
+          go-version: '1.26.5'
+          cache-dependency-path: packages/node-agent/go.mod
       - name: npm audit
-        run: npm install && npm audit --audit-level=high --omit=dev
+        run: npm ci && npm audit --audit-level=high --omit=dev
       - name: Go vulnerability check
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.5.0

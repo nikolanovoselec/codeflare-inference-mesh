@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>codeflare-inference-mesh — Complete Call Flow &amp; Architecture Documentation</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0f172a; --surface: #1e293b; --border: #334155;
+  --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+  --warn: #fbbf24; --err: #f87171; --ok: #34d399;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+.container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 2.4rem; margin-bottom: 8px; background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+h2 { font-size: 1.7rem; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+h3 { font-size: 1.25rem; margin: 32px 0 12px; color: var(--accent); }
+h4 { font-size: 1.05rem; margin: 20px 0 8px; color: var(--warn); }
+p { margin: 8px 0; color: var(--muted); }
+.subtitle { color: var(--muted); font-size: 1.1rem; margin-bottom: 32px; }
+.mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; overflow-x: auto; position: relative; }
+.mermaid.is-enhanced { padding: 0; overflow: hidden; min-height: 260px; }
+.mermaid-viewport { padding: 54px 24px 24px; overflow: hidden; cursor: grab; touch-action: none; min-height: 260px; }
+.mermaid-viewport.is-dragging { cursor: grabbing; }
+.mermaid-viewport svg { max-width: none !important; height: auto; transform-origin: 0 0; transition: transform 120ms ease; }
+.mermaid-toolbar { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 6px; background: rgba(15,23,42,0.92); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
+.mermaid-toolbar button, .mermaid-toolbar .zoom-level { height: 28px; min-width: 32px; border: 1px solid var(--border); border-radius: 6px; background: #1e293b; color: var(--text); font: 600 0.78rem system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; }
+.mermaid-toolbar button { cursor: pointer; }
+.mermaid-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+.mermaid-toolbar .zoom-level { min-width: 52px; color: var(--muted); background: transparent; }
+.call-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92rem; }
+.call-table th { background: #1a2744; color: var(--accent); text-align: left; padding: 10px 14px; border: 1px solid var(--border); }
+.call-table td { padding: 8px 14px; border: 1px solid var(--border); vertical-align: top; }
+.call-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+.tag-async { background: #7c3aed33; color: #a78bfa; }
+.tag-class { background: #05966933; color: var(--ok); }
+.tag-func { background: #2563eb33; color: var(--accent); }
+.tag-cmd { background: #d9770633; color: var(--warn); }
+.tag-endpoint { background: #dc262633; color: var(--err); }
+.tag-hook { background: #db277733; color: #f472b6; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin: 16px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin: 16px 0; }
+.arrow-chain { font-family: 'Fira Code', monospace; font-size: 0.85rem; color: var(--accent); padding: 10px; background: rgba(56,189,248,0.06); border-radius: 6px; }
+code { font-family: 'Fira Code', 'Cascadia Code', monospace; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 3px; font-size: 0.88em; }
+ul, ol { margin: 8px 0 8px 24px; color: var(--muted); }
+li { margin: 4px 0; }
+a { color: var(--accent); }
+hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+.nav { position: sticky; top: 0; background: var(--bg); z-index: 10; padding: 12px 0; border-bottom: 1px solid var(--border); display: flex; gap: 20px; flex-wrap: wrap; font-size: 0.9rem; }
+.nav a { text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+@media (max-width: 768px) { .container { padding: 16px; } h1 { font-size: 1.8rem; } }
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>codeflare-inference-mesh — Complete Call Flow &amp; Architecture Documentation</h1>
+<p class="subtitle">Generated from graphify knowledge graph: 1501 nodes, 3836 edges, 58 communities. Commit: 26dde02</p>
+
+<div class="nav">
+    <a href="#overview">Architecture Overview</a>
+    <a href="#build-graph">Graph Build</a>
+    <a href="#cli-skills">CLI &amp; Skill Installers</a>
+    <a href="#serve-api">Serving API</a>
+    <a href="#tests-fixtures">Tests &amp; Fixtures</a>
+    <a href="#og-image-generation">OG image generation</a>
+    <a href="#reservations-index-migration">Reservations index migration</a>
+</div>
+
+<!-- ====== Architecture Overview ====== -->
+<h2 id="overview">1. Architecture Overview</h2>
+
+<div class="mermaid">
+
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    BUILD_GRAPH_321CBB04("Graph Build<br/><small>34 nodes</small>")
+    class BUILD_GRAPH_321CBB04 module;
+    CLI_SKILLS_9964CBB8("CLI &amp; Skill Installers<br/><small>659 nodes</small>")
+    class CLI_SKILLS_9964CBB8 module;
+    SERVE_API_35EC8E86("Serving API<br/><small>770 nodes</small>")
+    class SERVE_API_35EC8E86 module;
+    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>29 nodes</small>")
+    class TESTS_FIXTURES_B84B1DCC module;
+    OG_IMAGE_GENERATION_69F8FFE0("OG image generation<br/><small>8 nodes</small>")
+    class OG_IMAGE_GENERATION_69F8FFE0 module;
+    RESERVATIONS_INDEX_MIGRATION_3D6114FF("Reservations index migration<br/><small>1 nodes</small>")
+    class RESERVATIONS_INDEX_MIGRATION_3D6114FF module;
+    CLI_SKILLS_9964CBB8 -->|imports x25| SERVE_API_35EC8E86
+    SERVE_API_35EC8E86 -->|imports x21| TESTS_FIXTURES_B84B1DCC
+    TESTS_FIXTURES_B84B1DCC -->|imports x17| SERVE_API_35EC8E86
+    SERVE_API_35EC8E86 -->|calls x5| CLI_SKILLS_9964CBB8
+    CLI_SKILLS_9964CBB8 -->|imports x2| TESTS_FIXTURES_B84B1DCC
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h4>Architecture Layers</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>Layer</th><th>Nodes</th><th>Communities</th></tr>
+      <tr><td>Graph Build</td><td>34</td><td><code>35, 40, 47, 57</code></td></tr><tr><td>CLI &amp; Skill Installers</td><td>659</td><td><code>0, 1, 2, 6, 7, 8, 11, 13, 19, 22, 23, 26, 34, 38, 45, 48, 50, 51</code></td></tr><tr><td>Serving API</td><td>770</td><td><code>3, 4, 5, 9, 10, 12, 14, 15, 16, 17, 18, 20, 21, 24, 25, 27, 29, 30, 31, 32, 33, 36, 37, 39, 42, 44, 46, 49, 52, 53, 54, 56</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>29</td><td><code>28, 41</code></td></tr><tr><td>OG image generation</td><td>8</td><td><code>43</code></td></tr><tr><td>Reservations index migration</td><td>1</td><td><code>55</code></td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Core Flow</h4>
+    <div class="arrow-chain">Graph Build -&gt; CLI &amp; Skill Installers -&gt; Serving API -&gt; Tests &amp; Fixtures -&gt; OG image generation -&gt; Reservations index migration</div>
+  </div>
+</div>
+<div class="grid">
+  <div class="card">
+    <h4>Graph Report Highlights</h4>
+    <ul>
+      <li>1501 nodes · 3836 edges · 58 communities (52 shown, 6 thin omitted)</li>
+      <li>Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 296 edges (avg confidence: 0.79)</li>
+      <li>Token cost: 0 input · 0 output</li>
+      <li>1. `createRouter()` - 84 edges</li>
+      <li>2. `json()` - 79 edges</li>
+      <li>3. `MeshLLMManager` - 44 edges</li>
+    </ul>
+  </div>
+</div>
+<hr>
+<!-- ====== 2. Graph Build ====== -->
+<h2 id="build-graph">2. Graph Build</h2>
+<p>Graph Build groups implementation around packagejson, tsconfigbasejson, packages, tsconfigjson, mostly in package.json, tsconfig.base.json, packages/router-worker/tsconfig.json. This section covers 34 nodes and 30 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Graph Build (34 nodes, 30 edges)
+    subgraph build_graph_package_json_4e40bfbd["package.json"]
+        package_582681c2("package.json")
+        package_scripts_25cfc1ca("scripts<br/><small>package.json</small>")
+        package_description_1bccacf3("description<br/><small>package.json</small>")
+        package_engines_92ff67d1("engines<br/><small>package.json</small>")
+        package_name_b23e1232("name<br/><small>package.json</small>")
+        package_private_9955bf19("private<br/><small>package.json</small>")
+        package_version_a7f3cb7e("version<br/><small>package.json</small>")
+        package_workspaces_1e2e55c4("workspaces<br/><small>package.json</small>")
+        package_scripts_cf_types_8a6c650f("cf-types<br/><small>package.json</small>")
+        package_scripts_dry_run_16dbf1ad("dry-run<br/><small>package.json</small>")
+        package_scripts_lint_619c0521("lint<br/><small>package.json</small>")
+        package_scripts_test_71544dc5("test<br/><small>package.json</small>")
+        package_scripts_typecheck_09c71ae6("typecheck<br/><small>package.json</small>")
+        package_engines_node_f5210d2f("node<br/><small>package.json</small>")
+    end
+    subgraph build_graph_packages_router_worker_tsconfig_json_ab94c424["packages/router-worker/tsconfig.json"]
+        packages_router_worker_tsconfig_3caf0b5a("tsconfig.json")
+        packages_router_worker_tsconfig_compileroptions_62862b71("compilerOptions<br/><small>packages/router-worker/tsconfig.json</small>")
+    end
+    subgraph build_graph_tsconfig_base_json_32f7fbda["tsconfig.base.json"]
+        tsconfig_base_compileroptions_0a93f158("compilerOptions<br/><small>tsconfig.base.json</small>")
+        tsconfig_base_593e0b92("tsconfig.base.json")
+    end
+    package_582681c2 -->|contains| package_description_1bccacf3
+    package_582681c2 -->|contains| package_engines_92ff67d1
+    package_582681c2 -->|contains| package_name_b23e1232
+    package_582681c2 -->|contains| package_private_9955bf19
+    package_582681c2 -->|contains| package_scripts_25cfc1ca
+    package_582681c2 -->|contains| package_version_a7f3cb7e
+    package_582681c2 -->|contains| package_workspaces_1e2e55c4
+    package_scripts_25cfc1ca -->|contains| package_scripts_cf_types_8a6c650f
+    package_scripts_25cfc1ca -->|contains| package_scripts_dry_run_16dbf1ad
+    package_scripts_25cfc1ca -->|contains| package_scripts_lint_619c0521
+    package_scripts_25cfc1ca -->|contains| package_scripts_test_71544dc5
+    package_scripts_25cfc1ca -->|contains| package_scripts_typecheck_09c71ae6
+    package_engines_92ff67d1 -->|contains| package_engines_node_f5210d2f
+    packages_router_worker_tsconfig_3caf0b5a -->|contains| packages_router_worker_tsconfig_compileroptions_62862b71
+    tsconfig_base_593e0b92 -->|contains| tsconfig_base_compileroptions_0a93f158
+    %% Omitted for readability: 16 nodes, 0 edges
+    class package_582681c2 function;
+    class package_scripts_25cfc1ca function;
+    class package_description_1bccacf3 function;
+    class package_engines_92ff67d1 function;
+    class package_name_b23e1232 function;
+    class package_private_9955bf19 function;
+    class package_version_a7f3cb7e function;
+    class package_workspaces_1e2e55c4 function;
+    class package_scripts_cf_types_8a6c650f function;
+    class package_scripts_dry_run_16dbf1ad function;
+    class package_scripts_lint_619c0521 function;
+    class package_scripts_test_71544dc5 function;
+    class package_scripts_typecheck_09c71ae6 function;
+    class package_engines_node_f5210d2f function;
+    class packages_router_worker_tsconfig_3caf0b5a function;
+    class packages_router_worker_tsconfig_compileroptions_62862b71 function;
+    class tsconfig_base_compileroptions_0a93f158 function;
+    class tsconfig_base_593e0b92 function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>package.json</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>package.json node in package.json.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>name</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>name node in package.json.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>version</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>version node in package.json.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>private</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>private node in package.json.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>description</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>description node in package.json.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>workspaces</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>workspaces node in package.json.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>scripts</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>scripts node in package.json.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>lint</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>lint node in package.json.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>test</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>typecheck</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>typecheck node in package.json.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>cf-types</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>cf-types node in package.json.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>dry-run</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>dry-run node in package.json.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>engines</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>engines node in package.json.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>node</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>node node in package.json.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>tsconfig.base.json</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>compilerOptions</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>compilerOptions node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>target</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>target node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>module</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>module node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>moduleResolution</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>moduleResolution node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>lib</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>lib node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>strict</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>strict node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>noUncheckedIndexedAccess</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>noUncheckedIndexedAccess node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>exactOptionalPropertyTypes</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>exactOptionalPropertyTypes node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>resolveJsonModule</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>resolveJsonModule node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>skipLibCheck</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>skipLibCheck node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>types</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>types node in tsconfig.base.json.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>tsconfig.json</code><br><small style="color:var(--muted)">packages/router-worker/tsconfig.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>extends</code><br><small style="color:var(--muted)">packages/router-worker/tsconfig.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>extends node in packages/router-worker/tsconfig.json.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>compilerOptions</code><br><small style="color:var(--muted)">packages/router-worker/tsconfig.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>compilerOptions node in packages/router-worker/tsconfig.json.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>noEmit</code><br><small style="color:var(--muted)">packages/router-worker/tsconfig.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>noEmit node in packages/router-worker/tsconfig.json.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>package.json</code></td><td>14 nodes</td></tr>
+<tr><td><code>tsconfig.base.json</code></td><td>12 nodes</td></tr>
+<tr><td><code>packages/router-worker/tsconfig.json</code></td><td>7 nodes</td></tr>
+<tr><td><code>packages/node-agent/go.mod</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x30. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 3. CLI & Skill Installers ====== -->
+<h2 id="cli-skills">3. CLI &amp; Skill Installers</h2>
+<p>CLI &amp; Skill Installers groups implementation around agent, packages, node, internal, mostly in cmd/inference-mesh-agent/main_test.go, cmd/inference-mesh-agent/main.go, internal/agent/meshllm_manager_test.go. This section covers 659 nodes and 1753 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: CLI &amp; Skill Installers (659 nodes, 1753 edges)
+    subgraph cli_skills_cmd_inference_mesh_agent_main_go_fc11ea6c["cmd/inference-mesh-agent/main.go"]
+        inference_mesh_agent_serviceloop_7ff33c7e("serviceLoop<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_399f1345("main()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_0f8b3fbf("runInstall()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_3e255923("runService()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_53dcee45("configPathFromArgs()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_212abecf("defaultDataDir()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        inference_mesh_agent_runtimeloadstate_setstartin_79501248("SetStarting()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        inference_mesh_agent_runtimeloadstate_snapshot_fb361f78("Snapshot()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        inference_mesh_agent_runtimetargetfunc_01383dd0("runtimeTargetFunc<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        inference_mesh_agent_runtimetargetfunc_targeturl_f5fadc29("TargetURL()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        inference_mesh_agent_serviceloop_currentconfig_581dbc8a("currentConfig()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_6c4879ad("heartbeatLoop()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_a0f833e4("provisionMeshPeerFirewall()<br/><small>cmd/inference-mesh-agent/main.go</small>")
+    end
+    subgraph cli_skills_cmd_inference_mesh_agent_main_test_go_e5acffa3["cmd/inference-mesh-agent/main_test.go"]
+        inference_mesh_agent_fakemeshruntime_94f09031("fakeMeshRuntime<br/><small>cmd/inference-mesh-agent/main_test.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_f8db4b0b("newFakeMeshRuntime()<br/><small>cmd/inference-mesh-agent/main_test.go</small>")
+    end
+    agent_llamacppmanager_6840ff40("LlamaCppManager<br/><small>internal/agent/llamacpp_manager.go</small>")
+    agent_meshllmmanager_e5fde492("MeshLLMManager<br/><small>internal/agent/meshllm_manager.go</small>")
+    packages_node_agent_internal_agent_meshllm_manag_0f0a9329("newMeshManagerForTest()<br/><small>internal/agent/meshllm_manager_test.go</small>")
+    packages_node_agent_cmd_inference_mesh_agent_mai_399f1345 -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_0f8b3fbf
+    packages_node_agent_cmd_inference_mesh_agent_mai_399f1345 -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_3e255923
+    packages_node_agent_cmd_inference_mesh_agent_mai_0f8b3fbf -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_53dcee45
+    packages_node_agent_cmd_inference_mesh_agent_mai_0f8b3fbf -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_212abecf
+    packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| inference_mesh_agent_runtimeloadstate_setstartin_79501248
+    packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| inference_mesh_agent_runtimeloadstate_snapshot_fb361f78
+    packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| inference_mesh_agent_runtimetargetfunc_01383dd0
+    packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| inference_mesh_agent_runtimetargetfunc_targeturl_f5fadc29
+    packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| inference_mesh_agent_serviceloop_currentconfig_581dbc8a
+    packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_53dcee45
+    packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_6c4879ad
+    packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_a0f833e4
+    inference_mesh_agent_runtimetargetfunc_01383dd0 -->|method| inference_mesh_agent_runtimetargetfunc_targeturl_f5fadc29
+    inference_mesh_agent_serviceloop_7ff33c7e -->|method| inference_mesh_agent_serviceloop_currentconfig_581dbc8a
+    %% Omitted for readability: 641 nodes, 0 edges
+    class inference_mesh_agent_serviceloop_7ff33c7e function;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_399f1345 function;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_0f8b3fbf function;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 function;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_53dcee45 function;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_212abecf function;
+    class inference_mesh_agent_runtimeloadstate_setstartin_79501248 function;
+    class inference_mesh_agent_runtimeloadstate_snapshot_fb361f78 function;
+    class inference_mesh_agent_runtimetargetfunc_01383dd0 function;
+    class inference_mesh_agent_runtimetargetfunc_targeturl_f5fadc29 function;
+    class inference_mesh_agent_serviceloop_currentconfig_581dbc8a function;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_6c4879ad function;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_a0f833e4 function;
+    class inference_mesh_agent_fakemeshruntime_94f09031 test;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_f8db4b0b test;
+    class agent_llamacppmanager_6840ff40 klass;
+    class agent_meshllmmanager_e5fde492 klass;
+    class packages_node_agent_internal_agent_meshllm_manag_0f0a9329 test;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>applyMeshStatusMetrics()</code><br><small style="color:var(--muted)">cmd/inference-mesh-agent/main.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>collect()</code><br><small style="color:var(--muted)">cmd/inference-mesh-agent/main.go</small></td>
+  <td><code>DeriveMeshRole()</code><br><small style="color:var(--muted)">internal/agent/meshllm_status.go</small><br><code>MapMeshLLMState()</code><br><small style="color:var(--muted)">internal/agent/meshllm_status.go</small><br><code>MeshStatusWithModels()</code><br><small style="color:var(--muted)">internal/agent/metrics.go</small><br>+2 more</td>
+  <td>applyMeshStatusMetrics() node in cmd/inference-mesh-agent/main.go.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>meshllm_manager.go</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>meshllm_manager.go node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>meshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>meshProcess node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>meshLauncher</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>meshLauncher node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>execMeshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Kill()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Signal()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Wait()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>execMeshProcess node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>Cmd</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Cmd node in project.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>.Signal()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>execMeshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>.Signal() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>Signal</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Stop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>Signal node in project.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>.Kill()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>execMeshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>Stop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>.Kill() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>.Wait()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>execMeshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>wait()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>.Wait() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>launchMeshProcess()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Start()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>launchMeshProcess() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>Context</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Context node in project.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>Writer</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Writer node in project.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>APIReady()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>ApplyBootstrap()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>awaitReadiness()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br>+25 more</td>
+  <td>MeshLLMManager node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>Mutex</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Mutex node in project.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>CancelFunc</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>CancelFunc node in project.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>MeshBootstrap</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>MeshBootstrap node in project.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>Duration</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Duration node in project.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>Time</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Time node in project.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>.Runtime()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>.Runtime() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>.TargetURL()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>.TargetURL() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>.Start()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>launchMeshProcess()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>awaitReadiness()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>MeshLLMEnv()</code><br><small style="color:var(--muted)">internal/agent/meshllm_render.go</small><br><code>renderInputLocked()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br>+6 more</td>
+  <td>.Start() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>.Stop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Kill()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Signal</code></td>
+  <td><code>awaitReadiness()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>finishStop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Restart()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br>+1 more</td>
+  <td>.Stop() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>.Restart()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Start()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Stop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>.Restart() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>.RestartWithInput()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>RestartWithBinaryInput()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>.RestartWithInput() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>.RestartWithBinaryInput()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>RestartWithInput()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Start()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br>+1 more</td>
+  <td>No direct outbound edge</td>
+  <td>.RestartWithBinaryInput() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>.SetState()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>.SetState() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>.SetFailure()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>.SetFailure() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>.State()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>runningLocked()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>.State() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>.LastError()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>runningLocked()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td>.LastError() node in internal/agent/meshllm_manager.go.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>cmd/inference-mesh-agent/main_test.go</code></td><td>58 nodes</td></tr>
+<tr><td><code>cmd/inference-mesh-agent/main.go</code></td><td>53 nodes</td></tr>
+<tr><td><code>internal/agent/meshllm_manager_test.go</code></td><td>47 nodes</td></tr>
+<tr><td><code>internal/agent/meshllm_manager.go</code></td><td>41 nodes</td></tr>
+<tr><td><code>internal/agent/agent_test.go</code></td><td>38 nodes</td></tr>
+<tr><td><code>internal/agent/llamacpp_install.go</code></td><td>33 nodes</td></tr>
+<tr><td><code>internal/agent/llamacpp_manager.go</code></td><td>33 nodes</td></tr>
+<tr><td><code>internal/agent/meshllm_install.go</code></td><td>27 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: references x485, calls x425, contains x411, method x139. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 4. Serving API ====== -->
+<h2 id="serve-api">4. Serving API</h2>
+<p>Serving API groups implementation around router, packages, worker, routerts, mostly in router-worker/src/router.ts, router-worker/src/types.ts, router-worker/src/store.ts. This section covers 770 nodes and 1927 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Serving API (770 nodes, 1927 edges)
+    subgraph serve_api_router_worker_scripts_workflow_safety_32ead5e2["router-worker/scripts/workflow-safety.mjs"]
+        packages_router_worker_scripts_workflow_safety_w_f81c7d3a("workflowFiles()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_v_eb02c55d("validateWorkflowSafety()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_l_11f313af("linesFromFile()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_i_23684641("indentOf()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_j_81a2b485("jobBlocks()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_j_bbb7c886("jobLevelField()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_r_8c671ae6("runnerPins()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_s_cf9ea197("stepBlocks()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_h_2370a720("hasWorkflowRunTrigger()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+        packages_router_worker_scripts_workflow_safety_h_9cdc4858("hasHardenedWorkflowRunJob()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
+    end
+    subgraph serve_api_router_worker_scripts_deploy_gate_mjs_bff7e81b["router-worker/scripts/deploy-gate.mjs"]
+        packages_router_worker_scripts_deploy_gate_lates_51c07723("latestRequiredRun()<br/><small>router-worker/scripts/deploy-gate.mjs</small>")
+        packages_router_worker_scripts_deploy_gate_evalu_8608fce7("evaluateDeployGate()<br/><small>router-worker/scripts/deploy-gate.mjs</small>")
+    end
+    subgraph serve_api_router_worker_src_router_ts_14bfc004["router-worker/src/router.ts"]
+        packages_router_worker_src_router_createrouter_81c04e5d("createRouter()<br/><small>router-worker/src/router.ts</small>")
+        packages_router_worker_src_router_requireautomat_2ee02683("requireAutomation()<br/><small>router-worker/src/router.ts</small>")
+    end
+    packages_router_worker_src_cloudflare_api_cloudf_d5bf4f13("CloudflareGatewayClient<br/><small>router-worker/src/cloudflare-api.ts</small>")
+    packages_router_worker_src_store_d1store_a8116496("D1Store<br/><small>router-worker/src/store.ts</small>")
+    packages_router_worker_src_test_helpers_memoryst_4e9c4b5d("MemoryStore<br/><small>router-worker/src/test-helpers.ts</small>")
+    packages_router_worker_src_types_store_3a0e9a0a("Store<br/><small>router-worker/src/types.ts</small>")
+    packages_router_worker_scripts_deploy_gate_lates_51c07723 -->|calls| packages_router_worker_scripts_deploy_gate_evalu_8608fce7
+    packages_router_worker_scripts_workflow_safety_w_f81c7d3a -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
+    packages_router_worker_scripts_workflow_safety_l_11f313af -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
+    packages_router_worker_scripts_workflow_safety_i_23684641 -->|calls| packages_router_worker_scripts_workflow_safety_j_81a2b485
+    packages_router_worker_scripts_workflow_safety_i_23684641 -->|calls| packages_router_worker_scripts_workflow_safety_j_bbb7c886
+    packages_router_worker_scripts_workflow_safety_i_23684641 -->|calls| packages_router_worker_scripts_workflow_safety_r_8c671ae6
+    packages_router_worker_scripts_workflow_safety_i_23684641 -->|calls| packages_router_worker_scripts_workflow_safety_s_cf9ea197
+    packages_router_worker_scripts_workflow_safety_h_2370a720 -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
+    packages_router_worker_scripts_workflow_safety_j_81a2b485 -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
+    packages_router_worker_scripts_workflow_safety_h_9cdc4858 -->|calls| packages_router_worker_scripts_workflow_safety_j_bbb7c886
+    packages_router_worker_scripts_workflow_safety_h_9cdc4858 -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
+    packages_router_worker_scripts_workflow_safety_r_8c671ae6 -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
+    %% Omitted for readability: 752 nodes, 0 edges
+    class packages_router_worker_scripts_workflow_safety_w_f81c7d3a function;
+    class packages_router_worker_scripts_workflow_safety_v_eb02c55d function;
+    class packages_router_worker_scripts_workflow_safety_l_11f313af function;
+    class packages_router_worker_scripts_workflow_safety_i_23684641 function;
+    class packages_router_worker_scripts_workflow_safety_j_81a2b485 function;
+    class packages_router_worker_scripts_workflow_safety_j_bbb7c886 function;
+    class packages_router_worker_scripts_workflow_safety_r_8c671ae6 function;
+    class packages_router_worker_scripts_workflow_safety_s_cf9ea197 function;
+    class packages_router_worker_scripts_workflow_safety_h_2370a720 function;
+    class packages_router_worker_scripts_workflow_safety_h_9cdc4858 function;
+    class packages_router_worker_scripts_deploy_gate_lates_51c07723 function;
+    class packages_router_worker_scripts_deploy_gate_evalu_8608fce7 function;
+    class packages_router_worker_src_router_createrouter_81c04e5d api;
+    class packages_router_worker_src_router_requireautomat_2ee02683 function;
+    class packages_router_worker_src_cloudflare_api_cloudf_d5bf4f13 entry;
+    class packages_router_worker_src_store_d1store_a8116496 ui;
+    class packages_router_worker_src_test_helpers_memoryst_4e9c4b5d test;
+    class packages_router_worker_src_types_store_3a0e9a0a ui;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>approvedNodeHeaders()</code><br><small style="color:var(--muted)">router-worker/src/auth.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>forwardInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>router.ts</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>approvedNodeHeaders() node in router-worker/src/auth.ts.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>directSessionKey()</code><br><small style="color:var(--muted)">router-worker/src/direct-affinity.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>router.ts</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>runDirectLlamaCppInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>directSessionKey() node in router-worker/src/direct-affinity.ts.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>validateCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/installers.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>handleCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>router.ts</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>validateCustomDomain() node in router-worker/src/installers.ts.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>isDefaultModelId()</code><br><small style="color:var(--muted)">router-worker/src/profiles.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>classifyModelDeletion()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>router.ts</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>isDefaultModelId() node in router-worker/src/profiles.ts.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>router.ts</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td><code>access-provisioning.ts</code><br><small style="color:var(--muted)">router-worker/src/access-provisioning.ts</small><br><code>access.ts</code><br><small style="color:var(--muted)">router-worker/src/access.ts</small><br><code>AccessProvisionRequest</code><br><small style="color:var(--muted)">router-worker/src/access-provisioning.ts</small><br>+57 more</td>
+  <td><code>accessConfig()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br><code>advancePhase()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br><code>breakGlassActive()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br>+24 more</td>
+  <td>Module file in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>JSON_HEADERS</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>JSON_HEADERS node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>syncCustomProvider()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>syncGatewayForActor()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>syncCustomProvider() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>provisionCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>handleCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>provisionCustomDomain() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>listZones()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>handleZones()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>listZones() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>listGateways()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>handleGatewayOptions()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>listGateways() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>listRoutes()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>handleGatewayOptions()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>listRoutes() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>provisionStatus()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>handleGatewayProvisionStatus()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>provisionStatus() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>runInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>handleChat()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>directSessionBody()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>handlePlaygroundDirect()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+3 more</td>
+  <td>runInference() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>runMeshInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>forwardInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>runMeshInference() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>runDirectLlamaCppInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>directSessionKey()</code><br><small style="color:var(--muted)">router-worker/src/direct-affinity.ts</small><br><code>runInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>decideDirectSessionWithAffinity()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>directAffinitySecret()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>eligibleDirectNodes()</code><br><small style="color:var(--muted)">router-worker/src/scheduler.ts</small><br>+4 more</td>
+  <td>runDirectLlamaCppInference() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>forwardInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>approvedNodeHeaders()</code><br><small style="color:var(--muted)">router-worker/src/auth.ts</small><br><code>runDirectLlamaCppInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>runMeshInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>meshUrl()</code><br><small style="color:var(--muted)">router-worker/src/scheduler.ts</small><br><code>resolveUpstreamToken()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+1 more</td>
+  <td>forwardInference() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>profileReadiness()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>handleAdminStatus()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>nodeReadyForProfile()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>profileReadiness() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>nodeReadyForProfile()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>profileReadiness()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>nodeReadyForProfile() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>handleInstallScript()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>installScript()</code><br><small style="color:var(--muted)">router-worker/src/installers.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>handleInstallScript() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>syncGatewayForActor()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createTokenRecord()</code><br><small style="color:var(--muted)">router-worker/src/auth.ts</small><br><code>generateBearerToken()</code><br><small style="color:var(--muted)">router-worker/src/auth.ts</small><br><code>handleApiGatewaySync()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+2 more</td>
+  <td><code>cleanString()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>usableWorkerBaseUrl()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>syncGatewayForActor() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>handleCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>provisionCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>validateCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/installers.ts</small></td>
+  <td><code>advancePhase()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>publicWorkerOrigin()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+1 more</td>
+  <td>handleCustomDomain() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>INVALID_MAX_VRAM</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>INVALID_MAX_VRAM node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>LlamaCppConfigBody</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>MeshllmTunablesBody</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>MeshllmTunablesBody node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>PrefixCacheBlock</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Caches analysis results or computes cache keys.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>MESHLLM_PAYLOAD_MODES</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>MESHLLM_PAYLOAD_MODES node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>resolvePrefixCache()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>resolveMeshllmTunables()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>Caches analysis results or computes cache keys.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>ModelConfigBody</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>handleWhoami()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>requireUser()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>handleWhoami() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>handlePlaygroundChat()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>cleanString()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>playgroundMaxTokens()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+2 more</td>
+  <td>Supports retrieval-augmented Q&amp;A or streaming chat.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>router-worker/src/router.ts</code></td><td>169 nodes</td></tr>
+<tr><td><code>router-worker/src/types.ts</code></td><td>48 nodes</td></tr>
+<tr><td><code>router-worker/src/store.ts</code></td><td>43 nodes</td></tr>
+<tr><td><code>router-worker/src/cloudflare-api.ts</code></td><td>42 nodes</td></tr>
+<tr><td><code>router-worker/src/mesh-state.ts</code></td><td>36 nodes</td></tr>
+<tr><td><code>router-worker/src/admin-ui-contract.ts</code></td><td>26 nodes</td></tr>
+<tr><td><code>router-worker/src/test-helpers.ts</code></td><td>25 nodes</td></tr>
+<tr><td><code>router-worker/src/router.test.ts</code></td><td>24 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x764, contains x606, imports x243, method x114. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 5. Tests & Fixtures ====== -->
+<h2 id="tests-fixtures">5. Tests &amp; Fixtures</h2>
+<p>Tests &amp; Fixtures groups implementation around packages, router, worker, storetestts, mostly in router-worker/src/store.test.ts, router-worker/src/test-helpers.ts, router-worker/src/mesh-state.test.ts. This section covers 29 nodes and 49 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Tests &amp; Fixtures (29 nodes, 49 edges)
+    subgraph tests_fixtures_router_worker_src_store_test_ts_dc614b88["router-worker/src/store.test.ts"]
+        packages_router_worker_src_store_test_faked1stat_11325014("FakeD1Statement<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_faked1stat_3e3433fe("run()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_faked1stat_b37f3e2c("selectRows()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_41ec0f2f("store.test.ts")
+        packages_router_worker_src_store_test_faked1stat_6f7b3f36("all()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_faked1data_c6be22e3("FakeD1Database<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_faked1data_1dae5804("prepare()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_faked1stat_f6e82e80("bind()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_faked1stat_78fef55c("constructor()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_faked1stat_3b5fc00b("first()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_nullablenu_4e72c225("nullableNumber()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_nullablete_6513c982("nullableText()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_number_ea9aa4da("number()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_ok_4415de92("ok()<br/><small>router-worker/src/store.test.ts</small>")
+        packages_router_worker_src_store_test_text_feb5bd84("text()<br/><small>router-worker/src/store.test.ts</small>")
+    end
+    subgraph tests_fixtures_router_worker_src_test_helpers_ts_8c54cb8d["router-worker/src/test-helpers.ts"]
+        packages_router_worker_src_test_helpers_memoryst_f4deef89("seedDefaultProfiles()<br/><small>router-worker/src/test-helpers.ts</small>")
+        packages_router_worker_src_test_helpers_nodefixt_d2ad1261("nodeFixture()<br/><small>router-worker/src/test-helpers.ts</small>")
+    end
+    packages_router_worker_src_mesh_state_test_meshn_53230416("meshNode()<br/><small>router-worker/src/mesh-state.test.ts</small>")
+    packages_router_worker_src_mesh_state_test_meshn_53230416 -->|calls| packages_router_worker_src_test_helpers_nodefixt_d2ad1261
+    packages_router_worker_src_store_test_faked1data_c6be22e3 -->|method| packages_router_worker_src_store_test_faked1data_1dae5804
+    packages_router_worker_src_store_test_faked1stat_11325014 -->|method| packages_router_worker_src_store_test_faked1stat_6f7b3f36
+    packages_router_worker_src_store_test_faked1stat_11325014 -->|method| packages_router_worker_src_store_test_faked1stat_f6e82e80
+    packages_router_worker_src_store_test_faked1stat_11325014 -->|method| packages_router_worker_src_store_test_faked1stat_78fef55c
+    packages_router_worker_src_store_test_faked1stat_11325014 -->|method| packages_router_worker_src_store_test_faked1stat_3b5fc00b
+    packages_router_worker_src_store_test_faked1stat_11325014 -->|method| packages_router_worker_src_store_test_faked1stat_3e3433fe
+    packages_router_worker_src_store_test_faked1stat_11325014 -->|method| packages_router_worker_src_store_test_faked1stat_b37f3e2c
+    packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_nullablenu_4e72c225
+    packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_nullablete_6513c982
+    packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_number_ea9aa4da
+    packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_ok_4415de92
+    packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_text_feb5bd84
+    packages_router_worker_src_store_test_faked1stat_6f7b3f36 -->|calls| packages_router_worker_src_store_test_faked1stat_b37f3e2c
+    packages_router_worker_src_store_test_faked1stat_6f7b3f36 -->|calls| packages_router_worker_src_store_test_ok_4415de92
+    packages_router_worker_src_store_test_faked1stat_b37f3e2c -->|calls| packages_router_worker_src_store_test_number_ea9aa4da
+    packages_router_worker_src_store_test_faked1stat_b37f3e2c -->|calls| packages_router_worker_src_store_test_text_feb5bd84
+    packages_router_worker_src_store_test_41ec0f2f -->|imports| packages_router_worker_src_test_helpers_nodefixt_d2ad1261
+    %% Omitted for readability: 11 nodes, 0 edges
+    class packages_router_worker_src_store_test_faked1stat_11325014 test;
+    class packages_router_worker_src_store_test_faked1stat_3e3433fe test;
+    class packages_router_worker_src_store_test_faked1stat_b37f3e2c test;
+    class packages_router_worker_src_store_test_41ec0f2f test;
+    class packages_router_worker_src_store_test_faked1stat_6f7b3f36 test;
+    class packages_router_worker_src_store_test_faked1data_c6be22e3 test;
+    class packages_router_worker_src_store_test_faked1data_1dae5804 test;
+    class packages_router_worker_src_store_test_faked1stat_f6e82e80 test;
+    class packages_router_worker_src_store_test_faked1stat_78fef55c test;
+    class packages_router_worker_src_store_test_faked1stat_3b5fc00b test;
+    class packages_router_worker_src_store_test_nullablenu_4e72c225 test;
+    class packages_router_worker_src_store_test_nullablete_6513c982 test;
+    class packages_router_worker_src_store_test_number_ea9aa4da test;
+    class packages_router_worker_src_store_test_ok_4415de92 test;
+    class packages_router_worker_src_store_test_text_feb5bd84 test;
+    class packages_router_worker_src_test_helpers_memoryst_f4deef89 test;
+    class packages_router_worker_src_test_helpers_nodefixt_d2ad1261 test;
+    class packages_router_worker_src_mesh_state_test_meshn_53230416 test;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>store.test.ts</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>nodeFixture()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small><br><code>test-helpers.ts</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>Module file in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>Row</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Row node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>FakeD1Database</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>prepare()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>FakeD1Database node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>.prepare()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>FakeD1Database</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>.prepare() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>FakeD1Statement</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>all()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>bind()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>constructor()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br>+3 more</td>
+  <td>FakeD1Statement node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>.constructor()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>FakeD1Statement</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>.constructor() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>.bind()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>FakeD1Statement</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>.bind() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>.run()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>FakeD1Statement</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><code>nullableNumber()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>nullableText()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>number()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br>+3 more</td>
+  <td>.run() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>.first()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>FakeD1Statement</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>.first() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>.all()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>FakeD1Statement</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><code>ok()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>selectRows()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>.all() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>.selectRows()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>all()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>FakeD1Statement</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><code>desc()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>maybe()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>number()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br>+3 more</td>
+  <td>.selectRows() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>ok()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>all()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>run()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>ok() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>tokenKey()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>run()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>selectRows()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>tokenKey() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>text()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>run()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>selectRows()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>text() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>nullableText()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>run()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>nullableText() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>number()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>run()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>selectRows()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><code>desc()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>number() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>nullableNumber()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>run()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>nullableNumber() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>maybe()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>selectRows()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><code>pick()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>maybe() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>pick()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>maybe()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>selectRows()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>pick() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>desc()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>number()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small><br><code>selectRows()</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>desc() node in router-worker/src/store.test.ts.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>meshNode()</code><br><small style="color:var(--muted)">router-worker/src/mesh-state.test.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>nodeFixture()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>meshNode() node in router-worker/src/mesh-state.test.ts.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>test-helpers.ts</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>store.test.ts</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>Module file in router-worker/src/test-helpers.ts.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>.seedDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>retiredDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small><br><code>seedDefaultActivation()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small><br><code>shouldRefreshDefaultProfile()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>.seedDefaultProfiles() node in router-worker/src/test-helpers.ts.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>shouldRefreshDefaultProfile()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>seedDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>shouldRefreshDefaultProfile() node in router-worker/src/test-helpers.ts.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>seedDefaultActivation()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>seedDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>seedDefaultActivation() node in router-worker/src/test-helpers.ts.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>retiredDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>seedDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>retiredDefaultProfiles() node in router-worker/src/test-helpers.ts.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>signAccessJwt()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>accessBase64Url()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>signAccessJwt() node in router-worker/src/test-helpers.ts.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>accessBase64Url()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>signAccessJwt()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>accessBase64Url() node in router-worker/src/test-helpers.ts.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>nodeFixture()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>meshNode()</code><br><small style="color:var(--muted)">router-worker/src/mesh-state.test.ts</small><br><code>store.test.ts</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>nodeFixture() node in router-worker/src/test-helpers.ts.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>router-worker/src/store.test.ts</code></td><td>20 nodes</td></tr>
+<tr><td><code>router-worker/src/test-helpers.ts</code></td><td>8 nodes</td></tr>
+<tr><td><code>router-worker/src/mesh-state.test.ts</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x21, contains x18, method x7, imports x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 6. OG image generation ====== -->
+<h2 id="og-image-generation">6. OG image generation</h2>
+<p>OG image generation groups implementation around rasterize, ogmjs, assets, here, mostly in assets/rasterize-og.mjs. This section covers 8 nodes and 7 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: OG image generation (8 nodes, 7 edges)
+    assets_rasterize_og_74209869("rasterize-og.mjs")
+    assets_rasterize_og_fontfiles_628ed066("fontFiles<br/><small>assets/rasterize-og.mjs</small>")
+    assets_rasterize_og_here_124f0db6("here<br/><small>assets/rasterize-og.mjs</small>")
+    assets_rasterize_og_png_f51377b6("png<br/><small>assets/rasterize-og.mjs</small>")
+    assets_rasterize_og_pngpath_78d9b3d2("pngPath<br/><small>assets/rasterize-og.mjs</small>")
+    assets_rasterize_og_resvg_476a6d03("resvg<br/><small>assets/rasterize-og.mjs</small>")
+    assets_rasterize_og_svg_6ac6694a("svg<br/><small>assets/rasterize-og.mjs</small>")
+    assets_rasterize_og_svgpath_c6947089("svgPath<br/><small>assets/rasterize-og.mjs</small>")
+    assets_rasterize_og_74209869 -->|contains| assets_rasterize_og_fontfiles_628ed066
+    assets_rasterize_og_74209869 -->|contains| assets_rasterize_og_here_124f0db6
+    assets_rasterize_og_74209869 -->|contains| assets_rasterize_og_png_f51377b6
+    assets_rasterize_og_74209869 -->|contains| assets_rasterize_og_pngpath_78d9b3d2
+    assets_rasterize_og_74209869 -->|contains| assets_rasterize_og_resvg_476a6d03
+    assets_rasterize_og_74209869 -->|contains| assets_rasterize_og_svg_6ac6694a
+    assets_rasterize_og_74209869 -->|contains| assets_rasterize_og_svgpath_c6947089
+    class assets_rasterize_og_74209869 function;
+    class assets_rasterize_og_fontfiles_628ed066 function;
+    class assets_rasterize_og_here_124f0db6 function;
+    class assets_rasterize_og_png_f51377b6 function;
+    class assets_rasterize_og_pngpath_78d9b3d2 function;
+    class assets_rasterize_og_resvg_476a6d03 function;
+    class assets_rasterize_og_svg_6ac6694a function;
+    class assets_rasterize_og_svgpath_c6947089 function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>rasterize-og.mjs</code><br><small style="color:var(--muted)">assets/rasterize-og.mjs</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>rasterize-og.mjs node in assets/rasterize-og.mjs.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>here</code><br><small style="color:var(--muted)">assets/rasterize-og.mjs</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>here node in assets/rasterize-og.mjs.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>svgPath</code><br><small style="color:var(--muted)">assets/rasterize-og.mjs</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>svgPath node in assets/rasterize-og.mjs.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>pngPath</code><br><small style="color:var(--muted)">assets/rasterize-og.mjs</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>pngPath node in assets/rasterize-og.mjs.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>fontFiles</code><br><small style="color:var(--muted)">assets/rasterize-og.mjs</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>fontFiles node in assets/rasterize-og.mjs.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>svg</code><br><small style="color:var(--muted)">assets/rasterize-og.mjs</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>svg node in assets/rasterize-og.mjs.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>resvg</code><br><small style="color:var(--muted)">assets/rasterize-og.mjs</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>resvg node in assets/rasterize-og.mjs.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>png</code><br><small style="color:var(--muted)">assets/rasterize-og.mjs</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>png node in assets/rasterize-og.mjs.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>assets/rasterize-og.mjs</code></td><td>8 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x7. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 7. Reservations index migration ====== -->
+<h2 id="reservations-index-migration">7. Reservations index migration</h2>
+<p>Reservations index migration groups implementation around 0002, reservations, expiry, indexsql, mostly in router-worker/migrations/0002_reservations_expiry_index.sql. This section covers 1 nodes and 0 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Reservations index migration (1 nodes, 0 edges)
+    packages_router_worker_migrations_0002_reservati_59f8fdbd("reservations expiry index.sql<br/><small>router-worker/migrations/0002_reservations_expiry_index.sql</small>")
+    class packages_router_worker_migrations_0002_reservati_59f8fdbd function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>0002_reservations_expiry_index.sql</code><br><small style="color:var(--muted)">router-worker/migrations/0002_reservations_expiry_index.sql</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>0002_reservations_expiry_index.sql node in router-worker/migrations/0002_reservations_expiry_index.sql.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>router-worker/migrations/0002_reservations_expiry_index.sql</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: No high-confidence call edges detected. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<h2 id="stats">Project Statistics</h2>
+
+<div class="grid">
+  <div class="card">
+    <h4>Graph</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><td>Nodes</td><td>1501</td></tr>
+      <tr><td>Edges</td><td>3836</td></tr>
+      <tr><td>Hyperedges</td><td>0</td></tr>
+      <tr><td>Communities</td><td>58</td></tr>
+      <tr><td>Documented Sections</td><td>6</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Edge Confidence</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><td>EXTRACTED</td><td>3540</td></tr>
+      <tr><td>INFERRED</td><td>296</td></tr>
+      <tr><td>AMBIGUOUS</td><td>0</td></tr>
+    </table>
+  </div>
+</div>
+
+<div style="text-align:center; padding:40px 0; color: var(--muted); font-size:0.9rem;">
+  <p>codeflare-inference-mesh — Architecture Documentation</p>
+  <p>Generated: 2026-07-09 13:36 UTC · graphify callflow-html</p>
+</div>
+
+</div><!-- .container -->
+
+<script>
+(function () {
+  const mermaidConfig = {
+    startOnLoad: false,
+    theme: 'dark',
+    securityLevel: 'loose',
+    flowchart: { htmlLabels: true, useMaxWidth: true },
+    themeVariables: {
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#38bdf8',
+      secondaryColor: '#0f172a',
+      tertiaryColor: '#334155',
+      lineColor: '#64748b',
+      textColor: '#e2e8f0',
+    }
+  };
+
+  mermaid.initialize(mermaidConfig);
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function enhanceMermaidDiagrams() {
+    document.querySelectorAll('.mermaid').forEach((container) => {
+      if (container.dataset.zoomReady === 'true') return;
+      const svg = container.querySelector('svg');
+      if (!svg) return;
+
+      container.dataset.zoomReady = 'true';
+      container.classList.add('is-enhanced');
+
+      const viewport = document.createElement('div');
+      viewport.className = 'mermaid-viewport';
+      svg.parentNode.insertBefore(viewport, svg);
+      viewport.appendChild(svg);
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'mermaid-toolbar';
+      toolbar.innerHTML = [
+        '<button type="button" data-action="zoom-out" title="Zoom out">-</button>',
+        '<span class="zoom-level" data-role="level">100%</span>',
+        '<button type="button" data-action="zoom-in" title="Zoom in">+</button>',
+        '<button type="button" data-action="fit" title="Fit width">Fit</button>',
+        '<button type="button" data-action="reset" title="Reset view">Reset</button>'
+      ].join('');
+      container.insertBefore(toolbar, viewport);
+
+      const state = { scale: 1, x: 0, y: 0, dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 };
+      const level = toolbar.querySelector('[data-role="level"]');
+
+      function applyTransform() {
+        svg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+        level.textContent = `${Math.round(state.scale * 100)}%`;
+      }
+
+      function zoomBy(delta) {
+        state.scale = clamp(state.scale + delta, 0.25, 3);
+        applyTransform();
+      }
+
+      function reset() {
+        state.scale = 1;
+        state.x = 0;
+        state.y = 0;
+        applyTransform();
+      }
+
+      function fitWidth() {
+        const rawWidth = svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width
+          ? svg.viewBox.baseVal.width
+          : svg.getBoundingClientRect().width / state.scale;
+        if (!rawWidth) {
+          reset();
+          return;
+        }
+        state.scale = clamp((viewport.clientWidth - 48) / rawWidth, 0.25, 1.4);
+        state.x = 0;
+        state.y = 0;
+        applyTransform();
+      }
+
+      toolbar.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const action = button.dataset.action;
+        if (action === 'zoom-in') zoomBy(0.15);
+        if (action === 'zoom-out') zoomBy(-0.15);
+        if (action === 'fit') fitWidth();
+        if (action === 'reset') reset();
+      });
+
+      viewport.addEventListener('wheel', (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        zoomBy(event.deltaY < 0 ? 0.1 : -0.1);
+      }, { passive: false });
+
+      viewport.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        state.dragging = true;
+        state.startX = event.clientX;
+        state.startY = event.clientY;
+        state.originX = state.x;
+        state.originY = state.y;
+        viewport.classList.add('is-dragging');
+        viewport.setPointerCapture(event.pointerId);
+      });
+
+      viewport.addEventListener('pointermove', (event) => {
+        if (!state.dragging) return;
+        state.x = state.originX + event.clientX - state.startX;
+        state.y = state.originY + event.clientY - state.startY;
+        applyTransform();
+      });
+
+      function endDrag(event) {
+        if (!state.dragging) return;
+        state.dragging = false;
+        viewport.classList.remove('is-dragging');
+        if (viewport.hasPointerCapture(event.pointerId)) {
+          viewport.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      viewport.addEventListener('pointerup', endDrag);
+      viewport.addEventListener('pointercancel', endDrag);
+      applyTransform();
+    });
+  }
+
+  function renderMermaid() {
+    const result = mermaid.run
+      ? mermaid.run({ querySelector: '.mermaid' })
+      : Promise.resolve();
+    Promise.resolve(result)
+      .then(enhanceMermaidDiagrams)
+      .catch((error) => {
+        console.error('Mermaid render failed:', error);
+        enhanceMermaidDiagrams();
+      });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderMermaid);
+  } else {
+    renderMermaid();
+  }
+})();
+</script>
+
+</body>
+</html>

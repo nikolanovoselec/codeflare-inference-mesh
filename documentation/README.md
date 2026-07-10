@@ -21,7 +21,6 @@ This documentation explains how the planned system fits together. Requirements l
 - Specs define what must be true.
 - Documentation explains how operators and implementers use the design.
 - Decisions record alternatives and tradeoffs.
-- `pending.md` tracks implementation gaps and next steps.
 
 ## REQ backlinks
 
@@ -50,5 +49,3 @@ Each lane references the REQs it implements or explains. If implementation chang
 ## Related
 
 - Product spec: [../sdd/README.md](../sdd/README.md)
-- Current plan: [../PLAN.md](../PLAN.md)
-- Implementation tracking: [../pending.md](../pending.md)

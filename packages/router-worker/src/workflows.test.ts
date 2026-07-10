@@ -1,16 +1,28 @@
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import YAML from 'yaml'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+const ACTION_CHECKOUT = 'actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0'
+const ACTION_SETUP_NODE = 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e'
+const ACTION_SETUP_GO = 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16'
+const ACTION_UPLOAD_ARTIFACT = 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a'
+const ACTION_DEPENDENCY_REVIEW = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294'
+const ACTION_CODEQL_INIT = 'github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
+const ACTION_CODEQL_ANALYZE = 'github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
+const ACTION_CODEQL_UPLOAD_SARIF = 'github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
+const ACTION_SCORECARD = 'ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a'
 
 type Step = {
   readonly name?: string
   readonly run?: string
   readonly uses?: string
   readonly with?: Record<string, unknown>
+  readonly env?: Record<string, string>
   readonly 'working-directory'?: string
 }
 
@@ -20,129 +32,438 @@ type Job = {
   readonly permissions?: Record<string, string>
   readonly needs?: readonly string[]
   readonly 'timeout-minutes'?: number
+  readonly environment?: string
   readonly steps: readonly Step[]
 }
 
 type Workflow = {
+  readonly name?: string
   readonly on: Record<string, unknown>
   readonly permissions?: Record<string, string>
   readonly jobs: Record<string, Job>
+  readonly concurrency?: Record<string, string | boolean>
 }
 
 function workflow(name: string): Workflow {
   return YAML.parse(readFileSync(resolve(repoRoot, '.github/workflows', name), 'utf8')) as Workflow
 }
 
-function stepRuns(job: Job): readonly string[] {
-  return job.steps.map((step) => step.run).filter((run): run is string => typeof run === 'string')
-}
-
-function runLines(job: Job): readonly string[] {
-  return stepRuns(job).flatMap((run) => run.split('\n').map((line) => line.trim()).filter(Boolean))
+function stepByName(job: Job, name: string): Step | undefined {
+  return job.steps.find((step) => step.name === name)
 }
 
 function stepUses(job: Job): readonly string[] {
   return job.steps.map((step) => step.uses).filter((use): use is string => typeof use === 'string')
 }
 
+function outputValues(stdout: string): Record<string, string> {
+  return Object.fromEntries(stdout.trim().split('\n').filter(Boolean).map((line) => line.split('=', 2) as [string, string]))
+}
+
+function runScript(script: string, options: { input?: string; env?: Record<string, string>; args?: readonly string[] } = {}) {
+  return spawnSync(process.execPath, [resolve(repoRoot, script), ...(options.args ?? [])], {
+    input: options.input,
+    env: { ...process.env, ...options.env },
+    encoding: 'utf8'
+  })
+}
+
+function runShellBlock(block: string, env: Record<string, string>) {
+  return runShellBlockWithFiles(block, env).result
+}
+
+function runShellBlockWithFiles(block: string, env: Record<string, string>, files: Record<string, string> = {}, binFiles: Record<string, string> = {}, readBack: readonly string[] = []) {
+  const dir = mkdtempSync(resolve(tmpdir(), 'workflow-shell-'))
+  const bin = resolve(dir, 'bin')
+  mkdirSync(bin, { recursive: true })
+  for (const [file, content] of Object.entries(files)) {
+    const path = resolve(dir, file)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, content)
+  }
+  for (const [file, content] of Object.entries(binFiles)) {
+    const path = resolve(bin, file)
+    writeFileSync(path, content, { mode: 0o755 })
+  }
+  const script = resolve(dir, 'step.sh')
+  writeFileSync(script, block)
+  try {
+    const result = spawnSync('bash', [script], { cwd: dir, env: { PATH: `${bin}:${process.env.PATH ?? ''}`, ...env }, encoding: 'utf8' })
+    const outputs = Object.fromEntries(readBack.map((file) => {
+      const path = resolve(dir, file)
+      return [file, existsSync(path) ? readFileSync(path, 'utf8') : '']
+    }))
+    return { result, outputs }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 describe('workflow contract values', () => {
+  it('REQ-REL-001 opens dependency update pull requests for supported package ecosystems', () => {
+    const dependabot = YAML.parse(readFileSync(resolve(repoRoot, '.github/dependabot.yml'), 'utf8')) as { readonly version: number; readonly updates: readonly { readonly 'package-ecosystem': string; readonly directory: string; readonly schedule: { readonly interval: string }; readonly 'open-pull-requests-limit': number }[] }
+
+    expect(dependabot.version).toBe(2)
+    expect(dependabot.updates.map((entry) => ({ ecosystem: entry['package-ecosystem'], directory: entry.directory, interval: entry.schedule.interval, limit: entry['open-pull-requests-limit'] }))).toEqual([
+      { ecosystem: 'npm', directory: '/', interval: 'weekly', limit: 5 },
+      { ecosystem: 'gomod', directory: '/packages/node-agent', interval: 'weekly', limit: 5 },
+      { ecosystem: 'github-actions', directory: '/', interval: 'weekly', limit: 5 }
+    ])
+  })
+
   it('REQ-REL-001 runs PR, main-push, manual, router, agent, packaging, security, and aggregate test checks', () => {
     const ci = workflow('ci.yml')
 
+    expect(ci.name).toBe('PR Checks')
     expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push', 'workflow_dispatch'])
-    expect(ci.on.pull_request).toEqual({ branches: ['main'] })
+    expect(ci.on.pull_request).toEqual({ branches: ['main', 'develop'] })
     expect(ci.on.push).toEqual({ branches: ['main'] })
     expect(Object.keys(ci.jobs).sort()).toEqual(['agent', 'dependency-review', 'packaging', 'router', 'test', 'vulnerability-checks'])
+    expect(ci.permissions).toEqual({ contents: 'read' })
     expect(ci.jobs.test!.needs).toEqual(['router', 'agent', 'packaging', 'dependency-review', 'vulnerability-checks'])
 
-    expect(stepUses(ci.jobs.router!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'actions/setup-node@v6.4.0']))
-    expect(ci.jobs.router!.steps.find((step) => step.uses === 'actions/setup-node@v6.4.0')?.with).toEqual({ 'node-version': '24' })
-    expect(stepRuns(ci.jobs.router!)).toEqual(expect.arrayContaining([
-      'npm install',
-      'npm run lint --workspace packages/router-worker',
-      'npm run test --workspace packages/router-worker',
-      'npm run typecheck --workspace packages/router-worker',
-      'npm run cf-types --workspace packages/router-worker',
-      'npm run dry-run --workspace packages/router-worker'
-    ]))
-    expect(stepUses(ci.jobs.agent!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'actions/setup-go@v6.5.0']))
-    expect(ci.jobs.agent!.steps.find((step) => step.uses === 'actions/setup-go@v6.5.0')?.with).toEqual({ 'go-version': '1.26.4' })
-    expect(stepRuns(ci.jobs.agent!)).toEqual(expect.arrayContaining(['go test ./...', 'go vet ./...', 'go test -race ./...', 'go build ./cmd/inference-mesh-agent']))
-    expect(runLines(ci.jobs.packaging!)).toEqual(expect.arrayContaining(['sha256sum -c dist/checksums.txt']))
-    expect(stepUses(ci.jobs.packaging!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
-    expect(stepUses(ci.jobs['dependency-review']!)).toEqual(expect.arrayContaining(['actions/dependency-review-action@v5.0.0']))
-    expect(runLines(ci.jobs['vulnerability-checks']!)).toEqual(expect.arrayContaining(['govulncheck ./...']))
+    expect(stepUses(ci.jobs.router!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SETUP_NODE]))
+    expect(ci.jobs.router!.steps.find((step) => step.uses === ACTION_SETUP_NODE)?.with).toEqual({ 'node-version': '24' })
+    expect(stepByName(ci.jobs.router!, 'Install dependencies')?.run).toBe('npm ci')
+    expect(ci.jobs.router!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Install dependencies', 'Lint router', 'Test router behavior', 'Type-check router', 'Generate Wrangler types', 'Worker dry-run deploy']))
+    expect(stepUses(ci.jobs.agent!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SETUP_GO]))
+    expect(ci.jobs.agent!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.5', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs.packaging!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.5', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs['vulnerability-checks']!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.5', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs['dependency-review']!.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' })
+    expect(ci.jobs.agent!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Go test', 'Go vet', 'Go race tests', 'Build command']))
+    expect(ci.jobs.packaging!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Build staged binary', 'Create archive and checksums', 'Version command', ACTION_UPLOAD_ARTIFACT]))
+    expect(stepUses(ci.jobs.packaging!)).toEqual(expect.arrayContaining([ACTION_UPLOAD_ARTIFACT]))
+    expect(stepUses(ci.jobs['dependency-review']!)).toEqual(expect.arrayContaining([ACTION_DEPENDENCY_REVIEW]))
+    expect(stepByName(ci.jobs['vulnerability-checks']!, 'npm audit')?.run).toBe('npm ci && npm audit --audit-level=high --omit=dev')
+    expect(ci.jobs['vulnerability-checks']!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['npm audit', 'Go vulnerability check']))
   })
 
-  it('REQ-REL-002 deploys only from workflow_dispatch main and applies D1 before Worker deploy', () => {
+  it('REQ-REL-002 REQ-REL-005 auto-deploys production only after green main gates and allows manual integration from any branch', () => {
     const deploy = workflow('deploy.yml')
+    const deployJob = deploy.jobs.deploy!
 
-    expect(Object.keys(deploy.on)).toEqual(['workflow_dispatch'])
-    expect(deploy.jobs.deploy!['timeout-minutes']).toBe(45)
-    expect(deploy.jobs.deploy!.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: 'main' })
-    expect(deploy.jobs.deploy).toHaveProperty('env.CLOUDFLARE_API_TOKEN', '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}')
-    expect(runLines(deploy.jobs.deploy!)).toEqual(expect.arrayContaining([
-      'test -n "$CLOUDFLARE_ACCOUNT_ID"',
-      'test -n "$CLOUDFLARE_API_TOKEN"',
-      'test -n "$CLOUDFLARE_API_TOKEN_RUNTIME"',
-      'npm run lint --workspace packages/router-worker',
-      'npm run test --workspace packages/router-worker',
-      'npm run typecheck --workspace packages/router-worker',
-      'go test ./...',
-      'go vet ./...',
-      'npx wrangler d1 migrations apply codeflare-inference-mesh --remote',
-      "grep -qxF \"$ln\" wrangler.toml || { echo \"::error::Workers VPC Mesh binding line not enabled: $ln\"; exit 1; }",
-      'printf \'%s\' "$CLOUDFLARE_ACCOUNT_ID" | npx wrangler secret put CLOUDFLARE_ACCOUNT_ID',
-      'printf \'%s\' "$CLOUDFLARE_API_TOKEN_RUNTIME" | npx wrangler secret put CLOUDFLARE_API_TOKEN_RUNTIME',
-      'npx wrangler deploy'
-    ]))
+    expect(Object.keys(deploy.on).sort()).toEqual(['workflow_dispatch', 'workflow_run'])
+    expect(deploy.on.workflow_run).toEqual({ workflows: ['PR Checks'], types: ['completed'], branches: ['main'] })
+    expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.environment.default', 'integration')
+    expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.version_tag.required', false)
+    expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.worker_base_url.required', false)
+    expect(deploy.concurrency).toMatchObject({ 'cancel-in-progress': true })
+    expect(deployJob['timeout-minutes']).toBe(45)
+    expect(deployJob.if).toBeDefined()
+    expect(deploy.permissions).toEqual({ contents: 'read' })
+    expect(deployJob.permissions).toEqual({ contents: 'write', actions: 'read' })
+    expect(deployJob.env).toBeUndefined()
+    expect(deployJob.steps.find((step) => step.uses === ACTION_CHECKOUT)?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}', 'persist-credentials': false })
+    const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
+    expect(stepNames.indexOf('Guard deploy source')).toBeLessThan(stepNames.indexOf(ACTION_CHECKOUT))
+    const guardRun = stepByName(deployJob, 'Guard deploy source')!.run!
+    const guardEnv = { WORKFLOW_RUN_CONCLUSION: '', WORKFLOW_RUN_EVENT: '', WORKFLOW_RUN_REPOSITORY: '', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }
+    expect(runShellBlock(guardRun, { ...guardEnv, EVENT_NAME: 'workflow_dispatch', INPUT_ENVIRONMENT: 'integration', GITHUB_REF: 'refs/heads/feature' }).status).toBe(0)
+    expect(runShellBlock(guardRun, { ...guardEnv, EVENT_NAME: 'workflow_dispatch', INPUT_ENVIRONMENT: 'production', GITHUB_REF: 'refs/heads/feature' }).status).toBe(1)
+    expect(runShellBlock(guardRun, { EVENT_NAME: 'workflow_run', INPUT_ENVIRONMENT: '', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_CONCLUSION: 'success', WORKFLOW_RUN_EVENT: 'push', WORKFLOW_RUN_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }).status).toBe(0)
+    expect(runShellBlock(guardRun, { EVENT_NAME: 'workflow_run', INPUT_ENVIRONMENT: '', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_CONCLUSION: 'success', WORKFLOW_RUN_EVENT: 'pull_request', WORKFLOW_RUN_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }).status).toBe(1)
+    expect(deployJob.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.5', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(stepByName(deployJob, 'Install router dependencies')?.run).toBe('npm ci')
+    expect(stepNames.indexOf('Resolve deploy settings')).toBeGreaterThan(stepNames.indexOf(ACTION_CHECKOUT))
+    expect(stepNames.indexOf('Publish GitHub Release')).toBeGreaterThan(-1)
+    expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
+    expect(stepByName(deployJob, 'Resolve deploy settings')).toMatchObject({
+      run: 'node packages/router-worker/scripts/resolve-deploy-settings.mjs >> "$GITHUB_OUTPUT"',
+      env: {
+        INPUT_ENVIRONMENT: '${{ inputs.environment }}',
+        INPUT_VERSION_TAG: '${{ inputs.version_tag }}',
+        INPUT_WORKER_BASE_URL: '${{ inputs.worker_base_url }}',
+        WORKFLOW_RUN_HEAD_SHA: '${{ github.event.workflow_run.head_sha }}',
+        WORKER_BASE_URL: '${{ vars.WORKER_BASE_URL }}',
+        PRODUCTION_WORKER_BASE_URL: '${{ vars.PRODUCTION_WORKER_BASE_URL }}',
+        INTEGRATION_WORKER_BASE_URL: '${{ vars.INTEGRATION_WORKER_BASE_URL }}',
+        CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: '${{ vars.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN }}'
+      }
+    })
+    const integrationSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7' } })
+    const integrationSettingsWithBootstrapUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7', CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: 'example-subdomain' } })
+    const productionSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_run', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_HEAD_SHA: 'abc123', GITHUB_RUN_NUMBER: '8', PRODUCTION_WORKER_BASE_URL: 'https://router.example.com' } })
+    const rejectedProduction = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'production', GITHUB_RUN_NUMBER: '9', WORKER_BASE_URL: 'https://router.example.com' } })
+    const rejectedWorkerUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '10', WORKER_BASE_URL: 'https://router.example.com/path' } })
+    const rejectedShellUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '11', WORKER_BASE_URL: 'https://$(id).example.com' } })
+    expect(integrationSettings.status).toBe(0)
+    expect(outputValues(integrationSettings.stdout)).toEqual({ target_env: 'integration', deploy_ref: 'refs/heads/feature', version_tag: 'v0.1.0-dev.7', worker_base_url: '', db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' })
+    expect(outputValues(integrationSettingsWithBootstrapUrl.stdout)).toMatchObject({ worker_base_url: 'https://codeflare-inference-mesh-router-integration.example-subdomain.workers.dev' })
+    expect(productionSettings.status).toBe(0)
+    expect(outputValues(productionSettings.stdout)).toMatchObject({ target_env: 'production', deploy_ref: 'abc123', version_tag: 'v0.1.8', worker_base_url: 'https://router.example.com', db_name: 'codeflare-inference-mesh' })
+    expect(rejectedProduction.status).toBe(1)
+    expect(rejectedWorkerUrl.status).toBe(1)
+    expect(rejectedShellUrl.status).toBe(1)
+    expect(runScript('packages/router-worker/scripts/deploy-gate.mjs', {
+      input: JSON.stringify([
+        { workflowName: 'Security', headSha: 'abc', event: 'workflow_dispatch', headBranch: 'develop', status: 'completed', conclusion: 'success', databaseId: 4 },
+        { workflowName: 'Security', headSha: 'abc', event: 'push', headBranch: 'main', status: 'completed', conclusion: 'failure', databaseId: 5, url: 'https://example.test/failing-run' }
+      ]),
+      env: { WORKFLOW_NAME: 'Security', GATE_SHA: 'abc', REQUIRED_EVENT: 'push', REQUIRED_BRANCH: 'main' }
+    }).stdout.startsWith('failure')).toBe(true)
+    const d1Step = stepByName(deployJob, 'Resolve or create D1 database')!
+    const d1Run = d1Step.run!
+    expect(d1Step).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}', AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', WORKER_BASE_URL: '${{ steps.settings.outputs.worker_base_url }}' } })
+    const d1Execution = runShellBlockWithFiles(
+      d1Run.replaceAll('${{ steps.settings.outputs.db_name }}', 'codeflare-inference-mesh-integration'),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', AGENT_RELEASE_TAG: 'v0.1.0-dev.7', WORKER_BASE_URL: 'https://router.example.com' },
+      { 'wrangler.toml': 'database_id = "create-via-deploy-workflow"\nAGENT_RELEASE_TAG = "agent-release-tag-placeholder"\nWORKER_BASE_URL = "https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev"\n' },
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler d1 list --json" ]; then printf \'[{"name":"codeflare-inference-mesh-integration","uuid":"11111111-2222-4333-8444-555555555555"}]\'; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
+      ['wrangler.toml']
+    )
+    const d1WithoutBootstrapUrl = runShellBlockWithFiles(
+      d1Run.replaceAll('${{ steps.settings.outputs.db_name }}', 'codeflare-inference-mesh-integration'),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', AGENT_RELEASE_TAG: 'v0.1.0-dev.7', WORKER_BASE_URL: '' },
+      { 'wrangler.toml': 'database_id = "create-via-deploy-workflow"\nAGENT_RELEASE_TAG = "agent-release-tag-placeholder"\nWORKER_BASE_URL = "https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev"\n' },
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler d1 list --json" ]; then printf \'[{"name":"codeflare-inference-mesh-integration","uuid":"11111111-2222-4333-8444-555555555555"}]\'; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
+      ['wrangler.toml']
+    )
+    expect(d1Execution.result.status).toBe(0)
+    expect(d1Execution.outputs['wrangler.toml']).toContain('https://router.example.com')
+    expect(d1Execution.outputs['wrangler.toml']).not.toContain('<your-subdomain>')
+    expect(d1WithoutBootstrapUrl.result.status).toBe(0)
+    expect(d1WithoutBootstrapUrl.outputs['wrangler.toml']).toContain('https://codeflare-inference-mesh-router.<your-subdomain>.workers.dev')
+    expect(stepByName(deployJob, 'Apply D1 migrations')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
+    const secretsRun = stepByName(deployJob, 'Set Worker runtime secrets')!.run!
+    expect(stepByName(deployJob, 'Set Worker runtime secrets')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN_RUNTIME: '${{ secrets.CLOUDFLARE_API_TOKEN_RUNTIME }}' } })
+    const secretsExecution = runShellBlockWithFiles(
+      secretsRun.replaceAll('${{ steps.settings.outputs.wrangler_env }}', ''),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', ADMIN_RECOVERY_TOKEN: '' },
+      {},
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5" = "exec -- wrangler secret bulk" ]; then cat > secret-bulk.json; exit 0; fi\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN" ]; then cat > secret-delete.stdin; printf \'%s\' "$*" > secret-delete.args; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
+      ['secret-bulk.json', 'secret-delete.stdin', 'secret-delete.args']
+    )
+    expect(secretsExecution.result.status).toBe(0)
+    expect(JSON.parse(secretsExecution.outputs['secret-bulk.json']!)).toEqual({ CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token' })
+    expect(secretsExecution.outputs['secret-delete.stdin']).toBe('y\n')
+    expect(secretsExecution.outputs['secret-delete.args']).toContain('ADMIN_RECOVERY_TOKEN')
+    const missingSecretExecution = runShellBlockWithFiles(
+      secretsRun.replaceAll('${{ steps.settings.outputs.wrangler_env }}', ''),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', ADMIN_RECOVERY_TOKEN: '' },
+      {},
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5" = "exec -- wrangler secret bulk" ]; then cat >/dev/null; exit 0; fi\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN" ]; then cat >/dev/null; printf "Secret not found" >&2; exit 1; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' }
+    )
+    const failedDeleteExecution = runShellBlockWithFiles(
+      secretsRun.replaceAll('${{ steps.settings.outputs.wrangler_env }}', ''),
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', ADMIN_RECOVERY_TOKEN: '' },
+      {},
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5" = "exec -- wrangler secret bulk" ]; then cat >/dev/null; exit 0; fi\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler secret delete ADMIN_RECOVERY_TOKEN" ]; then cat >/dev/null; printf "network down" >&2; exit 1; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' }
+    )
+    expect(missingSecretExecution.result.status).toBe(0)
+    expect(failedDeleteExecution.result.status).toBe(1)
+    expect(stepByName(deployJob, 'Deploy Worker')).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' } })
+    const summaryStep = stepByName(deployJob, 'Write deployment summary')!
+    const summaryExecution = runShellBlockWithFiles(
+      summaryStep.run!
+        .replaceAll('${{ steps.settings.outputs.target_env }}', 'integration')
+        .replaceAll('${{ steps.settings.outputs.deploy_ref }}', 'refs/heads/feature')
+        .replaceAll('${{ steps.settings.outputs.worker_name }}', 'codeflare-inference-mesh-router-integration')
+        .replaceAll('${{ steps.settings.outputs.version_tag }}', 'v0.1.0-dev.7'),
+      { GITHUB_STEP_SUMMARY: 'summary.md' },
+      {},
+      {},
+      ['summary.md']
+    )
+    const summaryValues = Object.fromEntries(summaryExecution.outputs['summary.md']!.split('\n').flatMap((line): [string, string][] => {
+      const match = /^- ([^:]+): (.+)$/.exec(line)
+      if (!match) return []
+      const [, key, value] = match
+      return key && value ? [[key, value]] : []
+    }))
+    expect(summaryExecution.result.status).toBe(0)
+    expect(summaryValues).toEqual({ Environment: 'integration', Ref: 'refs/heads/feature', Worker: 'codeflare-inference-mesh-router-integration', 'Release tag': 'v0.1.0-dev.7', Artifacts: 'inference-mesh-release-artifacts' })
+  })
+
+  it('REQ-REL-005 extracts Wrangler D1 create IDs and fails closed when the ID is absent', () => {
+    const temp = mkdtempSync(resolve(tmpdir(), 'd1-id-'))
+    try {
+      const script = resolve(repoRoot, 'packages/router-worker/scripts/d1-database-id.mjs')
+      const validPath = resolve(temp, 'valid.txt')
+      const invalidPath = resolve(temp, 'invalid.txt')
+      writeFileSync(validPath, '[[d1_databases]]\nbinding = "DB"\ndatabase_name = "codeflare-inference-mesh-integration"\ndatabase_id = "11111111-2222-4333-8444-555555555555"\n')
+      writeFileSync(invalidPath, 'Created database without a stable identifier')
+
+      const valid = spawnSync(process.execPath, [script, validPath], { encoding: 'utf8' })
+      const invalid = spawnSync(process.execPath, [script, invalidPath], { encoding: 'utf8' })
+
+      expect(valid.status).toBe(0)
+      expect(valid.stdout).toBe('11111111-2222-4333-8444-555555555555')
+      expect(invalid.status).toBe(1)
+      expect(invalid.stdout).toBe('')
+    } finally {
+      rmSync(temp, { recursive: true, force: true })
+    }
   })
 
   it('REQ-REL-003 builds cross-platform release assets, manifest, optional signature, and GitHub Release', () => {
     const deploy = workflow('deploy.yml')
+    const deployJob = deploy.jobs.deploy!
+    const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
 
-    expect(runLines(deploy.jobs.deploy!)).toEqual(expect.arrayContaining([
-      'for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do',
-      'sha256sum *.tar.gz *.zip > checksums.txt',
-      'sha256sum -c checksums.txt',
-      'cosign sign-blob --key env://COSIGN_PRIVATE_KEY --output-signature checksums.txt.sig checksums.txt',
-      'gh release create "${{ inputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ inputs.version_tag }}" --notes-file release-notes.md $PRERELEASE'
-    ]))
-    expect(deploy.on.workflow_dispatch).toHaveProperty('inputs.version_tag.required', true)
-    expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining(['actions/upload-artifact@v7.0.1']))
+    expect(stepNames).toEqual(expect.arrayContaining(['Build release artifacts and manifest', 'Sign checksums when signing is configured', 'Publish GitHub Release', 'Deploy Worker', ACTION_UPLOAD_ARTIFACT]))
+    const buildStep = stepByName(deployJob, 'Build release artifacts and manifest')!
+    expect(buildStep).toMatchObject({ 'working-directory': 'packages/node-agent' })
+    // Linux binaries build with CGO disabled so they link statically and run across glibc distributions (Arch, Debian, Ubuntu, RHEL).
+    expect(buildStep.run).toContain('CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build')
+    const buildExecution = runShellBlockWithFiles(
+      buildStep.run!
+        .replaceAll('${{ steps.settings.outputs.version_tag }}', 'v0.1.0-dev.7')
+        .replaceAll('${{ steps.settings.outputs.target_env }}', 'integration'),
+      { GITHUB_SHA: 'abc123' },
+      {},
+      {
+        go: '#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "-o" ]; then shift; out="$1"; fi; shift || true; done\nmkdir -p "$(dirname "$out")"\nprintf binary > "$out"\n',
+        zip: '#!/bin/sh\nprintf archive > "$1"\n',
+        tar: '#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "-czf" ]; then shift; out="$1"; fi; shift || true; done\nprintf archive > "$out"\n',
+        sha256sum: '#!/bin/sh\nif [ "$1" = "-c" ]; then exit 0; fi\nfor file in "$@"; do printf "abc  %s\\n" "$file"; done\n'
+      },
+      ['dist/inference-mesh-agent-linux-amd64', 'dist/inference-mesh-agent-linux-amd64.tar.gz', 'dist/inference-mesh-agent-windows-amd64.exe', 'dist/inference-mesh-agent-windows-amd64.zip', 'dist/checksums.txt', 'dist/release-manifest.json']
+    )
+    expect(buildExecution.result.status).toBe(0)
+    expect(buildExecution.outputs['dist/inference-mesh-agent-linux-amd64']).toBe('')
+    expect(buildExecution.outputs['dist/inference-mesh-agent-linux-amd64.tar.gz']).toBe('archive')
+    expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.exe']).toBe('')
+    expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.zip']).toBe('archive')
+    expect(buildExecution.outputs['dist/checksums.txt']).toContain('.tar.gz')
+    const releaseManifest = JSON.parse(buildExecution.outputs['dist/release-manifest.json']!) as { version: string; channel: string; commit: string; artifacts: readonly { name: string }[] }
+    expect(releaseManifest).toMatchObject({ version: 'v0.1.0-dev.7', channel: 'integration', commit: 'abc123' })
+    expect(releaseManifest.artifacts.map((artifact) => artifact.name).sort()).toEqual([
+      'inference-mesh-agent-darwin-arm64.tar.gz',
+      'inference-mesh-agent-linux-amd64.tar.gz',
+      'inference-mesh-agent-linux-arm64.tar.gz',
+      'inference-mesh-agent-windows-amd64.zip'
+    ])
+    const signStep = stepByName(deployJob, 'Sign checksums when signing is configured')!
+    expect(signStep).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { COSIGN_PRIVATE_KEY: '${{ secrets.COSIGN_PRIVATE_KEY }}', COSIGN_PASSWORD: '${{ secrets.COSIGN_PASSWORD }}' } })
+    const skippedSign = runShellBlock(signStep.run!, { COSIGN_PRIVATE_KEY: '', COSIGN_PASSWORD: '' })
+    expect(skippedSign.status).toBe(0)
+    expect(skippedSign.stdout).toContain('Cosign key not configured; skipping signature')
+    expect(stepByName(deployJob, 'Publish GitHub Release')).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { GH_TOKEN: '${{ github.token }}' } })
+    expect(stepByName(deployJob, 'Resolve or create D1 database')?.env).toMatchObject({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' })
+    expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
+    expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining([ACTION_UPLOAD_ARTIFACT]))
   })
 
-  it('REQ-REL-004 enables CodeQL, Scorecard, and bounded fuzz workflows with explicit timeouts', () => {
+  it('REQ-SEC-006 pushes the MESH_STATE_KEY Worker secret during deploy and fails closed when the GitHub secret is absent', () => {
+    const deploy = workflow('deploy.yml')
+    const deployJob = deploy.jobs.deploy!
+    const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
+
+    const validateStep = stepByName(deployJob, 'Validate deploy secrets')!
+    expect(validateStep.env).toMatchObject({ MESH_STATE_KEY: '${{ secrets.MESH_STATE_KEY }}', SESSION_AFFINITY_KEY: '${{ secrets.SESSION_AFFINITY_KEY }}' })
+    const validateEnv = { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_API_TOKEN_RUNTIME: 'runtime-token', SESSION_AFFINITY_KEY: 'session-affinity-key-value' }
+    expect(runShellBlock(validateStep.run!, { ...validateEnv, MESH_STATE_KEY: 'mesh-state-key-value' }).status).toBe(0)
+    expect(runShellBlock(validateStep.run!, { ...validateEnv, MESH_STATE_KEY: '' }).status).toBe(1)
+    expect(runShellBlock(validateStep.run!, { ...validateEnv, MESH_STATE_KEY: 'mesh-state-key-value', SESSION_AFFINITY_KEY: '' }).status).toBe(1)
+
+    const meshKeyStep = stepByName(deployJob, 'Set Worker mesh state key')!
+    expect(meshKeyStep).toMatchObject({
+      'working-directory': 'packages/router-worker',
+      env: {
+        CLOUDFLARE_ACCOUNT_ID: '${{ secrets.CLOUDFLARE_ACCOUNT_ID }}',
+        CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}',
+        MESH_STATE_KEY: '${{ secrets.MESH_STATE_KEY }}'
+      }
+    })
+    expect(stepNames.indexOf('Set Worker mesh state key')).toBeGreaterThan(stepNames.indexOf('Set Worker runtime secrets'))
+    expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Set Worker mesh state key'))
+    const meshKeyRun = meshKeyStep.run!.replaceAll('${{ steps.settings.outputs.wrangler_env }}', '')
+    const meshKeyExecution = runShellBlockWithFiles(
+      meshKeyRun,
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', MESH_STATE_KEY: 'mesh-state-key-value' },
+      {},
+      { npm: '#!/bin/sh\nif [ "$1 $2 $3 $4 $5 $6" = "exec -- wrangler secret put MESH_STATE_KEY" ]; then cat > secret-put.stdin; exit 0; fi\nprintf \'unexpected npm %s\\n\' "$*" >&2\nexit 1\n' },
+      ['secret-put.stdin']
+    )
+    expect(meshKeyExecution.result.status).toBe(0)
+    expect(meshKeyExecution.outputs['secret-put.stdin']).toBe('mesh-state-key-value')
+    const missingMeshKeyExecution = runShellBlockWithFiles(
+      meshKeyRun,
+      { CLOUDFLARE_ACCOUNT_ID: 'account-a', CLOUDFLARE_API_TOKEN: 'deploy-token', MESH_STATE_KEY: '' },
+      {},
+      { npm: '#!/bin/sh\ncat > secret-put.stdin\nexit 0\n' },
+      ['secret-put.stdin']
+    )
+    expect(missingMeshKeyExecution.result.status).toBe(1)
+    expect(missingMeshKeyExecution.outputs['secret-put.stdin']).toBe('')
+    expect(missingMeshKeyExecution.result.stdout).toContain('::error::MESH_STATE_KEY')
+  })
+
+  it('REQ-REL-004 enables Security and Fuzz gates with stable aggregate checks and explicit timeouts', () => {
     const security = workflow('security.yml')
     const fuzz = workflow('fuzz.yml')
 
     expect(Object.keys(security.on).sort()).toEqual(['pull_request', 'push', 'schedule', 'workflow_dispatch'])
+    expect(security.permissions).toEqual({ contents: 'read' })
+    expect(security.on.pull_request).toEqual({ branches: ['main', 'develop'] })
+    expect(security.on.push).toEqual({ branches: ['main'] })
+    expect(security.jobs['workflow-safety']!['timeout-minutes']).toBe(5)
     expect(security.jobs.codeql).toHaveProperty('strategy.matrix.language', ['javascript-typescript', 'go'])
+    expect(security.jobs.codeql).toHaveProperty('if', "github.repository_visibility == 'public'")
     expect(security.jobs.codeql!['timeout-minutes']).toBe(20)
+    expect(security.jobs.scorecard).toHaveProperty('if', "github.repository_visibility == 'public' && github.ref == 'refs/heads/main'")
     expect(security.jobs.scorecard!['timeout-minutes']).toBe(10)
-    expect(stepUses(security.jobs.codeql!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'github/codeql-action/init@v4.36.2', 'github/codeql-action/analyze@v4.36.2']))
-    expect(stepUses(security.jobs.scorecard!)).toEqual(expect.arrayContaining(['actions/checkout@v7.0.0', 'ossf/scorecard-action@v2.4.3', 'github/codeql-action/upload-sarif@v4.36.2']))
+    expect(security.jobs.security!.needs).toEqual(['workflow-safety', 'codeql'])
+    expect(security.jobs.security!['timeout-minutes']).toBe(5)
+    expect(stepUses(security.jobs.codeql!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_CODEQL_INIT, ACTION_CODEQL_ANALYZE]))
+    expect(stepUses(security.jobs.scorecard!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SCORECARD, ACTION_CODEQL_UPLOAD_SARIF]))
+    expect(security.jobs.codeql).toHaveProperty('permissions.security-events', 'write')
     expect(security.jobs.scorecard).toHaveProperty('permissions.security-events', 'write')
-    expect(Object.keys(fuzz.jobs).sort()).toEqual(['agent-fuzz', 'router-fuzz'])
+    expect(fuzz.on.pull_request).toEqual({ branches: ['main', 'develop'] })
+    expect(fuzz.on.push).toEqual({ branches: ['main'] })
+    expect(Object.keys(fuzz.jobs).sort()).toEqual(['agent-fuzz', 'fuzz', 'router-fuzz'])
+    expect(fuzz.jobs.fuzz!.needs).toEqual(['router-fuzz', 'agent-fuzz'])
+    expect(fuzz.jobs.fuzz!['timeout-minutes']).toBe(5)
     expect(fuzz.jobs['router-fuzz']!['timeout-minutes']).toBe(10)
     expect(fuzz.jobs['agent-fuzz']!['timeout-minutes']).toBe(10)
-    expect(stepRuns(fuzz.jobs['router-fuzz']!)).toEqual(expect.arrayContaining(['npx vitest run src/fuzz.test.ts']))
-    expect(stepRuns(fuzz.jobs['agent-fuzz']!)).toEqual(expect.arrayContaining(['go test -run=^$ -fuzz=Fuzz -fuzztime=30s ./internal/agent']))
+    expect(stepByName(fuzz.jobs['router-fuzz']!, 'Install dependencies')?.run).toBe('npm ci')
+    expect(stepByName(fuzz.jobs['router-fuzz']!, 'Run router fuzz corpus')).toMatchObject({ 'working-directory': 'packages/router-worker' })
+    expect(fuzz.jobs['agent-fuzz']).toHaveProperty('defaults.run.working-directory', 'packages/node-agent')
+    expect(fuzz.jobs['agent-fuzz']!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.4', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(stepByName(fuzz.jobs['agent-fuzz']!, 'Run agent fuzz targets')).toBeDefined()
   })
 
-  it('REQ-REL-004 avoids workflow_run head_sha checkout pattern from Codeflare alert 63', () => {
-    const workflows = ['ci.yml', 'deploy.yml', 'security.yml', 'fuzz.yml'].map(workflow)
+  it('REQ-REL-004 rejects unsafe workflow_run checkout, floating actions, reusable workflows, and floating runners', () => {
+    const valid = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [resolve(repoRoot, '.github/workflows')] })
+    expect(valid.status).toBe(0)
 
-    for (const item of workflows) {
-      expect(Object.hasOwn(item.on, 'workflow_run')).toBe(false)
-      for (const job of Object.values(item.jobs)) {
-        for (const step of job.steps) {
-          if (step.uses?.startsWith('actions/checkout@')) {
-            expect(step.with?.ref).not.toBe('${{ github.event.workflow_run.head_sha || github.ref }}')
-          }
-        }
-      }
+    const temp = mkdtempSync(resolve(tmpdir(), 'workflow-safety-'))
+    try {
+      const unsafeWorkflowDir = resolve(temp, 'unsafe-workflow-run')
+      const unsafeActionDir = resolve(temp, 'unsafe-action')
+      const unsafeRunnerDir = resolve(temp, 'unsafe-runner')
+      const unsafeReusableDir = resolve(temp, 'unsafe-reusable')
+      const unsafeStepGuardDir = resolve(temp, 'unsafe-step-guard')
+      const unsafeNamedCheckoutDir = resolve(temp, 'unsafe-named-checkout')
+      mkdirSync(unsafeWorkflowDir, { recursive: true })
+      mkdirSync(unsafeActionDir, { recursive: true })
+      mkdirSync(unsafeRunnerDir, { recursive: true })
+      mkdirSync(unsafeReusableDir, { recursive: true })
+      mkdirSync(unsafeStepGuardDir, { recursive: true })
+      mkdirSync(unsafeNamedCheckoutDir, { recursive: true })
+      writeFileSync(resolve(unsafeWorkflowDir, 'deploy.yml'), `name: Deploy\non:\n  workflow_run:\n    workflows: [PR Checks]\njobs:\n  deploy:\n    if: github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@v7.0.0\n        with:\n          ref: \${{ github.event.workflow_run.head_sha || github.ref }}\n      - uses: actions/checkout@v7.0.0\n        with:\n          ref: \${{ github.ref }}\n`)
+      writeFileSync(resolve(unsafeActionDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@main # hidden by comment in raw-line parsers\n`)
+      writeFileSync(resolve(unsafeRunnerDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    runs-on:\n      - ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4.2.2\n`)
+      writeFileSync(resolve(unsafeReusableDir, 'security.yml'), `name: Security\non: [pull_request]\njobs:\n  unsafe:\n    uses: owner/repo/.github/workflows/reusable.yml@main\n`)
+      writeFileSync(resolve(unsafeStepGuardDir, 'deploy.yml'), `name: Deploy\non:\n  workflow_run:\n    workflows: [PR Checks]\njobs:\n  deploy:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@v7.0.0\n        if: github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository\n        with:\n          ref: \${{ github.event.workflow_run.head_sha || github.ref }}\n`)
+      writeFileSync(resolve(unsafeNamedCheckoutDir, 'deploy.yml'), `name: Deploy\non:\n  workflow_run:\n    workflows: [PR Checks]\njobs:\n  deploy:\n    if: github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository\n    runs-on: ubuntu-24.04\n    steps:\n      - name: Checkout\n        uses: actions/checkout@v7.0.0\n        with:\n          ref: \${{ github.ref }}\n`)
+
+      const unsafeWorkflowRun = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeWorkflowDir] })
+      const unsafeAction = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeActionDir] })
+      const unsafeRunner = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeRunnerDir] })
+      const unsafeReusable = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeReusableDir] })
+      const unsafeStepGuard = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeStepGuardDir] })
+      const unsafeNamedCheckout = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [unsafeNamedCheckoutDir] })
+
+      expect(unsafeWorkflowRun.status).not.toBe(0)
+      expect(unsafeAction.status).not.toBe(0)
+      expect(unsafeRunner.status).not.toBe(0)
+      expect(unsafeReusable.status).not.toBe(0)
+      expect(unsafeStepGuard.status).not.toBe(0)
+      expect(unsafeNamedCheckout.status).not.toBe(0)
+    } finally {
+      rmSync(temp, { recursive: true, force: true })
     }
-    expect(workflow('deploy.yml').jobs.deploy!.steps.find((step) => step.uses === 'actions/checkout@v7.0.0')?.with).toEqual({ ref: 'main' })
   })
 })

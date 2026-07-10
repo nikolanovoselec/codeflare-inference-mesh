@@ -50,11 +50,26 @@ export function bearerToken(request: Request): string | undefined {
   return match?.[1]
 }
 
+const SAFE_TOKEN_FIELD_NAMES = new Set([
+  'maxoutputtokens',
+  'cachedtokenslast',
+  'tokenspersecond',
+  'prompttokens',
+  'completiontokens',
+  'totaltokens'
+])
+
+function isSecretFieldName(key: string): boolean {
+  const lower = key.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (SAFE_TOKEN_FIELD_NAMES.has(lower)) return false
+  return lower === 'authorization' || lower === 'token' || lower === 'secret' || lower === 'key' || lower === 'verifier' || lower.endsWith('token') || lower.endsWith('secret') || lower.endsWith('key') || lower.endsWith('verifier')
+}
+
 export function redactSecrets(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactSecrets)
   if (!value || typeof value !== 'object') return value
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => {
-    if (/token|secret|authorization|key|verifier/i.test(key)) return [key, '[redacted]']
+    if (isSecretFieldName(key)) return [key, '[redacted]']
     return [key, redactSecrets(item)]
   }))
 }
