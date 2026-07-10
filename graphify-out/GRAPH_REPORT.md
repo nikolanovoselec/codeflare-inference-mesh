@@ -1,91 +1,106 @@
-# Graph Report - /home/user/workspace/codeflare-inference-mesh  (2026-07-09)
+# Graph Report - /home/user/workspace/codeflare-inference-mesh  (2026-07-10)
 
 ## Corpus Check
-- label apply mode — file stats not available
+- 128 files · ~260,142 words
+- Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1501 nodes · 3836 edges · 58 communities (52 shown, 6 thin omitted)
-- Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 296 edges (avg confidence: 0.79)
+- 1824 nodes · 5531 edges · 74 communities (64 shown, 10 thin omitted)
+- Extraction: 76% EXTRACTED · 24% INFERRED · 0% AMBIGUOUS · INFERRED: 1352 edges (avg confidence: 0.78)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `26dde025`
+- Built from commit: `247c4b69`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
-- [[_COMMUNITY_Mesh LLM process manager|Mesh LLM process manager]]
-- [[_COMMUNITY_Model binary installation|Model binary installation]]
-- [[_COMMUNITY_Agent service runtime orchestration|Agent service runtime orchestration]]
-- [[_COMMUNITY_Inference request routing|Inference request routing]]
-- [[_COMMUNITY_Cloudflare API access provisioning|Cloudflare API access provisioning]]
-- [[_COMMUNITY_Mesh state and bootstrap|Mesh state and bootstrap]]
-- [[_COMMUNITY_Agent service integration tests|Agent service integration tests]]
-- [[_COMMUNITY_Mesh LLM manager unit tests|Mesh LLM manager unit tests]]
-- [[_COMMUNITY_Agent self-update mechanism|Agent self-update mechanism]]
-- [[_COMMUNITY_Router admin API handlers|Router admin API handlers]]
-- [[_COMMUNITY_Request authentication|Request authentication]]
-- [[_COMMUNITY_LlamaCpp runtime management|LlamaCpp runtime management]]
-- [[_COMMUNITY_Router D1 database store|Router D1 database store]]
-- [[_COMMUNITY_Agent test helpers and config|Agent test helpers and config]]
-- [[_COMMUNITY_Inference request scheduler|Inference request scheduler]]
-- [[_COMMUNITY_Admin UI view components|Admin UI view components]]
-- [[_COMMUNITY_Admin UI test harness|Admin UI test harness]]
-- [[_COMMUNITY_Cloudflare Workers workflow tests|Cloudflare Workers workflow tests]]
-- [[_COMMUNITY_Access JWT verification|Access JWT verification]]
-- [[_COMMUNITY_Agent configuration management|Agent configuration management]]
-- [[_COMMUNITY_Router test fixtures|Router test fixtures]]
-- [[_COMMUNITY_Admin UI contract and CSS|Admin UI contract and CSS]]
-- [[_COMMUNITY_Upstream proxy handler|Upstream proxy handler]]
-- [[_COMMUNITY_Agent version cache|Agent version cache]]
-- [[_COMMUNITY_Runtime version cache|Runtime version cache]]
-- [[_COMMUNITY_Memory store test helpers|Memory store test helpers]]
-- [[_COMMUNITY_Agent HTTP client|Agent HTTP client]]
-- [[_COMMUNITY_Store interface definition|Store interface definition]]
-- [[_COMMUNITY_D1 database test fakes|D1 database test fakes]]
-- [[_COMMUNITY_Workflow safety validation|Workflow safety validation]]
-- [[_COMMUNITY_Model profile configuration|Model profile configuration]]
-- [[_COMMUNITY_Admin dashboard tests|Admin dashboard tests]]
-- [[_COMMUNITY_API node management|API node management]]
-- [[_COMMUNITY_Admin setup state machine|Admin setup state machine]]
-- [[_COMMUNITY_Agent operational dashboard|Agent operational dashboard]]
-- [[_COMMUNITY_Root workspace package config|Root workspace package config]]
-- [[_COMMUNITY_Direct session affinity|Direct session affinity]]
-- [[_COMMUNITY_Install script generation|Install script generation]]
-- [[_COMMUNITY_GPU and runtime metrics|GPU and runtime metrics]]
-- [[_COMMUNITY_Request rate limiting|Request rate limiting]]
-- [[_COMMUNITY_Shared TypeScript compiler config|Shared TypeScript compiler config]]
-- [[_COMMUNITY_Router test utility helpers|Router test utility helpers]]
-- [[_COMMUNITY_Model profile defaults and parsing|Model profile defaults and parsing]]
-- [[_COMMUNITY_OG image generation|OG image generation]]
-- [[_COMMUNITY_Initial D1 migration schema|Initial D1 migration schema]]
-- [[_COMMUNITY_Agent runtime manager tests|Agent runtime manager tests]]
-- [[_COMMUNITY_Deploy settings resolution|Deploy settings resolution]]
-- [[_COMMUNITY_Router TypeScript configuration|Router TypeScript configuration]]
-- [[_COMMUNITY_Address fuzz testing|Address fuzz testing]]
-- [[_COMMUNITY_Script linting|Script linting]]
-- [[_COMMUNITY_Unix service signals|Unix service signals]]
-- [[_COMMUNITY_Windows service signals|Windows service signals]]
-- [[_COMMUNITY_Deploy gate evaluation|Deploy gate evaluation]]
-- [[_COMMUNITY_Direct sessions migration|Direct sessions migration]]
-- [[_COMMUNITY_Node agent Go module|Node agent Go module]]
+- [[_COMMUNITY_SDD Requirements Corpus|SDD Requirements Corpus]]
+- [[_COMMUNITY_Runtime Binary Installers|Runtime Binary Installers]]
+- [[_COMMUNITY_Agent Test Runtime Fakes|Agent Test Runtime Fakes]]
+- [[_COMMUNITY_Router Inference Handlers|Router Inference Handlers]]
+- [[_COMMUNITY_Cloudflare Provisioning Clients|Cloudflare Provisioning Clients]]
+- [[_COMMUNITY_LlamaCpp Runtime Manager|LlamaCpp Runtime Manager]]
+- [[_COMMUNITY_Router Auth Handlers|Router Auth Handlers]]
+- [[_COMMUNITY_Public Documentation Corpus|Public Documentation Corpus]]
+- [[_COMMUNITY_Agent Self Update|Agent Self Update]]
+- [[_COMMUNITY_Admin UI Shell|Admin UI Shell]]
+- [[_COMMUNITY_Router Test Store Types|Router Test Store Types]]
+- [[_COMMUNITY_Scheduler Type Contracts|Scheduler Type Contracts]]
+- [[_COMMUNITY_Admin UI Views|Admin UI Views]]
+- [[_COMMUNITY_Mesh State Bootstrap|Mesh State Bootstrap]]
+- [[_COMMUNITY_D1 Store Profiles|D1 Store Profiles]]
+- [[_COMMUNITY_MeshLLM Runtime Manager|MeshLLM Runtime Manager]]
+- [[_COMMUNITY_MeshLLM Manager Tests|MeshLLM Manager Tests]]
+- [[_COMMUNITY_Agent Heartbeat Tests|Agent Heartbeat Tests]]
+- [[_COMMUNITY_SDD Glossary Terms|SDD Glossary Terms]]
+- [[_COMMUNITY_MeshLLM Status Parser|MeshLLM Status Parser]]
+- [[_COMMUNITY_Admin Mesh Harness|Admin Mesh Harness]]
+- [[_COMMUNITY_Node Auth Endpoints|Node Auth Endpoints]]
+- [[_COMMUNITY_Worker Workflow Tests|Worker Workflow Tests]]
+- [[_COMMUNITY_Router End-To-End Tests|Router End-To-End Tests]]
+- [[_COMMUNITY_Runtime Version Controls|Runtime Version Controls]]
+- [[_COMMUNITY_Direct Affinity Durable|Direct Affinity Durable]]
+- [[_COMMUNITY_MeshLLM Argument Rendering|MeshLLM Argument Rendering]]
+- [[_COMMUNITY_Access JWT Tests|Access JWT Tests]]
+- [[_COMMUNITY_Worker Entry Versions|Worker Entry Versions]]
+- [[_COMMUNITY_Mesh Crypto Tests|Mesh Crypto Tests]]
+- [[_COMMUNITY_Agent Runtime Profiles|Agent Runtime Profiles]]
+- [[_COMMUNITY_Agent HTTP Client|Agent HTTP Client]]
+- [[_COMMUNITY_D1 Store Unit Tests|D1 Store Unit Tests]]
+- [[_COMMUNITY_Agent Service Metrics|Agent Service Metrics]]
+- [[_COMMUNITY_Workflow Safety Script|Workflow Safety Script]]
+- [[_COMMUNITY_Agent Version Controls|Agent Version Controls]]
+- [[_COMMUNITY_Setup State Access|Setup State Access]]
+- [[_COMMUNITY_Agent Config Detection|Agent Config Detection]]
+- [[_COMMUNITY_Mesh Manager Test Fakes|Mesh Manager Test Fakes]]
+- [[_COMMUNITY_Runtime Profile Restart|Runtime Profile Restart]]
+- [[_COMMUNITY_Agent Command Entrypoint|Agent Command Entrypoint]]
+- [[_COMMUNITY_Admin Status APIs|Admin Status APIs]]
+- [[_COMMUNITY_Agent Config Persistence|Agent Config Persistence]]
+- [[_COMMUNITY_Agent Dashboard Controls|Agent Dashboard Controls]]
+- [[_COMMUNITY_Model Management APIs|Model Management APIs]]
+- [[_COMMUNITY_GPU Metrics Parsing|GPU Metrics Parsing]]
+- [[_COMMUNITY_Workspace Package Metadata|Workspace Package Metadata]]
+- [[_COMMUNITY_Installer Script Generation|Installer Script Generation]]
+- [[_COMMUNITY_Rate Limit Logic|Rate Limit Logic]]
+- [[_COMMUNITY_Model Profile Builder|Model Profile Builder]]
+- [[_COMMUNITY_TypeScript Base Config|TypeScript Base Config]]
+- [[_COMMUNITY_Firewall Rule Provisioning|Firewall Rule Provisioning]]
+- [[_COMMUNITY_Runtime Lifecycle Tests|Runtime Lifecycle Tests]]
+- [[_COMMUNITY_OG Image Rasterizer|OG Image Rasterizer]]
+- [[_COMMUNITY_Initial D1 Schema|Initial D1 Schema]]
+- [[_COMMUNITY_Deploy Settings Resolver|Deploy Settings Resolver]]
+- [[_COMMUNITY_Router TypeScript Config|Router TypeScript Config]]
+- [[_COMMUNITY_Mesh Console Fixture|Mesh Console Fixture]]
+- [[_COMMUNITY_Mesh IP Fuzzing|Mesh IP Fuzzing]]
+- [[_COMMUNITY_Mesh Process Signals|Mesh Process Signals]]
+- [[_COMMUNITY_Runtime Error Log Tests|Runtime Error Log Tests]]
+- [[_COMMUNITY_Script Lint Walker|Script Lint Walker]]
+- [[_COMMUNITY_Service Install Plan|Service Install Plan]]
+- [[_COMMUNITY_Unix Signal Handling|Unix Signal Handling]]
+- [[_COMMUNITY_Windows Signal Handling|Windows Signal Handling]]
+- [[_COMMUNITY_Deploy Gate Script|Deploy Gate Script]]
+- [[_COMMUNITY_Direct Session Migration|Direct Session Migration]]
+- [[_COMMUNITY_Mesh Token Lifecycle|Mesh Token Lifecycle]]
+- [[_COMMUNITY_Review Queue Spec|Review Queue Spec]]
+- [[_COMMUNITY_SDD Change Log|SDD Change Log]]
+- [[_COMMUNITY_Node Agent Module|Node Agent Module]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `createRouter()` - 84 edges
-2. `json()` - 79 edges
-3. `MeshLLMManager` - 44 edges
-4. `Store` - 37 edges
-5. `LlamaCppManager` - 34 edges
-6. `MemoryStore` - 32 edges
-7. `fakeMeshRuntime` - 31 edges
-8. `Config` - 31 edges
-9. `requireAdmin()` - 31 edges
-10. `D1Store` - 30 edges
+1. `Constraints` - 132 edges
+2. `createRouter()` - 84 edges
+3. `json()` - 79 edges
+4. `MeshLLMManager` - 46 edges
+5. `Setup Admin` - 44 edges
+6. `Runtime Profiles` - 38 edges
+7. `Store` - 37 edges
+8. `fakeMeshRuntime` - 34 edges
+9. `LlamaCppManager` - 34 edges
+10. `requireAdmin()` - 34 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `runInstall()` --calls--> `DefaultConfig()`  [INFERRED]
-  packages/node-agent/cmd/inference-mesh-agent/main.go → packages/node-agent/internal/agent/config.go
-- `runInstall()` --calls--> `ListenerAddress()`  [INFERRED]
   packages/node-agent/cmd/inference-mesh-agent/main.go → packages/node-agent/internal/agent/config.go
 - `runInstall()` --calls--> `SaveConfig()`  [INFERRED]
   packages/node-agent/cmd/inference-mesh-agent/main.go → packages/node-agent/internal/agent/config.go
@@ -93,227 +108,277 @@
   packages/node-agent/cmd/inference-mesh-agent/main.go → packages/node-agent/internal/agent/service.go
 - `runService()` --calls--> `ApplyClaim()`  [INFERRED]
   packages/node-agent/cmd/inference-mesh-agent/main.go → packages/node-agent/internal/agent/client.go
+- `runService()` --calls--> `DetectWARPInterfaceName()`  [INFERRED]
+  packages/node-agent/cmd/inference-mesh-agent/main.go → packages/node-agent/internal/agent/config.go
 
 ## Import Cycles
 - None detected.
 
-## Communities (58 total, 6 thin omitted)
+## Communities (74 total, 10 thin omitted)
 
-### Community 0 - "Mesh LLM process manager"
-Cohesion: 0.05
-Nodes (55): execMeshProcess, GPUStatus, meshLauncher, MeshLLMManager, MeshLLMRenderInput, MeshLLMStatus, meshProcess, Cmd (+47 more)
+### Community 0 - "SDD Requirements Corpus"
+Cohesion: 0.10
+Nodes (167): CON-CF-001: Cloudflare-first public control plane, CON-CF-002: Worker runtime compatibility, CON-CI-001: CI is the verification surface, CON-MODEL-001: Stable Gateway aliases, CON-NET-001: Mesh destination validation, CON-REL-001: Release artifacts are verifiable, CON-RUNTIME-001: Runtime boundaries, CON-SDD-001: SDD and TDD stay coupled (+159 more)
 
-### Community 1 - "Model binary installation"
+### Community 1 - "Runtime Binary Installers"
 Cohesion: 0.07
-Nodes (84): fakeArchiveEntry, LlamaCppAsset, LlamaCppInstallOption, llamaCppInstallOptions, LlamaCppReleaseAsset, llamaCppReleaseResponse, MeshLLMAsset, MeshLLMInstallOption (+76 more)
+Nodes (88): fakeArchiveEntry, LlamaCppAsset, LlamaCppInstallOption, llamaCppInstallOptions, LlamaCppReleaseAsset, llamaCppReleaseResponse, MeshLLMAsset, MeshLLMInstallOption (+80 more)
 
-### Community 2 - "Agent service runtime orchestration"
-Cohesion: 0.06
-Nodes (63): CommandRunner, HeartbeatIdentity, LlamaCppInput, LlamaCppSettings, MeshLLMSettings, ModelProfile, PrefixCacheSettings, ReasoningSettings (+55 more)
-
-### Community 3 - "Inference request routing"
+### Community 2 - "Agent Test Runtime Fakes"
 Cohesion: 0.05
-Nodes (71): approvedNodeHeaders(), directSessionKey(), validateCustomDomain(), isDefaultModelId(), boundedInt(), classifyModelDeletion(), cleanString(), ConsoleRole (+63 more)
+Nodes (54): ActiveCounter, RuntimeTargetProvider, staticTarget, HandlerFunc, Header, HeartbeatRequest, fakeMeshRuntime, fakeUpdater (+46 more)
 
-### Community 4 - "Cloudflare API access provisioning"
+### Community 3 - "Router Inference Handlers"
+Cohesion: 0.05
+Nodes (76): AccessJwtSource, approvedNodeHeaders(), directSessionKey(), validateCustomDomain(), boundedInt(), cleanString(), ConsoleRole, decideDirectSessionWithAffinity() (+68 more)
+
+### Community 4 - "Cloudflare Provisioning Clients"
 Cohesion: 0.05
 Nodes (39): ACCESS_PROVISIONING_ANCHORS, AccessAppRecord, AccessGroupRecord, AccessPolicyRecord, AccessProvisionRequest, AccessProvisionResult, CloudflareAccessClient, MACHINE_BYPASS_SUFFIXES (+31 more)
 
-### Community 5 - "Mesh state and bootstrap"
-Cohesion: 0.07
-Nodes (53): DURABLE_ANCHORS, RegistryDO, SessionAffinityDO, decryptJson(), EncryptedEnvelope, encryptJson(), fromBase64(), importMeshStateKey() (+45 more)
+### Community 5 - "LlamaCpp Runtime Manager"
+Cohesion: 0.06
+Nodes (28): LlamaCppInput, LlamaCppManager, LlamaCppSettings, MeshLLMSettings, ModelProfile, mutableTarget, PrefixCacheSettings, ReasoningSettings (+20 more)
 
-### Community 6 - "Agent service integration tests"
-Cohesion: 0.08
-Nodes (37): HeartbeatRequest, fakeMeshRuntime, fakeUpdater, routerFixture, runtimeMetrics(), Context, HeartbeatResponse, MeshBootstrap (+29 more)
-
-### Community 7 - "Mesh LLM manager unit tests"
+### Community 6 - "Router Auth Handlers"
 Cohesion: 0.10
-Nodes (44): consoleFixture, eventLog, fakeLaunch, fakeMeshProcess, launchRecord, managerFixture, modelsFixture, Once (+36 more)
+Nodes (51): createTokenRecord(), generateBearerToken(), DEFAULT_MODEL_PROFILES, isDefaultModelId(), applyFleetSettings(), classifyModelDeletion(), createRouter(), handleAdminLogin() (+43 more)
 
-### Community 8 - "Agent self-update mechanism"
+### Community 7 - "Public Documentation Corpus"
+Cohesion: 0.05
+Nodes (43): Setup and admin API routes, Agent self-update, Authenticated AI Gateway, Behavioral verification, Cloudflare Access admin authentication, Codeflare Inference Mesh, codeflare-mesh public alias, GitHub Actions deployment workflow (+35 more)
+
+### Community 8 - "Agent Self Update"
 Cohesion: 0.10
 Nodes (37): fakeSelfUpdateEnv, SelfUpdateOption, SelfUpdater, UpdateAsset, UpdatePlan, containsEnv(), applyStagedBinary(), atomicSwap() (+29 more)
 
-### Community 9 - "Router admin API handlers"
-Cohesion: 0.12
-Nodes (46): applyFleetSettings(), createRouter(), handleAdminAgentVersions(), handleAdminAgentVersionSelect(), handleAdminLogin(), handleAdminMeshRotate(), handleAdminRuntimeVersions(), handleAdminRuntimeVersionSelect() (+38 more)
-
-### Community 10 - "Request authentication"
+### Community 9 - "Admin UI Shell"
 Cohesion: 0.10
-Nodes (37): AUTH_ANCHORS, bearerToken(), createTokenId(), createTokenRecord(), generateBearerToken(), hashToken(), isSecretFieldName(), randomHex() (+29 more)
+Nodes (36): ADMIN_UI_ANCHORS, AdminUiState, ActivationProfileView, ADMIN_UI_ACTIONS, ADMIN_UI_AGENT_VERSION, ADMIN_UI_CONFIRM, ADMIN_UI_DRAWER, ADMIN_UI_MESH_HEALTH (+28 more)
 
-### Community 11 - "LlamaCpp runtime management"
+### Community 10 - "Router Test Store Types"
 Cohesion: 0.08
-Nodes (10): LlamaCppManager, runtimeLog, containsString(), CancelFunc, Context, Duration, MeshBootstrap, Mutex (+2 more)
+Nodes (15): DirectSessionDecision, seedAutomationKey(), tokenFromRow(), TokenRow, accessBase64Url(), MemoryStore, retiredDefaultProfiles(), seedDefaultActivation() (+7 more)
 
-### Community 12 - "Router D1 database store"
+### Community 11 - "Scheduler Type Contracts"
+Cohesion: 0.08
+Nodes (32): MeshHealthEntry, allowedMeshCidrs(), allowedMeshPorts(), cidrContains(), DEFAULT_MESH_CIDRS, DEFAULT_MESH_PORTS, eligibleDirectNodes(), eligibleNodes() (+24 more)
+
+### Community 12 - "Admin UI Views"
+Cohesion: 0.16
+Nodes (37): ADMIN_UI_FIELD_ANCHOR, button(), ButtonOptions, commandChip(), CommandChipOptions, commandRow(), CommandRowOptions, escapeHtml() (+29 more)
+
+### Community 13 - "Mesh State Bootstrap"
+Cohesion: 0.14
+Nodes (37): appendMeshAudit(), applyHeartbeatMeshState(), bootstrapFromState(), captureMeshId(), clearedDetail(), electSeedIfAbsent(), emptyMeshState(), handleMeshRotate() (+29 more)
+
+### Community 14 - "D1 Store Profiles"
 Cohesion: 0.10
 Nodes (16): normalizeModelProfile(), D1Store, directSessionFromRow(), DirectSessionRow, GATE_CONFIG_KEYS, gateConfigCache, materializeNode(), nodeFromRow() (+8 more)
 
-### Community 13 - "Agent test helpers and config"
-Cohesion: 0.14
-Nodes (35): argvContains(), T, TestConfigPathHonorsExplicitConfigEnv(), TestREQLLAMACPPHeartbeatReportsSelectedDirectRuntime(), TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(), TestREQNODE004DashboardRendersOperationalStatusUI(), TestREQNODE004DashboardReportsMeshLLMRuntimePanel(), TestREQNODE004DashboardRuntimeControlsReportUnavailableWithoutController() (+27 more)
-
-### Community 14 - "Inference request scheduler"
+### Community 15 - "MeshLLM Runtime Manager"
 Cohesion: 0.09
-Nodes (24): fetch(), INDEX_ANCHORS, DEFAULT_MODEL_PROFILES, eligibleNodes(), isDirectEligible(), isEligible(), isSafeMeshTarget(), SCHEDULER_ANCHORS (+16 more)
+Nodes (9): meshLauncher, MeshLLMManager, CancelFunc, Duration, MeshBootstrap, Mutex, Time, MeshLLMEnv() (+1 more)
 
-### Community 15 - "Admin UI view components"
+### Community 16 - "MeshLLM Manager Tests"
 Cohesion: 0.19
-Nodes (31): ADMIN_UI_FIELD_ANCHOR, button(), ButtonOptions, escapeHtml(), field(), FieldOptions, navItem(), NavItemOptions (+23 more)
+Nodes (30): modelsFixture, TestREQRUN005APIReadyFailsClosedWhenModelsUnreachable(), NewMeshLLMManager(), envContains(), equalStrings(), flagValues(), Server, T (+22 more)
 
-### Community 16 - "Admin UI test harness"
+### Community 17 - "Agent Heartbeat Tests"
+Cohesion: 0.14
+Nodes (34): HeartbeatRequest, T, TestConfigPathHonorsExplicitConfigEnv(), TestREQLLAMACPPHeartbeatReportsSelectedDirectRuntime(), TestREQNODE001ServiceSkeletonAndListenerPolicy(), TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload(), TestREQNODE004DashboardRendersOperationalStatusUI(), TestREQNODE004DashboardReportsMeshLLMRuntimePanel() (+26 more)
+
+### Community 18 - "SDD Glossary Terms"
+Cohesion: 0.06
+Nodes (35): Access Application, Access JWT, Agent Release, AI Gateway, Bootstrap Origin, Break-Glass Recovery, Cloudflare Mesh, Console API (+27 more)
+
+### Community 19 - "MeshLLM Status Parser"
+Cohesion: 0.13
+Nodes (30): GPUStatus, MeshLLMSplitCapacityAdvice, MeshLLMSplitParticipant, MeshLLMSplitReadiness, MeshLLMSplitReadinessBlocker, MeshLLMStage, MeshLLMStatus, runtimeStagePayload (+22 more)
+
+### Community 20 - "Admin Mesh Harness"
 Cohesion: 0.08
-Nodes (19): ADMIN_UI_AGENT_VERSION, ADMIN_UI_DRAWER, ADMIN_UI_MESH_HEALTH, MeshHealthEntry, MeshUiStatusNode, AdminUiHarness, descendants(), elementStub() (+11 more)
+Nodes (18): adminUiHtml(), adminUiCss(), AdminUiHarness, descendants(), elementStub(), FetchCall, HarnessOptions, PendingTimer (+10 more)
 
-### Community 17 - "Cloudflare Workers workflow tests"
+### Community 21 - "Node Auth Endpoints"
+Cohesion: 0.11
+Nodes (29): desiredAgentVersion(), AUTH_ANCHORS, bearerToken(), createTokenId(), hashToken(), isSecretFieldName(), randomHex(), redactSecrets() (+21 more)
+
+### Community 22 - "Worker Workflow Tests"
 Cohesion: 0.07
 Nodes (25): dependencies, devDependencies, @cloudflare/workers-types, @types/node, typescript, vitest, wrangler, yaml (+17 more)
 
-### Community 18 - "Access JWT verification"
-Cohesion: 0.12
-Nodes (20): ACCESS_ANCHORS, AccessConfig, AccessJwk, AccessVerification, base64UrlToBytes(), claimsValid(), decodeSegment(), extractAccessJwt() (+12 more)
-
-### Community 19 - "Agent configuration management"
-Cohesion: 0.16
-Nodes (24): Addr, Config, NamedInterface, RuntimeBinaryVersions, ServiceInstall, IP, TestREQNODE001ServiceSkeletonAndListenerPolicy(), ApplyDetectedMeshIP() (+16 more)
-
-### Community 20 - "Router test fixtures"
-Cohesion: 0.10
+### Community 23 - "Router End-To-End Tests"
+Cohesion: 0.09
 Nodes (9): resetJwksCache(), bearer(), identityGroupsFetcher(), makeMesh(), mintKey(), roleRouter(), routerFixture(), accessJwksFetcher() (+1 more)
 
-### Community 21 - "Admin UI contract and CSS"
-Cohesion: 0.16
-Nodes (22): ADMIN_UI_ANCHORS, AdminUiState, ActivationProfileView, ADMIN_UI_ACTIONS, ADMIN_UI_CONFIRM, ADMIN_UI_NAV, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING (+14 more)
+### Community 24 - "Runtime Version Controls"
+Cohesion: 0.11
+Nodes (21): handleAdminRuntimeVersions(), handleAdminRuntimeVersionSelect(), handleApiRuntimeVersions(), handleApiRuntimeVersionSet(), currentTags(), fetchReleaseTags(), handleRuntimeVersionsList(), handleRuntimeVersionsSelect() (+13 more)
 
-### Community 22 - "Upstream proxy handler"
-Cohesion: 0.13
-Nodes (18): ActiveCounter, mutableTarget, RuntimeTargetProvider, staticTarget, HandlerFunc, Header, TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(), containsArgSequence() (+10 more)
+### Community 25 - "Direct Affinity Durable"
+Cohesion: 0.09
+Nodes (7): decideDirectSession(), DIRECT_AFFINITY_ANCHORS, DirectAffinityOutcome, DirectSessionDecisionRequest, DURABLE_ANCHORS, selectNode(), Store
 
-### Community 23 - "Agent version cache"
+### Community 26 - "MeshLLM Argument Rendering"
+Cohesion: 0.26
+Nodes (21): MeshLLMRenderInput, flashAttentionValue(), MeshLLMConfigTOML(), RenderMeshLLMArgs(), allRenderForms(), argvValue(), assertNoForbiddenFlags(), T (+13 more)
+
+### Community 27 - "Access JWT Tests"
 Cohesion: 0.12
-Nodes (15): AGENT_VERSIONS_ANCHORS, AgentVersionsCache, AgentVersionsEnv, extractReleaseTags(), fetchReleaseTags(), handleAgentVersionSelect(), handleAgentVersionsList(), isCacheFresh() (+7 more)
+Nodes (17): ACCESS_ANCHORS, AccessConfig, AccessJwk, AccessVerification, base64UrlToBytes(), claimsValid(), decodeSegment(), findKey() (+9 more)
 
-### Community 24 - "Runtime version cache"
-Cohesion: 0.14
-Nodes (18): InvalidJsonBodyError, currentTags(), fetchReleaseTags(), handleRuntimeVersionsList(), handleRuntimeVersionsSelect(), isCacheFresh(), json(), JSON_HEADERS (+10 more)
-
-### Community 25 - "Memory store test helpers"
-Cohesion: 0.13
-Nodes (7): seedAutomationKey(), tokenFromRow(), TokenRow, MemoryStore, AuditEvent, CredentialKind, TokenRecord
-
-### Community 26 - "Agent HTTP client"
-Cohesion: 0.22
-Nodes (18): ClaimRequest, ClaimResponse, Client, HeartbeatRequest, HeartbeatResponse, MeshBootstrap, activeDesiredProfiles(), ApplyClaim() (+10 more)
-
-### Community 27 - "Store interface definition"
+### Community 28 - "Worker Entry Versions"
 Cohesion: 0.10
-Nodes (3): decideDirectSession(), selectNode(), Store
+Nodes (10): emptyEnv, FetchCall, ListBody, StoredCache, RegistryDO, SessionAffinityDO, fetch(), INDEX_ANCHORS (+2 more)
 
-### Community 28 - "D1 database test fakes"
+### Community 29 - "Mesh Crypto Tests"
+Cohesion: 0.14
+Nodes (18): decryptJson(), EncryptedEnvelope, encryptJson(), fromBase64(), importMeshStateKey(), MESH_CRYPTO_ANCHORS, toBase64(), MeshStateRecord (+10 more)
+
+### Community 30 - "Agent Runtime Profiles"
+Cohesion: 0.18
+Nodes (16): Config, RuntimeBinaryVersions, runtimeLoadState, beginRuntimeProfileRestart(), MeshBootstrap, ModelProfile, llamaCppBinaryPath(), llamaCppInput() (+8 more)
+
+### Community 31 - "Agent HTTP Client"
+Cohesion: 0.22
+Nodes (13): ClaimRequest, Client, meshProcess, Context, CancelFunc, fetchLocalBody(), fetchMeshLLMModels(), fetchMeshLLMRuntimeStages() (+5 more)
+
+### Community 32 - "D1 Store Unit Tests"
 Cohesion: 0.19
 Nodes (12): desc(), FakeD1Database, FakeD1Statement, maybe(), nullableNumber(), nullableText(), number(), ok() (+4 more)
 
-### Community 29 - "Workflow safety validation"
+### Community 33 - "Agent Service Metrics"
+Cohesion: 0.19
+Nodes (10): agentUpdater, runtimeTelemetry, serviceLoop, applyMeshStatusMetrics(), NodeMetrics, heartbeatLoop(), meshWaitStuck(), runtimeMetrics() (+2 more)
+
+### Community 34 - "Workflow Safety Script"
 Cohesion: 0.22
 Nodes (18): actionUses(), checkoutSteps(), escapeRegExp(), hasHardenedWorkflowRunJob(), hasWorkflowRunTrigger(), indentOf(), invalidActionPin(), invalidRunnerPin() (+10 more)
 
-### Community 30 - "Model profile configuration"
-Cohesion: 0.21
-Nodes (17): buildCustomProfile(), modelRefSegment(), slugify(), slugifyModelRef(), configureLlamaCppProfile(), handleApiModelAdd(), handleApiModelConfigure(), handleProfileAdd() (+9 more)
-
-### Community 31 - "Admin dashboard tests"
+### Community 35 - "Agent Version Controls"
 Cohesion: 0.17
-Nodes (13): adminUiHtml(), ADMIN_UI_NODES_TABLE, ADMIN_UI_RUNTIME_VERSION, dashboardHarness(), dashboardNodes, DashboardOptions, dashboardProfiles, rowOrder() (+5 more)
+Nodes (16): AGENT_VERSIONS_ANCHORS, AgentVersionsCache, AgentVersionsEnv, extractReleaseTags(), fetchReleaseTags(), handleAgentVersionSelect(), handleAgentVersionsList(), isCacheFresh() (+8 more)
 
-### Community 32 - "API node management"
-Cohesion: 0.20
-Nodes (15): desiredAgentVersion(), apiSetNodeDeactivated(), handleAdminStatus(), handleApiNodeActivate(), handleApiNodeDeactivate(), handleApiNodeGet(), handleApiNodeList(), handleApiNodeReconfigure() (+7 more)
+### Community 36 - "Setup State Access"
+Cohesion: 0.15
+Nodes (17): extractAccessJwt(), fetchIdentityGroups(), verifyAccessRequest(), adminUiState(), handleSetupAccess(), handleSetupComplete(), normalizeGroupList(), provisionAccess() (+9 more)
 
-### Community 33 - "Admin setup state machine"
-Cohesion: 0.18
-Nodes (14): adminUiState(), handleSetupAccess(), handleSetupComplete(), normalizeGroupList(), provisionAccess(), resolveHostGate(), resolveRole(), accessConfig() (+6 more)
+### Community 37 - "Agent Config Detection"
+Cohesion: 0.28
+Nodes (15): Addr, NamedInterface, IP, TestREQNODE008DetectsWARPAdapterAndIP(), DetectHostMeshIP(), DetectMeshIP(), detectWARPInterfaceIP(), DetectWARPInterfaceName() (+7 more)
 
-### Community 34 - "Agent operational dashboard"
+### Community 38 - "Mesh Manager Test Fakes"
 Cohesion: 0.24
-Nodes (13): DashboardStatus, RuntimeController, dashboardCard(), dashboardControlAllowed(), dashboardHTML(), dashboardRuntimeCard(), Context, NodeMetrics (+5 more)
+Nodes (9): eventLog, fakeLaunch, fakeMeshProcess, launchRecord, managerFixture, Once, Mutex, Signal (+1 more)
 
-### Community 35 - "Root workspace package config"
+### Community 39 - "Runtime Profile Restart"
+Cohesion: 0.25
+Nodes (12): meshRuntime, beginRestart(), finishRestart(), CancelFunc, Context, Duration, HeartbeatResponse, Mutex (+4 more)
+
+### Community 40 - "Agent Command Entrypoint"
+Cohesion: 0.22
+Nodes (14): meshRuntimeBudgetReporter, runtimeTargetFunc, splitReadinessPoller, configPathFromArgs(), defaultDataDir(), execCommandRunner(), Server, main() (+6 more)
+
+### Community 41 - "Admin Status APIs"
+Cohesion: 0.20
+Nodes (16): apiSetNodeDeactivated(), handleAdminStatus(), handleApiNodeActivate(), handleApiNodeDeactivate(), handleApiNodeGet(), handleApiNodeList(), handleApiNodeReconfigure(), handleApiSettingsGet() (+8 more)
+
+### Community 42 - "Agent Config Persistence"
+Cohesion: 0.33
+Nodes (14): ClaimResponse, HeartbeatIdentity, HeartbeatResponse, MeshBootstrap, activeDesiredProfiles(), ApplyClaim(), ApplyDesiredProfiles(), ApplyDesiredRuntimeVersions() (+6 more)
+
+### Community 43 - "Agent Dashboard Controls"
+Cohesion: 0.25
+Nodes (14): DashboardStatus, dashboardCard(), dashboardControlAllowed(), DashboardHandler(), dashboardHTML(), dashboardRuntimeCard(), Context, Handler (+6 more)
+
+### Community 44 - "Model Management APIs"
+Cohesion: 0.22
+Nodes (15): slugify(), configureLlamaCppProfile(), handleApiModelAdd(), handleApiModelConfigure(), handleApiModelList(), handleProfileAdd(), handleProfileConfig(), LLAMACPP_CACHE_TYPES (+7 more)
+
+### Community 45 - "GPU Metrics Parsing"
+Cohesion: 0.24
+Nodes (12): NodeMetrics, TestREQOBS009ReportsLastRuntimeError(), Context, NodeMetrics, GPUFallbackMetrics(), nvidiaSMIArgs(), parseSystemProfilerVRAM(), parseVRAMToMiB() (+4 more)
+
+### Community 46 - "Workspace Package Metadata"
 Cohesion: 0.14
 Nodes (13): description, engines, node, name, private, scripts, cf-types, dry-run (+5 more)
 
-### Community 36 - "Direct session affinity"
-Cohesion: 0.18
-Nodes (6): DIRECT_AFFINITY_ANCHORS, DirectAffinityOutcome, DirectSessionDecision, DirectSessionDecisionRequest, DirectSessionRecord, NodeRecord
-
-### Community 37 - "Install script generation"
+### Community 47 - "Installer Script Generation"
 Cohesion: 0.21
 Nodes (13): INSTALLER_ANCHORS, InstallerArch, installerCommand(), InstallerInput, InstallerPlan, InstallerPlatform, installScript(), InstallScriptInput (+5 more)
 
-### Community 38 - "GPU and runtime metrics"
-Cohesion: 0.27
-Nodes (11): NodeMetrics, Context, NodeMetrics, GPUFallbackMetrics(), nvidiaSMIArgs(), parseSystemProfilerVRAM(), parseVRAMToMiB(), atoi() (+3 more)
-
-### Community 39 - "Request rate limiting"
+### Community 48 - "Rate Limit Logic"
 Cohesion: 0.28
 Nodes (9): bearerToken(), BUCKET_BINDING, classifyRoute(), isRateLimited(), RateBucket, rateKey(), sha256Hex(), TOKEN_KEYED (+1 more)
 
-### Community 40 - "Shared TypeScript compiler config"
+### Community 49 - "Model Profile Builder"
+Cohesion: 0.26
+Nodes (10): buildCustomProfile(), LLAMACPP_PROFILE_DEFAULTS, MESHLLM_RECURRENT_REF_MARKERS, MESHLLM_TUNABLE_DEFAULTS, meshllmPayloadMode(), modelRefSegment(), parseLlamaCppModelRef(), PROFILE_ANCHORS (+2 more)
+
+### Community 50 - "TypeScript Base Config"
 Cohesion: 0.17
 Nodes (11): compilerOptions, exactOptionalPropertyTypes, lib, module, moduleResolution, noUncheckedIndexedAccess, resolveJsonModule, skipLibCheck (+3 more)
 
-### Community 41 - "Router test utility helpers"
-Cohesion: 0.31
-Nodes (7): meshNode(), accessBase64Url(), nodeFixture(), retiredDefaultProfiles(), seedDefaultActivation(), shouldRefreshDefaultProfile(), signAccessJwt()
+### Community 51 - "Firewall Rule Provisioning"
+Cohesion: 0.36
+Nodes (8): CommandRunner, provisionMeshPeerFirewall(), EnsureInboundRule(), ensureLinuxRule(), ensureWindowsRule(), Context, T, TestREQNODE010EnsureInboundRule()
 
-### Community 42 - "Model profile defaults and parsing"
-Cohesion: 0.25
-Nodes (7): LLAMACPP_PROFILE_DEFAULTS, MESHLLM_RECURRENT_REF_MARKERS, MESHLLM_TUNABLE_DEFAULTS, meshllmPayloadMode(), parseLlamaCppModelRef(), PROFILE_ANCHORS, RuntimeKind
+### Community 52 - "Runtime Lifecycle Tests"
+Cohesion: 0.33
+Nodes (6): fakeRuntimeController, argvContains(), Context, TestREQRUN005RuntimeManagerUsesProcessLifetimeContext(), TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline(), TestREQRUN007RestartWithInputRelaunchesWithNewProfileArgs()
 
-### Community 43 - "OG image generation"
+### Community 53 - "OG Image Rasterizer"
 Cohesion: 0.25
 Nodes (7): fontFiles, here, png, pngPath, resvg, svg, svgPath
 
-### Community 44 - "Initial D1 migration schema"
+### Community 54 - "Initial D1 Schema"
 Cohesion: 0.25
 Nodes (7): audit_events, model_profiles, nodes, reservations, router_config, sessions, tokens
 
-### Community 45 - "Agent runtime manager tests"
-Cohesion: 0.48
-Nodes (4): fakeRuntimeController, Context, TestREQRUN005RuntimeManagerUsesProcessLifetimeContext(), TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline()
-
-### Community 46 - "Deploy settings resolution"
+### Community 55 - "Deploy Settings Resolver"
 Cohesion: 0.33
 Nodes (5): DEPLOY_SETTINGS_ANCHORS, output, validHostnameLabel(), validWorkerBaseUrl(), workerBaseUrl
 
-### Community 47 - "Router TypeScript configuration"
+### Community 56 - "Router TypeScript Config"
 Cohesion: 0.29
 Nodes (6): compilerOptions, noEmit, rootDir, exclude, extends, include
 
-### Community 48 - "Address fuzz testing"
+### Community 57 - "Mesh Console Fixture"
+Cohesion: 0.40
+Nodes (3): consoleFixture, Request, ResponseWriter
+
+### Community 58 - "Mesh IP Fuzzing"
 Cohesion: 0.40
 Nodes (3): fuzzAddr, F, FuzzDetectMeshIP()
 
+### Community 59 - "Mesh Process Signals"
+Cohesion: 0.40
+Nodes (3): execMeshProcess, Cmd, Signal
+
+### Community 60 - "Runtime Error Log Tests"
+Cohesion: 0.60
+Nodes (4): T, TestREQOBS011RuntimeErrorDetailReflectsRing(), TestREQOBS011RuntimeLogCapturesLastErrorLine(), TestREQOBS011RuntimeLogHandlesSplitWrites()
+
 ## Knowledge Gaps
-- **164 isolated node(s):** `here`, `svgPath`, `pngPath`, `fontFiles`, `svg` (+159 more)
+- **174 isolated node(s):** `here`, `svgPath`, `pngPath`, `fontFiles`, `svg` (+169 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **10 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `MeshLLMManager` connect `Mesh LLM process manager` to `Agent service runtime orchestration`, `Agent service integration tests`, `Mesh LLM manager unit tests`, `LlamaCpp runtime management`, `Agent HTTP client`?**
-  _High betweenness centrality (0.048) - this node is a cross-community bridge._
-- **Why does `Config` connect `Agent configuration management` to `Agent operational dashboard`, `Agent service runtime orchestration`, `Agent service integration tests`, `Agent test helpers and config`, `Agent HTTP client`?**
-  _High betweenness centrality (0.026) - this node is a cross-community bridge._
-- **Why does `startMeshRuntime()` connect `Agent service runtime orchestration` to `Mesh LLM process manager`, `Model binary installation`, `Agent configuration management`, `Mesh LLM manager unit tests`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **What connects `here`, `svgPath`, `pngPath` to the rest of the system?**
-  _164 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Mesh LLM process manager` be split into smaller, more focused modules?**
-  _Cohesion score 0.052503052503052504 - nodes in this community are weakly interconnected._
-- **Should `Model binary installation` be split into smaller, more focused modules?**
-  _Cohesion score 0.07175689479060265 - nodes in this community are weakly interconnected._
-- **Should `Agent service runtime orchestration` be split into smaller, more focused modules?**
-  _Cohesion score 0.05799373040752351 - nodes in this community are weakly interconnected._
+- **Why does `MeshLLMManager` connect `MeshLLM Runtime Manager` to `Agent Test Runtime Fakes`, `LlamaCpp Runtime Manager`, `Mesh Manager Test Fakes`, `MeshLLM Manager Tests`, `MeshLLM Argument Rendering`, `Agent Runtime Profiles`, `Agent HTTP Client`?**
+  _High betweenness centrality (0.027) - this node is a cross-community bridge._
+- **Why does `Config` connect `Agent Runtime Profiles` to `Agent Service Metrics`, `Agent Test Runtime Fakes`, `Agent Config Detection`, `Runtime Profile Restart`, `Agent Command Entrypoint`, `Agent Config Persistence`, `Agent Dashboard Controls`, `Agent Heartbeat Tests`?**
+  _High betweenness centrality (0.021) - this node is a cross-community bridge._
+- **Why does `startMeshRuntime()` connect `Agent Runtime Profiles` to `Runtime Binary Installers`, `Runtime Profile Restart`, `Agent Command Entrypoint`, `MeshLLM Runtime Manager`, `MeshLLM Manager Tests`?**
+  _High betweenness centrality (0.020) - this node is a cross-community bridge._
+- **Are the 133 inferred relationships involving `Release and CI verification` (e.g. with `CON-CF-001: Cloudflare-first public control plane` and `CON-CF-002: Worker runtime compatibility`) actually correct?**
+  _`Release and CI verification` has 133 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 129 inferred relationships involving `Observability and diagnostics` (e.g. with `CON-CF-001: Cloudflare-first public control plane` and `CON-CF-002: Worker runtime compatibility`) actually correct?**
+  _`Observability and diagnostics` has 129 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 120 inferred relationships involving `Router Worker` (e.g. with `CON-CF-001: Cloudflare-first public control plane` and `CON-CF-002: Worker runtime compatibility`) actually correct?**
+  _`Router Worker` has 120 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 90 inferred relationships involving `Admin console and setup UI` (e.g. with `CON-CF-001: Cloudflare-first public control plane` and `CON-CF-002: Worker runtime compatibility`) actually correct?**
+  _`Admin console and setup UI` has 90 INFERRED edges - model-reasoned connections that need verification._

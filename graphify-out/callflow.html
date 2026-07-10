@@ -60,16 +60,20 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 <div class="container">
 
 <h1>codeflare-inference-mesh — Complete Call Flow &amp; Architecture Documentation</h1>
-<p class="subtitle">Generated from graphify knowledge graph: 1501 nodes, 3836 edges, 58 communities. Commit: 26dde02</p>
+<p class="subtitle">Generated from graphify knowledge graph: 1824 nodes, 5531 edges, 74 communities. Commit: 247c4b6</p>
 
 <div class="nav">
     <a href="#overview">Architecture Overview</a>
     <a href="#build-graph">Graph Build</a>
+    <a href="#outputs-docs">Outputs &amp; Docs</a>
     <a href="#cli-skills">CLI &amp; Skill Installers</a>
     <a href="#serve-api">Serving API</a>
     <a href="#tests-fixtures">Tests &amp; Fixtures</a>
-    <a href="#og-image-generation">OG image generation</a>
-    <a href="#reservations-index-migration">Reservations index migration</a>
+    <a href="#og-image-rasterizer">OG Image Rasterizer</a>
+    <a href="#mesh-token-lifecycle">Mesh Token Lifecycle</a>
+    <a href="#review-queue-spec">Review Queue Spec</a>
+    <a href="#sdd-change-log">SDD Change Log</a>
+    <a href="#reservations-expiry-index">Reservations Expiry Index</a>
 </div>
 
 <!-- ====== Architecture Overview ====== -->
@@ -79,23 +83,30 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    BUILD_GRAPH_321CBB04("Graph Build<br/><small>34 nodes</small>")
+    BUILD_GRAPH_321CBB04("Graph Build<br/><small>236 nodes</small>")
     class BUILD_GRAPH_321CBB04 module;
-    CLI_SKILLS_9964CBB8("CLI &amp; Skill Installers<br/><small>659 nodes</small>")
+    OUTPUTS_DOCS_ED82387C("Outputs &amp; Docs<br/><small>47 nodes</small>")
+    class OUTPUTS_DOCS_ED82387C module;
+    CLI_SKILLS_9964CBB8("CLI &amp; Skill Installers<br/><small>672 nodes</small>")
     class CLI_SKILLS_9964CBB8 module;
-    SERVE_API_35EC8E86("Serving API<br/><small>770 nodes</small>")
+    SERVE_API_35EC8E86("Serving API<br/><small>837 nodes</small>")
     class SERVE_API_35EC8E86 module;
-    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>29 nodes</small>")
+    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>20 nodes</small>")
     class TESTS_FIXTURES_B84B1DCC module;
-    OG_IMAGE_GENERATION_69F8FFE0("OG image generation<br/><small>8 nodes</small>")
-    class OG_IMAGE_GENERATION_69F8FFE0 module;
-    RESERVATIONS_INDEX_MIGRATION_3D6114FF("Reservations index migration<br/><small>1 nodes</small>")
-    class RESERVATIONS_INDEX_MIGRATION_3D6114FF module;
-    CLI_SKILLS_9964CBB8 -->|imports x25| SERVE_API_35EC8E86
-    SERVE_API_35EC8E86 -->|imports x21| TESTS_FIXTURES_B84B1DCC
-    TESTS_FIXTURES_B84B1DCC -->|imports x17| SERVE_API_35EC8E86
-    SERVE_API_35EC8E86 -->|calls x5| CLI_SKILLS_9964CBB8
-    CLI_SKILLS_9964CBB8 -->|imports x2| TESTS_FIXTURES_B84B1DCC
+    OG_IMAGE_RASTERIZER_9B5257C2("OG Image Rasterizer<br/><small>8 nodes</small>")
+    class OG_IMAGE_RASTERIZER_9B5257C2 module;
+    MESH_TOKEN_LIFECYCLE_F329B741("Mesh Token Lifecycle<br/><small>1 nodes</small>")
+    class MESH_TOKEN_LIFECYCLE_F329B741 module;
+    REVIEW_QUEUE_SPEC_C5550959("Review Queue Spec<br/><small>1 nodes</small>")
+    class REVIEW_QUEUE_SPEC_C5550959 module;
+    SDD_CHANGE_LOG_179EBE3B("SDD Change Log<br/><small>1 nodes</small>")
+    class SDD_CHANGE_LOG_179EBE3B module;
+    RESERVATIONS_EXPIRY_INDEX_A0B8FDFD("Reservations Expiry Index<br/><small>1 nodes</small>")
+    class RESERVATIONS_EXPIRY_INDEX_A0B8FDFD module;
+    OUTPUTS_DOCS_ED82387C -->|describes x8| BUILD_GRAPH_321CBB04
+    TESTS_FIXTURES_B84B1DCC -->|imports x7| SERVE_API_35EC8E86
+    SERVE_API_35EC8E86 -->|imports x4| TESTS_FIXTURES_B84B1DCC
+    BUILD_GRAPH_321CBB04 -->|describes state flow x3| OUTPUTS_DOCS_ED82387C
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -112,94 +123,77 @@ flowchart LR
     <h4>Architecture Layers</h4>
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>Layer</th><th>Nodes</th><th>Communities</th></tr>
-      <tr><td>Graph Build</td><td>34</td><td><code>35, 40, 47, 57</code></td></tr><tr><td>CLI &amp; Skill Installers</td><td>659</td><td><code>0, 1, 2, 6, 7, 8, 11, 13, 19, 22, 23, 26, 34, 38, 45, 48, 50, 51</code></td></tr><tr><td>Serving API</td><td>770</td><td><code>3, 4, 5, 9, 10, 12, 14, 15, 16, 17, 18, 20, 21, 24, 25, 27, 29, 30, 31, 32, 33, 36, 37, 39, 42, 44, 46, 49, 52, 53, 54, 56</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>29</td><td><code>28, 41</code></td></tr><tr><td>OG image generation</td><td>8</td><td><code>43</code></td></tr><tr><td>Reservations index migration</td><td>1</td><td><code>55</code></td></tr>
+      <tr><td>Graph Build</td><td>236</td><td><code>0, 18, 46, 50, 56, 73</code></td></tr><tr><td>Outputs &amp; Docs</td><td>47</td><td><code>7</code></td></tr><tr><td>CLI &amp; Skill Installers</td><td>672</td><td><code>1, 2, 5, 8, 15, 16, 17, 19, 26, 30, 31, 33, 37, 38, 39, 40, 42, 43, 45, 51, 52, 57, 58, 59, 60, 62, 63, 64</code></td></tr><tr><td>Serving API</td><td>837</td><td><code>3, 4, 6, 9, 10, 11, 12, 13, 14, 20, 21, 22, 23, 24, 25, 27, 28, 29, 34, 35, 36, 41, 44, 47, 48, 49, 54, 55, 61, 65, 66, 67, 72</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>20</td><td><code>32</code></td></tr><tr><td>OG Image Rasterizer</td><td>8</td><td><code>53</code></td></tr><tr><td>Mesh Token Lifecycle</td><td>1</td><td><code>68</code></td></tr><tr><td>Review Queue Spec</td><td>1</td><td><code>69</code></td></tr><tr><td>SDD Change Log</td><td>1</td><td><code>70</code></td></tr><tr><td>Reservations Expiry Index</td><td>1</td><td><code>71</code></td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Core Flow</h4>
-    <div class="arrow-chain">Graph Build -&gt; CLI &amp; Skill Installers -&gt; Serving API -&gt; Tests &amp; Fixtures -&gt; OG image generation -&gt; Reservations index migration</div>
+    <div class="arrow-chain">CLI &amp; Skill Installers -&gt; Graph Build -&gt; Outputs &amp; Docs -&gt; Serving API -&gt; Tests &amp; Fixtures -&gt; OG Image Rasterizer -&gt; Mesh Token Lifecycle</div>
   </div>
 </div>
 <div class="grid">
   <div class="card">
     <h4>Graph Report Highlights</h4>
     <ul>
-      <li>1501 nodes · 3836 edges · 58 communities (52 shown, 6 thin omitted)</li>
-      <li>Extraction: 92% EXTRACTED · 8% INFERRED · 0% AMBIGUOUS · INFERRED: 296 edges (avg confidence: 0.79)</li>
+      <li>1824 nodes · 5531 edges · 74 communities (64 shown, 10 thin omitted)</li>
+      <li>Extraction: 76% EXTRACTED · 24% INFERRED · 0% AMBIGUOUS · INFERRED: 1352 edges (avg confidence: 0.78)</li>
       <li>Token cost: 0 input · 0 output</li>
-      <li>1. `createRouter()` - 84 edges</li>
-      <li>2. `json()` - 79 edges</li>
-      <li>3. `MeshLLMManager` - 44 edges</li>
+      <li>1. `Constraints` - 132 edges</li>
+      <li>2. `createRouter()` - 84 edges</li>
+      <li>3. `json()` - 79 edges</li>
     </ul>
   </div>
 </div>
 <hr>
 <!-- ====== 2. Graph Build ====== -->
 <h2 id="build-graph">2. Graph Build</h2>
-<p>Graph Build groups implementation around packagejson, tsconfigbasejson, packages, tsconfigjson, mostly in package.json, tsconfig.base.json, packages/router-worker/tsconfig.json. This section covers 34 nodes and 30 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Graph Build groups implementation around req, adm, node, mesh, mostly in package.json, tsconfig.base.json, packages/router-worker/tsconfig.json. This section covers 236 nodes and 1459 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Graph Build (34 nodes, 30 edges)
-    subgraph build_graph_package_json_4e40bfbd["package.json"]
-        package_582681c2("package.json")
-        package_scripts_25cfc1ca("scripts<br/><small>package.json</small>")
-        package_description_1bccacf3("description<br/><small>package.json</small>")
-        package_engines_92ff67d1("engines<br/><small>package.json</small>")
-        package_name_b23e1232("name<br/><small>package.json</small>")
-        package_private_9955bf19("private<br/><small>package.json</small>")
-        package_version_a7f3cb7e("version<br/><small>package.json</small>")
-        package_workspaces_1e2e55c4("workspaces<br/><small>package.json</small>")
-        package_scripts_cf_types_8a6c650f("cf-types<br/><small>package.json</small>")
-        package_scripts_dry_run_16dbf1ad("dry-run<br/><small>package.json</small>")
-        package_scripts_lint_619c0521("lint<br/><small>package.json</small>")
-        package_scripts_test_71544dc5("test<br/><small>package.json</small>")
-        package_scripts_typecheck_09c71ae6("typecheck<br/><small>package.json</small>")
-        package_engines_node_f5210d2f("node<br/><small>package.json</small>")
-    end
-    subgraph build_graph_packages_router_worker_tsconfig_json_ab94c424["packages/router-worker/tsconfig.json"]
-        packages_router_worker_tsconfig_3caf0b5a("tsconfig.json")
-        packages_router_worker_tsconfig_compileroptions_62862b71("compilerOptions<br/><small>packages/router-worker/tsconfig.json</small>")
-    end
-    subgraph build_graph_tsconfig_base_json_32f7fbda["tsconfig.base.json"]
-        tsconfig_base_compileroptions_0a93f158("compilerOptions<br/><small>tsconfig.base.json</small>")
-        tsconfig_base_593e0b92("tsconfig.base.json")
-    end
-    package_582681c2 -->|contains| package_description_1bccacf3
-    package_582681c2 -->|contains| package_engines_92ff67d1
-    package_582681c2 -->|contains| package_name_b23e1232
-    package_582681c2 -->|contains| package_private_9955bf19
-    package_582681c2 -->|contains| package_scripts_25cfc1ca
-    package_582681c2 -->|contains| package_version_a7f3cb7e
-    package_582681c2 -->|contains| package_workspaces_1e2e55c4
-    package_scripts_25cfc1ca -->|contains| package_scripts_cf_types_8a6c650f
-    package_scripts_25cfc1ca -->|contains| package_scripts_dry_run_16dbf1ad
-    package_scripts_25cfc1ca -->|contains| package_scripts_lint_619c0521
-    package_scripts_25cfc1ca -->|contains| package_scripts_test_71544dc5
-    package_scripts_25cfc1ca -->|contains| package_scripts_typecheck_09c71ae6
-    package_engines_92ff67d1 -->|contains| package_engines_node_f5210d2f
-    packages_router_worker_tsconfig_3caf0b5a -->|contains| packages_router_worker_tsconfig_compileroptions_62862b71
-    tsconfig_base_593e0b92 -->|contains| tsconfig_base_compileroptions_0a93f158
-    %% Omitted for readability: 16 nodes, 0 edges
-    class package_582681c2 function;
-    class package_scripts_25cfc1ca function;
-    class package_description_1bccacf3 function;
-    class package_engines_92ff67d1 function;
-    class package_name_b23e1232 function;
-    class package_private_9955bf19 function;
-    class package_version_a7f3cb7e function;
-    class package_workspaces_1e2e55c4 function;
-    class package_scripts_cf_types_8a6c650f function;
-    class package_scripts_dry_run_16dbf1ad function;
-    class package_scripts_lint_619c0521 function;
-    class package_scripts_test_71544dc5 function;
-    class package_scripts_typecheck_09c71ae6 function;
-    class package_engines_node_f5210d2f function;
-    class packages_router_worker_tsconfig_3caf0b5a function;
-    class packages_router_worker_tsconfig_compileroptions_62862b71 function;
-    class tsconfig_base_compileroptions_0a93f158 function;
-    class tsconfig_base_593e0b92 function;
+    %% Section: Graph Build (236 nodes, 1459 edges)
+    concept_cloudflare_router_plane_fd0d0f4b("Cloudflare router plane")
+    concept_ai_gateway_afb33bda("Cloudflare AI Gateway")
+    concept_d1_state_282deeb7("D1 durable state")
+    concept_router_worker_d46d7178("Router Worker")
+    concept_durable_objects_188c505a("Durable Objects")
+    concept_glossary_ai_gateway_2d5a91c7("AI Gateway")
+    concept_glossary_access_application_e290b08a("Access Application")
+    concept_glossary_access_jwt_02e3730a("Access JWT")
+    concept_admin_console_047c6a0f("Admin console and setup UI")
+    concept_glossary_agent_release_86ddf2c1("Agent Release")
+    concept_control_plane_api_9351f407("Automation control-plane API")
+    concept_glossary_bootstrap_origin_899bf9db("Bootstrap Origin")
+    concept_glossary_break_glass_recovery_993f7d7b("Break-Glass Recovery")
+    con_CON_CF_001_7334ae4f("CON-CF-001: Cloudflare-first public con...")
+    con_CON_CF_002_e46667a4("CON-CF-002: Worker runtime compatibility")
+    con_CON_CI_001_60797def("CON-CI-001: CI is the verification surface")
+    con_CON_MODEL_001_38526db8("CON-MODEL-001: Stable Gateway aliases")
+    con_CON_NET_001_94c896de("CON-NET-001: Mesh destination validation")
+    concept_cloudflare_router_plane_fd0d0f4b -->|uses| concept_ai_gateway_afb33bda
+    concept_cloudflare_router_plane_fd0d0f4b -->|uses| concept_d1_state_282deeb7
+    concept_cloudflare_router_plane_fd0d0f4b -->|uses| concept_router_worker_d46d7178
+    concept_cloudflare_router_plane_fd0d0f4b -->|uses| concept_durable_objects_188c505a
+    %% Omitted for readability: 218 nodes, 0 edges
+    class concept_cloudflare_router_plane_fd0d0f4b api;
+    class concept_ai_gateway_afb33bda klass;
+    class concept_d1_state_282deeb7 klass;
+    class concept_router_worker_d46d7178 api;
+    class concept_durable_objects_188c505a klass;
+    class concept_glossary_ai_gateway_2d5a91c7 klass;
+    class concept_glossary_access_application_e290b08a klass;
+    class concept_glossary_access_jwt_02e3730a klass;
+    class concept_admin_console_047c6a0f klass;
+    class concept_glossary_agent_release_86ddf2c1 klass;
+    class concept_control_plane_api_9351f407 api;
+    class concept_glossary_bootstrap_origin_899bf9db klass;
+    class concept_glossary_break_glass_recovery_993f7d7b klass;
+    class con_CON_CF_001_7334ae4f klass;
+    class con_CON_CF_002_e46667a4 klass;
+    class con_CON_CI_001_60797def klass;
+    class con_CON_MODEL_001_38526db8 klass;
+    class con_CON_NET_001_94c896de klass;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -223,243 +217,243 @@ flowchart LR
 </tr>
 <tr>
   <td>1</td>
-  <td><code>package.json</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Architecture lane</code><br><small style="color:var(--muted)">documentation/lanes/architecture.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>package.json node in package.json.</td>
+  <td>Documentation node describing Architecture lane.</td>
 </tr>
 <tr>
   <td>2</td>
-  <td><code>name</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Cloudflare router plane</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
   <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>name node in package.json.</td>
+  <td><code>Cloudflare AI Gateway</code><br><code>D1 durable state</code><br><code>Durable Objects</code><br>+1 more</td>
+  <td>Cloudflare router plane node in project.</td>
 </tr>
 <tr>
   <td>3</td>
-  <td><code>version</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>version node in package.json.</td>
+  <td><code>Router Worker</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td><code>Cloudflare router plane</code></td>
+  <td><code>Cloudflare AI Gateway</code></td>
+  <td>Router Worker node in project.</td>
 </tr>
 <tr>
   <td>4</td>
-  <td><code>private</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
+  <td><code>Cloudflare AI Gateway</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>Cloudflare router plane</code><br><code>Router Worker</code></td>
   <td>No direct outbound edge</td>
-  <td>private node in package.json.</td>
+  <td>Cloudflare AI Gateway node in project.</td>
 </tr>
 <tr>
   <td>5</td>
-  <td><code>description</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
+  <td><code>D1 durable state</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>Cloudflare router plane</code></td>
   <td>No direct outbound edge</td>
-  <td>description node in package.json.</td>
+  <td>D1 durable state node in project.</td>
 </tr>
 <tr>
   <td>6</td>
-  <td><code>workspaces</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
+  <td><code>Durable Objects</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>Cloudflare router plane</code></td>
   <td>No direct outbound edge</td>
-  <td>workspaces node in package.json.</td>
+  <td>Durable Objects node in project.</td>
 </tr>
 <tr>
   <td>7</td>
-  <td><code>scripts</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Node Agent</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>scripts node in package.json.</td>
+  <td>Node Agent node in project.</td>
 </tr>
 <tr>
   <td>8</td>
-  <td><code>lint</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>MeshLLM runtime</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>lint node in package.json.</td>
+  <td>MeshLLM runtime node in project.</td>
 </tr>
 <tr>
   <td>9</td>
-  <td><code>test</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Direct session affinity</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Verifies imports, entry points, or version behavior.</td>
+  <td>Direct session affinity node in project.</td>
 </tr>
 <tr>
   <td>10</td>
-  <td><code>typecheck</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Credential boundaries</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>typecheck node in package.json.</td>
+  <td>Credential boundaries node in project.</td>
 </tr>
 <tr>
   <td>11</td>
-  <td><code>cf-types</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Cloudflare Workers public control plane</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>cf-types node in package.json.</td>
+  <td>Cloudflare Workers public control plane node in project.</td>
 </tr>
 <tr>
   <td>12</td>
-  <td><code>dry-run</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Encrypted/no-plaintext durable secrets</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>dry-run node in package.json.</td>
+  <td>Encrypted/no-plaintext durable secrets node in project.</td>
 </tr>
 <tr>
   <td>13</td>
-  <td><code>engines</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Mesh destination validation</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>engines node in package.json.</td>
+  <td>Mesh destination validation node in project.</td>
 </tr>
 <tr>
   <td>14</td>
-  <td><code>node</code><br><small style="color:var(--muted)">package.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Direct llama.cpp runtime</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>node node in package.json.</td>
+  <td>Direct llama.cpp runtime node in project.</td>
 </tr>
 <tr>
   <td>15</td>
-  <td><code>tsconfig.base.json</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Stable public model alias codeflare-mesh</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Reads, resolves, or persists project configuration.</td>
+  <td>Stable public model alias codeflare-mesh node in project.</td>
 </tr>
 <tr>
   <td>16</td>
-  <td><code>compilerOptions</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Admin console and setup UI</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>compilerOptions node in tsconfig.base.json.</td>
+  <td>Admin console and setup UI node in project.</td>
 </tr>
 <tr>
   <td>17</td>
-  <td><code>target</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Automation control-plane API</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>target node in tsconfig.base.json.</td>
+  <td>Automation control-plane API node in project.</td>
 </tr>
 <tr>
   <td>18</td>
-  <td><code>module</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Observability and diagnostics</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>module node in tsconfig.base.json.</td>
+  <td>Observability and diagnostics node in project.</td>
 </tr>
 <tr>
   <td>19</td>
-  <td><code>moduleResolution</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Release and CI verification</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>moduleResolution node in tsconfig.base.json.</td>
+  <td>Release and CI verification node in project.</td>
 </tr>
 <tr>
   <td>20</td>
-  <td><code>lib</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Scheduling and routing</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>lib node in tsconfig.base.json.</td>
+  <td>Scheduling and routing node in project.</td>
 </tr>
 <tr>
   <td>21</td>
-  <td><code>strict</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Cloudflare Access authentication</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>strict node in tsconfig.base.json.</td>
+  <td>Cloudflare Access authentication node in project.</td>
 </tr>
 <tr>
   <td>22</td>
-  <td><code>noUncheckedIndexedAccess</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Runtime profiles</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>noUncheckedIndexedAccess node in tsconfig.base.json.</td>
+  <td>Runtime profiles node in project.</td>
 </tr>
 <tr>
   <td>23</td>
-  <td><code>exactOptionalPropertyTypes</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Gateway integration</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>exactOptionalPropertyTypes node in tsconfig.base.json.</td>
+  <td>Gateway integration node in project.</td>
 </tr>
 <tr>
   <td>24</td>
-  <td><code>resolveJsonModule</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Constraints</code><br><small style="color:var(--muted)">sdd/spec/constraints.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>resolveJsonModule node in tsconfig.base.json.</td>
+  <td>Documentation node describing Constraints.</td>
 </tr>
 <tr>
   <td>25</td>
-  <td><code>skipLibCheck</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>CON-CF-001: Cloudflare-first public control plane</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>skipLibCheck node in tsconfig.base.json.</td>
+  <td>CON-CF-001: Cloudflare-first public control plane node in project.</td>
 </tr>
 <tr>
   <td>26</td>
-  <td><code>types</code><br><small style="color:var(--muted)">tsconfig.base.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>CON-CF-002: Worker runtime compatibility</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>types node in tsconfig.base.json.</td>
+  <td>CON-CF-002: Worker runtime compatibility node in project.</td>
 </tr>
 <tr>
   <td>27</td>
-  <td><code>tsconfig.json</code><br><small style="color:var(--muted)">packages/router-worker/tsconfig.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>CON-NET-001: Mesh destination validation</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Reads, resolves, or persists project configuration.</td>
+  <td>CON-NET-001: Mesh destination validation node in project.</td>
 </tr>
 <tr>
   <td>28</td>
-  <td><code>extends</code><br><small style="color:var(--muted)">packages/router-worker/tsconfig.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>CON-SEC-001: Separate credential classes</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-async">Async</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>extends node in packages/router-worker/tsconfig.json.</td>
+  <td>CON-SEC-001: Separate credential classes node in project.</td>
 </tr>
 <tr>
   <td>29</td>
-  <td><code>compilerOptions</code><br><small style="color:var(--muted)">packages/router-worker/tsconfig.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>CON-SEC-002: No plaintext durable secrets</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>compilerOptions node in packages/router-worker/tsconfig.json.</td>
+  <td>CON-SEC-002: No plaintext durable secrets node in project.</td>
 </tr>
 <tr>
   <td>30</td>
-  <td><code>noEmit</code><br><small style="color:var(--muted)">packages/router-worker/tsconfig.json</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>CON-SEC-003: Mesh secret custody and rotation</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>noEmit node in packages/router-worker/tsconfig.json.</td>
+  <td>CON-SEC-003: Mesh secret custody and rotation node in project.</td>
 </tr>
 </table>
 
@@ -471,26 +465,372 @@ flowchart LR
       <tr><td><code>package.json</code></td><td>14 nodes</td></tr>
 <tr><td><code>tsconfig.base.json</code></td><td>12 nodes</td></tr>
 <tr><td><code>packages/router-worker/tsconfig.json</code></td><td>7 nodes</td></tr>
+<tr><td><code>documentation/lanes/architecture.md</code></td><td>1 nodes</td></tr>
 <tr><td><code>packages/node-agent/go.mod</code></td><td>1 nodes</td></tr>
+<tr><td><code>sdd/spec/constraints.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>sdd/spec/control-plane-api.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>sdd/spec/gateway.md</code></td><td>1 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x30. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: references x214, contains x163, defines x34, belongs to x13. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
-<!-- ====== 3. CLI & Skill Installers ====== -->
-<h2 id="cli-skills">3. CLI &amp; Skill Installers</h2>
-<p>CLI &amp; Skill Installers groups implementation around agent, packages, node, internal, mostly in cmd/inference-mesh-agent/main_test.go, cmd/inference-mesh-agent/main.go, internal/agent/meshllm_manager_test.go. This section covers 659 nodes and 1753 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 3. Outputs & Docs ====== -->
+<h2 id="outputs-docs">3. Outputs &amp; Docs</h2>
+<p>Outputs &amp; Docs groups implementation around documentation, requirements, readmemd, api, mostly in CONTRIBUTING.md, PRODUCT.md, README.md. This section covers 47 nodes and 56 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: CLI &amp; Skill Installers (659 nodes, 1753 edges)
+    %% Section: Outputs &amp; Docs (47 nodes, 56 edges)
+    subgraph outputs_docs_External_generated_a8e9d6d8["External / generated"]
+        concept_codeflare_inference_mesh_e5153680("Codeflare Inference Mesh")
+        concept_provider_api_49d0b719("Provider and node API routes")
+        concept_admin_api_8518f014("Setup and admin API routes")
+        concept_worker_secrets_vars_caa08fa7("Worker secrets, vars, and bindings")
+        concept_deployment_workflow_fb1400fd("GitHub Actions deployment workflow")
+        concept_observability_status_d4f2ad35("Admin status and mesh health")
+        concept_mesh_secret_custody_c135520e("Mesh secret custody and rotation")
+        concept_troubleshooting_runbooks_c43fe7ed("Operational troubleshooting runbooks")
+        concept_req_control_plane_api_2ea7fa84("Control-Plane API requirements")
+        concept_req_gateway_9ee0d55f("Gateway Integration requirements")
+        concept_req_node_agent_e94f1f2e("Node Agent requirements")
+        concept_req_observability_0614d440("Observability requirements")
+    end
+    doc_CONTRIBUTING_md_ed16559a("CONTRIBUTING.md")
+    doc_README_md_e6c686bc("README.md")
+    doc_documentation_README_md_324b1e64("documentation/README.md")
+    doc_documentation_lanes_api_reference_admin_md_2d86ed59("Admin API Reference lane<br/><small>documentation/lanes/api-reference-admin.md</small>")
+    doc_documentation_lanes_security_md_b1033a96("Security lane<br/><small>documentation/lanes/security.md</small>")
+    doc_sdd_README_md_6767e2d6("SDD requirements index<br/><small>sdd/README.md</small>")
+    doc_README_md_e6c686bc -->|describes| concept_codeflare_inference_mesh_e5153680
+    doc_documentation_README_md_324b1e64 -->|indexes lane| doc_documentation_lanes_api_reference_admin_md_2d86ed59
+    doc_documentation_README_md_324b1e64 -->|indexes lane| doc_documentation_lanes_security_md_b1033a96
+    doc_documentation_lanes_api_reference_admin_md_2d86ed59 -->|defines api surface| concept_admin_api_8518f014
+    doc_documentation_lanes_security_md_b1033a96 -->|defines security control| concept_mesh_secret_custody_c135520e
+    doc_sdd_README_md_6767e2d6 -->|indexes domain| concept_req_control_plane_api_2ea7fa84
+    doc_sdd_README_md_6767e2d6 -->|indexes domain| concept_req_gateway_9ee0d55f
+    doc_sdd_README_md_6767e2d6 -->|indexes domain| concept_req_node_agent_e94f1f2e
+    doc_sdd_README_md_6767e2d6 -->|indexes domain| concept_req_observability_0614d440
+    doc_README_md_e6c686bc -->|references| doc_documentation_README_md_324b1e64
+    doc_README_md_e6c686bc -->|references| doc_sdd_README_md_6767e2d6
+    %% Omitted for readability: 29 nodes, 0 edges
+    class concept_codeflare_inference_mesh_e5153680 klass;
+    class concept_provider_api_49d0b719 api;
+    class concept_admin_api_8518f014 api;
+    class concept_worker_secrets_vars_caa08fa7 klass;
+    class concept_deployment_workflow_fb1400fd klass;
+    class concept_observability_status_d4f2ad35 klass;
+    class concept_mesh_secret_custody_c135520e klass;
+    class concept_troubleshooting_runbooks_c43fe7ed klass;
+    class concept_req_control_plane_api_2ea7fa84 api;
+    class concept_req_gateway_9ee0d55f klass;
+    class concept_req_node_agent_e94f1f2e klass;
+    class concept_req_observability_0614d440 klass;
+    class doc_CONTRIBUTING_md_ed16559a concept;
+    class doc_README_md_e6c686bc concept;
+    class doc_documentation_README_md_324b1e64 concept;
+    class doc_documentation_lanes_api_reference_admin_md_2d86ed59 concept;
+    class doc_documentation_lanes_security_md_b1033a96 concept;
+    class doc_sdd_README_md_6767e2d6 concept;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>CONTRIBUTING.md</code><br><small style="color:var(--muted)">CONTRIBUTING.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing CONTRIBUTING.md.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>PRODUCT.md</code><br><small style="color:var(--muted)">PRODUCT.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing PRODUCT.md.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>README.md</code><br><small style="color:var(--muted)">README.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing README.md.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>SECURITY.md</code><br><small style="color:var(--muted)">SECURITY.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing SECURITY.md.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>documentation/README.md</code><br><small style="color:var(--muted)">documentation/README.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing documentation/README.md.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>documentation/decisions/README.md</code><br><small style="color:var(--muted)">documentation/decisions/README.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing documentation/decisions/README.md.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>API Reference lane</code><br><small style="color:var(--muted)">documentation/lanes/api-reference.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing API Reference lane.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>Admin API Reference lane</code><br><small style="color:var(--muted)">documentation/lanes/api-reference-admin.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Admin API Reference lane.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>Configuration lane</code><br><small style="color:var(--muted)">documentation/lanes/configuration.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Configuration lane.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>Deployment lane</code><br><small style="color:var(--muted)">documentation/lanes/deployment.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Deployment lane.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>Observability lane</code><br><small style="color:var(--muted)">documentation/lanes/observability.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Observability lane.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>Security lane</code><br><small style="color:var(--muted)">documentation/lanes/security.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Security lane.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>Troubleshooting lane</code><br><small style="color:var(--muted)">documentation/lanes/troubleshooting.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Troubleshooting lane.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>SDD requirements index</code><br><small style="color:var(--muted)">sdd/README.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing SDD requirements index.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>Codeflare Inference Mesh</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Codeflare Inference Mesh node in project.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>Private inference fabric</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Private inference fabric node in project.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>Workers VPC and Cloudflare Mesh</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Workers VPC and Cloudflare Mesh node in project.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>Direct llama.cpp runtime</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Direct llama.cpp runtime node in project.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>codeflare-mesh public alias</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>codeflare-mesh public alias node in project.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>First-run setup</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>First-run setup node in project.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>Cloudflare Access admin authentication</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Cloudflare Access admin authentication node in project.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>Mesh secret custody and rotation</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Mesh secret custody and rotation node in project.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>Route rate limiting</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-endpoint">API</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Route rate limiting node in project.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>Header filtering</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Header filtering node in project.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>Authenticated AI Gateway</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Authenticated AI Gateway node in project.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>Operator console</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Operator console node in project.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>Admin status and mesh health</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Admin status and mesh health node in project.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>GitHub Actions deployment workflow</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Turns a local path or remote repository into analysis context.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>Agent self-update</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Agent self-update node in project.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>Worker secrets, vars, and bindings</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Worker secrets, vars, and bindings node in project.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>CONTRIBUTING.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>PRODUCT.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>README.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>SECURITY.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>documentation/README.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>documentation/decisions/README.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>documentation/lanes/api-reference-admin.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>documentation/lanes/api-reference.md</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: indexes domain x10, indexes lane x8, references x4, defines security control x4. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 4. CLI & Skill Installers ====== -->
+<h2 id="cli-skills">4. CLI &amp; Skill Installers</h2>
+<p>CLI &amp; Skill Installers groups implementation around agent, packages, node, internal, mostly in cmd/inference-mesh-agent/main_test.go, cmd/inference-mesh-agent/main.go, internal/agent/meshllm_manager_test.go. This section covers 672 nodes and 1835 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: CLI &amp; Skill Installers (672 nodes, 1835 edges)
     subgraph cli_skills_cmd_inference_mesh_agent_main_go_fc11ea6c["cmd/inference-mesh-agent/main.go"]
-        inference_mesh_agent_serviceloop_7ff33c7e("serviceLoop<br/><small>cmd/inference-mesh-agent/main.go</small>")
         packages_node_agent_cmd_inference_mesh_agent_mai_399f1345("main()<br/><small>cmd/inference-mesh-agent/main.go</small>")
         packages_node_agent_cmd_inference_mesh_agent_mai_0f8b3fbf("runInstall()<br/><small>cmd/inference-mesh-agent/main.go</small>")
         packages_node_agent_cmd_inference_mesh_agent_mai_3e255923("runService()<br/><small>cmd/inference-mesh-agent/main.go</small>")
@@ -507,6 +847,7 @@ flowchart LR
     subgraph cli_skills_cmd_inference_mesh_agent_main_test_go_e5acffa3["cmd/inference-mesh-agent/main_test.go"]
         inference_mesh_agent_fakemeshruntime_94f09031("fakeMeshRuntime<br/><small>cmd/inference-mesh-agent/main_test.go</small>")
         packages_node_agent_cmd_inference_mesh_agent_mai_f8db4b0b("newFakeMeshRuntime()<br/><small>cmd/inference-mesh-agent/main_test.go</small>")
+        packages_node_agent_cmd_inference_mesh_agent_mai_a698842d("newLoopForTest()<br/><small>cmd/inference-mesh-agent/main_test.go</small>")
     end
     agent_llamacppmanager_6840ff40("LlamaCppManager<br/><small>internal/agent/llamacpp_manager.go</small>")
     agent_meshllmmanager_e5fde492("MeshLLMManager<br/><small>internal/agent/meshllm_manager.go</small>")
@@ -524,9 +865,7 @@ flowchart LR
     packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_6c4879ad
     packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 -->|calls| packages_node_agent_cmd_inference_mesh_agent_mai_a0f833e4
     inference_mesh_agent_runtimetargetfunc_01383dd0 -->|method| inference_mesh_agent_runtimetargetfunc_targeturl_f5fadc29
-    inference_mesh_agent_serviceloop_7ff33c7e -->|method| inference_mesh_agent_serviceloop_currentconfig_581dbc8a
-    %% Omitted for readability: 641 nodes, 0 edges
-    class inference_mesh_agent_serviceloop_7ff33c7e function;
+    %% Omitted for readability: 654 nodes, 0 edges
     class packages_node_agent_cmd_inference_mesh_agent_mai_399f1345 function;
     class packages_node_agent_cmd_inference_mesh_agent_mai_0f8b3fbf function;
     class packages_node_agent_cmd_inference_mesh_agent_mai_3e255923 function;
@@ -541,6 +880,7 @@ flowchart LR
     class packages_node_agent_cmd_inference_mesh_agent_mai_a0f833e4 function;
     class inference_mesh_agent_fakemeshruntime_94f09031 test;
     class packages_node_agent_cmd_inference_mesh_agent_mai_f8db4b0b test;
+    class packages_node_agent_cmd_inference_mesh_agent_mai_a698842d test;
     class agent_llamacppmanager_6840ff40 klass;
     class agent_meshllmmanager_e5fde492 klass;
     class packages_node_agent_internal_agent_meshllm_manag_0f0a9329 test;
@@ -567,243 +907,243 @@ flowchart LR
 </tr>
 <tr>
   <td>1</td>
-  <td><code>applyMeshStatusMetrics()</code><br><small style="color:var(--muted)">cmd/inference-mesh-agent/main.go</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>collect()</code><br><small style="color:var(--muted)">cmd/inference-mesh-agent/main.go</small></td>
-  <td><code>DeriveMeshRole()</code><br><small style="color:var(--muted)">internal/agent/meshllm_status.go</small><br><code>MapMeshLLMState()</code><br><small style="color:var(--muted)">internal/agent/meshllm_status.go</small><br><code>MeshStatusWithModels()</code><br><small style="color:var(--muted)">internal/agent/metrics.go</small><br>+2 more</td>
-  <td>applyMeshStatusMetrics() node in cmd/inference-mesh-agent/main.go.</td>
-</tr>
-<tr>
-  <td>2</td>
-  <td><code>meshllm_manager.go</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>llamacpp_install.go</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-class">Module</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>meshllm_manager.go node in internal/agent/meshllm_manager.go.</td>
+  <td>llamacpp_install.go node in internal/agent/llamacpp_install.go.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>LlamaCppAsset</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-async">Async</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>LlamaCppAsset node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>3</td>
-  <td><code>meshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>llamaCppInstallOptions</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>meshProcess node in internal/agent/meshllm_manager.go.</td>
+  <td>llamaCppInstallOptions node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>4</td>
-  <td><code>meshLauncher</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>LlamaCppReleaseAsset</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-async">Async</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>meshLauncher node in internal/agent/meshllm_manager.go.</td>
+  <td>LlamaCppReleaseAsset node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>5</td>
-  <td><code>execMeshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>llamaCppReleaseResponse</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
-  <td><code>Kill()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Signal()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Wait()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>execMeshProcess node in internal/agent/meshllm_manager.go.</td>
+  <td>No direct outbound edge</td>
+  <td>llamaCppReleaseResponse node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>6</td>
-  <td><code>Cmd</code><br><small style="color:var(--muted)"></small></td>
+  <td><code>LlamaCppInstallOption</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Cmd node in project.</td>
+  <td>LlamaCppInstallOption node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>7</td>
-  <td><code>.Signal()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>WithLlamaCppPlatform()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>execMeshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>No direct outbound edge</td>
-  <td>.Signal() node in internal/agent/meshllm_manager.go.</td>
+  <td>External entry / no inbound edge</td>
+  <td><code>TestREQNODE013EnsureLlamaCppDiscoversHo...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppDoesNotReus...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppInstallsMan...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br>+3 more</td>
+  <td>WithLlamaCppPlatform() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>8</td>
-  <td><code>Signal</code><br><small style="color:var(--muted)"></small></td>
-  <td><span class="tag tag-class">Class</span></td>
+  <td><code>WithLlamaCppAssetOverride()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-async">Async</span></td>
   <td>External entry / no inbound edge</td>
-  <td><code>Stop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>Signal node in project.</td>
+  <td>No direct outbound edge</td>
+  <td>WithLlamaCppAssetOverride() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>9</td>
-  <td><code>.Kill()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>WithLlamaCppLookPath()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>execMeshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><code>Stop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>.Kill() node in internal/agent/meshllm_manager.go.</td>
+  <td>External entry / no inbound edge</td>
+  <td><code>TestREQNODE013EnsureLlamaCppDiscoversHo...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppDoesNotReus...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppInstallsMan...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br>+3 more</td>
+  <td>WithLlamaCppLookPath() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>10</td>
-  <td><code>.Wait()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>WithLlamaCppVersionQuery()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>execMeshProcess</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><code>wait()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>.Wait() node in internal/agent/meshllm_manager.go.</td>
+  <td>External entry / no inbound edge</td>
+  <td><code>TestREQNODE013EnsureLlamaCppDiscoversHo...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppDoesNotReus...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppInstallsMan...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br>+3 more</td>
+  <td>WithLlamaCppVersionQuery() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>11</td>
-  <td><code>launchMeshProcess()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>WithLlamaCppDownload()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
-  <td><code>Start()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>launchMeshProcess() node in internal/agent/meshllm_manager.go.</td>
+  <td><code>TestREQNODE013EnsureLlamaCppDiscoversHo...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppDoesNotReus...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppInstallsMan...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br>+3 more</td>
+  <td>WithLlamaCppDownload() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>12</td>
-  <td><code>Context</code><br><small style="color:var(--muted)"></small></td>
-  <td><span class="tag tag-class">Class</span></td>
+  <td><code>WithLlamaCppReleaseFetcher()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Context node in project.</td>
+  <td><code>TestREQNODE013EnsureLlamaCppDoesNotReus...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppInstallsMan...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppRejectsChec...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small></td>
+  <td>WithLlamaCppReleaseFetcher() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>13</td>
-  <td><code>Writer</code><br><small style="color:var(--muted)"></small></td>
-  <td><span class="tag tag-class">Class</span></td>
+  <td><code>WithLlamaCppBackend()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Writer node in project.</td>
+  <td><code>TestREQNODE013EnsureLlamaCppDoesNotReus...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppPrefersUsab...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small></td>
+  <td>WithLlamaCppBackend() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>14</td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><span class="tag tag-class">Class</span></td>
+  <td><code>WithLlamaCppHostCandidates()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
-  <td><code>APIReady()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>ApplyBootstrap()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>awaitReadiness()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br>+25 more</td>
-  <td>MeshLLMManager node in internal/agent/meshllm_manager.go.</td>
+  <td><code>TestREQNODE013EnsureLlamaCppDiscoversHo...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br><code>TestREQNODE013EnsureLlamaCppPrefersUsab...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small></td>
+  <td>WithLlamaCppHostCandidates() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>15</td>
-  <td><code>Mutex</code><br><small style="color:var(--muted)"></small></td>
-  <td><span class="tag tag-class">Class</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Mutex node in project.</td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>llamaCppBinaryPath()</code><br><small style="color:var(--muted)">cmd/inference-mesh-agent/main.go</small></td>
+  <td><code>detectLlamaCppBackend()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>extractLlamaCppRuntime()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>findUsableLlamaCppHostBinary()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br>+14 more</td>
+  <td>EnsureLlamaCpp() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>16</td>
-  <td><code>CancelFunc</code><br><small style="color:var(--muted)"></small></td>
-  <td><span class="tag tag-class">Class</span></td>
+  <td><code>LlamaCppAssetFor()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-async">Async</span></td>
   <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>CancelFunc node in project.</td>
+  <td><code>LlamaCppAssetForBackend()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>TestREQNODE013LlamaCppReleaseDigestSele...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small></td>
+  <td>LlamaCppAssetFor() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>17</td>
-  <td><code>MeshBootstrap</code><br><small style="color:var(--muted)"></small></td>
-  <td><span class="tag tag-class">Class</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>MeshBootstrap node in project.</td>
+  <td><code>LlamaCppAssetForBackend()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-async">Async</span></td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>LlamaCppAssetFor()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><code>llamaCppAssetNames()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>TestREQNODE013LlamaCppAssetPrefersGpuBa...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small></td>
+  <td>LlamaCppAssetForBackend() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>18</td>
-  <td><code>Duration</code><br><small style="color:var(--muted)"></small></td>
-  <td><span class="tag tag-class">Class</span></td>
-  <td>External entry / no inbound edge</td>
+  <td><code>llamaCppAssetNames()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-async">Async</span></td>
+  <td><code>LlamaCppAssetForBackend()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td>No direct outbound edge</td>
-  <td>Duration node in project.</td>
+  <td>llamaCppAssetNames() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>19</td>
-  <td><code>Time</code><br><small style="color:var(--muted)"></small></td>
-  <td><span class="tag tag-class">Class</span></td>
-  <td>External entry / no inbound edge</td>
+  <td><code>llamaCppManagedTarget()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td>No direct outbound edge</td>
-  <td>Time node in project.</td>
+  <td>llamaCppManagedTarget() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>20</td>
-  <td><code>.Runtime()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>findUsableLlamaCppHostBinary()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>No direct outbound edge</td>
-  <td>.Runtime() node in internal/agent/meshllm_manager.go.</td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><code>llamaCppVersionMatches()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>shouldPreferUsableHostLlama()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td>findUsableLlamaCppHostBinary() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>21</td>
-  <td><code>.TargetURL()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>shouldPreferUsableHostLlama()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>findUsableLlamaCppHostBinary()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td>No direct outbound edge</td>
-  <td>.TargetURL() node in internal/agent/meshllm_manager.go.</td>
+  <td>shouldPreferUsableHostLlama() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>22</td>
-  <td><code>.Start()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>llamaCppHostCandidates()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>launchMeshProcess()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><code>awaitReadiness()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>MeshLLMEnv()</code><br><small style="color:var(--muted)">internal/agent/meshllm_render.go</small><br><code>renderInputLocked()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br>+6 more</td>
-  <td>.Start() node in internal/agent/meshllm_manager.go.</td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>llamaCppHostCandidates() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>23</td>
-  <td><code>.Stop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>detectLlamaCppBackend()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>Kill()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Signal</code></td>
-  <td><code>awaitReadiness()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>finishStop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Restart()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br>+1 more</td>
-  <td>.Stop() node in internal/agent/meshllm_manager.go.</td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>detectLlamaCppBackend() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>24</td>
-  <td><code>.Restart()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>llamaCppBinaryName()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Start()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Stop()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td>No direct outbound edge</td>
-  <td>.Restart() node in internal/agent/meshllm_manager.go.</td>
+  <td>llamaCppBinaryName() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>25</td>
-  <td><code>.RestartWithInput()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>llamaCppVersionMatches()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><code>RestartWithBinaryInput()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>.RestartWithInput() node in internal/agent/meshllm_manager.go.</td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>findUsableLlamaCppHostBinary()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>llamaCppVersionMatches() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>26</td>
-  <td><code>.RestartWithBinaryInput()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>RestartWithInput()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br><code>Start()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small><br>+1 more</td>
+  <td><code>fetchLlamaCppReleaseAssets()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-async">Async</span></td>
+  <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>.RestartWithBinaryInput() node in internal/agent/meshllm_manager.go.</td>
+  <td>fetchLlamaCppReleaseAssets() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>27</td>
-  <td><code>.SetState()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>downloadLlamaCppAsset()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><span class="tag tag-async">Async</span></td>
+  <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>.SetState() node in internal/agent/meshllm_manager.go.</td>
+  <td>downloadLlamaCppAsset() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>28</td>
-  <td><code>.SetFailure()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>extractLlamaCppRuntime()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>No direct outbound edge</td>
-  <td>.SetFailure() node in internal/agent/meshllm_manager.go.</td>
+  <td><code>EnsureLlamaCpp()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><code>extractLlamaCppTarGz()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>extractLlamaCppZip()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>TestREQNODE013LlamaCppRejectsUnsafeTarA...</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install_test.go</small><br>+1 more</td>
+  <td>extractLlamaCppRuntime() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>29</td>
-  <td><code>.State()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>extractLlamaCppTarGz()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><code>runningLocked()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>.State() node in internal/agent/meshllm_manager.go.</td>
+  <td><code>extractLlamaCppRuntime()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td><code>isLlamaCppRuntimeFile()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>resolveLlamaCppRuntimeLink()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small><br><code>safeArchiveEntryBase()</code><br><small style="color:var(--muted)">internal/agent/meshllm_install.go</small></td>
+  <td>extractLlamaCppTarGz() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 <tr>
   <td>30</td>
-  <td><code>.LastError()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
+  <td><code>resolveLlamaCppRuntimeLink()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>MeshLLMManager</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td><code>runningLocked()</code><br><small style="color:var(--muted)">internal/agent/meshllm_manager.go</small></td>
-  <td>.LastError() node in internal/agent/meshllm_manager.go.</td>
+  <td><code>extractLlamaCppTarGz()</code><br><small style="color:var(--muted)">internal/agent/llamacpp_install.go</small></td>
+  <td>No direct outbound edge</td>
+  <td>resolveLlamaCppRuntimeLink() node in internal/agent/llamacpp_install.go.</td>
 </tr>
 </table>
 
@@ -812,31 +1152,31 @@ flowchart LR
     <h4>Key Files</h4>
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
-      <tr><td><code>cmd/inference-mesh-agent/main_test.go</code></td><td>58 nodes</td></tr>
-<tr><td><code>cmd/inference-mesh-agent/main.go</code></td><td>53 nodes</td></tr>
-<tr><td><code>internal/agent/meshllm_manager_test.go</code></td><td>47 nodes</td></tr>
-<tr><td><code>internal/agent/meshllm_manager.go</code></td><td>41 nodes</td></tr>
-<tr><td><code>internal/agent/agent_test.go</code></td><td>38 nodes</td></tr>
+      <tr><td><code>cmd/inference-mesh-agent/main_test.go</code></td><td>65 nodes</td></tr>
+<tr><td><code>cmd/inference-mesh-agent/main.go</code></td><td>57 nodes</td></tr>
+<tr><td><code>internal/agent/meshllm_manager_test.go</code></td><td>49 nodes</td></tr>
+<tr><td><code>internal/agent/meshllm_manager.go</code></td><td>45 nodes</td></tr>
+<tr><td><code>internal/agent/agent_test.go</code></td><td>39 nodes</td></tr>
 <tr><td><code>internal/agent/llamacpp_install.go</code></td><td>33 nodes</td></tr>
 <tr><td><code>internal/agent/llamacpp_manager.go</code></td><td>33 nodes</td></tr>
-<tr><td><code>internal/agent/meshllm_install.go</code></td><td>27 nodes</td></tr>
+<tr><td><code>internal/agent/meshllm_install.go</code></td><td>29 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: references x485, calls x425, contains x411, method x139. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: references x523, calls x442, contains x422, method x144. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
-<!-- ====== 4. Serving API ====== -->
-<h2 id="serve-api">4. Serving API</h2>
-<p>Serving API groups implementation around router, packages, worker, routerts, mostly in router-worker/src/router.ts, router-worker/src/types.ts, router-worker/src/store.ts. This section covers 770 nodes and 1927 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 5. Serving API ====== -->
+<h2 id="serve-api">5. Serving API</h2>
+<p>Serving API groups implementation around router, packages, worker, routerts, mostly in router-worker/src/router.ts, router-worker/src/types.ts, router-worker/src/store.ts. This section covers 837 nodes and 2116 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Serving API (770 nodes, 1927 edges)
+    %% Section: Serving API (837 nodes, 2116 edges)
     subgraph serve_api_router_worker_scripts_workflow_safety_32ead5e2["router-worker/scripts/workflow-safety.mjs"]
         packages_router_worker_scripts_workflow_safety_w_f81c7d3a("workflowFiles()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
         packages_router_worker_scripts_workflow_safety_v_eb02c55d("validateWorkflowSafety()<br/><small>router-worker/scripts/workflow-safety.mjs</small>")
@@ -857,10 +1197,10 @@ flowchart LR
         packages_router_worker_src_router_createrouter_81c04e5d("createRouter()<br/><small>router-worker/src/router.ts</small>")
         packages_router_worker_src_router_requireautomat_2ee02683("requireAutomation()<br/><small>router-worker/src/router.ts</small>")
     end
+    packages_router_worker_src_admin_ui_components_e_55db8c8e("escapeHtml()<br/><small>router-worker/src/admin-ui-components.ts</small>")
     packages_router_worker_src_cloudflare_api_cloudf_d5bf4f13("CloudflareGatewayClient<br/><small>router-worker/src/cloudflare-api.ts</small>")
     packages_router_worker_src_store_d1store_a8116496("D1Store<br/><small>router-worker/src/store.ts</small>")
     packages_router_worker_src_test_helpers_memoryst_4e9c4b5d("MemoryStore<br/><small>router-worker/src/test-helpers.ts</small>")
-    packages_router_worker_src_types_store_3a0e9a0a("Store<br/><small>router-worker/src/types.ts</small>")
     packages_router_worker_scripts_deploy_gate_lates_51c07723 -->|calls| packages_router_worker_scripts_deploy_gate_evalu_8608fce7
     packages_router_worker_scripts_workflow_safety_w_f81c7d3a -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
     packages_router_worker_scripts_workflow_safety_l_11f313af -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
@@ -873,7 +1213,7 @@ flowchart LR
     packages_router_worker_scripts_workflow_safety_h_9cdc4858 -->|calls| packages_router_worker_scripts_workflow_safety_j_bbb7c886
     packages_router_worker_scripts_workflow_safety_h_9cdc4858 -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
     packages_router_worker_scripts_workflow_safety_r_8c671ae6 -->|calls| packages_router_worker_scripts_workflow_safety_v_eb02c55d
-    %% Omitted for readability: 752 nodes, 0 edges
+    %% Omitted for readability: 819 nodes, 0 edges
     class packages_router_worker_scripts_workflow_safety_w_f81c7d3a function;
     class packages_router_worker_scripts_workflow_safety_v_eb02c55d function;
     class packages_router_worker_scripts_workflow_safety_l_11f313af function;
@@ -888,10 +1228,10 @@ flowchart LR
     class packages_router_worker_scripts_deploy_gate_evalu_8608fce7 function;
     class packages_router_worker_src_router_createrouter_81c04e5d api;
     class packages_router_worker_src_router_requireautomat_2ee02683 function;
+    class packages_router_worker_src_admin_ui_components_e_55db8c8e function;
     class packages_router_worker_src_cloudflare_api_cloudf_d5bf4f13 entry;
     class packages_router_worker_src_store_d1store_a8116496 ui;
     class packages_router_worker_src_test_helpers_memoryst_4e9c4b5d test;
-    class packages_router_worker_src_types_store_3a0e9a0a ui;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -915,6 +1255,14 @@ flowchart LR
 </tr>
 <tr>
   <td>1</td>
+  <td><code>AccessJwtSource</code><br><small style="color:var(--muted)">router-worker/src/access.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>router.ts</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>usesAccessJwt()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>AccessJwtSource node in router-worker/src/access.ts.</td>
+</tr>
+<tr>
+  <td>2</td>
   <td><code>approvedNodeHeaders()</code><br><small style="color:var(--muted)">router-worker/src/auth.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -922,7 +1270,7 @@ flowchart LR
   <td>approvedNodeHeaders() node in router-worker/src/auth.ts.</td>
 </tr>
 <tr>
-  <td>2</td>
+  <td>3</td>
   <td><code>directSessionKey()</code><br><small style="color:var(--muted)">router-worker/src/direct-affinity.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -930,7 +1278,7 @@ flowchart LR
   <td>directSessionKey() node in router-worker/src/direct-affinity.ts.</td>
 </tr>
 <tr>
-  <td>3</td>
+  <td>4</td>
   <td><code>validateCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/installers.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -938,19 +1286,11 @@ flowchart LR
   <td>validateCustomDomain() node in router-worker/src/installers.ts.</td>
 </tr>
 <tr>
-  <td>4</td>
-  <td><code>isDefaultModelId()</code><br><small style="color:var(--muted)">router-worker/src/profiles.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>classifyModelDeletion()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>router.ts</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td>isDefaultModelId() node in router-worker/src/profiles.ts.</td>
-</tr>
-<tr>
   <td>5</td>
   <td><code>router.ts</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-endpoint">API</span></td>
-  <td><code>access-provisioning.ts</code><br><small style="color:var(--muted)">router-worker/src/access-provisioning.ts</small><br><code>access.ts</code><br><small style="color:var(--muted)">router-worker/src/access.ts</small><br><code>AccessProvisionRequest</code><br><small style="color:var(--muted)">router-worker/src/access-provisioning.ts</small><br>+57 more</td>
-  <td><code>accessConfig()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br><code>advancePhase()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br><code>breakGlassActive()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br>+24 more</td>
+  <td><code>access-provisioning.ts</code><br><small style="color:var(--muted)">router-worker/src/access-provisioning.ts</small><br><code>access.ts</code><br><small style="color:var(--muted)">router-worker/src/access.ts</small><br><code>AccessJwtSource</code><br><small style="color:var(--muted)">router-worker/src/access.ts</small><br>+62 more</td>
+  <td><code>accessConfig()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br><code>advancePhase()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br><code>breakGlassActive()</code><br><small style="color:var(--muted)">router-worker/src/setup-state.ts</small><br>+26 more</td>
   <td>Module file in router-worker/src/router.ts.</td>
 </tr>
 <tr>
@@ -963,14 +1303,6 @@ flowchart LR
 </tr>
 <tr>
   <td>7</td>
-  <td><code>syncCustomProvider()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>syncGatewayForActor()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td>syncCustomProvider() node in router-worker/src/router.ts.</td>
-</tr>
-<tr>
-  <td>8</td>
   <td><code>provisionCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -978,15 +1310,7 @@ flowchart LR
   <td>provisionCustomDomain() node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>9</td>
-  <td><code>listZones()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>handleZones()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td>listZones() node in router-worker/src/router.ts.</td>
-</tr>
-<tr>
-  <td>10</td>
+  <td>8</td>
   <td><code>listGateways()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -994,7 +1318,7 @@ flowchart LR
   <td>listGateways() node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>11</td>
+  <td>9</td>
   <td><code>listRoutes()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-endpoint">API</span></td>
   <td>External entry / no inbound edge</td>
@@ -1002,23 +1326,31 @@ flowchart LR
   <td>listRoutes() node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>12</td>
-  <td><code>provisionStatus()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>10</td>
+  <td><code>handleChat()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>handleGatewayProvisionStatus()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td>provisionStatus() node in router-worker/src/router.ts.</td>
+  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>authenticateKind()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>parseObject()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+1 more</td>
+  <td>Supports retrieval-augmented Q&amp;A or streaming chat.</td>
 </tr>
 <tr>
-  <td>13</td>
+  <td>11</td>
   <td><code>runInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>handleChat()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><code>directSessionBody()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>handlePlaygroundDirect()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+3 more</td>
+  <td><code>directSessionBody()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>handlePlaygroundDirect()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+4 more</td>
   <td>runInference() node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>14</td>
+  <td>12</td>
+  <td><code>routablePublicModel()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>routablePublicModel() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>13</td>
   <td><code>runMeshInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>runInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
@@ -1026,7 +1358,7 @@ flowchart LR
   <td>runMeshInference() node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>15</td>
+  <td>14</td>
   <td><code>runDirectLlamaCppInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>directSessionKey()</code><br><small style="color:var(--muted)">router-worker/src/direct-affinity.ts</small><br><code>runInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
@@ -1034,7 +1366,7 @@ flowchart LR
   <td>runDirectLlamaCppInference() node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>16</td>
+  <td>15</td>
   <td><code>forwardInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>approvedNodeHeaders()</code><br><small style="color:var(--muted)">router-worker/src/auth.ts</small><br><code>runDirectLlamaCppInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>runMeshInference()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
@@ -1042,39 +1374,15 @@ flowchart LR
   <td>forwardInference() node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
+  <td>16</td>
+  <td><code>handleInstaller()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>installerCommand()</code><br><small style="color:var(--muted)">router-worker/src/installers.ts</small></td>
+  <td><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>publicWorkerOrigin()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>requireAdmin()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>handleInstaller() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
   <td>17</td>
-  <td><code>profileReadiness()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>handleAdminStatus()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><code>nodeReadyForProfile()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td>profileReadiness() node in router-worker/src/router.ts.</td>
-</tr>
-<tr>
-  <td>18</td>
-  <td><code>nodeReadyForProfile()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>profileReadiness()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td>No direct outbound edge</td>
-  <td>nodeReadyForProfile() node in router-worker/src/router.ts.</td>
-</tr>
-<tr>
-  <td>19</td>
-  <td><code>handleInstallScript()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>installScript()</code><br><small style="color:var(--muted)">router-worker/src/installers.ts</small></td>
-  <td>No direct outbound edge</td>
-  <td>handleInstallScript() node in router-worker/src/router.ts.</td>
-</tr>
-<tr>
-  <td>20</td>
-  <td><code>syncGatewayForActor()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>createTokenRecord()</code><br><small style="color:var(--muted)">router-worker/src/auth.ts</small><br><code>generateBearerToken()</code><br><small style="color:var(--muted)">router-worker/src/auth.ts</small><br><code>handleApiGatewaySync()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+2 more</td>
-  <td><code>cleanString()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>usableWorkerBaseUrl()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td>syncGatewayForActor() node in router-worker/src/router.ts.</td>
-</tr>
-<tr>
-  <td>21</td>
   <td><code>handleCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>provisionCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>validateCustomDomain()</code><br><small style="color:var(--muted)">router-worker/src/installers.ts</small></td>
@@ -1082,7 +1390,15 @@ flowchart LR
   <td>handleCustomDomain() node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>22</td>
+  <td>18</td>
+  <td><code>handleNodeConfig()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>nodeWithConfig()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>requireAdmin()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>19</td>
   <td><code>INVALID_MAX_VRAM</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
@@ -1090,7 +1406,7 @@ flowchart LR
   <td>INVALID_MAX_VRAM node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>23</td>
+  <td>20</td>
   <td><code>LlamaCppConfigBody</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
@@ -1098,7 +1414,47 @@ flowchart LR
   <td>Reads, resolves, or persists project configuration.</td>
 </tr>
 <tr>
+  <td>21</td>
+  <td><code>NodeConfigBody</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>INVALID_NODE_NAME</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>INVALID_NODE_NAME node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>normalizeNodeDisplayName()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>nodeWithConfig()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>normalizeNodeDisplayName() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
   <td>24</td>
+  <td><code>nodeWithVramOverride()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>nodeWithConfig()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>nodeWithVramOverride() node in router-worker/src/router.ts.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>nodeWithConfig()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>handleNodeConfig()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>nodeWithVramOverride()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>normalizeNodeDisplayName()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td><code>handleApiNodeReconfigure()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>26</td>
   <td><code>MeshllmTunablesBody</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
@@ -1106,7 +1462,7 @@ flowchart LR
   <td>MeshllmTunablesBody node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>25</td>
+  <td>27</td>
   <td><code>PrefixCacheBlock</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
@@ -1114,7 +1470,7 @@ flowchart LR
   <td>Caches analysis results or computes cache keys.</td>
 </tr>
 <tr>
-  <td>26</td>
+  <td>28</td>
   <td><code>MESHLLM_PAYLOAD_MODES</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
@@ -1122,7 +1478,7 @@ flowchart LR
   <td>MESHLLM_PAYLOAD_MODES node in router-worker/src/router.ts.</td>
 </tr>
 <tr>
-  <td>27</td>
+  <td>29</td>
   <td><code>resolvePrefixCache()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -1130,28 +1486,12 @@ flowchart LR
   <td>Caches analysis results or computes cache keys.</td>
 </tr>
 <tr>
-  <td>28</td>
+  <td>30</td>
   <td><code>ModelConfigBody</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
   <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
   <td>Reads, resolves, or persists project configuration.</td>
-</tr>
-<tr>
-  <td>29</td>
-  <td><code>handleWhoami()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>requireUser()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td>handleWhoami() node in router-worker/src/router.ts.</td>
-</tr>
-<tr>
-  <td>30</td>
-  <td><code>handlePlaygroundChat()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>createRouter()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small></td>
-  <td><code>cleanString()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>json()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br><code>playgroundMaxTokens()</code><br><small style="color:var(--muted)">router-worker/src/router.ts</small><br>+2 more</td>
-  <td>Supports retrieval-augmented Q&amp;A or streaming chat.</td>
 </tr>
 </table>
 
@@ -1160,54 +1500,49 @@ flowchart LR
     <h4>Key Files</h4>
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
-      <tr><td><code>router-worker/src/router.ts</code></td><td>169 nodes</td></tr>
-<tr><td><code>router-worker/src/types.ts</code></td><td>48 nodes</td></tr>
+      <tr><td><code>router-worker/src/router.ts</code></td><td>181 nodes</td></tr>
+<tr><td><code>router-worker/src/types.ts</code></td><td>52 nodes</td></tr>
 <tr><td><code>router-worker/src/store.ts</code></td><td>43 nodes</td></tr>
 <tr><td><code>router-worker/src/cloudflare-api.ts</code></td><td>42 nodes</td></tr>
-<tr><td><code>router-worker/src/mesh-state.ts</code></td><td>36 nodes</td></tr>
+<tr><td><code>router-worker/src/mesh-state.ts</code></td><td>41 nodes</td></tr>
+<tr><td><code>router-worker/src/test-helpers.ts</code></td><td>33 nodes</td></tr>
 <tr><td><code>router-worker/src/admin-ui-contract.ts</code></td><td>26 nodes</td></tr>
-<tr><td><code>router-worker/src/test-helpers.ts</code></td><td>25 nodes</td></tr>
 <tr><td><code>router-worker/src/router.test.ts</code></td><td>24 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: calls x764, contains x606, imports x243, method x114. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x827, contains x672, imports x279, method x116. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
-<!-- ====== 5. Tests & Fixtures ====== -->
-<h2 id="tests-fixtures">5. Tests &amp; Fixtures</h2>
-<p>Tests &amp; Fixtures groups implementation around packages, router, worker, storetestts, mostly in router-worker/src/store.test.ts, router-worker/src/test-helpers.ts, router-worker/src/mesh-state.test.ts. This section covers 29 nodes and 49 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 6. Tests & Fixtures ====== -->
+<h2 id="tests-fixtures">6. Tests &amp; Fixtures</h2>
+<p>Tests &amp; Fixtures groups implementation around storetestts, packages, router, worker, mostly in router-worker/src/store.test.ts. This section covers 20 nodes and 36 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Tests &amp; Fixtures (29 nodes, 49 edges)
-    subgraph tests_fixtures_router_worker_src_store_test_ts_dc614b88["router-worker/src/store.test.ts"]
-        packages_router_worker_src_store_test_faked1stat_11325014("FakeD1Statement<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_faked1stat_3e3433fe("run()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_faked1stat_b37f3e2c("selectRows()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_41ec0f2f("store.test.ts")
-        packages_router_worker_src_store_test_faked1stat_6f7b3f36("all()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_faked1data_c6be22e3("FakeD1Database<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_faked1data_1dae5804("prepare()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_faked1stat_f6e82e80("bind()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_faked1stat_78fef55c("constructor()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_faked1stat_3b5fc00b("first()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_nullablenu_4e72c225("nullableNumber()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_nullablete_6513c982("nullableText()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_number_ea9aa4da("number()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_ok_4415de92("ok()<br/><small>router-worker/src/store.test.ts</small>")
-        packages_router_worker_src_store_test_text_feb5bd84("text()<br/><small>router-worker/src/store.test.ts</small>")
-    end
-    subgraph tests_fixtures_router_worker_src_test_helpers_ts_8c54cb8d["router-worker/src/test-helpers.ts"]
-        packages_router_worker_src_test_helpers_memoryst_f4deef89("seedDefaultProfiles()<br/><small>router-worker/src/test-helpers.ts</small>")
-        packages_router_worker_src_test_helpers_nodefixt_d2ad1261("nodeFixture()<br/><small>router-worker/src/test-helpers.ts</small>")
-    end
-    packages_router_worker_src_mesh_state_test_meshn_53230416("meshNode()<br/><small>router-worker/src/mesh-state.test.ts</small>")
-    packages_router_worker_src_mesh_state_test_meshn_53230416 -->|calls| packages_router_worker_src_test_helpers_nodefixt_d2ad1261
+    %% Section: Tests &amp; Fixtures (20 nodes, 36 edges)
+    packages_router_worker_src_store_test_faked1stat_11325014("FakeD1Statement<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_faked1stat_3e3433fe("run()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_faked1stat_b37f3e2c("selectRows()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_faked1stat_6f7b3f36("all()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_faked1data_c6be22e3("FakeD1Database<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_maybe_fb937dca("maybe()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_faked1data_1dae5804("prepare()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_faked1stat_f6e82e80("bind()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_faked1stat_78fef55c("constructor()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_faked1stat_3b5fc00b("first()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_nullablenu_4e72c225("nullableNumber()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_nullablete_6513c982("nullableText()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_number_ea9aa4da("number()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_ok_4415de92("ok()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_text_feb5bd84("text()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_tokenkey_b07f5449("tokenKey()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_desc_291d7895("desc()<br/><small>router-worker/src/store.test.ts</small>")
+    packages_router_worker_src_store_test_pick_b4163062("pick()<br/><small>router-worker/src/store.test.ts</small>")
     packages_router_worker_src_store_test_faked1data_c6be22e3 -->|method| packages_router_worker_src_store_test_faked1data_1dae5804
     packages_router_worker_src_store_test_faked1stat_11325014 -->|method| packages_router_worker_src_store_test_faked1stat_6f7b3f36
     packages_router_worker_src_store_test_faked1stat_11325014 -->|method| packages_router_worker_src_store_test_faked1stat_f6e82e80
@@ -1220,18 +1555,24 @@ flowchart LR
     packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_number_ea9aa4da
     packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_ok_4415de92
     packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_text_feb5bd84
+    packages_router_worker_src_store_test_faked1stat_3e3433fe -->|calls| packages_router_worker_src_store_test_tokenkey_b07f5449
     packages_router_worker_src_store_test_faked1stat_6f7b3f36 -->|calls| packages_router_worker_src_store_test_faked1stat_b37f3e2c
     packages_router_worker_src_store_test_faked1stat_6f7b3f36 -->|calls| packages_router_worker_src_store_test_ok_4415de92
+    packages_router_worker_src_store_test_faked1stat_b37f3e2c -->|calls| packages_router_worker_src_store_test_desc_291d7895
+    packages_router_worker_src_store_test_faked1stat_b37f3e2c -->|calls| packages_router_worker_src_store_test_maybe_fb937dca
     packages_router_worker_src_store_test_faked1stat_b37f3e2c -->|calls| packages_router_worker_src_store_test_number_ea9aa4da
+    packages_router_worker_src_store_test_faked1stat_b37f3e2c -->|calls| packages_router_worker_src_store_test_pick_b4163062
     packages_router_worker_src_store_test_faked1stat_b37f3e2c -->|calls| packages_router_worker_src_store_test_text_feb5bd84
-    packages_router_worker_src_store_test_41ec0f2f -->|imports| packages_router_worker_src_test_helpers_nodefixt_d2ad1261
-    %% Omitted for readability: 11 nodes, 0 edges
+    packages_router_worker_src_store_test_faked1stat_b37f3e2c -->|calls| packages_router_worker_src_store_test_tokenkey_b07f5449
+    packages_router_worker_src_store_test_number_ea9aa4da -->|calls| packages_router_worker_src_store_test_desc_291d7895
+    packages_router_worker_src_store_test_maybe_fb937dca -->|calls| packages_router_worker_src_store_test_pick_b4163062
+    %% Omitted for readability: 2 nodes, 0 edges
     class packages_router_worker_src_store_test_faked1stat_11325014 test;
     class packages_router_worker_src_store_test_faked1stat_3e3433fe test;
     class packages_router_worker_src_store_test_faked1stat_b37f3e2c test;
-    class packages_router_worker_src_store_test_41ec0f2f test;
     class packages_router_worker_src_store_test_faked1stat_6f7b3f36 test;
     class packages_router_worker_src_store_test_faked1data_c6be22e3 test;
+    class packages_router_worker_src_store_test_maybe_fb937dca test;
     class packages_router_worker_src_store_test_faked1data_1dae5804 test;
     class packages_router_worker_src_store_test_faked1stat_f6e82e80 test;
     class packages_router_worker_src_store_test_faked1stat_78fef55c test;
@@ -1241,9 +1582,9 @@ flowchart LR
     class packages_router_worker_src_store_test_number_ea9aa4da test;
     class packages_router_worker_src_store_test_ok_4415de92 test;
     class packages_router_worker_src_store_test_text_feb5bd84 test;
-    class packages_router_worker_src_test_helpers_memoryst_f4deef89 test;
-    class packages_router_worker_src_test_helpers_nodefixt_d2ad1261 test;
-    class packages_router_worker_src_mesh_state_test_meshn_53230416 test;
+    class packages_router_worker_src_store_test_tokenkey_b07f5449 test;
+    class packages_router_worker_src_store_test_desc_291d7895 test;
+    class packages_router_worker_src_store_test_pick_b4163062 test;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -1270,7 +1611,7 @@ flowchart LR
   <td><code>store.test.ts</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
   <td><span class="tag tag-func">Test</span></td>
   <td>External entry / no inbound edge</td>
-  <td><code>nodeFixture()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small><br><code>test-helpers.ts</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
+  <td>No direct outbound edge</td>
   <td>Module file in router-worker/src/store.test.ts.</td>
 </tr>
 <tr>
@@ -1425,78 +1766,6 @@ flowchart LR
   <td>No direct outbound edge</td>
   <td>desc() node in router-worker/src/store.test.ts.</td>
 </tr>
-<tr>
-  <td>21</td>
-  <td><code>meshNode()</code><br><small style="color:var(--muted)">router-worker/src/mesh-state.test.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>nodeFixture()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td>meshNode() node in router-worker/src/mesh-state.test.ts.</td>
-</tr>
-<tr>
-  <td>22</td>
-  <td><code>test-helpers.ts</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td><code>store.test.ts</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
-  <td>No direct outbound edge</td>
-  <td>Module file in router-worker/src/test-helpers.ts.</td>
-</tr>
-<tr>
-  <td>23</td>
-  <td><code>.seedDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>retiredDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small><br><code>seedDefaultActivation()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small><br><code>shouldRefreshDefaultProfile()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td>.seedDefaultProfiles() node in router-worker/src/test-helpers.ts.</td>
-</tr>
-<tr>
-  <td>24</td>
-  <td><code>shouldRefreshDefaultProfile()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td><code>seedDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td>No direct outbound edge</td>
-  <td>shouldRefreshDefaultProfile() node in router-worker/src/test-helpers.ts.</td>
-</tr>
-<tr>
-  <td>25</td>
-  <td><code>seedDefaultActivation()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td><code>seedDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td>No direct outbound edge</td>
-  <td>seedDefaultActivation() node in router-worker/src/test-helpers.ts.</td>
-</tr>
-<tr>
-  <td>26</td>
-  <td><code>retiredDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td><code>seedDefaultProfiles()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td>No direct outbound edge</td>
-  <td>retiredDefaultProfiles() node in router-worker/src/test-helpers.ts.</td>
-</tr>
-<tr>
-  <td>27</td>
-  <td><code>signAccessJwt()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>accessBase64Url()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td>signAccessJwt() node in router-worker/src/test-helpers.ts.</td>
-</tr>
-<tr>
-  <td>28</td>
-  <td><code>accessBase64Url()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td><code>signAccessJwt()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td>No direct outbound edge</td>
-  <td>accessBase64Url() node in router-worker/src/test-helpers.ts.</td>
-</tr>
-<tr>
-  <td>29</td>
-  <td><code>nodeFixture()</code><br><small style="color:var(--muted)">router-worker/src/test-helpers.ts</small></td>
-  <td><span class="tag tag-func">Test</span></td>
-  <td><code>meshNode()</code><br><small style="color:var(--muted)">router-worker/src/mesh-state.test.ts</small><br><code>store.test.ts</code><br><small style="color:var(--muted)">router-worker/src/store.test.ts</small></td>
-  <td>No direct outbound edge</td>
-  <td>nodeFixture() node in router-worker/src/test-helpers.ts.</td>
-</tr>
 </table>
 
 <div class="grid">
@@ -1505,25 +1774,23 @@ flowchart LR
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
       <tr><td><code>router-worker/src/store.test.ts</code></td><td>20 nodes</td></tr>
-<tr><td><code>router-worker/src/test-helpers.ts</code></td><td>8 nodes</td></tr>
-<tr><td><code>router-worker/src/mesh-state.test.ts</code></td><td>1 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: calls x21, contains x18, method x7, imports x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x16, contains x12, method x7, references x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
-<!-- ====== 6. OG image generation ====== -->
-<h2 id="og-image-generation">6. OG image generation</h2>
-<p>OG image generation groups implementation around rasterize, ogmjs, assets, here, mostly in assets/rasterize-og.mjs. This section covers 8 nodes and 7 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 7. OG Image Rasterizer ====== -->
+<h2 id="og-image-rasterizer">7. OG Image Rasterizer</h2>
+<p>OG Image Rasterizer groups implementation around rasterize, ogmjs, assets, here, mostly in assets/rasterize-og.mjs. This section covers 8 nodes and 7 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: OG image generation (8 nodes, 7 edges)
+    %% Section: OG Image Rasterizer (8 nodes, 7 edges)
     assets_rasterize_og_74209869("rasterize-og.mjs")
     assets_rasterize_og_fontfiles_628ed066("fontFiles<br/><small>assets/rasterize-og.mjs</small>")
     assets_rasterize_og_here_124f0db6("here<br/><small>assets/rasterize-og.mjs</small>")
@@ -1649,14 +1916,182 @@ flowchart LR
 </div>
 <hr>
 
-<!-- ====== 7. Reservations index migration ====== -->
-<h2 id="reservations-index-migration">7. Reservations index migration</h2>
-<p>Reservations index migration groups implementation around 0002, reservations, expiry, indexsql, mostly in router-worker/migrations/0002_reservations_expiry_index.sql. This section covers 1 nodes and 0 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 8. Mesh Token Lifecycle ====== -->
+<h2 id="mesh-token-lifecycle">8. Mesh Token Lifecycle</h2>
+<p>Mesh Token Lifecycle groups implementation around mesh, token, lifecycle, mostly in unmapped files. This section covers 1 nodes and 0 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Reservations index migration (1 nodes, 0 edges)
+    %% Section: Mesh Token Lifecycle (1 nodes, 0 edges)
+    concept_mesh_token_lifecycle_f1f93ac6("Mesh token lifecycle")
+    class concept_mesh_token_lifecycle_f1f93ac6 klass;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>Mesh token lifecycle</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Mesh token lifecycle node in project.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td colspan="2">No source file mapping</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: No high-confidence call edges detected. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 9. Review Queue Spec ====== -->
+<h2 id="review-queue-spec">9. Review Queue Spec</h2>
+<p>Review Queue Spec groups implementation around review, queue, sdd, spec, mostly in sdd/spec/.review-queue.md. This section covers 1 nodes and 0 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Review Queue Spec (1 nodes, 0 edges)
+    doc_sdd_spec_review_queue_md_fa4b43ba(".Review Queue<br/><small>sdd/spec/.review-queue.md</small>")
+    class doc_sdd_spec_review_queue_md_fa4b43ba concept;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>.Review Queue</code><br><small style="color:var(--muted)">sdd/spec/.review-queue.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing .Review Queue.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>sdd/spec/.review-queue.md</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: No high-confidence call edges detected. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 10. SDD Change Log ====== -->
+<h2 id="sdd-change-log">10. SDD Change Log</h2>
+<p>SDD Change Log groups implementation around changes, sdd, spec, changesmd, mostly in sdd/spec/changes.md. This section covers 1 nodes and 0 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: SDD Change Log (1 nodes, 0 edges)
+    doc_sdd_spec_changes_md_92ef4b09("Changes<br/><small>sdd/spec/changes.md</small>")
+    class doc_sdd_spec_changes_md_92ef4b09 concept;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>Changes</code><br><small style="color:var(--muted)">sdd/spec/changes.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Changes.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>sdd/spec/changes.md</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: No high-confidence call edges detected. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 11. Reservations Expiry Index ====== -->
+<h2 id="reservations-expiry-index">11. Reservations Expiry Index</h2>
+<p>Reservations Expiry Index groups implementation around 0002, reservations, expiry, indexsql, mostly in router-worker/migrations/0002_reservations_expiry_index.sql. This section covers 1 nodes and 0 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Reservations Expiry Index (1 nodes, 0 edges)
     packages_router_worker_migrations_0002_reservati_59f8fdbd("reservations expiry index.sql<br/><small>router-worker/migrations/0002_reservations_expiry_index.sql</small>")
     class packages_router_worker_migrations_0002_reservati_59f8fdbd function;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
@@ -1711,18 +2146,18 @@ flowchart LR
   <div class="card">
     <h4>Graph</h4>
     <table style="width:100%;font-size:0.85rem;">
-      <tr><td>Nodes</td><td>1501</td></tr>
-      <tr><td>Edges</td><td>3836</td></tr>
+      <tr><td>Nodes</td><td>1824</td></tr>
+      <tr><td>Edges</td><td>5531</td></tr>
       <tr><td>Hyperedges</td><td>0</td></tr>
-      <tr><td>Communities</td><td>58</td></tr>
-      <tr><td>Documented Sections</td><td>6</td></tr>
+      <tr><td>Communities</td><td>74</td></tr>
+      <tr><td>Documented Sections</td><td>10</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Edge Confidence</h4>
     <table style="width:100%;font-size:0.85rem;">
-      <tr><td>EXTRACTED</td><td>3540</td></tr>
-      <tr><td>INFERRED</td><td>296</td></tr>
+      <tr><td>EXTRACTED</td><td>4179</td></tr>
+      <tr><td>INFERRED</td><td>1352</td></tr>
       <tr><td>AMBIGUOUS</td><td>0</td></tr>
     </table>
   </div>
@@ -1730,7 +2165,7 @@ flowchart LR
 
 <div style="text-align:center; padding:40px 0; color: var(--muted); font-size:0.9rem;">
   <p>codeflare-inference-mesh — Architecture Documentation</p>
-  <p>Generated: 2026-07-09 13:36 UTC · graphify callflow-html</p>
+  <p>Generated: 2026-07-10 09:46 UTC · graphify callflow-html</p>
 </div>
 
 </div><!-- .container -->
