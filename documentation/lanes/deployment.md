@@ -80,8 +80,9 @@ Manual verification for a new environment using two WARP-enrolled nodes. Expecte
 2. **Second node joins.** Install the agent on node B. The router distributes join tokens through heartbeat mesh bootstrap — no manual token handling. Expect `peerNodeIds` to list both nodes and `tokenCount` 2.
 3. **Split readiness.** Activate the split profile from the Admin UI. Both nodes restart `mesh-llm` in split mode; nodes are not ready while reloading. Expect `readyModels` to repopulate with the split profile's model once layer distribution completes.
 4. **Failover and rejoin.** Stop the agent service on node B. Expect node B to appear in `failedNodeIds` while node A keeps serving; after restart, node B rejoins from distributed tokens and `failedNodeIds` clears.
-5. **Rotation test.** Rotate the mesh token from the Admin UI. Expect `rotation` to increment, mesh state to reset, `tokenCount` to recover, and the mesh to reform within two minutes under idle or short-stream load. ([CON-SEC-003](../../sdd/spec/constraints.md#con-sec-003-mesh-secret-custody-and-rotation)) ([REQ-SEC-006](../../sdd/spec/security.md))
-   - Model readiness restoration additionally waits on model reload.
+5. **Rotation test.** Rotate the mesh token from the Admin UI. Expect `rotation` to increment, mesh state to reset, token count to recover, and the mesh to reform within two minutes.
+
+Run this under idle or short-stream load. Model readiness restoration additionally waits on model reload. ([CON-SEC-003](../../sdd/spec/constraints.md#con-sec-003-mesh-secret-custody-and-rotation)) ([REQ-SEC-006](../../sdd/spec/security.md))
    - A node holding only a pre-rotation token must not rejoin until it receives a fresh one. ([REQ-SEC-006](../../sdd/spec/security.md))
 6. **Gateway chat.** Send a chat completion for the public alias through the AI Gateway dynamic route and confirm a mesh-served response. ([REQ-GWY-003](../../sdd/spec/gateway.md))
 

@@ -42,6 +42,8 @@ GET /
 
 **Implements:** [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md), [REQ-ADM-011](../../sdd/spec/setup-admin.md), [REQ-ADM-014](../../sdd/spec/setup-admin.md)
 
+**Notes:** During setup, the shell uses the same Codeflare operator-console treatment as the dashboard: `setupHero()` renders the reduced-motion-safe wordmark plus Claim/Domain/Access/Route/Node milestone tiles, and `setupWizardView()` places the stepper in a sticky `setup-rail` before the wizard panels. ([REQ-ADM-011](../../sdd/spec/setup-admin.md#req-adm-011-guided-first-run-setup)) <!-- @impl: packages/router-worker/src/admin-ui-views.ts::setupWizardView --> <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss -->
+
 ### GET /admin
 
 Serves the same state-gated Admin UI shell as `/`.

@@ -31,7 +31,9 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## Data plane lifecycle
 
-1. Client calls AI Gateway using `dynamic/<route-name>`. The provisioned route retries a failed model call up to 3 times with a 120s timeout each, so a hung upstream can take a few minutes to surface as an error. ([REQ-GWY-003](../../sdd/spec/gateway.md))
+AI Gateway routes retry failed model calls up to 3 times with a 120s timeout per try, so a hung upstream can take a few minutes to surface. ([REQ-GWY-003](../../sdd/spec/gateway.md))
+
+1. Client calls AI Gateway using `dynamic/<route-name>`. ([REQ-GWY-003](../../sdd/spec/gateway.md))
 2. AI Gateway forwards to the custom provider URL on the router Worker. ([REQ-GWY-001](../../sdd/spec/gateway.md))
 3. Worker verifies provider credentials and validates the chat body. ([REQ-GWY-002](../../sdd/spec/gateway.md)) ([REQ-RTR-002](../../sdd/spec/router-worker.md))
 4. Worker maps the stable public model id `codeflare-mesh` to the single active model profile via `getProfileByPublicModel`, since every profile carries the same shared alias and the single-active invariant leaves exactly one owner. ([REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model))
@@ -42,19 +44,26 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 
 ## Control plane lifecycle
 
-1. Admin opens the bootstrap origin; the wizard claims the deployment, provisions the custom domain, and provisions role-gated Access plus machine-path bypass, then hands off and the origin locks. ([security.md](security.md#role-based-console-access): policy shape; [security.md](security.md#break-glass-recovery-and-host-gating): the lock.) ([REQ-ADM-011](../../sdd/spec/setup-admin.md)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md)) ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-ADM-014](../../sdd/spec/setup-admin.md))
-2. Admin connects AI Gateway from the wizard's Gateway step — gateway and route dropdowns from the live account, one-click provisioning — or later from the dashboard Routing section, now with an operational status chip. ([REQ-GWY-005](../../sdd/spec/gateway.md)) ([REQ-GWY-003](../../sdd/spec/gateway.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md)) ([REQ-ADM-024](../../sdd/spec/setup-admin.md#req-adm-024-routing-operational-status))
-3. Admin creates a one-time setup token from the wizard's enrollment step or the dashboard Nodes section. ([REQ-ADM-003](../../sdd/spec/setup-admin.md)) ([REQ-ADM-006](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
-4. Node operator runs the generated install command. ([REQ-ADM-004](../../sdd/spec/setup-admin.md))
-5. Node agent claims the token and starts heartbeat. ([REQ-NODE-002](../../sdd/spec/node-agent.md))
-6. For each active MeshLLM profile, the router elects the first eligible heartbeating node as mesh seed (store-if-absent, serialized through RegistryDO) and answers it with `meshBootstrap.action: "create"`; other nodes receive `wait` and do not start `mesh-llm` yet. ([REQ-RUN-008](../../sdd/spec/runtime-profiles.md))
-7. The seed's `mesh-llm` mints the mesh identity, and every node reports its invite token and mesh id in each heartbeat. ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md)) ([REQ-SEC-006](../../sdd/spec/security.md))
-   - The router stores the token set encrypted and returns all live tokens as `joinTokens` in heartbeat responses, so remaining nodes join. ([REQ-RUN-008](../../sdd/spec/runtime-profiles.md))
-8. One-click mesh rotation increments a per-profile rotation counter and clears stored mesh state; the counter is baked into the rendered `--mesh-name codeflare-<profileId>-r<N>`, so nodes drain, re-elect a seed, and reform a new mesh. ([REQ-SEC-006](../../sdd/spec/security.md))
-9. Admin observes the mesh on the dashboard — topology, drawers, stats, sortable nodes, throughput trace — and verifies inference from the playground. Connector bounds keep topology lines inside the canvas. ([REQ-OBS-002](../../sdd/spec/observability.md)) ([REQ-OBS-007](../../sdd/spec/observability.md)) ([REQ-OBS-010](../../sdd/spec/observability.md)) ([REQ-ADM-015](../../sdd/spec/setup-admin.md)) ([REQ-ADM-028](../../sdd/spec/setup-admin.md#req-adm-028-topology-connector-bounds)) ([REQ-ADM-016](../../sdd/spec/setup-admin.md)) ([REQ-ADM-007](../../sdd/spec/setup-admin.md))
-10. Each verified caller resolves to a console role: an admin sees and edits everything, while a read-only user (any Access-authenticated caller when no user set is configured) sees only the overview and playground, with configuration writes refused server-side. ([REQ-SEC-010](../../sdd/spec/security.md)) ([REQ-ADM-017](../../sdd/spec/setup-admin.md))
-11. Admin can add a model from the dashboard or `POST /admin/profiles/add`; MeshLLM supports single-machine or split profiles, llama.cpp supports direct single-machine profiles for cache-local coding sessions, and each new profile stays inactive until activation. ([REQ-RUN-011](../../sdd/spec/runtime-profiles.md#req-run-011-custom-model-onboarding)) ([REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles)) ([REQ-ADM-025](../../sdd/spec/setup-admin.md#req-adm-025-add-a-model-console-control))
-12. Admin can remove a custom, switched-off model from the catalog via the dashboard delete control or `POST /admin/profiles/delete` (`DELETE /api/v1/models/{id}` for automation); built-in models and the active model are refused with status 409. ([REQ-RUN-012](../../sdd/spec/runtime-profiles.md#req-run-012-custom-model-removal)) ([REQ-ADM-026](../../sdd/spec/setup-admin.md#req-adm-026-delete-a-model-console-control)) ([REQ-API-008](../../sdd/spec/control-plane-api.md#req-api-008-programmatic-model-deletion))
+Setup and day-two control flows implement the setup, Access, Gateway, dashboard, observability, role, and model-management requirements cited below.
+
+1. Admin opens the bootstrap origin.
+2. The shared setup hero and step rail guide claim, domain, Access, Gateway, node, and review milestones.
+3. The wizard provisions the custom domain, role-gated Access, and machine-path bypass.
+4. The custom-domain link hands off to Access; completing setup locks the bootstrap origin.
+5. Admin connects AI Gateway from the wizard Gateway step or dashboard Routing.
+6. Live account gateway options and one-click provisioning feed the Gateway step.
+7. Admin creates a one-time setup token from the wizard enrollment step or dashboard Nodes.
+8. Node operator runs the generated install command.
+9. Node agent claims the token and starts heartbeat.
+10. Admin observes topology, drawers, stats, sortable nodes, and throughput trace.
+11. Admin verifies inference from Playground.
+12. Each verified caller resolves to either admin or read-only user.
+13. Admin adds models from the dashboard or `POST /admin/profiles/add`.
+14. Admin removes custom, switched-off models from the dashboard or API.
+
+Related requirements: [REQ-ADM-011](../../sdd/spec/setup-admin.md), [REQ-ADM-012](../../sdd/spec/setup-admin.md), [REQ-SEC-010](../../sdd/spec/security.md), [REQ-ADM-014](../../sdd/spec/setup-admin.md), [REQ-GWY-005](../../sdd/spec/gateway.md), [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-007](../../sdd/spec/setup-admin.md), [REQ-ADM-024](../../sdd/spec/setup-admin.md#req-adm-024-routing-operational-status), [REQ-ADM-003](../../sdd/spec/setup-admin.md), [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-NODE-002](../../sdd/spec/node-agent.md).
+
+Related dashboard/model requirements: [REQ-OBS-002](../../sdd/spec/observability.md), [REQ-OBS-007](../../sdd/spec/observability.md), [REQ-OBS-010](../../sdd/spec/observability.md), [REQ-ADM-015](../../sdd/spec/setup-admin.md), [REQ-ADM-028](../../sdd/spec/setup-admin.md#req-adm-028-topology-connector-bounds), [REQ-ADM-016](../../sdd/spec/setup-admin.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md), [REQ-RUN-011](../../sdd/spec/runtime-profiles.md#req-run-011-custom-model-onboarding), [REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles), [REQ-ADM-025](../../sdd/spec/setup-admin.md#req-adm-025-add-a-model-console-control), [REQ-RUN-012](../../sdd/spec/runtime-profiles.md#req-run-012-custom-model-removal), [REQ-ADM-026](../../sdd/spec/setup-admin.md#req-adm-026-delete-a-model-console-control), [REQ-API-008](../../sdd/spec/control-plane-api.md#req-api-008-programmatic-model-deletion).
 
 ## State flow
 
@@ -65,11 +74,15 @@ D1 is durable truth for records that must survive restarts. The inference reques
 The claimed node stores desired profiles, resolves the active profile, and supervises the MeshLLM runtime:
 
 - It installs the pinned `mesh-llm` binary when it is missing (SHA-256-verified download; install failure reports `dependency-missing`). ([REQ-NODE-006](../../sdd/spec/node-agent.md))
-- It runs one headless `mesh-llm serve` process from the profile. The command carries mesh address, Nostr discovery, disabled iroh relays, split-mode flags, and invite tokens. Deactivated nodes keep heartbeating but launch no runtime. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md)) ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-011](../../sdd/spec/node-agent.md))
+- It runs one headless `mesh-llm serve` process from the profile. ([REQ-RUN-003](../../sdd/spec/runtime-profiles.md))
+
+The command carries mesh address, Nostr discovery, disabled iroh relays, split-mode flags, and invite tokens. Deactivated nodes keep heartbeating but launch no runtime. ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-011](../../sdd/spec/node-agent.md))
 - Readiness combines the `mesh-llm` console status with the node's own OpenAI model list. A `loading` console state extends the readiness deadline instead of failing the runtime. ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-OBS-008](../../sdd/spec/observability.md))
 - The console API (default `127.0.0.1:3131`) is localhost-only on the node and is never exposed through the router or the mesh; the agent proxies Worker traffic only to the OpenAI API (default `127.0.0.1:9337`). ([REQ-RUN-010](../../sdd/spec/runtime-profiles.md))
 - Heartbeat `meshBootstrap` responses drive drain-then-restart triggers for rotation, foreign mesh ids, and seed promotion. Draining waits for local proxy and MeshLLM `inflight_requests` counters to reach zero before restart. ([REQ-RUN-006](../../sdd/spec/runtime-profiles.md))
-- Runtime start/stop/restart controls are exposed only on the localhost dashboard, require the dashboard token, and validate same-origin browser Origin headers when present; heartbeats and dashboard status derive runtime state from the live runtime manager. ([REQ-NODE-004](../../sdd/spec/node-agent.md)) ([REQ-OBS-003](../../sdd/spec/observability.md))
+- Runtime start, stop, and restart controls exist only on the localhost dashboard and require the dashboard token. ([REQ-NODE-004](../../sdd/spec/node-agent.md))
+
+Browser `Origin` headers must be same-origin when present. Heartbeats and dashboard status derive runtime state from the live runtime manager. ([REQ-OBS-003](../../sdd/spec/observability.md))
 
 ## Boundaries
 
