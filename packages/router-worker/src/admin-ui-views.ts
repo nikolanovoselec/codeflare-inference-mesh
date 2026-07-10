@@ -35,6 +35,24 @@ ${output({ id: `${prefix}setup-token-output`, kind: 'setup-token', extraClass: '
 ${output({ id: `${prefix}installer-output`, kind: 'installer-command', pre: true, extraClass: 'copyable' })}`
 }
 
+function setupHero(): string {
+  const stats = [
+    { id: 'claim', label: 'Claim', value: 'own the router' },
+    { id: 'domain', label: 'Domain', value: 'move to Access' },
+    { id: 'access', label: 'Access', value: 'role-gated console' },
+    { id: 'route', label: 'Route', value: 'AI Gateway alias' },
+    { id: 'node', label: 'Node', value: 'first machine' }
+  ]
+  return `<section class="dashboard-hero setup-hero" data-setup-hero="true" aria-labelledby="setup-hero-title">
+<div class="hero-copy">
+<p class="eyebrow">First-run setup</p>
+<h1 id="setup-hero-title"><span data-scramble>Codeflare</span> <span class="hero-accent">Inference Mesh</span></h1>
+<p>Bring the router under operator control, protect it with Cloudflare Access, connect the serving route, and enroll the first machine.</p>
+</div>
+<div class="tile-grid hero-stats setup-stats" aria-label="Setup milestones">${stats.map((item) => `<div class="tile" data-setup-stat="${escapeHtml(item.id)}"><strong>${escapeHtml(item.label)}</strong><code>${escapeHtml(item.value)}</code></div>`).join('')}</div>
+</section>`
+}
+
 export function setupWizardView(active: boolean): string {
   const steps = [
     { step: 'connect', label: 'Connect' },
@@ -123,7 +141,7 @@ ${output({ id: 'wiz-gateway-output', kind: 'gateway-sync', pre: true })}
 ${output({ id: 'wizard-complete-output', kind: 'setup-complete', pre: true })}`
   })
   return `<section class="view view-gate" id="view-setup" data-wizard="${escapeHtml(ADMIN_UI_WIZARD.steps.join(' '))}"${active ? '' : ' hidden'} aria-label="Guided setup">
-<div class="gate-flow">${stepper(steps, 'connect')}${connect}${domain}${access}${gateway}${node}${review}</div>
+<div class="gate-flow">${setupHero()}<div class="setup-layout"><aside class="setup-rail" aria-label="Setup progress">${stepper(steps, 'connect')}</aside><div class="setup-panels">${connect}${domain}${access}${gateway}${node}${review}</div></div></div>
 </section>`
 }
 

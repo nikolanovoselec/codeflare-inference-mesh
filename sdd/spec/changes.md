@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-07-10
+
+- Reworked first-run setup to use the same Codeflare operator-console shell as the day-two dashboard, with the shared hero treatment, milestone tiles, and a left setup step rail that collapses cleanly on mobile. ([REQ-ADM-011](setup-admin.md#req-adm-011-guided-first-run-setup))
+
 ## 2026-07-09
 
 - Fixed MeshLLM split-stage visibility by polling `/api/runtime/stages` for full topology, preserving legitimate layer `0` ranges when merging live stage status, resolving MeshLLM node IDs back to Codeflare machine names, suppressing stale `model_size_unknown` blockers when serving/stage evidence exists, and keeping planner capacity byte totals out of visible operator copy while retaining structured diagnostics for tests and automation. When MeshLLM reports GPU capacity but omits used VRAM, the node agent now fills `gpuMemoryUsedMiB` from host GPU telemetry so `/api/v1/nodes` and the console can show the same used/total VRAM display as direct llama.cpp without guessing in the UI. Non-serving `model_size_unknown` now follows the same one-shot self-heal path as `waiting_for_peers`. ([REQ-OBS-007](observability.md#req-obs-007-mesh-health-surface), [REQ-OBS-009](observability.md#req-obs-009-hardware-and-throughput-metrics), [REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface), [REQ-RUN-005](runtime-profiles.md#req-run-005-health-and-recovery))
