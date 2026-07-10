@@ -135,7 +135,7 @@ function adminUiScript(html: string): string {
 
 
 describe('router worker behavioral contracts', () => {
-  it('REQ-ADM-006 serves a responsive browser admin UI for every admin-facing function', async () => {
+  it('REQ-ADM-006 REQ-ADM-035 serves a responsive browser admin UI for every admin-facing function', async () => {
     // AdminConfigurationUiTestAnchor
     const { router } = routerFixture()
     const root = await router(new Request('https://router.test/'))
@@ -550,7 +550,7 @@ describe('router worker behavioral contracts', () => {
     expect(harness.byId('installer-output').textContent).toBe('install command for /admin/installers/windows')
   })
 
-  it('REQ-ADM-006 REQ-RUN-011 keeps direct llama.cpp UI controls backed by admin API payloads', async () => {
+  it('REQ-ADM-006 REQ-OBS-012 REQ-RUN-011 REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads', async () => {
     // DirectRuntimeUiParityTestAnchor
     const { router, store } = routerFixture()
     await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
@@ -803,7 +803,7 @@ describe('router worker behavioral contracts', () => {
     expect(recurrent?.meshllm!.prefixCache?.payloadMode).toBe('kv-recurrent')
   })
 
-  it('REQ-RUN-011 adds a direct llama.cpp single model as an inactive profile', async () => {
+  it('REQ-RUN-011 REQ-RUN-013 adds a direct llama.cpp single model as an inactive profile', async () => {
     const { router, store } = routerFixture()
     const response = await router(new Request('https://router.test/admin/profiles/add', {
       method: 'POST',
@@ -817,7 +817,7 @@ describe('router worker behavioral contracts', () => {
     expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 4, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
   })
 
-  it('REQ-RUN-011 rejects direct llama.cpp for split models', async () => {
+  it('REQ-RUN-011 REQ-RUN-013 rejects direct llama.cpp for split models', async () => {
     const { router, store } = routerFixture()
     const response = await router(new Request('https://router.test/admin/profiles/add', {
       method: 'POST',
@@ -3884,7 +3884,7 @@ describe('operator playground contracts', () => {
     }) as typeof fetch
   }
 
-  it('REQ-ADM-029 REQ-RUN-011 direct playground sends a stable session user for affinity', async () => {
+  it('REQ-ADM-029 REQ-RUN-011 REQ-RUN-013 direct playground sends a stable session user for affinity', async () => {
     // DirectPlaygroundSessionUserTestAnchor
     const store = new MemoryStore()
     await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
@@ -4096,7 +4096,7 @@ describe('control-plane API (/api/v1)', () => {
     expect(JSON.stringify(store.audit)).not.toContain(created.token)
   })
 
-  it('REQ-API-005 syncs the Gateway over the automation API and returns the provider token once', async () => {
+  it('REQ-API-005 REQ-API-010 syncs the Gateway over the automation API and returns the provider token once', async () => {
     const gatewayResult = { providerId: 'prov', providerSlug: 'custom-inference-mesh-router-test', routeId: 'route', routeVersionId: 'ver', deploymentId: 'dep', gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', workerUrl: 'https://mesh.example.com', manualProviderKeyRequired: true as const, providerTokenInstructions: 'x' }
     const { router, store } = routerFixture({
       env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
@@ -4720,7 +4720,7 @@ describe('control-plane API (/api/v1)', () => {
     expect(profile?.active).toBe(false)
   })
 
-  it('REQ-API-005 lists available agent versions to an automation caller', async () => {
+  it('REQ-API-005 REQ-API-010 lists available agent versions to an automation caller', async () => {
     const { router } = routerFixture({ releasesFetcher: githubReleasesFetcher(['v1.2.0', 'v1.1.0']) })
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/agent-versions', { headers: bearer(key.token) }))
@@ -4728,7 +4728,7 @@ describe('control-plane API (/api/v1)', () => {
     expect((await res.json() as { tags: string[] }).tags).toContain('v1.2.0')
   })
 
-  it('REQ-API-005 sets the fleet agent version and rejects an unknown version', async () => {
+  it('REQ-API-005 REQ-API-010 sets the fleet agent version and rejects an unknown version', async () => {
     const { router, store } = routerFixture({ releasesFetcher: githubReleasesFetcher(['v1.2.0', 'v1.1.0']) })
     const key = await mintKey(router)
     const headers = { ...bearer(key.token), 'content-type': 'application/json' }
@@ -4739,7 +4739,7 @@ describe('control-plane API (/api/v1)', () => {
     expect(bad.status).toBe(400)
   })
 
-  it('REQ-API-005 refuses model and version endpoints without an automation key', async () => {
+  it('REQ-API-005 REQ-API-010 refuses model and version endpoints without an automation key', async () => {
     const { router } = routerFixture()
     expect((await router(new Request('https://router.test/api/v1/models', { headers: bearer('nope') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/api/v1/models/x/enable', { method: 'POST', headers: bearer('nope') }))).status).toBe(401)

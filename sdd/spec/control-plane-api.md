@@ -44,7 +44,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 2. A request to an `/api/v1` endpoint is rejected with `401` when it carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::requireAutomation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-002 rejects an api request without a valid automation key) -->
 3. Every `/api/v1` request is classified into a dedicated `api` rate-limit bucket, keyed by a hash of the automation key so one caller's burst cannot spend another's budget. <!-- @impl: packages/router-worker/src/rate-limit.ts::classifyRoute --> <!-- @test: packages/router-worker/src/rate-limit.test.ts (REQ-SEC-011 maps each public endpoint to its bucket, defaulting unlisted routes to public) -->
 4. The `/api/v1/*` paths are covered by the machine Access-bypass so automation reaches them without an Access session. <!-- @impl: packages/router-worker/src/access-provisioning.ts::MACHINE_BYPASS_SUFFIXES --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-ADM-012 creates the admin app and bypass coverage for machine paths with an everyone bypass policy) -->
-5. `GET /api/v1/status` returns a fleet snapshot — node totals and online count, model totals and active count, desired agent/runtime versions, per-node runtime-install status, and the latest Speed Test summary when one exists — to an authenticated automation caller. With `detail=full` or `include=details`, it also returns detailed node projections, profile readiness, profiles, mesh health, and stage/layer ownership without secret values. <!-- @impl: packages/router-worker/src/router.ts::handleApiStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-002 returns a fleet snapshot to an authenticated automation caller) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-002 exposes detailed mesh roles, readiness, and stage ownership on request) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-002 exposes per-node runtime install status to automation callers) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-009 exposes the direct router speed test to automation callers) -->
+5. `GET /api/v1/status` returns an authenticated fleet snapshot, and full-detail requests include node/profile/mesh/stage projections without secret values. <!-- @impl: packages/router-worker/src/router.ts::handleApiStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-002 returns a fleet snapshot to an authenticated automation caller) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-002 exposes detailed mesh roles, readiness, and stage ownership on request) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-002 exposes per-node runtime install status to automation callers) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-009 exposes the direct router speed test to automation callers) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
@@ -111,29 +111,52 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ---
 
-### REQ-API-005: Programmatic model and version management
+### REQ-API-005: Programmatic model management
 
-**Intent:** Fleet managers must configure models, switch them on and off, set fleet software/runtime versions, and run Gateway sync programmatically, wrapping the same validated levers the console uses so automation and the console never diverge.
+**Intent:** Fleet managers must list, configure, enable, and disable models programmatically through the same validated model levers the console uses.
 
 **Applies To:** Automation
 
 **Acceptance Criteria:**
 
-1. `GET /api/v1/models` returns each model as a projection: id, display name, callable names, active flag, rollout percent, runtime, context window (`0` = Auto for MeshLLM), model reference, split flag, per-model VRAM budget in GB (`0` = no cap for MeshLLM), and runtime-specific tunables, each auto field `null` when Auto. <!-- @impl: packages/router-worker/src/router.ts::toApiModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists models as projections with callable names) -->
+1. `GET /api/v1/models` returns each model projection with identity, callable names, activation state, rollout, runtime, model reference, split state, context, VRAM budget, and tunables. <!-- @impl: packages/router-worker/src/router.ts::toApiModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists models as projections with callable names) -->
 2. `POST /api/v1/models/{id}` updates a model's runtime-specific context window, model reference, VRAM budget, and/or tunables; MeshLLM accepts context `0` (Auto), direct llama.cpp requires context `>= 4096`, and invalid runtime/tunable values or unknown model ids are rejected. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelConfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 configures a model context window and rejects invalid input) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 configures direct llama.cpp settings over the automation API) -->
 3. `POST /api/v1/models/{id}/enable` switches a model on and switches off any other model that answers to the same callable name. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelEnable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 enables a model and switches off another with the same callable name) -->
 4. `POST /api/v1/models/{id}/disable` drops a model's traffic to zero. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDisable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 disables a model by dropping its traffic to zero) -->
-5. `GET /api/v1/agent-versions` lists the available node-agent versions to an automation caller. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 lists available agent versions to an automation caller) -->
-6. `PUT /api/v1/agent-version` sets the fleet-wide desired node-agent version, refreshing the release list once when the requested tag is missing from the warm cache, and rejects a version still absent after refresh. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersionSet --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 sets the fleet agent version and rejects an unknown version) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 accepts a newly published agent version after refreshing the release list) -->
-7. `GET /api/v1/runtime-versions` lists available MeshLLM and llama.cpp runtime versions with current desired selections, and `PUT /api/v1/runtime-versions` sets both desired runtime versions through the same validation core as the console. <!-- @impl: packages/router-worker/src/router.ts::handleApiRuntimeVersions --> <!-- @impl: packages/router-worker/src/router.ts::handleApiRuntimeVersionSet --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-API-005 lets automation list and select runtime versions) -->
-8. `POST /api/v1/gateway/sync` runs the same Gateway sync/provider-token rotation as the console and reveals the new provider token once to the automation caller. <!-- @impl: packages/router-worker/src/router.ts::handleApiGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 syncs the Gateway over the automation API and returns the provider token once) -->
-9. The model and version endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 refuses model and version endpoints without an automation key) -->
+5. The model endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::requireAutomation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 REQ-API-010 refuses model and version endpoints without an automation key) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-ADM-008](setup-admin.md#req-adm-008-agent-version-management), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation)
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-API-010: Programmatic version and Gateway management
+
+**Intent:** Fleet managers must select node-agent/runtime versions and run Cloudflare AI Gateway sync programmatically without diverging from console validation.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `GET /api/v1/agent-versions` lists the available node-agent versions to an automation caller. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 REQ-API-010 lists available agent versions to an automation caller) -->
+2. `PUT /api/v1/agent-version` sets the desired node-agent version and rejects a tag that is still absent after release-list refresh. <!-- @impl: packages/router-worker/src/router.ts::handleApiAgentVersionSet --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 REQ-API-010 sets the fleet agent version and rejects an unknown version) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-ADM-008 accepts a newly published agent version after refreshing the release list) -->
+3. `GET /api/v1/runtime-versions` lists available MeshLLM and llama.cpp runtime versions with current desired selections. <!-- @impl: packages/router-worker/src/router.ts::handleApiRuntimeVersions --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-API-005 REQ-API-010 lets automation list and select runtime versions) -->
+4. `PUT /api/v1/runtime-versions` sets both desired runtime versions through the same validation core as the console. <!-- @impl: packages/router-worker/src/router.ts::handleApiRuntimeVersionSet --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-API-005 REQ-API-010 lets automation list and select runtime versions) -->
+5. `POST /api/v1/gateway/sync` runs the same Gateway sync/provider-token rotation as the console and reveals the new provider token once. <!-- @impl: packages/router-worker/src/router.ts::handleApiGatewaySync --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 REQ-API-010 syncs the Gateway over the automation API and returns the provider token once) -->
+6. The version and Gateway endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::requireAutomation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 REQ-API-010 refuses model and version endpoints without an automation key) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-ADM-008](setup-admin.md#req-adm-008-agent-version-management), [REQ-ADM-033](setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility), [REQ-GWY-003](gateway.md#req-gwy-003-dynamic-route-automation)
 
 **Verification:** Automated test
 

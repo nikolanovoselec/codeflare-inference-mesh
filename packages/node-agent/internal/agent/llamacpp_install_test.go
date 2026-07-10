@@ -276,6 +276,7 @@ func TestREQNODE013EnsureLlamaCppReusesMatchingPathBinary(t *testing.T) {
 	}
 }
 
+// REQ-RUN-014: selected MeshLLM versions install before launch.
 func TestREQNODE013SelectedMeshLLMVersionDownloadsChecksumSidecar(t *testing.T) {
 	payload := []byte("fake mesh-llm")
 	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "mesh-llm-v0.73.0/bin/mesh-llm", body: payload, mode: 0o755}})

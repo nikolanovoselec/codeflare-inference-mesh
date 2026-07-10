@@ -716,7 +716,7 @@ POST /admin/profiles/add
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `409` | The reference's derived profile id already exists. | `{ "error": "duplicate_profile", "profileId": string, "requestId": string }` |
 
-**Implements:** [REQ-RUN-011](../../sdd/spec/runtime-profiles.md), [REQ-ADM-025](../../sdd/spec/setup-admin.md), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
+**Implements:** [REQ-RUN-011](../../sdd/spec/runtime-profiles.md), [REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles), [REQ-ADM-025](../../sdd/spec/setup-admin.md), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
 
 ### POST /admin/profiles/config
 

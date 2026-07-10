@@ -97,16 +97,37 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 3. `--max-vram` is rendered only when the profile sets a VRAM cap, and `--llama-flavor` only from hardware detection or an agent config override. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
 4. Rendered argv never contains `--publish`, `--listen-all`, `--auto`, or `--discover`. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererForbidsPublicDiscoveryFlags) -->
 5. Profiles carry the single source mode `meshllm-ref`; the agent passes the model ref to MeshLLM verbatim and never downloads or checksums model files itself. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003RendererContract) -->
-6. When a profile sets any supported value, the agent renders a per-profile config file (`--config <data dir>/meshllm-<profileId>.toml`) placing each under its MeshLLM subtable: `[models.model_fit]` (context, batch, micro-batch, KV cache types, flash attention, and a `prefix_cache` child table), `[models.throughput]` (parallel), and `[models.request_defaults]` (max output tokens, reasoning). <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003ContextLimitConfigRendering) -->
-7. A configuration value left unset (`0`/empty/absent, including a non-positive context limit) is omitted so MeshLLM auto-plans it; when a profile sets nothing, no config file is written. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003ContextLimitConfigRendering) -->
-8. The MeshLLM binary version is selected from router-delivered runtime settings and installed by the agent before launch; the agent artifact never bundles MeshLLM. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013SelectedMeshLLMVersionDownloadsChecksumSidecar) -->
-9. Changes to selected-profile launch inputs such as `maxVramGb`, context, split flag, bind port, or MeshLLM tunables request a runtime restart even when the profile ID and version are unchanged, so the next launch argv matches the saved profile. <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::profileKey --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003DesiredProfileContentChangeRestartsRuntime) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN003ProfileContentChangeRestartsWithUpdatedRenderInput) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-NODE-002](node-agent.md#req-node-002-node-claim-and-heartbeat), [REQ-RUN-002](#req-run-002-default-model-profiles)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-014: MeshLLM runtime configuration and versioning
+
+**Intent:** The agent must render optional MeshLLM configuration, install the selected MeshLLM binary version, and restart when saved launch inputs change.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. When a profile sets supported tunables, the agent writes a per-profile MeshLLM config file under the model-fit, throughput, and request-defaults tables. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003ContextLimitConfigRendering) -->
+2. Unset configuration values are omitted so MeshLLM auto-plans them; when a profile sets nothing, no config file is written. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN003ContextLimitConfigRendering) -->
+3. The MeshLLM binary version is selected from router-delivered runtime settings and installed by the agent before launch. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013SelectedMeshLLMVersionDownloadsChecksumSidecar) -->
+4. Changes to selected-profile launch inputs request a runtime restart even when the profile ID and version are unchanged. <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::profileKey --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003DesiredProfileContentChangeRestartsRuntime) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN003ProfileContentChangeRestartsWithUpdatedRenderInput) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-RUN-003](#req-run-003-managed-meshllm-runtime), [REQ-NODE-013](node-agent.md#req-node-013-runtime-binary-bootstrap)
 
 **Verification:** Automated test
 
@@ -128,7 +149,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 4. The agent launches the `mesh-llm` binary provisioned per REQ-NODE-013; a missing or failed install surfaces as a dependency-missing error instead of a runtime start. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010MissingBinaryReportsDependencyMissing) -->
 5. When the selected profile changes, the agent preempts an in-flight download or start of a now-deselected profile and switches to the newly selected profile without requiring a manual restart. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010PreemptsDeselectedInflightDownload) -->
 6. The agent does not restart a runtime that is already loading or serving the currently selected profile, so a healthy ready runtime is left running instead of being torn down on each heartbeat tick. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted) -->
-7. A restart attempt is bounded by a timeout so a Stop hung on a runtime ignoring SIGTERM cannot block the restart goroutine and strand the restart-pending latch; the bounded attempt releases the latch and marks the runtime failed, so a later heartbeat retries instead of the node wedging in a transient state until a manual relaunch. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::finishProfileRestart --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::restartCtx --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010RestartLatchReleasedWhenRuntimeHangs) -->
+7. A runtime stop/restart attempt is timeout-bounded, releases the restart latch, marks failure on timeout, and allows later heartbeat retry. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::finishProfileRestart --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::restartCtx --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010RestartLatchReleasedWhenRuntimeHangs) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
@@ -154,7 +175,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 2. While the console reports `node_state` `loading`, the readiness deadline extends instead of marking the runtime failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN005LoadingStateExtendsReadinessDeadline) -->
 3. Dashboard start requests return after launch while readiness continues outside the request deadline. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeStartDoesNotUseDashboardRequestDeadline) -->
 4. Child-process exit before readiness marks the runtime failed. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN005MeshLLMReadinessFailsWhenProcessExits) -->
-5. A runtime that fails with `mesh-llm readiness deadline exceeded` is treated as restart-needed on the next heartbeat create directive, and a split runtime that reports `waiting_for_peers` or non-serving `model_size_unknown` on consecutive heartbeats relaunches once for the current mesh bootstrap/profile key, so a stuck mesh self-heals instead of requiring Force Reload; `model_size_unknown` is ignored when the node already has serving/stage evidence. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager.NeedsRestart --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::serviceLoop.meshWaitSelfHeal --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN005LoadingStateExtendsReadinessDeadline) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005WaitingForPeersSelfHealsWithOneRestart) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005ModelSizeUnknownSelfHealsOnlyWhenNotServing) -->
+5. Readiness-deadline failures retry on the next create directive, and stuck split states self-heal once unless serving/stage evidence is already present. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager.NeedsRestart --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::serviceLoop.meshWaitSelfHeal --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN005LoadingStateExtendsReadinessDeadline) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005WaitingForPeersSelfHealsWithOneRestart) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005ModelSizeUnknownSelfHealsOnlyWhenNotServing) -->
 6. The agent drains and stops the runtime before shutdown, update, or profile switch. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runService --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN005RuntimeManagerUsesProcessLifetimeContext) -->
 7. The agent reports runtime state, loaded model, active profile ID/version, mesh membership state, MeshLLM version, and dependency-missing errors on heartbeat/dashboard status. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsMarksLaunchedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsMarksReadySelectedProfileLoaded) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeMetricsReportsActualLoadedProfile) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeRestartMarksPendingProfileNotReady) -->
 
@@ -208,11 +229,11 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 1. On `wait` the agent reports the runtime starting without launching `mesh-llm`; on `join` it renders one `--join <token>` argument per distributed token. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006WaitDefersLaunchAndJoinRendersTokens) -->
 2. The agent includes its current invite token and mesh id, read from the console status, in every heartbeat request. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManagerAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN006HeartbeatCarriesMeshTokenAndMeshId) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006PollStatusCapturesTokenAndMeshID) -->
-3. The agent drains and restarts the runtime when the response rotation differs from the running rotation, when the response mesh id differs from the running mesh id and join tokens are present, when a tokenless startup later receives a `join` token before it has captured a mesh id, or when a `create` directive promotes a running joiner to seed. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006RestartTriggersDrainAndRelaunch) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006TokenlessStartupRestartsWhenJoinArrivesBeforeMeshID) -->
+3. The agent drains and restarts when rotation, mesh id, late join-token, or create-vs-join directive changes require a fresh mesh process. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006RestartTriggersDrainAndRelaunch) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006TokenlessStartupRestartsWhenJoinArrivesBeforeMeshID) -->
 4. Rendered mesh transport always binds `--bind-ip` to the node's Mesh IP so peers dial each other over the WARP overlay, and `--disable-iroh-relays` removes any public relay/STUN fallback so iroh data stays private; `nostr` discovery carries rendezvous metadata only, never inference. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::RenderMeshLLMArgs --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN006BindsMeshIPSoTokensEmbedDialableAddresses) -->
 5. The agent runs at most one `mesh-llm` process; when several active MeshLLM profiles apply to a node, the first active profile is selected. <!-- @impl: packages/node-agent/internal/agent/runtime.go::SelectedProfile --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006SingleProcessSelectsFirstActiveProfile) -->
-6. Draining waits until both the local proxy in-flight counter and the MeshLLM console `inflight_requests` reach zero, bounded by the drain timeout; if the timeout expires during an operator-driven profile/model restart, the agent proceeds with the restart instead of stranding the node in a failed pre-load state on stale counters. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::waitForDrain --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::restartRuntimeForSelectedProfile --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN006DrainWaitsForMeshLLMConsoleInflight) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010ProfileRestartContinuesAfterStaleDrainCounter) -->
-7. The agent's tracked mesh id reflects only the current process: it mirrors the console mesh id (clearing it when the console reports none) and resets the mesh id, invite token, and readiness on each new process launch, so no stale identity is reported or triggers a restart. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006PollStatusClearsStaleMeshIDWhenConsoleReportsNone) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006StartClearsStaleMeshIdentity) -->
+6. Draining waits for local proxy and MeshLLM console in-flight counters until the drain timeout, then proceeds with operator-driven restarts. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::waitForDrain --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::restartRuntimeForSelectedProfile --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN006DrainWaitsForMeshLLMConsoleInflight) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010ProfileRestartContinuesAfterStaleDrainCounter) -->
+7. The tracked mesh id mirrors only the current process and resets with invite token and readiness on each new launch. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006PollStatusClearsStaleMeshIDWhenConsoleReportsNone) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN006StartClearsStaleMeshIdentity) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -301,19 +322,43 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 7. A successful add records a profile-added audit event. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 records a profile-added audit event on a successful add) -->
 
-8. `POST /admin/profiles/add` with runtime `llamacpp` and serving mode `single` creates an inactive direct profile with source mode `llamacpp-hf`, no MeshLLM split state, and the proven direct defaults: context `262144`, parallel `4`, GPU layers `99`, q4_0 KV, prefill batch `8192`, micro-batch `2048`, flash attention on, prompt cache on, cache reuse `256`, generation cap `16384`, and reasoning on / `deepseek` / `8192`. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 adds a direct llama.cpp single model as an inactive profile) -->
-
-9. Runtime `llamacpp` with serving mode `split` is rejected with status 400 and creates no direct profile, because split serving remains MeshLLM-only. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 rejects direct llama.cpp for split models) -->
-
-10. The Admin UI model-add runtime selector posts the same authenticated `runtime` field that the Admin API accepts, and split mode forces the selector back to `meshllm`. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-RUN-011 keeps direct llama.cpp UI controls backed by admin API payloads) -->
-
-11. A direct profile's Manage drawer exposes llama.cpp runtime settings — parallel slots, GPU layers (`-ngl` / `--gpu-layers`), KV cache type, prefill batch, micro-batch, flash attention, generation cap (`-n` / `--predict`), prompt cache/reuse, and reasoning — and saves them through `POST /admin/profiles/config` with a `llamacpp` settings block, without rendering MeshLLM-only controls. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::RenderLlamaCppArgs --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-RUN-011 keeps direct llama.cpp UI controls backed by admin API payloads) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-011 loads and saves direct llama.cpp runtime tunables from the model drawer) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQLLAMACPPRenderArgsIncludesCacheAndAlias) -->
-
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-001](#req-run-001-stable-public-model), [REQ-RUN-002](#req-run-002-default-model-profiles), [REQ-RUN-007](#req-run-007-split-serving-via-layer-packages)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-013: Direct llama.cpp custom profiles
+
+**Intent:** Operators must be able to add and tune direct llama.cpp profiles for single-node cache-local coding sessions while split serving remains MeshLLM-only.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. `POST /admin/profiles/add` with runtime `llamacpp` and serving mode `single` creates an inactive direct profile with source mode `llamacpp-hf` and no MeshLLM split state. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 REQ-RUN-013 adds a direct llama.cpp single model as an inactive profile) -->
+
+2. New direct profiles use the proven direct defaults: context `262144`, parallel `4`, GPU layers `99`, q4_0 KV, batch `8192`, micro-batch `2048`, flash attention, prompt cache/reuse `256`, generation cap `16384`, and `deepseek` reasoning. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 REQ-RUN-013 adds a direct llama.cpp single model as an inactive profile) -->
+
+3. Runtime `llamacpp` with serving mode `split` is rejected with status 400 and creates no direct profile. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-011 REQ-RUN-013 rejects direct llama.cpp for split models) -->
+
+4. The Admin UI model-add runtime selector posts the authenticated `runtime` field accepted by the Admin API, and split mode forces the selector back to `meshllm`. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-RUN-011 REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
+
+5. A direct profile's Manage drawer exposes and saves llama.cpp settings through `POST /admin/profiles/config` with a `llamacpp` settings block. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-011 REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer) -->
+
+6. The direct profile drawer hides MeshLLM-only controls. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-RUN-011 REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-SCH-004](state-scheduling.md#req-sch-004-direct-session-affinity)
 
 **Verification:** Automated test
 

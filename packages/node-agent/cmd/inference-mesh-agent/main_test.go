@@ -468,6 +468,7 @@ func TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall(t *testing.T) {
 	}
 }
 
+// REQ-RUN-014: updated render inputs are applied after content-change restart.
 func TestREQRUN003ProfileContentChangeRestartsWithUpdatedRenderInput(t *testing.T) {
 	// Same ID/version with changed launch settings is still a different runtime target. The heartbeat
 	// handler must restart with the updated render input, otherwise a saved maxVramGb change leaves

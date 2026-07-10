@@ -282,6 +282,7 @@ func TestREQSEC004NostrRelaysAppendWhenConfiguredOnly(t *testing.T) {
 	}
 }
 
+// REQ-RUN-014: MeshLLM config rendering and unset-value omission are covered here.
 func TestREQRUN003ContextLimitConfigRendering(t *testing.T) {
 	on := true
 	off := false

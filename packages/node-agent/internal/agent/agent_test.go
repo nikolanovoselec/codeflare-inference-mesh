@@ -470,6 +470,7 @@ func TestREQRUN003HeartbeatDesiredProfilesUpdateConfig(t *testing.T) {
 	})
 }
 
+// REQ-RUN-014: selected-profile launch input changes request restart.
 func TestREQRUN003DesiredProfileContentChangeRestartsRuntime(t *testing.T) {
 	// Runtime-launch inputs such as maxVramGb live inside the selected profile. A change to those
 	// fields must restart mesh-llm even when the profile ID/version are unchanged; otherwise Force
