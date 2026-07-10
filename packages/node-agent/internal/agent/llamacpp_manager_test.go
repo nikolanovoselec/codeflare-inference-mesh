@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestREQRUN013LlamaCppRenderArgsIncludesCacheAndAlias(t *testing.T) {
+func TestREQRUN015LlamaCppRenderArgsIncludesCacheAndAlias(t *testing.T) {
 	enabled := true
 	flash := true
 	args := RenderLlamaCppArgs(LlamaCppInput{

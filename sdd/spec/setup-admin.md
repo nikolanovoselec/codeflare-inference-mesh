@@ -313,7 +313,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Priority:** P1
 
-**Dependencies:** [REQ-ADM-008](#req-adm-008-agent-version-management), [REQ-NODE-013](node-agent.md#req-node-013-runtime-binary-bootstrap), [REQ-API-010](control-plane-api.md#req-api-010-programmatic-version-and-gateway-management)
+**Dependencies:** [REQ-ADM-008](#req-adm-008-agent-version-management), [REQ-NODE-013](node-agent.md#req-node-013-runtime-binary-bootstrap)
 
 **Verification:** Automated test
 

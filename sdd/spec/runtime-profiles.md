@@ -354,13 +354,35 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 6. Saving direct profile settings posts through `POST /admin/profiles/config` with a `llamacpp` settings block. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer) -->
 
-7. The node agent renders saved llama.cpp settings into `llama-server` launch arguments, while the drawer hides MeshLLM-only controls. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::RenderLlamaCppArgs --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN013LlamaCppRenderArgsIncludesCacheAndAlias) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
+7. The direct profile drawer hides MeshLLM-only controls. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-SCH-004](state-scheduling.md#req-sch-004-direct-session-affinity)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-015: Direct llama.cpp launch rendering
+
+**Intent:** Direct llama.cpp profile settings saved by the control plane must become deterministic `llama-server` launch arguments on each node.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. The node agent renders saved direct llama.cpp settings into `llama-server` launch arguments. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::RenderLlamaCppArgs --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN015LlamaCppRenderArgsIncludesCacheAndAlias) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-013](#req-run-013-direct-llamacpp-custom-profiles), [REQ-SCH-004](state-scheduling.md#req-sch-004-direct-session-affinity)
 
 **Verification:** Automated test
 
