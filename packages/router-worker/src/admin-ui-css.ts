@@ -109,10 +109,11 @@ input:focus-visible,select:focus-visible{border-color:var(--accent)}
 .health-pill[data-health=error]{color:var(--danger-text);border-color:var(--danger-line)}
 main{width:min(1120px,100%);max-width:100%;overflow:hidden;margin:0 auto;padding:1.25rem clamp(1rem,3vw,1.5rem) 4.5rem}
 .view-gate{display:block;padding-top:clamp(.75rem,3vh,1.25rem)}
-.gate-flow{width:min(1120px,100%);display:grid;gap:1.25rem}
-.setup-layout{display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:1.25rem;align-items:start;min-width:0}
+.gate-flow{width:min(1120px,100%);display:grid;grid-template-areas:"setup-hero" "setup-body";gap:1.25rem}
+.setup-layout{grid-area:setup-body;display:grid;grid-template-columns:var(--nav-w) minmax(0,1fr);gap:1.25rem;align-items:start;min-width:0}
 .setup-rail{position:sticky;top:4.5rem;display:grid;gap:.75rem;min-width:0}
 .setup-panels{display:grid;gap:1rem;min-width:0}
+.dashboard-hero.setup-hero{grid-area:setup-hero}
 .dashboard-hero.setup-hero h1{max-width:12ch}
 .setup-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 .setup-stats [data-setup-stat=node]{grid-column:1/-1}
