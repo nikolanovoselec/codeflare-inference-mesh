@@ -90,7 +90,7 @@ describe('runtime binary version management', () => {
     expect(body.desiredRuntimeVersions).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
   })
 
-  it('REQ-API-005 REQ-API-010 lets automation list and select runtime versions', async () => {
+  it('REQ-API-010 lets automation list and select runtime versions', async () => {
     const store = new MemoryStore()
     await store.putToken(await createTokenRecord('automation', 'auto-secret', Date.now()))
     const router = createRouter({

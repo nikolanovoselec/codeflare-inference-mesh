@@ -16,6 +16,8 @@ Admin routes are also rate-limited: `RL_AUTH` covers `/admin/login`, `/admin/set
 
 An admin route that reads a JSON body rejects a malformed body with `400` `{ "error": "invalid_json", "requestId": string }`; the per-route Response tables below omit this shared `400`. The optional-body routes — `POST /admin/cloudflare/gateway/sync`, `POST /admin/mesh/rotate`, `POST /admin/playground/chat`, `POST /admin/playground/direct-chat`, and `POST /admin/playground/speed-test` — still accept a request with no body (applying route defaults, or returning that route's own required-field error); only a present, unparseable body is rejected. ([REQ-RTR-005](../../sdd/spec/router-worker.md#req-rtr-005-malformed-request-body-handling))
 
+The dashboard Settings page includes an API reference table for admin action endpoints in this file; each row links to the matching endpoint section. ([REQ-ADM-035](../../sdd/spec/setup-admin.md#req-adm-035-settings-api-reference-listing))
+
 ## Endpoints
 
 ### GET /

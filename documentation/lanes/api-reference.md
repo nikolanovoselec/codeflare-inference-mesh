@@ -751,7 +751,7 @@ GET /api/v1/models
 
 A `ModelProjection` is `{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "split": boolean, "maxVramGb": number, "tunables": { "parallel": number|null, "cacheTypeK": string|null, "cacheTypeV": string|null, "batch": number|null, "ubatch": number|null, "flashAttn": boolean|null, "maxOutputTokens": number|null, "reasoning": object|null } }`. `split` is `true` when the model serves as a layer package across several machines. `contextWindow` `0` means Auto. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). Each `tunables` field is `null` when Auto (unset, MeshLLM auto-plans it).
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management)
 
 ### POST /api/v1/models
 
@@ -804,7 +804,7 @@ For MeshLLM profiles, the tunables mirror `POST /admin/profiles/config`: `parall
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
 
 ### POST /api/v1/models/{id}/enable
 
@@ -828,7 +828,7 @@ POST /api/v1/models/{id}/enable
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management)
 
 ### POST /api/v1/models/{id}/disable
 
@@ -852,7 +852,7 @@ POST /api/v1/models/{id}/disable
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management)
 
 ### DELETE /api/v1/models/{id}
 
@@ -900,7 +900,7 @@ GET /api/v1/agent-versions
 | `200` | The available versions. | `{ "tags": string[], "stale": boolean, "desired"?: string }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management)
 
 ### PUT /api/v1/agent-version
 
@@ -924,7 +924,7 @@ PUT /api/v1/agent-version
 | `400` | The version was missing or absent from the available list after refresh. | `invalid_version` / `unknown_version` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management)
+**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management)
 
 ### POST /api/v1/gateway/sync
 
@@ -950,7 +950,7 @@ POST /api/v1/gateway/sync
 | `424` | Cloudflare rejected the sync; the raw cause is recorded to audit only. | Actionable sync failure error body. |
 | `503` | Cloudflare runtime configuration is missing. | `cloudflare_runtime_config_missing` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation)
+**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation)
 
 ### GET /api/v1/runtime-versions
 
@@ -973,7 +973,7 @@ GET /api/v1/runtime-versions
 | `200` | Available runtime versions. | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management), [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management)
 
 ### PUT /api/v1/runtime-versions
 
@@ -997,7 +997,7 @@ PUT /api/v1/runtime-versions
 | `400` | No version was provided, a version string was invalid, or a tag is absent from the release-tag list. | `invalid_runtime_versions`, `invalid_meshllm_version`, `invalid_llamacpp_version`, `unknown_meshllm_version`, or `unknown_llamacpp_version` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-and-version-management), [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management)
 
 ### GET /api/v1/events
 

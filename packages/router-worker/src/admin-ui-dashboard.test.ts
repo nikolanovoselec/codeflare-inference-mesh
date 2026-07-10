@@ -96,7 +96,7 @@ describe('dashboard overview contracts', () => {
     delete (globalThis as { matchMedia?: unknown }).matchMedia
   })
 
-  it('REQ-ADM-007 REQ-ADM-036 uses the official Codeflare shell tokens', () => {
+  it('REQ-ADM-036 uses the official Codeflare shell tokens', () => {
     const css = adminUiCss()
 
     expect(css).toContain("--font-sans:'Inter'")
@@ -139,7 +139,7 @@ describe('dashboard overview contracts', () => {
     expect(authAt).toBeGreaterThan(rowAt)
   })
 
-  it('REQ-ADM-007 REQ-ADM-036 leaves the scramble phrase static under reduced motion', () => {
+  it('REQ-ADM-036 leaves the scramble phrase static under reduced motion', () => {
     ;(globalThis as { matchMedia?: unknown }).matchMedia = () => ({ matches: true })
     const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
     const harness = adminUiHarness(html, () => Response.json(statusFixture()), { sessionToken: 'admin-secret' })
@@ -152,7 +152,7 @@ describe('dashboard overview contracts', () => {
     expect(target.children.filter((child) => child.className === 'scramble-word')).toHaveLength(0)
   })
 
-  it('REQ-ADM-007 REQ-ADM-036 scrambles the hero phrase and converges back to the target', () => {
+  it('REQ-ADM-036 scrambles the hero phrase and converges back to the target', () => {
     vi.useFakeTimers()
     ;(globalThis as { matchMedia?: unknown }).matchMedia = () => ({ matches: false })
     vi.spyOn(Math, 'random').mockReturnValue(0)
@@ -781,7 +781,7 @@ describe('dashboard overview contracts', () => {
     expect(body.contextWindow).toBe(0)
   })
 
-  it('REQ-RUN-011 REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer', async () => {
+  it('REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer', async () => {
     const profiles = [
       { id: 'custom-direct', displayName: 'Direct Qwen', publicAliases: ['codeflare-mesh', 'direct-qwen'], active: true, rolloutPercent: 100, contextWindow: 262144, runtime: 'llamacpp', llamacpp: { modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', bindPort: 4330, contextWindow: 262144, parallel: 4, cachePrompt: true, cacheReuse: 256, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, alias: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', reasoning: { enabled: true, format: 'deepseek', budget: 8192 } } }
     ]
@@ -897,7 +897,7 @@ describe('dashboard overview contracts', () => {
     expect(harness.fetchCalls.find((entry) => entry.path === '/api/v1/keys/automation_a' && entry.init?.method === 'DELETE')).toBeDefined()
   })
 
-  it('REQ-ADM-033 REQ-OBS-012 renders runtime install status in the node table and drawer', async () => {
+  it('REQ-OBS-012 renders runtime install status in the node table and drawer', async () => {
     const nodes = [{
       id: 'direct-node',
       status: 'online',
