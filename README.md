@@ -125,13 +125,13 @@ Deploy tags: `vX.Y.Z-dev.N` for integration, `vX.Y.Z` for production.
 </details>
 
 <details>
-<summary><strong>Worker bindings, vars &amp; runtime secrets</strong></summary>
+<summary><strong>Worker configuration reference</strong></summary>
 
-The Worker configuration lives in [`packages/router-worker/wrangler.toml`](packages/router-worker/wrangler.toml). The exact binding inventory, runtime secrets, deployment variables, and node environment reference are maintained in the private operations repository:
+Worker bindings, runtime variables, and node environment behavior remain public in [`packages/router-worker/wrangler.toml`](packages/router-worker/wrangler.toml) and [configuration.md](documentation/lanes/configuration.md). Environment-specific GitHub deployment values and token scopes are maintained in the private operations repository:
 
 https://github.com/nikolanovoselec/codeflare-inference-mesh-private
 
-This public README intentionally does not duplicate the operational matrix.
+This public README intentionally does not duplicate the deployment credential matrix.
 
 </details>
 

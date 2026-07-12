@@ -22,6 +22,12 @@ This documentation explains how the planned system fits together. Requirements l
 - Documentation explains how operators and implementers use the design.
 - Decisions record alternatives and tradeoffs.
 
+## Public/private documentation boundary
+
+Public documentation owns product behavior, architecture, REQ backlinks, bindings, runtime configuration, and node environment behavior. Exact GitHub deployment secrets and variables, Cloudflare token scopes, and release-environment values live in [private operations](https://github.com/nikolanovoselec/codeflare-inference-mesh-private).
+
+When those deployment values or their workflow consumers change, update the private README in the same work. Public docs should link there rather than duplicate the credential matrix.
+
 ## REQ backlinks
 
 Each lane references the REQs it implements or explains. If implementation changes a public route, env var, workflow, token class, or architectural shape, update the matching lane in the same change.
