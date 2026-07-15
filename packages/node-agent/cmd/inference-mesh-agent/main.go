@@ -133,30 +133,14 @@ func runService(args []string) error {
 		if manager.State() == "ready" {
 			loadState.Set(profile)
 		}
-		defer func() {
-			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			_ = manager.Stop(stopCtx)
-		}()
-	}
-	var loopRuntime meshRuntime
-	dashboardControllers := []agent.RuntimeController{}
-	if manager != nil {
-		loopRuntime = manager
-		dashboardControllers = append(dashboardControllers, manager)
 	}
 	var stateMu sync.RWMutex
-	currentConfig := func() agent.Config {
-		stateMu.RLock()
-		defer stateMu.RUnlock()
-		return cfg
-	}
 	telemetry := &runtimeTelemetry{}
 	loop := &serviceLoop{
 		configPath:     agent.ConfigPath(),
 		stateMu:        &stateMu,
 		cfg:            &cfg,
-		manager:        loopRuntime,
+		manager:        manager,
 		loadState:      loadState,
 		telemetry:      telemetry,
 		activeRequests: activeRequests,
@@ -172,20 +156,31 @@ func runService(args []string) error {
 		goos:           runtime.GOOS,
 		warpIface:      warpIface,
 	}
+	// Runtime switches replace loop.manager, so shutdown must stop whatever manager
+	// is CURRENT then — a startup capture would stop a long-dead process. REQ-OBS-008.
+	defer func() {
+		if current := loop.currentManager(); current != nil {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = current.Stop(stopCtx)
+		}
+	}()
+	dashboardControllers := []agent.RuntimeController{}
+	if manager != nil {
+		dashboardControllers = append(dashboardControllers, &currentRuntimeController{loop: loop})
+	}
 	go heartbeatLoop(serviceCtx, loop)
 	proxy, err := agent.ProxyHandler(runtimeTargetFunc(func() string {
-		if loop.manager == nil {
-			return ""
+		if current := loop.currentManager(); current != nil {
+			return current.TargetURL()
 		}
-		return loop.manager.TargetURL()
+		return ""
 	}), cfg.UpstreamToken, activeRequests)
 	if err != nil {
 		return err
 	}
 	dashboardServer := &http.Server{Addr: cfg.DashboardAddress, Handler: agent.DashboardHandler(func() agent.DashboardStatus {
-		current := currentConfig()
-		metrics := telemetry.Snapshot(runtimeMetrics(loopRuntime, loadState, current, activeRequests.Value(), installError))
-		return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
+		return loop.dashboardStatus(version)
 	}, dashboardControllers...)}
 	go func() {
 		_ = dashboardServer.ListenAndServe()
@@ -352,11 +347,16 @@ type agentUpdater interface {
 // metrics assembly, the heartbeat exchange, desired-profile and mesh
 // bootstrap reconciliation, and the router-driven self-update.
 type serviceLoop struct {
-	configPath     string
-	stateMu        *sync.RWMutex
-	cfg            *agent.Config
-	manager        meshRuntime
-	loadState      *runtimeLoadState
+	configPath string
+	stateMu    *sync.RWMutex
+	cfg        *agent.Config
+	// manager is the CURRENT runtime manager. Runtime-mode switches replace it, so
+	// every consumer (dashboard, proxy, controls, shutdown) must go through
+	// currentManager()/setManager — a startup-captured copy goes stale and reports
+	// runtimeState=stopped while the live runtime serves traffic. REQ-OBS-008.
+	manager   meshRuntime
+	managerMu sync.RWMutex
+	loadState *runtimeLoadState
 	telemetry      *runtimeTelemetry
 	activeRequests *agent.ActiveCounter
 	updater        agentUpdater
@@ -402,6 +402,60 @@ func (s *serviceLoop) currentConfig() agent.Config {
 	return *s.cfg
 }
 
+func (s *serviceLoop) currentManager() meshRuntime {
+	s.managerMu.RLock()
+	defer s.managerMu.RUnlock()
+	return s.manager
+}
+
+func (s *serviceLoop) currentInstallError() string {
+	s.managerMu.RLock()
+	defer s.managerMu.RUnlock()
+	return s.installError
+}
+
+// setManager swaps in a replacement runtime manager (and the install error from its
+// launch) so dashboard, proxy, controls, and shutdown all follow the switch.
+func (s *serviceLoop) setManager(manager meshRuntime, installError string) {
+	s.managerMu.Lock()
+	s.manager = manager
+	s.installError = installError
+	s.managerMu.Unlock()
+}
+
+// dashboardStatus assembles the local dashboard snapshot from the CURRENT manager
+// and config, never a startup capture. REQ-NODE-004 / REQ-OBS-008.
+func (s *serviceLoop) dashboardStatus(version string) agent.DashboardStatus {
+	current := s.currentConfig()
+	metrics := s.telemetry.Snapshot(runtimeMetrics(s.currentManager(), s.loadState, current, s.activeRequests.Value(), s.currentInstallError()))
+	return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
+}
+
+// currentRuntimeController dispatches dashboard runtime controls to the manager that
+// is live NOW, so Start/Stop/Restart keep working after a runtime-mode switch.
+type currentRuntimeController struct{ loop *serviceLoop }
+
+func (c *currentRuntimeController) Start(ctx context.Context) error {
+	if m := c.loop.currentManager(); m != nil {
+		return m.Start(ctx)
+	}
+	return nil
+}
+
+func (c *currentRuntimeController) Stop(ctx context.Context) error {
+	if m := c.loop.currentManager(); m != nil {
+		return m.Stop(ctx)
+	}
+	return nil
+}
+
+func (c *currentRuntimeController) Restart(ctx context.Context) error {
+	if m := c.loop.currentManager(); m != nil {
+		return m.Restart(ctx)
+	}
+	return nil
+}
+
 func (s *serviceLoop) tick(ctx context.Context) {
 	current := s.currentConfig()
 	metrics, identity := s.collect(ctx, current)
@@ -423,17 +477,20 @@ func execCommandRunner(ctx context.Context, name string, args ...string) ([]byte
 // metrics and identity: mesh id and invite token are resent every tick.
 func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.NodeMetrics, agent.HeartbeatIdentity) {
 	identity := agent.HeartbeatIdentity{AgentVersion: s.agentVersion, ReloadNonce: s.lastReloadNonce}
-	metrics := runtimeMetrics(s.manager, s.loadState, current, s.activeRequests.Value(), s.installError)
-	if s.manager != nil {
-		if s.manager.Runtime() == "llamacpp" {
-			if direct, ok := s.manager.(*agent.LlamaCppManager); ok {
+	// One consistent manager per tick: a runtime switch mid-tick must not mix two
+	// managers' state into one metrics object. REQ-OBS-008.
+	manager := s.currentManager()
+	metrics := runtimeMetrics(manager, s.loadState, current, s.activeRequests.Value(), s.currentInstallError())
+	if manager != nil {
+		if manager.Runtime() == "llamacpp" {
+			if direct, ok := manager.(*agent.LlamaCppManager); ok {
 				metrics = agent.MergeRuntimeMetrics(metrics, direct.Metrics())
 			}
 		} else {
-			status, consoleReady := s.manager.PollStatus(ctx)
+			status, consoleReady := manager.PollStatus(ctx)
 			profile, _ := agent.SelectedProfile(current)
-			metrics = applyMeshStatusMetrics(metrics, profile, status, consoleReady, s.manager.APIReady(), s.manager.ReadyModels())
-			if budget, ok := s.manager.(meshRuntimeBudgetReporter); ok {
+			metrics = applyMeshStatusMetrics(metrics, profile, status, consoleReady, manager.APIReady(), manager.ReadyModels())
+			if budget, ok := manager.(meshRuntimeBudgetReporter); ok {
 				metrics.MeshMaxVramGb = budget.MaxVramGb()
 			}
 			if profile.MeshLLM.Split {
@@ -441,16 +498,16 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 				if modelRef == "" {
 					modelRef = profile.UpstreamModel
 				}
-				if poller, ok := s.manager.(splitReadinessPoller); ok {
+				if poller, ok := manager.(splitReadinessPoller); ok {
 					if report, ok := poller.PollSplitReadiness(ctx, modelRef); ok {
 						metrics.SplitReadiness = &report
 					}
 				}
 			}
-			identity.MeshID = s.manager.CurrentMeshID()
-			identity.MeshToken = s.manager.CurrentToken()
+			identity.MeshID = manager.CurrentMeshID()
+			identity.MeshToken = manager.CurrentToken()
 		}
-		if detail := s.manager.RuntimeErrorDetail(); detail != "" {
+		if detail := manager.RuntimeErrorDetail(); detail != "" {
 			metrics.RuntimeDetail = detail
 		}
 	}
@@ -489,12 +546,12 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 	// A deactivated node is tainted: it keeps heartbeating and self-updating but runs no model.
 	// Tear down a running runtime (idempotent) and hold it down until the taint clears. REQ-NODE-011.
 	if response.Deactivated {
-		if !s.deactivated && s.manager != nil {
-			_ = waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout)
+		if manager := s.currentManager(); !s.deactivated && manager != nil {
+			_ = waitForDrain(ctx, s.activeRequests, manager, s.drainTimeout)
 			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			_ = s.manager.Stop(stopCtx)
+			_ = manager.Stop(stopCtx)
 			cancel()
-			s.manager.SetState("deactivated")
+			manager.SetState("deactivated")
 		}
 		s.deactivated = true
 		s.maybeSelfUpdate(ctx, response.DesiredAgentVersion)
@@ -519,8 +576,8 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 		*s.cfg = next
 	}
 	s.stateMu.Unlock()
-	if s.manager != nil {
-		s.manager.ApplyBootstrap(response.MeshBootstrap)
+	if manager := s.currentManager(); manager != nil {
+		manager.ApplyBootstrap(response.MeshBootstrap)
 		if reactivated {
 			// Taint cleared: relaunch the selected profile even though the desired profiles are
 			// unchanged (ApplyDesiredProfiles reports no restart for an unchanged set). REQ-NODE-011.
@@ -545,7 +602,7 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 			// node reports the stuck waiting state on consecutive heartbeats, relaunch once for this
 			// bootstrap/profile key using the same path as Force Reload. REQ-RUN-005.
 			go s.finishProfileRestart(ctx, next, "starting")
-		} else if s.manager.NeedsRestart(response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
+		} else if manager.NeedsRestart(response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
 			// Mesh bootstrap changes and readiness self-heal also relaunch from the current selected
 			// profile config, so a restart cannot preserve stale render inputs.
 			go s.finishProfileRestart(ctx, next, "starting")
@@ -633,7 +690,7 @@ func (s *serviceLoop) restartCtx(ctx context.Context) (context.Context, context.
 }
 
 func (s *serviceLoop) beginProfileRestart(cfg agent.Config) bool {
-	_, ok := beginRuntimeProfileRestart(cfg, s.manager, s.loadState, &s.restartMu, &s.restartPending)
+	_, ok := beginRuntimeProfileRestart(cfg, s.currentManager(), s.loadState, &s.restartMu, &s.restartPending)
 	return ok
 }
 
@@ -650,33 +707,36 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 		// rule on every profile switch, not just at startup. REQ-NODE-010.
 		provisionMeshPeerFirewall(ctx, s.cmdRunner, s.goos, s.warpIface, profile)
 	}
-	if hasProfile && s.manager != nil && s.manager.Runtime() != profile.Runtime {
-		if err := waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout); err != nil && ctx.Err() != nil {
-			s.manager.SetFailure(err)
+	manager := s.currentManager()
+	if hasProfile && manager != nil && manager.Runtime() != profile.Runtime {
+		if err := waitForDrain(ctx, s.activeRequests, manager, s.drainTimeout); err != nil && ctx.Err() != nil {
+			manager.SetFailure(err)
 			return
 		}
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = s.manager.Stop(stopCtx)
+		_ = manager.Stop(stopCtx)
 		stopCancel()
 		started, installError, err := startRuntimeForProfile(ctx, cfg, profile, nil)
-		s.installError = installError
 		if err != nil {
-			s.manager.SetFailure(err)
+			s.setManager(manager, installError)
+			manager.SetFailure(err)
 			return
 		}
-		s.manager = started
+		// Publish the replacement manager so dashboard status, runtime controls, the
+		// proxy target, and shutdown all follow the switch. REQ-OBS-008.
+		s.setManager(started, installError)
 		if started.State() == "ready" {
 			s.loadState.Set(profile)
 		}
 		return
 	}
-	installError, err := restartRuntimeForSelectedProfile(ctx, cfg, s.manager, s.activeRequests, s.drainTimeout, restartState)
-	s.installError = installError
+	installError, err := restartRuntimeForSelectedProfile(ctx, cfg, manager, s.activeRequests, s.drainTimeout, restartState)
+	s.setManager(manager, installError)
 	if err != nil {
-		s.manager.SetFailure(err)
+		manager.SetFailure(err)
 		return
 	}
-	if hasProfile && s.manager.State() == "ready" {
+	if hasProfile && manager.State() == "ready" {
 		s.loadState.Set(profile)
 	}
 }
@@ -697,10 +757,11 @@ func (s *serviceLoop) maybeSelfUpdate(ctx context.Context, desired string) {
 	if !applied {
 		return
 	}
-	_ = waitForDrain(ctx, s.activeRequests, s.manager, s.drainTimeout)
-	if s.manager != nil {
+	manager := s.currentManager()
+	_ = waitForDrain(ctx, s.activeRequests, manager, s.drainTimeout)
+	if manager != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = s.manager.Stop(stopCtx)
+		_ = manager.Stop(stopCtx)
 		cancel()
 	}
 	fmt.Printf("agent updated to version %s; exiting for service restart\n", desired)
