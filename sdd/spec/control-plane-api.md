@@ -235,7 +235,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Priority:** P2
 
-**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-API-007](#req-api-007-programmatic-model-onboarding), [REQ-RUN-012](runtime-profiles.md#req-run-012-custom-model-removal)
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-API-007](#req-api-007-programmatic-model-onboarding), [REQ-RUN-012](runtime-profiles.md#req-run-012-model-removal)
 
 **Verification:** Automated test
 

@@ -4528,7 +4528,8 @@ describe('control-plane API (/api/v1)', () => {
   })
 
   it('REQ-API-005 lists models as projections with callable names', async () => {
-    const { router } = routerFixture()
+    const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models', { headers: bearer(key.token) }))
     expect(res.status).toBe(200)
@@ -4734,6 +4735,7 @@ describe('control-plane API (/api/v1)', () => {
 
   it('REQ-API-005 configures a model context window and rejects invalid input', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     const key = await mintKey(router)
     const headers = { ...bearer(key.token), 'content-type': 'application/json' }
     const ok = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 8192 }) }))
@@ -4774,6 +4776,7 @@ describe('control-plane API (/api/v1)', () => {
 
   it('REQ-API-005 enables a model and switches off another with the same callable name', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models/mesh-split-qwen36-35b/enable', { method: 'POST', headers: bearer(key.token) }))
     expect(res.status).toBe(200)
@@ -4788,6 +4791,7 @@ describe('control-plane API (/api/v1)', () => {
 
   it('REQ-API-005 disables a model by dropping its traffic to zero', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b/disable', { method: 'POST', headers: bearer(key.token) }))
     expect(res.status).toBe(200)

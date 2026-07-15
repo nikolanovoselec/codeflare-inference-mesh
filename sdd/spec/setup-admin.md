@@ -181,7 +181,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Priority:** P0
 
-**Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle), [REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-retirement), [REQ-OBS-007](observability.md#req-obs-007-mesh-health-surface)
+**Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle), [REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-activation-exclusivity), [REQ-OBS-007](observability.md#req-obs-007-mesh-health-surface)
 
 **Verification:** Automated test
 
@@ -791,7 +791,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Priority:** P2
 
-**Dependencies:** [REQ-RUN-012](runtime-profiles.md#req-run-012-custom-model-removal), [REQ-ADM-025](#req-adm-025-add-a-model-console-control), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
+**Dependencies:** [REQ-RUN-012](runtime-profiles.md#req-run-012-model-removal), [REQ-ADM-025](#req-adm-025-add-a-model-console-control), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
 
 **Verification:** Automated test
 

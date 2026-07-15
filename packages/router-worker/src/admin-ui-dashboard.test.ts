@@ -816,7 +816,7 @@ describe('dashboard overview contracts', () => {
     expect(body.llamacpp).toMatchObject({ parallel: -1, kvUnified: true, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
   })
 
-  it('REQ-ADM-026 shows a Delete control only for a custom, switched-off model', async () => {
+  it('REQ-ADM-026 shows a Delete control for any switched-off model', async () => {
     const profiles = [
       { id: 'custom-qwen3-14b-gguf-q4-k-m', displayName: 'Qwen3-14B', publicAliases: ['codeflare-mesh', 'q'], active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } },
       { id: 'custom-live', displayName: 'Live custom', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 32768, meshllm: { split: false, modelRef: 'y' } },
@@ -836,8 +836,11 @@ describe('dashboard overview contracts', () => {
     expect(deleteButton(), 'an active model hides Delete (turn it off first)').toBeUndefined()
     await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
 
+    // Seed-once: a switched-off default-named model no longer re-seeds, so it is deletable too.
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
-    expect(deleteButton(), 'a built-in model hides Delete (it re-seeds)').toBeUndefined()
+    const builtinDel = deleteButton()
+    expect(builtinDel, 'a switched-off default-named model exposes Delete').toBeDefined()
+    expect(builtinDel!.dataset.profileId).toBe('mesh-default-qwen36-35b')
   })
 
   it('REQ-ADM-026 deletes a model from the drawer through the profiles delete endpoint and closes the drawer', async () => {
