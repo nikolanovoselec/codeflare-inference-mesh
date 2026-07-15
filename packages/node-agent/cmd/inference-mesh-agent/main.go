@@ -133,10 +133,11 @@ func runService(args []string) error {
 		exit: func() {
 			os.Exit(0)
 		},
-		agentVersion:   version,
-		drainTimeout:   2 * time.Minute,
-		restartTimeout: defaultRestartTimeout,
-		cmdRunner:      execCommandRunner,
+		agentVersion:    version,
+		drainTimeout:    2 * time.Minute,
+		restartTimeout:  defaultRestartTimeout,
+		gpuProbeTimeout: defaultGpuProbeTimeout,
+		cmdRunner:       execCommandRunner,
 		goos:           runtime.GOOS,
 		warpIface:      warpIface,
 	}
@@ -373,8 +374,9 @@ type serviceLoop struct {
 	exit           func()
 	agentVersion   string
 	installError   string
-	drainTimeout   time.Duration
-	restartTimeout time.Duration
+	drainTimeout    time.Duration
+	restartTimeout  time.Duration
+	gpuProbeTimeout time.Duration
 	cmdRunner      agent.CommandRunner
 	goos           string
 	warpIface      string
@@ -571,7 +573,14 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 		if goosName == "" {
 			goosName = runtime.GOOS
 		}
-		if gpu := agent.GPUFallbackMetrics(ctx, goosName, runner); gpu.GPUMemoryTotalMiB > 0 || gpu.GPUMemoryUsedMiB > 0 {
+		probeTimeout := s.gpuProbeTimeout
+		if probeTimeout <= 0 {
+			probeTimeout = defaultGpuProbeTimeout
+		}
+		gpuCtx, gpuCancel := context.WithTimeout(ctx, probeTimeout)
+		gpu := agent.GPUFallbackMetrics(gpuCtx, goosName, runner)
+		gpuCancel()
+		if gpu.GPUMemoryTotalMiB > 0 || gpu.GPUMemoryUsedMiB > 0 {
 			if metrics.GPUName == "" {
 				metrics.GPUName = gpu.GPUName
 			}
@@ -644,6 +653,13 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 			// This must not reuse the manager's previous render input, otherwise changed runtime tunables
 			// such as maxVramGb keep relaunching with stale argv. REQ-NODE-012 / REQ-RUN-003.
 			go s.finishProfileRestart(ctx, next, "starting")
+		} else if profile, ok := agent.SelectedProfile(next); versionErr == nil && err == nil && ok && runtimeKindMismatch(manager, profile) && beginRestart(&s.restartMu, &s.restartPending) {
+			// A transiently failed runtime switch must not wedge the node: ApplyDesiredProfiles
+			// reports no restart for an unchanged set, so a switch that died mid-flight would
+			// leave actual and desired runtime kinds disagreeing forever. Reconcile them on
+			// every heartbeat and relaunch through the switch path until they agree. REQ-RUN-010.
+			s.loadState.SetStarting(profile)
+			go s.finishProfileRestart(ctx, next, "starting")
 		} else if s.meshWaitSelfHeal(next, response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
 			// MeshLLM can occasionally stay tokenless/peerless until a manual Force Reload. After the
 			// node reports the stuck waiting state on consecutive heartbeats, relaunch once for this
@@ -656,6 +672,20 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 		}
 	}
 	s.maybeSelfUpdate(ctx, response.DesiredAgentVersion)
+}
+
+// runtimeKindMismatch reports whether the running manager's kind disagrees with the
+// selected profile's runtime. Only the two managed kinds participate: a nil manager is
+// external mode, and an unknown/legacy profile runtime must never flap the runtime.
+func runtimeKindMismatch(manager meshRuntime, profile agent.ModelProfile) bool {
+	if profile.Runtime != "meshllm" && profile.Runtime != "llamacpp" {
+		return false
+	}
+	kind := manager.Runtime()
+	if kind != "meshllm" && kind != "llamacpp" {
+		return false
+	}
+	return kind != profile.Runtime
 }
 
 func (s *serviceLoop) meshWaitSelfHeal(cfg agent.Config, bootstrap *agent.MeshBootstrap) bool {
@@ -725,6 +755,11 @@ func meshWaitStuck(metrics agent.NodeMetrics) bool {
 // SIGTERM releases the restart-pending latch, so a later heartbeat retries instead of
 // the node wedging in a transient state until it is relaunched by hand. REQ-RUN-010.
 const defaultRestartTimeout = 3 * time.Minute
+
+// defaultGpuProbeTimeout bounds the host GPU telemetry probe inside a heartbeat tick.
+// macOS system_profiler can stall for minutes under Metal churn during a model switch,
+// and an unbounded probe freezes the whole heartbeat loop with it. REQ-NODE-002.
+const defaultGpuProbeTimeout = 10 * time.Second
 
 // restartCtx derives the bounded context for one restart attempt, falling back to the
 // default when unset so a zero value never yields an already-expired context.

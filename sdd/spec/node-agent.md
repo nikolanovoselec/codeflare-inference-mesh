@@ -46,6 +46,8 @@ This domain covers the local cross-platform service that registers nodes, proxie
 5. A failing heartbeat is never silent: the failure is logged to the agent's stderr on every state change (failure, different failure, recovery) and carried in the local dashboard status until a heartbeat succeeds. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::recordHeartbeatError --> <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardStatus --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002HeartbeatFailuresSurfaceAndClear) -->
 6. The heartbeat loop starts before initial runtime provisioning, which runs in the background and lands its manager through the current-manager accessor — a hanging binary download or runtime launch can never block the node's first check-in. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::launchInitialRuntime --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart) -->
 
+7. The host GPU telemetry probe inside a heartbeat tick runs under its own deadline — a stalled `system_profiler` (minutes-long under macOS Metal churn during a model switch) can never freeze the heartbeat loop and read as a phantom Offline. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::defaultGpuProbeTimeout --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002HeartbeatTelemetryProbeIsBounded) -->
+
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
 **Priority:** P0

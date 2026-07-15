@@ -1322,3 +1322,65 @@ func TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart(t *testing.T) {
 		t.Fatalf("the start's install detail must land with the manager, got %q", loop.currentInstallError())
 	}
 }
+
+func TestREQNODE002HeartbeatTelemetryProbeIsBounded(t *testing.T) {
+	// A hanging host GPU probe (macOS system_profiler can stall for minutes under Metal
+	// churn during a model switch) must never freeze the heartbeat loop: the probe runs
+	// under its own deadline inside collect. REQ-NODE-002.
+	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1, MeshLLM: agent.MeshLLMSettings{ModelRef: "u1", BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.goos = "darwin"
+	loop.gpuProbeTimeout = 50 * time.Millisecond
+	loop.cmdRunner = func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	done := make(chan struct{})
+	go func() {
+		loop.collect(context.Background(), cfg)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("collect must return under the telemetry probe bound, not hang with the GPU probe")
+	}
+}
+
+func TestREQRUN010RuntimeKindMismatchSelfHealsEachHeartbeat(t *testing.T) {
+	// A transiently failed runtime switch must not wedge the node: ApplyDesiredProfiles
+	// reports no restart for an unchanged set, so the agent reconciles the running
+	// manager's kind against the selected profile on every heartbeat until they agree.
+	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1, Runtime: "llamacpp", LlamaCpp: agent.LlamaCppSettings{ModelRef: "u1", BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	// A busy drain plus a tiny restart budget makes each reconcile attempt fail fast and
+	// observably (SetFailure) without reaching a real runtime launch.
+	counter.Inc()
+	manager := newFakeMeshRuntime(counter) // reports Runtime() == "meshllm": kind mismatch
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.loadState.Set(profile)
+	loop.restartTimeout = time.Millisecond
+
+	waitFailed := func(step string) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if manager.State() == "failed" {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("%s: runtime kind mismatch did not trigger a reconcile restart", step)
+	}
+	unchanged := agent.HeartbeatResponse{OK: true, DesiredProfiles: []agent.ModelProfile{profile}}
+	loop.handleResponse(context.Background(), unchanged)
+	waitFailed("first heartbeat")
+	// The reconcile retries on every later heartbeat, not only once.
+	manager.SetState("ready")
+	loop.handleResponse(context.Background(), unchanged)
+	waitFailed("second heartbeat")
+}

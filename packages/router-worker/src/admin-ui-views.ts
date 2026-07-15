@@ -165,7 +165,7 @@ function overviewSection(): string {
     actions: button({ action: 'status-refresh', label: 'Refresh', variant: 'primary' }),
     active: true,
     body: `<div class="topology" id="${ADMIN_UI_TOPOLOGY.containerId}">
-<div class="topo-controls"><label for="${ADMIN_UI_TOPOLOGY.meshSelectId}">Mesh</label><span class="slot"><select id="${ADMIN_UI_TOPOLOGY.meshSelectId}" name="topologyMesh" data-topo-mesh-select="true"><option value="all">All meshes</option></select></span></div>
+<div class="topo-controls"><label for="${ADMIN_UI_TOPOLOGY.meshSelectId}">Mesh</label><span class="slot"><select id="${ADMIN_UI_TOPOLOGY.meshSelectId}" name="topologyMesh" data-topo-mesh-select="true"><option value="all">All</option></select></span></div>
 <p class="topo-caption" id="${ADMIN_UI_TOPOLOGY.captionId}" data-output="topology-caption"></p>
 <div class="toks-trace" id="${ADMIN_UI_TOKS_TRACE.containerId}" data-output="toks-trace" role="img" aria-label="Tokens per second, rolling window"></div>
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
@@ -208,7 +208,7 @@ ${input.body}
 }
 
 function meshesCard(): string {
-  return `<div class="subpanel"><div class="panel-head"><h3>Meshes</h3>
+  return `<div class="subpanel"><div class="card-head"><h3>Meshes</h3>
 ${disclosure({
     id: 'mesh-add-details',
     action: 'mesh-add',
@@ -254,7 +254,7 @@ function modelsSection(): string {
     title: 'Mesh & Models',
     description: 'The AI models your machines can run, grouped into meshes. Deploy a model to serve it in its mesh; open Manage to rename it, move it, or see the machines running it.',
     body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a mesh to share a model. Set it in the deployment and redeploy.</p>
-<div class="subpanel"><div class="panel-head"><h3>Models</h3>
+<div class="subpanel"><div class="card-head"><h3>Models</h3>
 ${addModelCard()}</div>
 <div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Deploy one to start serving it.</p></div>
 ${output({ id: 'models-output', kind: 'models', pre: true })}</div>

@@ -974,7 +974,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     select.textContent = '';
     const all = document.createElement('option');
     all.value = 'all';
-    all.textContent = 'All meshes';
+    all.textContent = 'All';
     select.appendChild(all);
     meshes.forEach((mesh) => {
       const option = document.createElement('option');

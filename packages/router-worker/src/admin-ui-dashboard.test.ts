@@ -10,14 +10,17 @@ const dashboardNodes = [
     id: 'node-big',
     status: 'online',
     agentVersion: 'v1.3.0',
-    // readyModels carries upstream model refs (what the runtime loaded), exactly as the scheduler
-    // and the serving-count match on, never the public aliases.
+    // Serving requires adoption + readiness: agents always report the profile ids they run
+    // (activeProfileIds) alongside readyModels, which carries upstream model refs (what the
+    // runtime loaded), exactly as the scheduler and the serving-count match on.
+    activeProfileIds: ['mesh-default-qwen36-35b'],
     metrics: { runtimeState: 'running', readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'], gpuMemoryTotalMiB: 24_576, gpuMemoryUsedMiB: 20_000, tokensPerSecond: 42.5, activeRequests: 1 }
   },
   {
     id: 'node-small',
     status: 'online',
     agentVersion: 'v1.2.0',
+    activeProfileIds: ['mesh-default-qwen36-35b'],
     metrics: { runtimeState: 'ready', readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], gpuMemoryTotalMiB: 8_192, gpuMemoryUsedMiB: 4_000, tokensPerSecond: 61.25, activeRequests: 0 }
   },
   {
@@ -1767,11 +1770,11 @@ describe('mesh console contracts', () => {
       expect(at, `${id} must be a native disclosure`).toBeGreaterThan(-1)
       expect(html.indexOf('<summary', at)).toBeGreaterThan(at)
     }
-    // Each disclosure sits at the right end of its card header: the first panel head is
+    // Each disclosure sits at the right end of its card header: the first card head is
     // Models (carrying + Model), the second is Meshes (carrying + Mesh).
-    const modelsHeadAt = html.indexOf('class="panel-head"')
+    const modelsHeadAt = html.indexOf('class="card-head"')
     expect(modelsHeadAt).toBeGreaterThan(-1)
-    const meshHeadAt = html.indexOf('class="panel-head"', modelsHeadAt + 1)
+    const meshHeadAt = html.indexOf('class="card-head"', modelsHeadAt + 1)
     expect(meshHeadAt).toBeGreaterThan(modelsHeadAt)
     const modelDetailsAt = html.indexOf('id="model-add-details"')
     expect(modelDetailsAt).toBeGreaterThan(modelsHeadAt)
