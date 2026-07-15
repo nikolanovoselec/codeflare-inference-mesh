@@ -59,6 +59,34 @@ function bearer(token: string): HeadersInit {
   return { authorization: `Bearer ${token}` }
 }
 
+// The 35B profiles left the shipped catalog (it is now the single smoke starter).
+// Tests that exercise multi-profile behavior seed them as ordinary stored profiles.
+const LEGACY_MESH_DEFAULT: ModelProfile = {
+  id: 'mesh-default-qwen36-35b',
+  displayName: 'Qwen3.6 35B',
+  publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
+  upstreamModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
+  sourceMode: 'meshllm-ref',
+  contextWindow: 262144,
+  runtime: 'meshllm',
+  meshllm: { modelRef: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', split: false, bindPort: 4300 },
+  version: 1,
+  rolloutPercent: 0,
+  active: false,
+  meshId: 'default'
+}
+const LEGACY_MESH_SPLIT: ModelProfile = {
+  ...LEGACY_MESH_DEFAULT,
+  id: 'mesh-split-qwen36-35b',
+  displayName: 'Qwen3.6 35B (multi-machine)',
+  upstreamModel: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd',
+  meshllm: { modelRef: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd', split: true, bindPort: 4310 }
+}
+async function seedLegacyDefaults(store: MemoryStore): Promise<void> {
+  await store.setProfile(LEGACY_MESH_DEFAULT)
+  await store.setProfile(LEGACY_MESH_SPLIT)
+}
+
 const QWEN_UPSTREAM = 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'
 const SMOKE_UPSTREAM = 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'
 const MESH_STATE_KEY_B64 = `${'A'.repeat(43)}=`
@@ -764,6 +792,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     // The default seed makes the smoke model the single active owner of the stable public model.
     await router(new Request('https://router.test/health'))
     const seeded = await store.getProfileByPublicModel('codeflare-mesh')
@@ -918,8 +947,8 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-001 a chat for codeflare-mesh with no active model returns model-not-found', async () => {
     const { router, store } = routerFixture()
-    // Deactivate the seeded model (version-bumped so the per-request default seed leaves it off): no model is active.
-    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[2]!, active: false, rolloutPercent: 0, version: 2 })
+    // Deactivate the seeded model (seed-once never refreshes an existing row back on): no model is active.
+    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[0]!, active: false, rolloutPercent: 0, version: 2 })
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
@@ -933,10 +962,11 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-009 activation is single-active', async () => {
     const { router, store } = routerFixture()
-    // Seed two extra active profiles (version-bumped so the per-request default seed leaves them intact); the
-    // default seed also brings the smoke model up active, so three profiles are active before activation.
-    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[0]!, active: true, rolloutPercent: 100, version: 2 })
-    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[1]!, active: true, rolloutPercent: 100, version: 2 })
+    // Seed two extra active legacy profiles; the default seed then brings the smoke starter up
+    // switched off (an active non-default profile already owns the shared alias), so two
+    // profiles are active before activation.
+    await store.setProfile({ ...LEGACY_MESH_DEFAULT, active: true, rolloutPercent: 100 })
+    await store.setProfile({ ...LEGACY_MESH_SPLIT, active: true, rolloutPercent: 100 })
 
     const res = await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -952,34 +982,40 @@ describe('router worker behavioral contracts', () => {
     expect(profiles.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')?.active).toBe(false)
   })
 
-  it('REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active', async () => {
-    const store = new MemoryStore()
-    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-mm', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'], version: 1 }))
-    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-text', publicAliases: ['codeflare-mesh', 'legacy-text-alias'], version: 4 }))
+  it('REQ-RUN-009 seeds the starter exactly once and never resurrects or refreshes rows', async () => {
+    const { router, store } = routerFixture()
+    await router(new Request('https://router.test/health'))
+    const seeded = await store.listProfiles()
+    expect(seeded.map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
 
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    const profiles = await store.listProfiles()
-    const retired = profiles.find((profile) => profile.id === 'legacy-default-mm')!
-    const retainedVersioned = profiles.find((profile) => profile.id === 'legacy-default-text')!
-    const current = await store.getProfileByPublicModel('codeflare-mesh')
+    // Operator edits to the stored starter survive later requests: seeding never refreshes rows.
+    await store.setProfile({ ...seeded[0]!, displayName: 'Renamed', version: 5 })
+    await router(new Request('https://router.test/health'))
+    const after = await store.listProfiles()
+    expect(after.map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
+    expect(after[0]).toMatchObject({ displayName: 'Renamed', version: 5 })
 
-    expect(retired).toMatchObject({ active: false, rolloutPercent: 0, version: 2 })
-    expect(retainedVersioned).toMatchObject({ active: true, rolloutPercent: 100, version: 4, runtime: 'meshllm' })
-    expect(current).toMatchObject({ id: 'legacy-default-text', runtime: 'meshllm', sourceMode: 'meshllm-ref' })
+    // Deleting the starter sticks: the seeded marker keeps later requests from resurrecting it.
+    await store.deleteProfile('mesh-smoke-qwen25-1.5b')
+    await router(new Request('https://router.test/health'))
+    expect(await store.listProfiles()).toEqual([])
   })
 
-  it('REQ-RUN-009 preserves active llama.cpp custom profiles during default seeding', async () => {
+  it('REQ-RUN-009 preserves active llama.cpp custom profiles during first seeding', async () => {
     const store = new MemoryStore()
     const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 7 }
     await store.setProfile(direct)
 
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    const preserved = (await store.listProfiles()).find((profile) => profile.id === direct.id)!
+    const profiles = await store.listProfiles()
+    const preserved = profiles.find((profile) => profile.id === direct.id)!
+    const starter = profiles.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
     const current = await store.getProfileByPublicModel('codeflare-mesh')
 
     expect(preserved).toMatchObject({ active: true, rolloutPercent: 100, version: 7, runtime: 'llamacpp', sourceMode: 'llamacpp-hf' })
     expect(preserved.llamacpp).toMatchObject({ hfRepo: 'unsloth/Code-Model-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256 })
+    // The starter must not steal the shared alias: it seeds switched off and the custom profile stays the owner.
+    expect(starter).toMatchObject({ active: false, rolloutPercent: 0 })
     expect(current).toMatchObject({ id: direct.id, runtime: 'llamacpp' })
   })
 
@@ -996,7 +1032,8 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-SCH-005 lists only active profile aliases in the public model listing', async () => {
     const { router, store } = routerFixture()
-    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[2]!, id: 'ghost-profile', publicAliases: ['ghost-alias'], rolloutPercent: 0, active: false })
+    await seedLegacyDefaults(store)
+    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[0]!, id: 'ghost-profile', publicAliases: ['ghost-alias'], rolloutPercent: 0, active: false })
 
     const response = await router(new Request('https://router.test/v1/models', { headers: bearer('provider-secret') }))
     const body = await response.json() as { data: Array<{ id: string }> }
@@ -1010,16 +1047,17 @@ describe('router worker behavioral contracts', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('REQ-RUN-002 seeds the MeshLLM default profile set with contract values', () => {
-    const single = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'mesh-default-qwen36-35b')!
-    const split = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'mesh-split-qwen36-35b')!
-    const smoke = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
+  it('REQ-RUN-002 seeds the smoke starter with contract values and leaves stored legacy rows intact', async () => {
+    const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
+    await router(new Request('https://router.test/health'))
+    const profiles = await store.listProfiles()
+    const single = profiles.find((profile) => profile.id === 'mesh-default-qwen36-35b')!
+    const split = profiles.find((profile) => profile.id === 'mesh-split-qwen36-35b')!
+    const smoke = profiles.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
 
-    expect(DEFAULT_MODEL_PROFILES.map((profile) => profile.id)).toEqual([
-      'mesh-default-qwen36-35b',
-      'mesh-split-qwen36-35b',
-      'mesh-smoke-qwen25-1.5b'
-    ])
+    // The shipped catalog is exactly the single smoke starter.
+    expect(DEFAULT_MODEL_PROFILES.map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
     expect(single).toMatchObject({
       displayName: 'Qwen3.6 35B',
       publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
@@ -1635,6 +1673,7 @@ describe('router worker behavioral contracts', () => {
         async provisionCustomDomain() { throw new Error('custom domain is not used in this test') }
       }
     })
+    await seedLegacyDefaults(store)
 
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const claimAdmin = (await setupResponse.json() as { adminToken: string }).adminToken
@@ -2444,6 +2483,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-004 updates profile rollout as versioned configuration', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
 
     const response = await router(new Request('https://router.test/admin/profiles/rollout', {
@@ -2460,6 +2500,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-009 activation deactivates alias-overlapping active profiles', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
 
     const activateSplit = await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -2676,6 +2717,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-ADM-027 renames a model display name and call name with collision and reserved-alias guards', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
     const smoke = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
@@ -2728,6 +2770,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-ADM-009 activates profiles alias-exclusively and records the audit event', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
 
     const unauthorized = await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -2764,6 +2807,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-OBS-006 records profile activation audit events', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
 
     await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -4626,13 +4670,17 @@ describe('control-plane API (/api/v1)', () => {
     expect((await store.listProfiles()).some((profile) => profile.id === id)).toBe(true)
   })
 
-  it('REQ-API-008 REQ-RUN-012 refuses deleting a built-in model', async () => {
+  it('REQ-API-008 REQ-RUN-012 deletes the switched-off starter like any other model and it never re-seeds', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
-    const res = await apiDeleteModel(router, key.token, 'mesh-default-qwen36-35b')
-    expect(res.status).toBe(409)
-    expect((await res.json() as { error: string }).error).toBe('model_builtin')
-    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-default-qwen36-35b')).toBe(true)
+    // The seeded starter is active; switching it off makes it deletable (REQ-RUN-012).
+    await router(new Request('https://router.test/api/v1/models/mesh-smoke-qwen25-1.5b/disable', { method: 'POST', headers: bearer(key.token) }))
+    const res = await apiDeleteModel(router, key.token, 'mesh-smoke-qwen25-1.5b')
+    expect(res.status).toBe(200)
+    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')).toBe(false)
+    // Seed-once: another request cycle must not resurrect the deleted starter (REQ-RUN-002).
+    await router(new Request('https://router.test/health'))
+    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')).toBe(false)
   })
 
   it('REQ-API-008 REQ-RUN-012 returns 404 deleting an unknown model', async () => {
@@ -4660,12 +4708,12 @@ describe('control-plane API (/api/v1)', () => {
     expect((await store.listProfiles()).some((profile) => profile.id === added.profileId)).toBe(false)
   })
 
-  it('REQ-ADM-026 refuses console deletion of a built-in model', async () => {
+  it('REQ-ADM-026 refuses console deletion only while the model is active', async () => {
     const { router, store } = routerFixture()
-    const res = await adminDeleteModel(router, 'mesh-default-qwen36-35b')
+    const res = await adminDeleteModel(router, 'mesh-smoke-qwen25-1.5b')
     expect(res.status).toBe(409)
-    expect((await res.json() as { error: string }).error).toBe('model_builtin')
-    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-default-qwen36-35b')).toBe(true)
+    expect((await res.json() as { error: string }).error).toBe('model_active')
+    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')).toBe(true)
   })
 
   it('REQ-ADM-026 refuses console model deletion without an admin credential', async () => {

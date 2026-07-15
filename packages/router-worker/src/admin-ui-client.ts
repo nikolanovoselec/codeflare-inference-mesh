@@ -851,12 +851,20 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
   const nodeSortValue = (node, key) => {
     if (key === 'status') { const tone = nodeTone(node); return tone === 'ok' ? 2 : tone === 'warn' ? 1 : 0; }
+    if (key === 'mesh') return nodeMeshId(node);
     if (key === 'vram') return nodeVramTotal(node);
     if (key === 'models') return nodeModelCount(node);
     if (key === 'version') return node.agentVersion || '';
     return node.id;
   };
-  const nodeCellLabel = { id: 'Machine', status: 'Status', vram: 'VRAM', models: 'Models', version: 'Version' };
+  const nodeCellLabel = { id: 'Machine', status: 'Status', mesh: 'Mesh', vram: 'VRAM', models: 'Models', version: 'Version' };
+  const nodeMeshId = (node) => node.meshId || 'default';
+  // Display name for a machine group, resolved from the status mesh list.
+  const meshDisplayName = (meshId) => {
+    const meshes = lastStatus && Array.isArray(lastStatus.meshes) ? lastStatus.meshes : [];
+    const found = meshes.find((mesh) => mesh.id === meshId);
+    return found ? found.name : meshId;
+  };
   function renderNodesTable(nodes, desiredVersion) {
     const bodyEl = byId(config.nodesTable.bodyId);
     if (!bodyEl) return;
@@ -934,6 +942,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       installChip.setAttribute('data-runtime-install-chip', node.id);
       installChip.setAttribute('data-runtime-install-state', install.state);
       statusCell.appendChild(installChip);
+      cell('mesh', nodeMeshId(node), meshDisplayName(nodeMeshId(node)));
       cell('vram', String(nodeVramTotal(node)), fmtVramTelemetry(node));
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
@@ -1197,6 +1206,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     vramInput.value = node.maxVramGbOverride != null ? String(node.maxVramGbOverride) : '';
     vramOverrideRow.appendChild(vramInput);
     bodyEl.appendChild(vramOverrideRow);
+    // Mesh assignment: which machine group this node serves (REQ-ADM-023 / REQ-SCH-006).
+    const meshRow = document.createElement('label');
+    meshRow.className = 'drawer-row';
+    meshRow.textContent = 'Mesh';
+    const meshSelect = document.createElement('select');
+    meshSelect.id = 'node-edit-mesh';
+    const meshes = lastStatus && Array.isArray(lastStatus.meshes) ? lastStatus.meshes : [{ id: 'default', name: 'Default' }];
+    meshes.forEach((mesh) => {
+      const option = document.createElement('option');
+      option.value = mesh.id;
+      option.textContent = mesh.name;
+      meshSelect.appendChild(option);
+    });
+    meshSelect.value = nodeMeshId(node);
+    meshSelect.dataset.original = nodeMeshId(node);
+    meshRow.appendChild(meshSelect);
+    meshRow.appendChild(drawerHint('Moving a machine hands it the new mesh’s model on its next check-in; its old model stops once the new one deploys.'));
+    bodyEl.appendChild(meshRow);
     const saveVram = document.createElement('button');
     saveVram.type = 'button';
     saveVram.className = 'btn';
@@ -1352,6 +1379,25 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     vramInput.value = profile.meshllm && profile.meshllm.maxVramGb ? String(profile.meshllm.maxVramGb) : '';
     vramRow.appendChild(vramInput);
     if (!isDirect) bodyEl.appendChild(vramRow);
+    // Mesh assignment: which machine group serves this model (REQ-RUN-016). Moving it
+    // swaps its stable alias and deploys it switched off in the new mesh.
+    const modelMeshRow = document.createElement('label');
+    modelMeshRow.className = 'drawer-row';
+    modelMeshRow.textContent = 'Mesh';
+    const modelMeshSelect = document.createElement('select');
+    modelMeshSelect.id = 'model-edit-mesh';
+    const meshOptions = lastStatus && Array.isArray(lastStatus.meshes) ? lastStatus.meshes : [{ id: 'default', name: 'Default' }];
+    meshOptions.forEach((mesh) => {
+      const option = document.createElement('option');
+      option.value = mesh.id;
+      option.textContent = mesh.name;
+      modelMeshSelect.appendChild(option);
+    });
+    modelMeshSelect.value = profile.meshId || 'default';
+    modelMeshSelect.dataset.original = profile.meshId || 'default';
+    modelMeshRow.appendChild(modelMeshSelect);
+    modelMeshRow.appendChild(drawerHint('Moving a model re-routes it to the new mesh’s callable name and switches it off until you deploy it there.'));
+    bodyEl.appendChild(modelMeshRow);
     // Advanced runtime settings are runtime-specific: MeshLLM gets Auto-clearable
     // tunables, while direct llama.cpp gets cache-local server flags.
     const advancedHead = document.createElement('div');
@@ -1403,9 +1449,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     save.dataset.runtime = profile.runtime || 'meshllm';
     save.dataset.out = 'model-edit-output';
     bodyEl.appendChild(save);
-    // A custom, switched-off model can be permanently removed here; built-in models
-    // re-seed on boot and the active model owns the route, so neither shows Delete.
-    if (String(profile.id).indexOf('custom-') === 0 && !profile.active) {
+    // Any switched-off model can be permanently removed, including the seed-once
+    // starter (REQ-RUN-012); only the active model (it owns its mesh's route) hides Delete.
+    if (!profile.active) {
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'btn btn-danger';
@@ -1881,6 +1927,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     lastStatus = status;
     renderNodesTable(nodes, status.desiredAgentVersion);
     renderProfiles(profiles, readiness);
+    renderMeshList(Array.isArray(status.meshes) ? status.meshes : []);
     renderPlaygroundSelect();
     // Mesh detail now lives per-model in the Manage drawer; here we only keep the
     // global mesh-secret-missing banner (shown on the Models section) in sync.
@@ -1888,6 +1935,43 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (meshBanner) meshBanner.hidden = !meshEntries.some((entry) => entry.lastError === config.meshHealth.keyMissingError);
     renderAudit(audit);
     setHealth('ok', 'live');
+  }
+  // Meshes card: one row per machine group with its callable route and counts;
+  // only an empty non-default mesh offers Delete (REQ-ADM-037).
+  function renderMeshList(meshes) {
+    const listEl = byId('mesh-list');
+    if (!listEl) return;
+    listEl.textContent = '';
+    meshes.forEach((mesh) => {
+      const row = document.createElement('div');
+      row.className = 'command-row';
+      row.setAttribute('data-mesh-row', mesh.id);
+      const copy = document.createElement('div');
+      copy.className = 'command-copy';
+      const title = document.createElement('strong');
+      title.textContent = mesh.name;
+      copy.appendChild(title);
+      const detail = document.createElement('span');
+      detail.setAttribute('data-mesh-alias', mesh.alias || '');
+      detail.textContent = 'Route ' + (mesh.alias || '') + ' · ' + (mesh.machineCount || 0) + ' machines · ' + (mesh.modelCount || 0) + ' models';
+      copy.appendChild(detail);
+      row.appendChild(copy);
+      const actions = document.createElement('div');
+      actions.className = 'command-actions';
+      if (mesh.id !== 'default' && !mesh.machineCount && !mesh.modelCount) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-danger';
+        del.textContent = 'Delete';
+        del.dataset.action = 'mesh-delete';
+        del.dataset.meshId = mesh.id;
+        del.dataset.confirm = 'Delete this mesh?';
+        del.dataset.out = 'mesh-output';
+        actions.appendChild(del);
+      }
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    });
   }
   async function refreshStatus() {
     try {
@@ -2267,6 +2351,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'model-save': 'model-edit-output',
     'model-delete': 'model-edit-output',
     'model-add': 'model-add-output',
+    'mesh-create': 'mesh-output',
+    'mesh-delete': 'mesh-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
     'runtime-versions-refresh': 'runtime-version-output',
@@ -2392,6 +2478,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const raw = readInput('node-edit-vram');
       // Blank clears the override (revert to the model default); a number caps just this node.
       const payload = { displayName: readInput('node-edit-name'), maxVramGbOverride: raw === '' ? null : Number(raw) };
+      // Send the mesh only when the operator actually changed it, so saving an
+      // unrelated setting never re-triggers a mesh reassignment.
+      const meshEl = byId('node-edit-mesh');
+      if (meshEl && meshEl.value && meshEl.value !== meshEl.dataset.original) payload.meshId = meshEl.value;
       await request('/admin/nodes/' + nodeId + '/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
       setOutput(out, 'Machine settings saved.');
       toast('Machine settings saved');
@@ -2416,6 +2506,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const callEl = byId('model-edit-callname');
       const runtime = button.dataset.runtime || 'meshllm';
       const payload = { profileId: id, runtime: runtime };
+      // Mesh reassignment rides the same save, sent only when actually changed.
+      const modelMeshEl = byId('model-edit-mesh');
+      if (modelMeshEl && modelMeshEl.value && modelMeshEl.value !== modelMeshEl.dataset.original) payload.meshId = modelMeshEl.value;
       payload.contextWindow = ctxRaw === '' ? (runtime === 'llamacpp' ? 262144 : 0) : Number(ctxRaw);
       if (modelRaw !== '') payload.modelRef = modelRaw;
       // Empty means "leave as-is"; 0 explicitly clears the mesh-llm cap. Direct llama.cpp
@@ -2493,6 +2586,20 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       closeDrawer();
       await refreshStatus().catch(() => undefined);
       toast('Model deleted');
+    } else if (action === 'mesh-create') {
+      const nameEl = byId('mesh-create-name');
+      const name = nameEl ? nameEl.value.trim() : '';
+      await request('/admin/meshes', { method: 'POST', headers: headers(true), body: JSON.stringify({ name: name }) });
+      if (nameEl) nameEl.value = '';
+      setOutput(out, 'Mesh created.');
+      toast('Mesh created');
+      await refreshStatus().catch(() => undefined);
+    } else if (action === 'mesh-delete') {
+      const meshId = encodeURIComponent(button.dataset.meshId || '');
+      await request('/admin/meshes/' + meshId, { method: 'DELETE', headers: headers(false) });
+      setOutput(out, 'Mesh deleted.');
+      toast('Mesh deleted');
+      await refreshStatus().catch(() => undefined);
     } else if (action === 'api-key-create') {
       revealApiKey(await request('/api/v1/keys', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
       await loadApiKeys().catch(() => undefined);
@@ -2729,11 +2836,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const runtimeSelect = event.target.closest('[data-model-add-mode]');
     if (runtimeSelect) {
       const addRuntime = byId('model-add-runtime');
+      const split = runtimeSelect.value === 'split';
       if (addRuntime) {
-        const split = runtimeSelect.value === 'split';
         addRuntime.disabled = split;
         if (split) addRuntime.value = 'meshllm';
       }
+      // Contextual model sources: single serving shows GGUF files, split shows
+      // layer packages + the prepare guide (CSS keys off this dataset). REQ-ADM-025.
+      const sources = byId('model-add-sources');
+      if (sources) sources.dataset.modelSources = split ? 'split' : 'single';
       return;
     }
     const targetSelect = event.target.closest('[data-playground-target-select]');
