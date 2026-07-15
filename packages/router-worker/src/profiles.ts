@@ -1,3 +1,4 @@
+import { meshAliasFor } from './meshes'
 import type { ModelProfile, NodeRecord, RuntimeKind } from './types'
 
 // The single stable public model id AI Gateway forwards. Every model profile
@@ -132,9 +133,10 @@ export function slugifyModelRef(ref: string): string {
 // advances past every existing profile so a later live process never collides on
 // the mesh bind port. The profile ships with the MESHLLM_TUNABLE_DEFAULTS runtime
 // tunables and an Auto (0) context window; an operator refines both per model.
-export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string | undefined; runtime?: RuntimeKind }): ModelProfile {
+export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string | undefined; runtime?: RuntimeKind; meshId?: string }): ModelProfile {
   const ref = input.modelRef.trim()
   const runtime = input.runtime ?? 'meshllm'
+  const meshId = input.meshId ?? 'default'
   const slug = slugifyModelRef(ref)
   const segment = modelRefSegment(ref)
   const name = input.name?.trim()
@@ -142,11 +144,13 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
   const bindPort = highestBindPort + BIND_PORT_STEP
   const common = {
     displayName: name && name.length > 0 ? name : segment,
-    publicAliases: [STABLE_PUBLIC_MODEL, slug],
+    // The first alias is the mesh's stable callable name (REQ-RUN-016).
+    publicAliases: [meshAliasFor(meshId), slug],
     upstreamModel: ref,
     version: 1,
     rolloutPercent: 0,
-    active: false
+    active: false,
+    meshId
   } as const
   if (runtime === 'llamacpp') {
     const parsed = parseLlamaCppModelRef(ref)
@@ -261,12 +265,6 @@ export function profileMeshId(profile: ModelProfile): string {
 /** The machine group a node belongs to; nodes claimed before machine groups coerce to the default mesh. */
 export function nodeMeshId(node: NodeRecord): string {
   return node.meshId ?? 'default'
-}
-
-// A default (shipped) profile re-seeds on boot, so it cannot be permanently deleted;
-// deletion is reserved for custom onboarded models.
-export function isDefaultModelId(profileId: string): boolean {
-  return DEFAULT_MODEL_PROFILES.some((profile) => profile.id === profileId)
 }
 
 export const PROFILE_ANCHORS = {
