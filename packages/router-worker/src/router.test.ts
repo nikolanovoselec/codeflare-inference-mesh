@@ -5224,7 +5224,7 @@ describe('multi-mesh machine groups', () => {
   })
 
   it('REQ-GWY-009 gateway sync ensures one dynamic route per mesh', async () => {
-    let received: { extraRoutes?: readonly { routeName: string; publicModel: string }[]; routeName: string } | undefined
+    let received: { extraRoutes: readonly { routeName: string; publicModel: string }[] | undefined; routeName: string } | undefined
     const { router, store } = routerFixture({
       env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
       cloudflareClient: {
