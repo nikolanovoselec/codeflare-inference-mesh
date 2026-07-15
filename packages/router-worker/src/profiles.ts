@@ -45,11 +45,13 @@ const BIND_PORT_BASE = 4300
 const BIND_PORT_STEP = 10
 
 export const LLAMACPP_PROFILE_DEFAULTS = {
+  // contextWindow 0 = Auto: llama-server loads the model's native training context
+  // (--ctx-size 0), so a new direct profile never silently caps or overshoots the model.
   // parallel -1 = Auto: llama-server plans the slot count (4) with unified KV.
   // kvUnified stays pinned on even for explicit slot counts: non-unified splits
-  // --ctx-size across slots (262144/4 = 65536 per request), which 400s any longer
+  // --ctx-size across slots (ctx/4 per request), which 400s any longer
   // request and forces coding agents into early compaction.
-  contextWindow: 262144,
+  contextWindow: 0,
   parallel: -1,
   kvUnified: true,
   cachePrompt: true,

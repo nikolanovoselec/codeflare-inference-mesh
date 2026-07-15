@@ -1034,6 +1034,14 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
     next[key] = raw
     return null
   }
+  // contextWindow 0 = Auto (llama-server loads the model's native context via
+  // --ctx-size 0); a fixed direct context keeps the 4096 sanity floor.
+  const applyContextWindow = (raw: unknown): string | null => {
+    if (raw === undefined) return null
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || (raw !== 0 && raw < 4096)) return 'invalid_contextWindow'
+    next.contextWindow = raw
+    return null
+  }
   // parallel -1 = Auto (llama-server plans the slot count with unified KV);
   // otherwise a fixed slot count >= 1. 0 is invalid upstream and rejected here.
   const applyParallel = (raw: unknown): string | null => {
@@ -1067,7 +1075,7 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
     return 'invalid_gpuLayers'
   }
   for (const err of [
-    applyInt('contextWindow', body.contextWindow, 4096),
+    applyContextWindow(body.contextWindow),
     applyParallel(body.parallel),
     applyInt('cacheReuse', body.cacheReuse, 0),
     applyInt('bindPort', body.bindPort, 1),
@@ -1313,7 +1321,8 @@ function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly Mod
   if ('error' in settingsResult) return { error: settingsResult.error, status: 400 }
   let settings = settingsResult.settings
   const contextWindow = body.contextWindow ?? settings.contextWindow
-  if (!Number.isInteger(contextWindow) || contextWindow < 4096) return { error: 'invalid_context_window', status: 400 }
+  // 0 = Auto (llama-server loads the model's native context); fixed values keep the 4096 floor.
+  if (!Number.isInteger(contextWindow) || (contextWindow !== 0 && contextWindow < 4096)) return { error: 'invalid_context_window', status: 400 }
   settings = { ...settings, contextWindow, alias: modelRef, modelRef }
   let displayName = existing.displayName
   if (body.name !== undefined) {

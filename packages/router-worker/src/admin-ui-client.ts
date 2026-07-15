@@ -1388,7 +1388,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     // 0 = Auto, shown as a blank field: mesh-llm sizes the context to the GPU.
     ctxInput.value = (isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) ? String(isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) : '';
     ctxRow.appendChild(ctxInput);
-    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Direct profiles require a pinned value (4096 or higher).' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
+    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Blank = Auto (llama.cpp loads the model\'s native context). Pin a number (4096 or higher) to cap it; larger uses more GPU memory.' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
     bodyEl.appendChild(ctxRow);
     const modelRow = document.createElement('label');
     modelRow.className = 'drawer-row';
@@ -1549,6 +1549,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   // Compact current-value display: neutral by default, ok only for confirmed
   // connected/provisioned state so it never looks like a warning banner.
+  // Gateway cards list every ensured dynamic route (one per mesh, REQ-GWY-009); a
+  // pre-mesh stored sync result without a routes array falls back to its single route.
+  function gatewayRouteNames(gateway) {
+    const routes = gateway && Array.isArray(gateway.routes) ? gateway.routes.map((route) => route.routeName).filter(Boolean) : [];
+    return routes.length ? routes : [(gateway && gateway.routeName) || STABLE_PUBLIC_MODEL];
+  }
+  function routeSubLabel(names) {
+    return (names.length === 1 ? 'route ' : 'routes ') + names.join(' · ');
+  }
   function renderStateCard(el, parts) {
     if (!el) return;
     el.textContent = '';
@@ -1651,12 +1660,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     setPlaygroundModelSelect(routes.map((name) => ({ value: name, label: name })));
   }
   function modelName(profile) { return (profile.displayName && String(profile.displayName)) || profile.id; }
-  // A node serves a model when its runtime reports the model's upstream ref ready. readyModels
-  // carries upstream refs (what mesh-llm loaded) exactly as the scheduler/router match on, never
-  // the public aliases, so serving is keyed on profile.upstreamModel.
+  // A machine serves a profile, not a model string: it must have adopted the profile
+  // (activeProfileIds) AND report its upstream ref ready (readyModels carries upstream
+  // refs exactly as the scheduler matches on, never public aliases). Twin profiles
+  // sharing one modelRef must never inherit each other's serving count.
+  function nodeServesProfile(node, profile) {
+    return Array.isArray(node.activeProfileIds) && node.activeProfileIds.indexOf(profile.id) >= 0
+      && Boolean(node.metrics) && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.indexOf(profile.upstreamModel) >= 0;
+  }
   function nodesServingProfile(profile) {
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
-    return nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.indexOf(profile.upstreamModel) >= 0);
+    return nodes.filter((node) => nodeServesProfile(node, profile));
   }
   function servingCount(profile) {
     return nodesServingProfile(profile).length;
@@ -1711,6 +1725,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const detail = document.createElement('small');
       const ready = readiness.find((item) => item.profileId === profile.id);
       const serving = servingCount(profile);
+      row.setAttribute('data-serving', String(serving));
       detail.textContent = 'Alias: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
       body.append(nameRow, detail);
       row.appendChild(body);
@@ -1881,7 +1896,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       if (last && last.event.type === event.type && last.event.target === event.target) last.count += 1;
       else collapsed.push({ event: event, count: 1 });
     });
-    const feeds = [byId('overview-audit'), byId('audit-log')];
+    // The activity log lives in Settings only; the Overview stays a status surface.
+    const feeds = [byId('audit-log')];
     feeds.forEach((feed, index) => {
       if (!feed) return;
       feed.textContent = '';
@@ -1940,23 +1956,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     renderTopology(topologyNodes(nodes));
     pushToksSample(nodes.reduce((total, node) => total + (nodeToks(node) || 0), 0));
     renderToksTrace();
-    const rollup = byId('overview-mesh');
-    if (rollup) {
-      rollup.textContent = '';
-      meshEntries.forEach((entry) => {
-        const profile = profiles.find((candidate) => candidate.id === entry.profileId);
-        const name = profile ? modelName(profile) : entry.profileId;
-        const peers = (entry.peerNodeIds || []).length;
-        const shared = peers > 0;
-        // Plain summary, same vocabulary as the Model-sharing section; a single-node
-        // model reads "not shared yet" in neutral grey, never an alarming "forming".
-        const label = shared
-          ? name + ' · ' + peers + ' machine' + (peers === 1 ? '' : 's') + ' sharing' + meshStatusSuffix(entry)
-          : name + ' · not shared yet';
-        const tone = shared ? meshStatusTone(entry) : 'idle';
-        rollup.appendChild(statusDot(tone, label));
-      });
-    }
+    renderMeshStatus(status);
     const gatewayCurrent = byId('gateway-current');
     if (gatewayCurrent) {
       const selectedGateway = selectedGatewayValue('routing');
@@ -1968,7 +1968,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
           label: 'AI Gateway',
           value: gateway.gatewayId || '',
           placeholder: 'Not connected yet',
-          sub: gateway.gatewayId ? ('route ' + (gateway.routeName || STABLE_PUBLIC_MODEL)) : '',
+          sub: gateway.gatewayId ? routeSubLabel(gatewayRouteNames(gateway)) : '',
           chip: gateway.gatewayId ? 'connected' : '',
           chipTone: 'ok',
           state: gateway.gatewayId ? 'ok' : ''
@@ -2001,6 +2001,60 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   // Meshes card: one row per machine group with its callable route and counts;
   // only an empty non-default mesh offers Delete (REQ-ADM-037).
+  // meshRowHead is the shared mesh identity header — bold group name with its callable
+  // route right-aligned as an endpoint chip — composed by the Meshes management card and
+  // the Overview mesh status rows alike.
+  function meshRowHead(name, alias) {
+    const head = document.createElement('div');
+    head.className = 'mesh-row-head';
+    const title = document.createElement('strong');
+    title.textContent = name || '';
+    head.appendChild(title);
+    const route = document.createElement('span');
+    route.className = 'endpoint-chip';
+    route.setAttribute('data-mesh-alias', alias || '');
+    route.textContent = alias || '';
+    head.appendChild(route);
+    return head;
+  }
+  // Overview "Mesh status": one row per machine group answering the operator's four
+  // questions at a glance — is it serving, which model, on how many machines, how fast.
+  function renderMeshStatus(status) {
+    const rollup = byId('overview-mesh');
+    if (!rollup) return;
+    rollup.textContent = '';
+    const nodes = Array.isArray(status.nodes) ? status.nodes : [];
+    const profiles = Array.isArray(status.profiles) ? status.profiles : [];
+    (Array.isArray(status.meshes) ? status.meshes : []).forEach((mesh) => {
+      const meshNodes = nodes.filter((node) => (node.meshId || 'default') === mesh.id);
+      const model = profiles.find((profile) => profile.active && (profile.meshId || 'default') === mesh.id);
+      const serving = model ? meshNodes.filter((node) => nodeServesProfile(node, model)) : [];
+      const toks = serving.reduce((total, node) => total + (nodeToks(node) || 0), 0);
+      // A mesh with no model stays neutral grey — an empty group is a choice, not an alarm.
+      const word = model ? (serving.length > 0 ? 'Serving' : (meshNodes.length > 0 ? 'Preparing' : 'No machines')) : 'No model';
+      const tone = model ? (serving.length > 0 ? 'ok' : 'warn') : 'idle';
+      const row = document.createElement('div');
+      row.className = 'command-row';
+      row.setAttribute('data-mesh-status', mesh.id);
+      row.setAttribute('data-machines', String(meshNodes.length));
+      row.setAttribute('data-serving', String(serving.length));
+      if (toks > 0) row.setAttribute('data-toks', String(Math.round(toks)));
+      const copy = document.createElement('div');
+      copy.className = 'command-copy';
+      copy.appendChild(meshRowHead(mesh.name || mesh.id, mesh.alias));
+      const detail = document.createElement('span');
+      detail.className = 'mesh-counts';
+      const machinesPart = meshNodes.length + (meshNodes.length === 1 ? ' machine' : ' machines') + (model ? ' · ' + serving.length + ' serving' : '');
+      detail.textContent = (model ? modelName(model) : 'no model deployed') + ' · ' + machinesPart + (toks > 0 ? ' · ' + Math.round(toks) + ' tok/s' : '');
+      copy.appendChild(detail);
+      row.appendChild(copy);
+      const state = document.createElement('div');
+      state.className = 'command-actions';
+      state.appendChild(statusDot(tone, word));
+      row.appendChild(state);
+      rollup.appendChild(row);
+    });
+  }
   function renderMeshList(meshes) {
     const listEl = byId('mesh-list');
     if (!listEl) return;
@@ -2011,17 +2065,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       row.setAttribute('data-mesh-row', mesh.id);
       const copy = document.createElement('div');
       copy.className = 'command-copy';
-      const head = document.createElement('div');
-      head.className = 'mesh-row-head';
-      const title = document.createElement('strong');
-      title.textContent = mesh.name;
-      head.appendChild(title);
-      const route = document.createElement('span');
-      route.className = 'endpoint-chip';
-      route.setAttribute('data-mesh-alias', mesh.alias || '');
-      route.textContent = mesh.alias || '';
-      head.appendChild(route);
-      copy.appendChild(head);
+      copy.appendChild(meshRowHead(mesh.name, mesh.alias));
       const machines = mesh.machineCount || 0;
       const models = mesh.modelCount || 0;
       const counts = document.createElement('span');
@@ -2340,7 +2384,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         label: 'AI Gateway',
         value: target,
         placeholder: 'Not connected yet',
-        sub: status.provisioned ? 'route ' + (status.routeName || STABLE_PUBLIC_MODEL) : 'route not provisioned',
+        sub: status.provisioned ? routeSubLabel(gatewayRouteNames({ routes: lastStatus && lastStatus.gateway && lastStatus.gateway.routes, routeName: status.routeName })) : 'route not provisioned',
         chip: status.provisioned ? 'connected' : 'needs provisioning',
         chipTone: status.provisioned ? 'ok' : 'warn',
         state: status.provisioned ? 'ok' : 'empty'
@@ -2585,7 +2629,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       // Mesh reassignment rides the same save, sent only when actually changed.
       const modelMeshEl = byId('model-edit-mesh');
       if (modelMeshEl && modelMeshEl.value && modelMeshEl.value !== modelMeshEl.dataset.original) payload.meshId = modelMeshEl.value;
-      payload.contextWindow = ctxRaw === '' ? (runtime === 'llamacpp' ? 262144 : 0) : Number(ctxRaw);
+      // Blank = Auto for both runtimes: 0 lets mesh-llm auto-plan and renders
+      // --ctx-size 0 for llama.cpp (the model's native context).
+      payload.contextWindow = ctxRaw === '' ? 0 : Number(ctxRaw);
       if (modelRaw !== '') payload.modelRef = modelRaw;
       // Empty means "leave as-is"; 0 explicitly clears the mesh-llm cap. Direct llama.cpp
       // does not use this mesh-only VRAM budget.

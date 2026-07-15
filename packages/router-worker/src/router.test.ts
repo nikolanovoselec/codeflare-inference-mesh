@@ -866,7 +866,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.status).toBe(201)
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false, rolloutPercent: 0 })
-    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: -1, kvUnified: true, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
+    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', contextWindow: 0, cachePrompt: true, cacheReuse: 256, parallel: -1, kvUnified: true, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
   })
 
   it('REQ-RUN-013 rejects direct llama.cpp for split models', async () => {
@@ -2628,6 +2628,17 @@ describe('router worker behavioral contracts', () => {
     expect((await configure({ llamacpp: { parallel: -1 } })).status).toBe(200)
     const autoParallel = (await store.listProfiles()).find((profile) => profile.id === profileId)!
     expect(autoParallel.llamacpp?.parallel).toBe(-1)
+    // contextWindow 0 = Auto (llama-server loads the model's native context) on both the
+    // settings block and the top-level field the drawer saves; a fixed value below the
+    // 4096 floor is still rejected.
+    expect((await configure({ llamacpp: { contextWindow: 0 } })).status).toBe(200)
+    const autoContext = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(autoContext.llamacpp?.contextWindow).toBe(0)
+    expect((await configure({ contextWindow: 0 })).status).toBe(200)
+    const autoTopLevel = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(autoTopLevel.contextWindow).toBe(0)
+    expect((await configure({ llamacpp: { contextWindow: 2048 } })).status).toBe(400)
+    expect((await configure({ contextWindow: 2048 })).status).toBe(400)
     expect((await configure({ llamacpp: { contextWindow: 2048 } })).status).toBe(400)
     expect((await configure({ llamacpp: { parallel: 0 } })).status).toBe(400)
     expect((await configure({ llamacpp: { parallel: -2 } })).status).toBe(400)

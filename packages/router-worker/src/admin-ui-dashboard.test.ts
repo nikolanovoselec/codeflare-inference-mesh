@@ -1395,23 +1395,54 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(badge('single-a').dataset.tone).toBe('blue')
   })
 
-  it('REQ-OBS-007 labels overview mesh chips by model name and stays neutral when a model is not shared', async () => {
-    const harness = await dashboardHarness({
-      status: statusFixture({
-        meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, peerNodeIds: [], readyModels: [], failedNodeIds: [], tokenCount: 0 }]
-      })
-    })
-    const chip = harness.byId('overview-mesh').children[0]
-    expect(chip, 'overview should render a mesh chip').toBeDefined()
-    // The stub does not aggregate textContent from children; the label lives on a child span.
-    const label = descendants(chip!).map((node) => node.textContent).join('')
-    // Named by the model, not the wiring id or a raw rotation counter.
-    expect(label).toContain('Qwen3.6 35B')
-    expect(label).not.toContain('mesh-default-qwen36-35b')
-    // A single-node model reads "not shared yet" in a neutral tone, never an alarming amber "forming".
-    expect(label).not.toContain('forming')
-    expect(chip!.dataset.tone).not.toBe('warn')
-    expect(chip!.dataset.tone).not.toBe('danger')
+  it('REQ-ADM-018 REQ-RUN-016 serving counts bind to the adopted profile, not the shared model reference', async () => {
+    const shared = 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'
+    const profiles = [
+      { id: 'twin-llamacpp', displayName: 'Research Qwen', upstreamModel: shared, publicAliases: ['codeflare-mesh-research', 'twin'], meshId: 'research', active: true, rolloutPercent: 100, runtime: 'llamacpp', llamacpp: { modelRef: shared, bindPort: 4520 } },
+      { id: 'twin-meshllm', displayName: 'Research Single Qwen', upstreamModel: shared, publicAliases: ['codeflare-mesh-research', 'twin-single'], meshId: 'research', active: false, rolloutPercent: 0, runtime: 'meshllm', meshllm: { split: false } }
+    ]
+    // One machine runs the llama.cpp twin; the switched-off meshllm twin references the
+    // same model file but nobody has adopted it.
+    const nodes = [{ id: 'mac', status: 'online', meshId: 'research', activeProfileIds: ['twin-llamacpp'], metrics: { runtimeKind: 'llamacpp', runtimeState: 'ready', activeRequests: 0, readyModels: [shared] } }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes }) })
+    const rowOf = (id: string) => harness.byId('profile-list').children.find((row) => row.dataset.profileRow === id)!
+    expect(rowOf('twin-llamacpp').dataset.serving).toBe('1')
+    expect(rowOf('twin-meshllm').dataset.serving).toBe('0')
+  })
+
+  it('REQ-ADM-015 overview mesh status rows summarize each mesh: model, machines, serving, throughput', async () => {
+    const meshes = [
+      { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 },
+      { id: 'ops', name: 'Ops', alias: 'codeflare-mesh-ops', machineCount: 1, modelCount: 1 },
+      { id: 'empty', name: 'Empty', alias: 'codeflare-mesh-empty', machineCount: 0, modelCount: 0 }
+    ]
+    const profiles = [
+      { id: 'model-default', displayName: 'Default Model', upstreamModel: 'unsloth/Default-GGUF:Q4', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-ops', displayName: 'Ops Model', upstreamModel: 'unsloth/Ops-GGUF:Q4', publicAliases: ['codeflare-mesh-ops', 'ops'], meshId: 'ops', active: true, rolloutPercent: 100, meshllm: { split: false } }
+    ]
+    const nodes = [
+      { id: 'node-serving', status: 'online', activeProfileIds: ['model-default'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['unsloth/Default-GGUF:Q4'], tokensPerSecond: 42 } },
+      { id: 'node-ops', status: 'online', meshId: 'ops', activeProfileIds: [], metrics: { runtimeState: 'starting', activeRequests: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes }) })
+    const row = (id: string) => descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === id)!
+    // Default: its model is adopted and ready on one machine — Serving, with live throughput.
+    expect(row('default').getAttribute('data-machines')).toBe('1')
+    expect(row('default').getAttribute('data-serving')).toBe('1')
+    expect(row('default').getAttribute('data-toks')).toBe('42')
+    expect(descendants(row('default')).find((el) => el.className === 'chip')!.dataset.tone).toBe('ok')
+    // Ops: model on but its machine has not adopted it yet — amber, zero serving, no throughput.
+    expect(row('ops').getAttribute('data-serving')).toBe('0')
+    expect(row('ops').getAttribute('data-toks')).toBeNull()
+    expect(descendants(row('ops')).find((el) => el.className === 'chip')!.dataset.tone).toBe('warn')
+    // An empty mesh with no model stays neutral — a group without a model is a choice, not an alarm.
+    const emptyChip = descendants(row('empty')).find((el) => el.className === 'chip')!
+    expect(emptyChip.dataset.tone).not.toBe('warn')
+    expect(emptyChip.dataset.tone).not.toBe('danger')
+    // Each row head carries the mesh's callable route.
+    expect(descendants(row('ops')).find((el) => el.getAttribute('data-mesh-alias') !== null)!.getAttribute('data-mesh-alias')).toBe('codeflare-mesh-ops')
+    // The activity feed is gone from the Overview: logs live in Settings only.
+    expect(() => harness.byId('overview-audit')).toThrow()
   })
 
   it('REQ-ADM-015 tags each node cell with its column label for the stacked mobile layout', async () => {
@@ -1447,6 +1478,21 @@ describe('dashboard routing contracts', () => {
     if (path.startsWith('/admin/cloudflare/gateway/provision-status')) return Response.json({ gatewayId: 'inference-mesh', provisioned, routeEnabled: provisioned, ...(provisioned ? { routeId: 'r', providerId: 'p' } : {}) })
     return undefined
   }
+
+  it('REQ-ADM-024 REQ-GWY-009 the gateway card lists every ensured mesh route', async () => {
+    const gateway = {
+      gatewayId: 'inference-mesh',
+      routeName: 'codeflare-mesh',
+      publicModel: 'codeflare-mesh',
+      routes: [
+        { routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', routeId: 'r1' },
+        { routeName: 'codeflare-mesh-research', publicModel: 'codeflare-mesh-research', routeId: 'r2' }
+      ]
+    }
+    const harness = await dashboardHarness({ status: statusFixture({ gateway }) })
+    const sub = descendants(harness.byId('gateway-current')).find((node) => node.className === 'state-sub')
+    expect(sub?.textContent).toBe('routes codeflare-mesh · codeflare-mesh-research')
+  })
 
   it('REQ-ADM-024 shows the selected gateway route inside the AI Gateway card', async () => {
     // Provisioned per the live check but zero nodes online: the card is driven by provisioning
@@ -1721,14 +1767,21 @@ describe('mesh console contracts', () => {
       expect(at, `${id} must be a native disclosure`).toBeGreaterThan(-1)
       expect(html.indexOf('<summary', at)).toBeGreaterThan(at)
     }
-    const meshHeadAt = html.indexOf('class="mesh-head"')
-    expect(meshHeadAt).toBeGreaterThan(-1)
+    // Each disclosure sits at the right end of its card header: the first panel head is
+    // Models (carrying + Model), the second is Meshes (carrying + Mesh).
+    const modelsHeadAt = html.indexOf('class="panel-head"')
+    expect(modelsHeadAt).toBeGreaterThan(-1)
+    const meshHeadAt = html.indexOf('class="panel-head"', modelsHeadAt + 1)
+    expect(meshHeadAt).toBeGreaterThan(modelsHeadAt)
+    const modelDetailsAt = html.indexOf('id="model-add-details"')
+    expect(modelDetailsAt).toBeGreaterThan(modelsHeadAt)
+    expect(modelDetailsAt).toBeLessThan(meshHeadAt)
     expect(html.indexOf('id="mesh-add-details"', meshHeadAt)).toBeGreaterThan(meshHeadAt)
     // The add-model form fields live inside the disclosure body.
-    const modelDetailsAt = html.indexOf('id="model-add-details"')
     expect(html.indexOf('id="model-add-ref"', modelDetailsAt)).toBeGreaterThan(modelDetailsAt)
-    // Mesh rows right-align the route chip; a successful create collapses the mesh disclosure.
+    // Mesh rows right-align the route chip; disclosure summaries share the compact row-button metrics.
     expect(adminUiCss()).toContain('.mesh-row-head .endpoint-chip{margin-left:auto}')
+    expect(adminUiCss()).toContain('.row-item .btn,.disclosure>summary.btn{min-height:2.2rem')
   })
 
   it('REQ-ADM-025 renders the model sources panel with CSS-keyed contextual switching', async () => {

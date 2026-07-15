@@ -132,3 +132,20 @@ func hasExactArg(args []string, want string) bool {
 	}
 	return false
 }
+
+// Auto context (0) must pass through as --ctx-size 0, llama-server's "load the
+// model's native training context" sentinel — never a fabricated fixed size. REQ-RUN-015.
+func TestREQRUN015LlamaCppRenderArgsAutoContext(t *testing.T) {
+	args := RenderLlamaCppArgs(LlamaCppInput{
+		UpstreamModel: "unsloth/Code-Model-GGUF:Q4_K_M",
+		Settings: LlamaCppSettings{
+			HFRepo:        "unsloth/Code-Model-GGUF",
+			Quant:         "Q4_K_M",
+			BindPort:      4300,
+			ContextWindow: 0,
+		},
+	})
+	if !containsArgSequence(joinArgs(args), "--ctx-size 0") {
+		t.Fatalf("Auto context must render --ctx-size 0, got %q", joinArgs(args))
+	}
+}

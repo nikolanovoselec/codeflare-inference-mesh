@@ -161,8 +161,8 @@ function overviewSection(): string {
   return sectionPanel({
     id: 'overview',
     title: 'Overview',
-    description: 'Live state of the router, mesh, and recent activity.',
-    actions: button({ action: 'status-refresh', label: 'Refresh' }),
+    description: 'Live state of the router, meshes, and machines.',
+    actions: button({ action: 'status-refresh', label: 'Refresh', variant: 'primary' }),
     active: true,
     body: `<div class="topology" id="${ADMIN_UI_TOPOLOGY.containerId}">
 <div class="topo-controls"><label for="${ADMIN_UI_TOPOLOGY.meshSelectId}">Mesh</label><span class="slot"><select id="${ADMIN_UI_TOPOLOGY.meshSelectId}" name="topologyMesh" data-topo-mesh-select="true"><option value="all">All meshes</option></select></span></div>
@@ -171,8 +171,7 @@ function overviewSection(): string {
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
 <div class="topo-list" id="${ADMIN_UI_TOPOLOGY.listId}" data-output="topology-list"></div>
 </div>
-<div class="subpanel"><h3>Mesh status</h3><div class="form-actions" id="overview-mesh"></div></div>
-<div class="subpanel"><h3>Recent activity</h3><div class="feed" id="overview-audit" data-output="audit"></div></div>`
+<div class="subpanel"><h3>Mesh status</h3><div class="row-list" id="overview-mesh"></div></div>`
   })
 }
 
@@ -180,12 +179,12 @@ function nodesSection(): string {
   return sectionPanel({
     id: 'nodes',
     title: 'Nodes',
-    description: 'The machines running your models. Ready = serving a model. Active = online, still loading. Offline = has not checked in.',
-    actions: button({ action: 'status-refresh', label: 'Refresh' }),
+    description: 'The machines running your models. Serving = answering requests. Preparing = downloading or loading. Disconnected = checked in, runtime not running. Offline = has not checked in. Error = needs attention.',
+    actions: button({ action: 'status-refresh', label: 'Refresh', variant: 'primary' }),
     body: `<div class="node-filters form-actions" role="group" aria-label="Filter machines">
 <button class="btn btn-ghost" type="button" id="node-filter-all" data-action="nodes-filter" data-filter="all" aria-current="page">All</button>
-<button class="btn btn-ghost" type="button" id="node-filter-ready" data-action="nodes-filter" data-filter="ready">Ready</button>
-<button class="btn btn-ghost" type="button" id="node-filter-active" data-action="nodes-filter" data-filter="active">Active</button>
+<button class="btn btn-ghost" type="button" id="node-filter-ready" data-action="nodes-filter" data-filter="ready">Serving</button>
+<button class="btn btn-ghost" type="button" id="node-filter-active" data-action="nodes-filter" data-filter="active">Not serving</button>
 <button class="btn btn-ghost" type="button" id="node-filter-offline" data-action="nodes-filter" data-filter="offline">Offline</button>
 <label for="node-search">Search</label>
 <input class="node-search" id="node-search" type="search" name="nodeSearch" placeholder="Search machines…" data-node-search="true">
@@ -209,13 +208,13 @@ ${input.body}
 }
 
 function meshesCard(): string {
-  return `<div class="subpanel"><div class="mesh-head"><h3>Meshes</h3>
+  return `<div class="subpanel"><div class="panel-head"><h3>Meshes</h3>
 ${disclosure({
     id: 'mesh-add-details',
     action: 'mesh-add',
-    label: 'Add Mesh',
+    label: '+ Mesh',
     body: `<label for="${ADMIN_UI_MESHES.nameInputId}">Mesh name</label>
-<div class="form-actions mesh-add-row"><input id="${ADMIN_UI_MESHES.nameInputId}" name="meshName" type="text" placeholder="e.g. Development" autocomplete="off">${button({ action: 'mesh-create', label: 'Add', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
+<div class="form-actions mesh-add-row"><input id="${ADMIN_UI_MESHES.nameInputId}" name="meshName" type="text" placeholder="e.g. Development" autocomplete="off">${button({ action: 'mesh-create', label: '+', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
 <span class="field-hint">Letters only. The mesh answers at codeflare-mesh-&lt;name&gt;.</span>`
   })}</div>
 <p class="field-hint">Group machines into meshes and give each group its own model. Every mesh answers at its own route.</p>
@@ -224,10 +223,10 @@ ${output({ id: ADMIN_UI_MESHES.outputId, kind: 'mesh', pre: true })}</div>`
 }
 
 function addModelCard(): string {
-  return `<div class="subpanel model-add">${disclosure({
+  return disclosure({
     id: 'model-add-details',
     action: 'model-add',
-    label: 'Add Model',
+    label: '+ Model',
     body: `<p class="field-hint">Add a model reference and choose its runtime. MeshLLM can run single-machine or split models; llama.cpp is direct and cache-local for single-machine coding sessions.</p>
 <div class="form-grid">
 ${field({ id: 'model-add-name', label: 'Name', control: textInput({ id: 'model-add-name', name: 'name', placeholder: 'e.g. Fast Coder' }), hint: 'Shown in the console. Leave blank to name it after the model file.' })}
@@ -244,9 +243,9 @@ ${commandRow({ id: 'model-source-gguf', title: 'Unsloth GGUF', description: 'Rea
 ${commandRow({ id: 'model-source-layers', title: 'mesh-llm layer packages', description: 'Pre-split models for serving one model across several machines.', actions: '<a class="btn" id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">Browse packages</a>' })}
 ${commandRow({ id: 'model-source-split-guide', title: 'Prepare your own split model', description: 'Turn any model into layer packages with the splitter tool.', actions: '<a class="btn" id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">Open guide</a>' })}
 </div>
-<div class="form-actions">${button({ action: 'model-add', label: 'Add model', variant: 'primary', out: 'model-add-output' })}</div>
+<div class="form-actions">${button({ action: 'model-add', label: '+ Model', variant: 'primary', out: 'model-add-output' })}</div>
 ${output({ id: 'model-add-output', kind: 'model-add', pre: true })}`
-  })}</div>`
+  })
 }
 
 function modelsSection(): string {
@@ -255,10 +254,11 @@ function modelsSection(): string {
     title: 'Mesh & Models',
     description: 'The AI models your machines can run, grouped into meshes. Deploy a model to serve it in its mesh; open Manage to rename it, move it, or see the machines running it.',
     body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a mesh to share a model. Set it in the deployment and redeploy.</p>
+<div class="subpanel"><div class="panel-head"><h3>Models</h3>
+${addModelCard()}</div>
 <div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Deploy one to start serving it.</p></div>
-${output({ id: 'models-output', kind: 'models', pre: true })}
-${meshesCard()}
-${addModelCard()}`
+${output({ id: 'models-output', kind: 'models', pre: true })}</div>
+${meshesCard()}`
   })
 }
 
