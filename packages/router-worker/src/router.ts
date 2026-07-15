@@ -849,6 +849,9 @@ async function meshCreateCore(request: Request, deps: RouterDeps, actor: string,
   const name = typeof body?.name === 'string' ? body.name.trim() : ''
   const validated = name ? validateMeshName(name) : undefined
   if (!validated) return json({ error: 'invalid_mesh_name', requestId }, 400, requestId)
+  // Duplicate-name first: recreating an existing mesh (whose alias a profile
+  // legitimately owns) must read as mesh_exists, not a phantom alias conflict.
+  if ((await listMeshes(deps.store)).some((mesh) => mesh.id === validated.id)) return json({ error: 'mesh_exists', requestId }, 409, requestId)
   // A pre-existing callable name equal to the would-be mesh alias would give the
   // alias two owners the moment a model is activated in the new mesh.
   const profiles = await deps.store.listProfiles()

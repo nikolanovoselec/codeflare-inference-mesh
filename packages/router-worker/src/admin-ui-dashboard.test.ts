@@ -1409,7 +1409,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((child) => child.dataset.nodeRow)
     expect(row, 'a node row should render').toBeDefined()
     // Every cell carries a data-label so the mobile card layout prints "Label: value" without side-scroll.
-    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'VRAM', 'Models', 'Version'])
+    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'Mesh', 'VRAM', 'Models', 'Version'])
   })
 })
 

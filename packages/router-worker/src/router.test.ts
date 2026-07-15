@@ -200,9 +200,12 @@ describe('router worker behavioral contracts', () => {
       'node-revoke',
       'node-deactivate',
       'node-activate',
+      'mesh-create',
+      'mesh-delete',
       'profile-rollout',
       'profile-activate',
       'profile-config',
+      'profile-duplicate',
       'agent-versions-refresh',
       'agent-version-set',
       'runtime-versions-refresh',
@@ -230,9 +233,12 @@ describe('router worker behavioral contracts', () => {
       '/admin/nodes/{nodeId}/revoke',
       '/admin/nodes/{nodeId}/deactivate',
       '/admin/nodes/{nodeId}/activate',
+      '/admin/meshes',
+      '/admin/meshes/{meshId}',
       '/admin/profiles/rollout',
       '/admin/profiles/activate',
       '/admin/profiles/config',
+      '/admin/profiles/duplicate',
       '/admin/agent-versions',
       '/admin/agent-version',
       '/admin/runtime-versions',
@@ -5051,7 +5057,7 @@ describe('multi-mesh machine groups', () => {
       headers: { ...bearer(setupToken), 'content-type': 'application/json' },
       body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: [], activeProfileIds: [], capacity: 1 })
     }))
-    expect(claim.status).toBe(200)
+    expect(claim.status).toBe(201)
     const claimed = await claim.json() as { nodeId: string; profiles: Array<{ id: string }> }
     expect(claimed.profiles.map((profile) => profile.id)).toContain('mesh-smoke-qwen25-1.5b')
     expect(claimed.profiles.map((profile) => profile.id)).not.toContain(devProfileId)
