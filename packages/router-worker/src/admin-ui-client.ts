@@ -28,7 +28,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // model's own callable name is any public alias other than this shared one.
   const STABLE_PUBLIC_MODEL = 'codeflare-mesh';
   const chipEl = (tone, text) => { const c = document.createElement('span'); c.className = 'chip'; if (tone) c.setAttribute('data-tone', tone); c.textContent = text; return c; };
-  const callName = (profile) => { const aliases = (profile && profile.publicAliases) || []; return aliases.find((alias) => alias !== STABLE_PUBLIC_MODEL) || aliases[0] || ''; };
+  // A model's own alias is the first entry that is not a mesh's stable route name
+  // (codeflare-mesh or codeflare-mesh-<mesh>), mirroring the server's reserved-name rule.
+  const callName = (profile) => { const aliases = (profile && profile.publicAliases) || []; return aliases.find((alias) => alias !== STABLE_PUBLIC_MODEL && alias.indexOf(STABLE_PUBLIC_MODEL + '-') !== 0) || aliases[0] || ''; };
   const tokenKey = 'codeflareInferenceMeshAdminToken';
   const savedToken = () => sessionStorage.getItem(tokenKey) || localStorage.getItem(tokenKey) || '';
   const storeToken = (value, remember) => {
@@ -1449,6 +1451,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     save.dataset.runtime = profile.runtime || 'meshllm';
     save.dataset.out = 'model-edit-output';
     bodyEl.appendChild(save);
+    // Duplicate clones this model as an inactive copy the operator edits
+    // independently (REQ-RUN-017); it applies to any model, active or not.
+    const duplicate = document.createElement('button');
+    duplicate.type = 'button';
+    duplicate.className = 'btn';
+    duplicate.textContent = 'Duplicate model';
+    duplicate.dataset.action = 'model-duplicate';
+    duplicate.dataset.profileId = profile.id;
+    duplicate.dataset.out = 'model-edit-output';
+    bodyEl.appendChild(duplicate);
     // Any switched-off model can be permanently removed, including the seed-once
     // starter (REQ-RUN-012); only the active model (it owns its mesh's route) hides Delete.
     if (!profile.active) {
@@ -2349,6 +2361,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'node-activate': 'node-output',
     'model-toggle': 'models-output',
     'model-save': 'model-edit-output',
+    'model-duplicate': 'model-edit-output',
     'model-delete': 'model-edit-output',
     'model-add': 'model-add-output',
     'mesh-create': 'mesh-output',
@@ -2579,6 +2592,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       setOutput(out, 'Model settings saved.');
       toast('Model settings saved');
       await refreshStatus().catch(() => undefined);
+    } else if (action === 'model-duplicate') {
+      const id = button.dataset.profileId || '';
+      await request('/admin/profiles/duplicate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id }) });
+      setOutput(out, 'Model duplicated.');
+      closeDrawer();
+      await refreshStatus().catch(() => undefined);
+      toast('Model duplicated');
     } else if (action === 'model-delete') {
       const id = button.dataset.profileId || '';
       await request('/admin/profiles/delete', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id }) });

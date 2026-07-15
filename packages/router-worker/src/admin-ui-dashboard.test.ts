@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_DRAWER, ADMIN_UI_MESHES, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
 import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
@@ -1579,5 +1579,155 @@ describe('dashboard routing contracts', () => {
     await harness.clickAction('model-add')
     await harness.flush(10)
     expect(harness.fetchCalls.some((call) => call.path === '/admin/profiles/add')).toBe(false)
+  })
+})
+
+describe('mesh console contracts', () => {
+  const consoleMeshes = [
+    { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 },
+    { id: 'development', name: 'Development', alias: 'codeflare-mesh-development', machineCount: 0, modelCount: 0 },
+    { id: 'ops', name: 'Ops', alias: 'codeflare-mesh-ops', machineCount: 2, modelCount: 1 }
+  ]
+
+  it('REQ-ADM-037 nodes table renders a mesh column resolved to group names', async () => {
+    expect(ADMIN_UI_NODES_TABLE.columns).toContain('mesh')
+    const nodes = [
+      { id: 'node-big', status: 'online', meshId: 'development', metrics: { runtimeState: 'ready', activeRequests: 0 } },
+      { id: 'node-small', status: 'online', metrics: { runtimeState: 'ready', activeRequests: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshes: consoleMeshes }) })
+    const meshCell = (nodeId: string) => tableRows(harness).find((row) => row.dataset.nodeRow === nodeId)!.children.find((td) => td.getAttribute('data-cell') === 'mesh')!
+    expect(meshCell('node-big').getAttribute('data-value')).toBe('development')
+    expect(meshCell('node-big').textContent).toBe('Development')
+    // Legacy rows without a stored meshId render as members of the default group.
+    expect(meshCell('node-small').getAttribute('data-value')).toBe('default')
+    expect(meshCell('node-small').textContent).toBe('Default')
+  })
+
+  it('REQ-ADM-037 meshes card lists groups, gates Delete to empty non-default meshes, and posts create/delete', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ meshes: consoleMeshes }), respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/admin/meshes' && method === 'POST') return Response.json({ ok: true, mesh: { id: 'noobs', name: 'Noobs' } }, { status: 201 })
+      if (path === '/admin/meshes/development' && method === 'DELETE') return Response.json({ ok: true })
+      return undefined
+    } })
+    const rows = harness.byId(ADMIN_UI_MESHES.listId).children.filter((row) => row.dataset.meshRow)
+    expect(rows.map((row) => row.dataset.meshRow)).toEqual(['default', 'development', 'ops'])
+    const aliasOf = (row: StubElement) => descendants(row).find((el) => el.getAttribute('data-mesh-alias') !== null)?.getAttribute('data-mesh-alias')
+    expect(aliasOf(rows[1]!)).toBe('codeflare-mesh-development')
+    const deleteOf = (row: StubElement) => descendants(row).find((el) => el.dataset.action === 'mesh-delete')
+    expect(deleteOf(rows[0]!), 'the default mesh never offers Delete').toBeUndefined()
+    expect(deleteOf(rows[2]!), 'an occupied mesh offers no Delete').toBeUndefined()
+    const del = deleteOf(rows[1]!)
+    expect(del).toBeDefined()
+    expect(del!.dataset.meshId).toBe('development')
+    expect(del!.dataset.confirm, 'mesh delete arms before submitting').toBeTruthy()
+
+    harness.byId(ADMIN_UI_MESHES.nameInputId).value = ' Noobs '
+    await harness.clickAction('mesh-create', { out: ADMIN_UI_MESHES.outputId })
+    await harness.flush(5)
+    const createCall = harness.fetchCalls.find((call) => call.path === '/admin/meshes' && call.init?.method === 'POST')
+    expect(JSON.parse(String(createCall?.init?.body))).toEqual({ name: 'Noobs' })
+    expect(harness.byId(ADMIN_UI_MESHES.nameInputId).value, 'a successful create clears the input').toBe('')
+
+    await harness.clickAction('mesh-delete', { meshId: 'development', out: ADMIN_UI_MESHES.outputId })
+    await harness.flush(5)
+    expect(harness.fetchCalls.some((call) => call.path === '/admin/meshes/development' && call.init?.method === 'DELETE')).toBe(true)
+  })
+
+  it('REQ-ADM-023 node drawer saves the mesh selection only when changed', async () => {
+    const nodes = [{ id: 'node-weak', displayName: 'Weak', status: 'online', metrics: { runtimeState: 'ready', activeRequests: 0 } }]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshes: consoleMeshes }) })
+    await harness.clickAction('node-detail', { nodeId: 'node-weak' })
+    const select = harness.byId('node-edit-mesh')
+    expect(select.children.map((option) => option.value)).toEqual(['default', 'development', 'ops'])
+    expect(select.value).toBe('default')
+    expect(select.dataset.original).toBe('default')
+
+    await harness.clickAction('node-config-save', { nodeId: 'node-weak', out: 'node-output' })
+    const unchanged = harness.fetchCalls.find((call) => call.path === '/admin/nodes/node-weak/config')
+    expect(JSON.parse(String(unchanged?.init?.body))).not.toHaveProperty('meshId')
+
+    select.value = 'development'
+    await harness.clickAction('node-config-save', { nodeId: 'node-weak', out: 'node-output' })
+    const calls = harness.fetchCalls.filter((call) => call.path === '/admin/nodes/node-weak/config')
+    expect(JSON.parse(String(calls[calls.length - 1]?.init?.body)).meshId).toBe('development')
+  })
+
+  it('REQ-RUN-016 model drawer saves the mesh selection only when changed', async () => {
+    const profiles = [{ id: 'custom-tune', displayName: 'Tune', publicAliases: ['codeflare-mesh-development', 'tune'], meshId: 'development', active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
+    await harness.clickAction('model-detail', { profileId: 'custom-tune' })
+    const select = harness.byId('model-edit-mesh')
+    expect(select.value).toBe('development')
+    expect(select.dataset.original).toBe('development')
+    // The alias field carries the model's OWN alias, never its mesh's stable route name.
+    expect(harness.byId('model-edit-callname').value).toBe('tune')
+
+    await harness.clickAction('model-save', { profileId: 'custom-tune', runtime: 'meshllm', out: 'model-edit-output' })
+    const unchanged = harness.fetchCalls.find((call) => call.path === '/admin/profiles/config')
+    expect(JSON.parse(String(unchanged?.init?.body))).not.toHaveProperty('meshId')
+
+    select.value = 'ops'
+    await harness.clickAction('model-save', { profileId: 'custom-tune', runtime: 'meshllm', out: 'model-edit-output' })
+    const calls = harness.fetchCalls.filter((call) => call.path === '/admin/profiles/config')
+    expect(JSON.parse(String(calls[calls.length - 1]?.init?.body)).meshId).toBe('ops')
+  })
+
+  it('REQ-RUN-017 model drawer duplicates a model through the duplicate endpoint', async () => {
+    const profiles = [{ id: 'custom-live', displayName: 'Live', publicAliases: ['codeflare-mesh', 'live'], active: true, rolloutPercent: 100, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }), respond: (path, init) => {
+      if (path === '/admin/profiles/duplicate' && (init?.method || 'GET') === 'POST') return Response.json({ ok: true, profileId: 'custom-live-copy' }, { status: 201 })
+      return undefined
+    } })
+    await harness.clickAction('model-detail', { profileId: 'custom-live' })
+    // Duplicate applies to any model — including the active one Delete hides for.
+    const dup = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((el) => el.dataset.action === 'model-duplicate')
+    expect(dup).toBeDefined()
+    expect(dup!.dataset.profileId).toBe('custom-live')
+    await harness.clickAction('model-duplicate', { profileId: 'custom-live', out: 'model-edit-output' })
+    await harness.flush(5)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/duplicate')
+    expect(call?.init?.method).toBe('POST')
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ profileId: 'custom-live' })
+    expect(harness.byId(ADMIN_UI_DRAWER.containerId).hidden, 'drawer closes so the refreshed list shows the copy').toBe(true)
+  })
+
+  it('REQ-ADM-025 renders the model sources panel visible by default with CSS-keyed contextual switching', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    const panelAt = html.indexOf('id="model-add-sources"')
+    expect(panelAt).toBeGreaterThan(-1)
+    expect(html).toContain('data-model-sources="single"')
+    // A copyable reference-format example is structural: a code element inside the panel.
+    expect(html.slice(panelAt)).toMatch(/<code>[^<]+<\/code>/)
+    expect(html).toContain('data-command-row="model-source-gguf"')
+    expect(html).toContain('data-command-row="model-source-layers"')
+    expect(html).toContain('data-command-row="model-source-split-guide"')
+    // Context switching is CSS keyed off the dataset — content is never gated on a JS reveal.
+    const css = adminUiCss()
+    expect(css).toContain('.model-sources[data-model-sources="single"] .command-row[data-command-row="model-source-layers"]')
+    expect(css).toContain('.model-sources[data-model-sources="split"] .command-row[data-command-row="model-source-gguf"]')
+
+    const mode = harness.byId('model-add-mode')
+    const sources = harness.byId('model-add-sources')
+    mode.dataset.modelAddMode = 'true'
+    mode.value = 'split'
+    await harness.change(mode)
+    expect(sources.dataset.modelSources).toBe('split')
+    mode.value = 'single'
+    await harness.change(mode)
+    expect(sources.dataset.modelSources).toBe('single')
+  })
+
+  it("REQ-ADM-031 direct playground lists every mesh's active model by its own alias", async () => {
+    const profiles = [
+      { id: 'model-default', displayName: 'Default Model', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-dev', displayName: 'Dev Model', publicAliases: ['codeflare-mesh-development', 'dev-coder'], meshId: 'development', active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-off', displayName: 'Off Model', publicAliases: ['codeflare-mesh-ops', 'off-model'], meshId: 'ops', active: false, rolloutPercent: 0, meshllm: { split: false } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
+    const select = harness.byId(ADMIN_UI_PLAYGROUND.selectId)
+    expect(select.children.map((option) => option.value)).toEqual(['main', 'dev-coder'])
   })
 })

@@ -10,7 +10,7 @@ import { InvalidJsonBodyError } from './errors'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName } from './meshes'
-import { buildCustomProfile, DEFAULT_MODEL_PROFILES, nodeMeshId, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
+import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, nodeMeshId, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
@@ -106,6 +106,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/admin/profiles/add' && request.method === 'POST') return await handleProfileAdd(request, deps, id, now())
       if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
       if (url.pathname === '/admin/profiles/delete' && request.method === 'POST') return await handleProfileDelete(request, deps, id, now())
+      if (url.pathname === '/admin/profiles/duplicate' && request.method === 'POST') return await handleProfileDuplicate(request, deps, id, now())
       if (url.pathname === '/admin/settings' && request.method === 'POST') return await handleAdminSettings(request, deps, id, now())
       if (url.pathname === '/admin/runtime-versions' && request.method === 'GET') return await handleAdminRuntimeVersions(request, deps, id, now())
       if (url.pathname === '/admin/runtime-versions' && request.method === 'POST') return await handleAdminRuntimeVersionSelect(request, deps, id, now())
@@ -135,6 +136,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/models' && request.method === 'POST') return await handleApiModelAdd(request, deps, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/enable$/) && request.method === 'POST') return await handleApiModelEnable(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/disable$/) && request.method === 'POST') return await handleApiModelDisable(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/duplicate$/) && request.method === 'POST') return await handleApiModelDuplicate(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'DELETE') return await handleApiModelDelete(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'POST') return await handleApiModelConfigure(request, deps, url, id, now())
       if (url.pathname === '/api/v1/agent-versions' && request.method === 'GET') return await handleApiAgentVersions(request, deps, id, now())
@@ -2358,6 +2360,32 @@ async function handleProfileDelete(request: Request, deps: RouterDeps, requestId
   await deps.store.deleteProfile(profileId)
   await deps.store.appendAudit({ id: requestId, type: 'profile_deleted', at: now, actor, target: profileId, detail: {} })
   return json({ ok: true, profileId }, 200, requestId)
+}
+
+// Duplication clones a profile into an inactive same-mesh sibling with a derived
+// call name so the operator tunes a variant without touching the original (REQ-RUN-017).
+async function duplicateProfileCore(deps: RouterDeps, profileId: string, actor: string, requestId: string, now: number): Promise<Response> {
+  const profiles = await deps.store.listProfiles()
+  const source = profiles.find((profile) => profile.id === profileId)
+  if (!source) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const copy = buildDuplicateProfile(source, profiles)
+  await deps.store.setProfile(copy)
+  await deps.store.appendAudit({ id: requestId, type: 'model_duplicated', at: now, actor, target: copy.id, detail: { from: source.id } })
+  return json({ ok: true, profileId: copy.id, model: toApiModel(copy) }, 201, requestId)
+}
+
+async function handleProfileDuplicate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ profileId?: unknown }>(request)
+  if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
+  return duplicateProfileCore(deps, body.profileId, actor, requestId, now)
+}
+
+async function handleApiModelDuplicate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return duplicateProfileCore(deps, decodeURIComponent(url.pathname.split('/').at(-2) ?? ''), `automation:${automation.id}`, requestId, now)
 }
 
 async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {

@@ -212,6 +212,32 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
   }
 }
 
+// buildDuplicateProfile clones an existing profile into an inactive sibling the
+// operator edits independently (REQ-RUN-017): same mesh, model reference, runtime,
+// and tunables, but its own derived call name, id, and bind port. Version resets
+// to 1 — the copy is a brand-new operator row, never a shipped default.
+export function buildDuplicateProfile(source: ModelProfile, existing: readonly ModelProfile[]): ModelProfile {
+  const ownAlias = source.publicAliases.find((alias) => alias !== STABLE_PUBLIC_MODEL && !alias.startsWith(`${STABLE_PUBLIC_MODEL}-`))
+  const base = slugify(ownAlias ?? source.id)
+  const duplicateId = (slug: string) => (source.runtime === 'llamacpp' ? `custom-${slug}-llamacpp` : `custom-${slug}`)
+  const taken = new Set(existing.flatMap((profile) => [profile.id, ...profile.publicAliases]))
+  let slug = `${base}-copy`
+  for (let n = 2; taken.has(slug) || taken.has(duplicateId(slug)); n += 1) slug = `${base}-copy-${n}`
+  const highestBindPort = existing.reduce((max, profile) => Math.max(max, profile.meshllm?.bindPort ?? profile.llamacpp?.bindPort ?? BIND_PORT_BASE), BIND_PORT_BASE)
+  const bindPort = highestBindPort + BIND_PORT_STEP
+  return {
+    ...source,
+    id: duplicateId(slug),
+    displayName: `${source.displayName} (copy)`,
+    publicAliases: [meshAliasFor(profileMeshId(source)), slug],
+    version: 1,
+    rolloutPercent: 0,
+    active: false,
+    ...(source.meshllm ? { meshllm: { ...source.meshllm, bindPort } } : {}),
+    ...(source.llamacpp ? { llamacpp: { ...source.llamacpp, bindPort } } : {})
+  }
+}
+
 function parseLlamaCppModelRef(ref: string): { readonly hfRepo: string; readonly hfFile?: string; readonly quant?: string } {
   const withoutScheme = ref.replace(/^hf:\/\//, '')
   const quantSeparator = withoutScheme.lastIndexOf(':')
