@@ -906,14 +906,20 @@ func TestREQOBS009GPUFallbackPerOSAndMerge(t *testing.T) {
 		if got := GPUFallbackMetrics(ctx, "windows", windows); got.GPUMemoryTotalMiB != 16384 {
 			t.Fatalf("windows nvidia-smi.exe fallback: %#v", got)
 		}
-		// macOS parses system_profiler; VRAM (Total) in GB converts to MiB.
+		// macOS parses system_profiler (VRAM (Total) in GB converts to MiB) and reads
+		// live consumption from the IORegistry accelerator counter.
 		mac := func(_ context.Context, name string, _ ...string) ([]byte, error) {
-			if name != "system_profiler" {
-				t.Fatalf("darwin fallback must call system_profiler, got %q", name)
+			switch name {
+			case "system_profiler":
+				return []byte("Graphics/Displays:\n    Apple M3 Max:\n      Chipset Model: Apple M3 Max\n      VRAM (Total): 48 GB\n"), nil
+			case "ioreg":
+				return []byte("    \"PerformanceStatistics\" = {\"In use system memory\" = 1073741824}\n"), nil
+			default:
+				t.Fatalf("darwin fallback must call system_profiler or ioreg, got %q", name)
+				return nil, nil
 			}
-			return []byte("Graphics/Displays:\n    Apple M3 Max:\n      Chipset Model: Apple M3 Max\n      VRAM (Total): 48 GB\n"), nil
 		}
-		if got := GPUFallbackMetrics(ctx, "darwin", mac); got.GPUName != "Apple M3 Max" || got.GPUMemoryTotalMiB != 48*1024 {
+		if got := GPUFallbackMetrics(ctx, "darwin", mac); got.GPUName != "Apple M3 Max" || got.GPUMemoryTotalMiB != 48*1024 || got.GPUMemoryUsedMiB != 1024 {
 			t.Fatalf("darwin system_profiler fallback: %#v", got)
 		}
 		// A failed probe yields zero GPU fields (unknown), never an error.
