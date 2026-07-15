@@ -1388,7 +1388,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     // 0 = Auto, shown as a blank field: mesh-llm sizes the context to the GPU.
     ctxInput.value = (isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) ? String(isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) : '';
     ctxRow.appendChild(ctxInput);
-    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Blank = Auto (llama.cpp loads the model\'s native context). Pin a number (4096 or higher) to cap it; larger uses more GPU memory.' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
+    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Blank = Auto (llama.cpp loads the native model context). Pin a number (4096 or higher) to cap it; larger uses more GPU memory.' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
     bodyEl.appendChild(ctxRow);
     const modelRow = document.createElement('label');
     modelRow.className = 'drawer-row';
