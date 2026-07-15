@@ -1433,16 +1433,22 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(row('default').getAttribute('data-machines')).toBe('1')
     expect(row('default').getAttribute('data-serving')).toBe('1')
     expect(row('default').getAttribute('data-toks')).toBe('42')
-    expect(descendants(row('default')).find((el) => el.className === 'chip')!.dataset.tone).toBe('ok')
+    expect(row('default').getAttribute('data-state')).toBe('Serving')
+    expect(row('default').getAttribute('data-state-tone')).toBe('ok')
+    // The card merges the mesh identity (purple pill + route) with the model's own pills.
+    const meshPill = descendants(row('default')).find((el) => el.getAttribute('data-profile-mesh') !== null)!
+    expect(meshPill.dataset.tone).toBe('purple')
+    expect(descendants(row('default')).find((el) => el.getAttribute('data-runtime') !== null)!.getAttribute('data-runtime')).toBe('meshllm')
+    expect(descendants(row('default')).find((el) => el.getAttribute('data-serving-mode') !== null)!.getAttribute('data-serving-mode')).toBe('single')
     // Ops: model on but its machine has not adopted it yet — amber, zero serving, no throughput.
     expect(row('ops').getAttribute('data-serving')).toBe('0')
     expect(row('ops').getAttribute('data-toks')).toBeNull()
-    expect(descendants(row('ops')).find((el) => el.className === 'chip')!.dataset.tone).toBe('warn')
-    // An empty mesh with no model stays neutral — a group without a model is a choice, not an alarm.
-    const emptyChip = descendants(row('empty')).find((el) => el.className === 'chip')!
-    expect(emptyChip.dataset.tone).not.toBe('warn')
-    expect(emptyChip.dataset.tone).not.toBe('danger')
-    // Each row head carries the mesh's callable route.
+    expect(row('ops').getAttribute('data-state-tone')).toBe('warn')
+    // An empty mesh with no model stays neutral — a group without a model is a choice, not an
+    // alarm — and carries no model pills.
+    expect(row('empty').getAttribute('data-state-tone')).toBe('idle')
+    expect(descendants(row('empty')).find((el) => el.getAttribute('data-runtime') !== null)).toBeUndefined()
+    // Each card head carries the mesh's callable route.
     expect(descendants(row('ops')).find((el) => el.getAttribute('data-mesh-alias') !== null)!.getAttribute('data-mesh-alias')).toBe('codeflare-mesh-ops')
     // The activity feed is gone from the Overview: logs live in Settings only.
     expect(() => harness.byId('overview-audit')).toThrow()
@@ -1782,9 +1788,10 @@ describe('mesh console contracts', () => {
     expect(html.indexOf('id="mesh-add-details"', meshHeadAt)).toBeGreaterThan(meshHeadAt)
     // The add-model form fields live inside the disclosure body.
     expect(html.indexOf('id="model-add-ref"', modelDetailsAt)).toBeGreaterThan(modelDetailsAt)
-    // Mesh rows right-align the route chip; disclosure summaries share the compact row-button metrics.
+    // Mesh rows right-align the route chip; disclosure summaries, section-header actions,
+    // and disclosure submits all share the compact button tokens.
     expect(adminUiCss()).toContain('.mesh-row-head .endpoint-chip{margin-left:auto}')
-    expect(adminUiCss()).toContain('.row-item .btn,.disclosure>summary.btn{min-height:2.2rem')
+    expect(adminUiCss()).toContain('.row-item .btn,.disclosure>summary.btn,.panel-head>.btn,.disclosure-body .form-actions .btn{min-height:var(--btn-sm-h)')
   })
 
   it('REQ-ADM-025 renders the model sources panel with CSS-keyed contextual switching', async () => {

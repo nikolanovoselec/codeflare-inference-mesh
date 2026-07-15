@@ -2001,24 +2001,30 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   // Meshes card: one row per machine group with its callable route and counts;
   // only an empty non-default mesh offers Delete (REQ-ADM-037).
-  // meshRowHead is the shared mesh identity header — bold group name with its callable
-  // route right-aligned as an endpoint chip — composed by the Meshes management card and
-  // the Overview mesh status rows alike.
+  // routeChipEl renders a mesh's callable route as the right-aligned endpoint chip —
+  // shared by the Meshes management card and the Overview mesh status cards.
+  function routeChipEl(alias) {
+    const route = document.createElement('span');
+    route.className = 'endpoint-chip';
+    route.setAttribute('data-mesh-alias', alias || '');
+    route.textContent = alias || '';
+    return route;
+  }
+  // meshRowHead is the mesh identity header for the management card: bold group name
+  // with its callable route right-aligned.
   function meshRowHead(name, alias) {
     const head = document.createElement('div');
     head.className = 'mesh-row-head';
     const title = document.createElement('strong');
     title.textContent = name || '';
     head.appendChild(title);
-    const route = document.createElement('span');
-    route.className = 'endpoint-chip';
-    route.setAttribute('data-mesh-alias', alias || '');
-    route.textContent = alias || '';
-    head.appendChild(route);
+    head.appendChild(routeChipEl(alias));
     return head;
   }
-  // Overview "Mesh status": one row per machine group answering the operator's four
-  // questions at a glance — is it serving, which model, on how many machines, how fast.
+  // Overview "Mesh status": one card per machine group merging the mesh identity
+  // (purple pill + status word + callable route), the deployed model with its
+  // provider/mode pills, and the group's collective machine state — what is running,
+  // at a glance, in the same pill vocabulary as the models list.
   function renderMeshStatus(status) {
     const rollup = byId('overview-mesh');
     if (!rollup) return;
@@ -2038,20 +2044,36 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       row.setAttribute('data-mesh-status', mesh.id);
       row.setAttribute('data-machines', String(meshNodes.length));
       row.setAttribute('data-serving', String(serving.length));
+      row.setAttribute('data-state', word);
+      row.setAttribute('data-state-tone', tone);
       if (toks > 0) row.setAttribute('data-toks', String(Math.round(toks)));
       const copy = document.createElement('div');
       copy.className = 'command-copy';
-      copy.appendChild(meshRowHead(mesh.name || mesh.id, mesh.alias));
+      const head = document.createElement('div');
+      head.className = 'mesh-row-head';
+      head.appendChild(pillEl(PROFILE_PILLS.mesh, 'data-profile-mesh', mesh.id, mesh.name || mesh.id));
+      head.appendChild(statusDot(tone, word));
+      head.appendChild(routeChipEl(mesh.alias));
+      copy.appendChild(head);
+      const modelRow = document.createElement('div');
+      modelRow.className = 'model-name-row';
+      if (model) {
+        const name = document.createElement('strong');
+        name.textContent = modelName(model);
+        // The mesh pill is the card itself, so the model line carries provider + mode.
+        const pills = profilePills(model, model.runtime === 'llamacpp', Boolean(model.meshllm && model.meshllm.split));
+        modelRow.append(name, pills[0], pills[1]);
+      } else {
+        const none = document.createElement('small');
+        none.textContent = 'no model deployed';
+        modelRow.appendChild(none);
+      }
+      copy.appendChild(modelRow);
       const detail = document.createElement('span');
       detail.className = 'mesh-counts';
-      const machinesPart = meshNodes.length + (meshNodes.length === 1 ? ' machine' : ' machines') + (model ? ' · ' + serving.length + ' serving' : '');
-      detail.textContent = (model ? modelName(model) : 'no model deployed') + ' · ' + machinesPart + (toks > 0 ? ' · ' + Math.round(toks) + ' tok/s' : '');
+      detail.textContent = meshNodes.length + (meshNodes.length === 1 ? ' machine' : ' machines') + (model ? ' · ' + serving.length + ' serving' : '') + (toks > 0 ? ' · ' + Math.round(toks) + ' tok/s' : '');
       copy.appendChild(detail);
       row.appendChild(copy);
-      const state = document.createElement('div');
-      state.className = 'command-actions';
-      state.appendChild(statusDot(tone, word));
-      row.appendChild(state);
       rollup.appendChild(row);
     });
   }

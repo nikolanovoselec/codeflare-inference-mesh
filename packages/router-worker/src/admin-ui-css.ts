@@ -73,6 +73,8 @@ export function adminUiCss(): string {
   --fs-md:.875rem;
   --fs-lg:1rem;
   --fs-xl:1.125rem;
+  --btn-sm-h:2.2rem;
+  --btn-sm-pad:.35rem .7rem;
   --radius-sm:6px;
   --radius-md:8px;
   --radius-lg:12px;
@@ -262,7 +264,7 @@ code[data-mesh-field]{display:block}
 .row-item code{color:var(--text);font-size:var(--fs-sm);overflow-wrap:anywhere}
 .row-item .grow{flex:1 1 10rem;min-width:0;display:grid;gap:.15rem}
 .row-item small{color:var(--muted);font-size:var(--fs-xs)}
-.row-item .btn,.disclosure>summary.btn{min-height:2.2rem;padding:.35rem .7rem}
+.row-item .btn,.disclosure>summary.btn,.panel-head>.btn,.disclosure-body .form-actions .btn{min-height:var(--btn-sm-h);padding:var(--btn-sm-pad)}
 .row-item .btn{margin-left:auto}
 .empty-note{color:var(--muted);font-size:var(--fs-sm)}
 .feed{display:grid;gap:.35rem}

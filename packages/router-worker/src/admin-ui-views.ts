@@ -214,7 +214,7 @@ ${disclosure({
     action: 'mesh-add',
     label: '+ Mesh',
     body: `<label for="${ADMIN_UI_MESHES.nameInputId}">Mesh name</label>
-<div class="form-actions mesh-add-row"><input id="${ADMIN_UI_MESHES.nameInputId}" name="meshName" type="text" placeholder="e.g. Development" autocomplete="off">${button({ action: 'mesh-create', label: '+', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
+<div class="form-actions mesh-add-row"><input id="${ADMIN_UI_MESHES.nameInputId}" name="meshName" type="text" placeholder="e.g. Development" autocomplete="off">${button({ action: 'mesh-create', label: 'Add', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
 <span class="field-hint">Letters only. The mesh answers at codeflare-mesh-&lt;name&gt;.</span>`
   })}</div>
 <p class="field-hint">Group machines into meshes and give each group its own model. Every mesh answers at its own route.</p>
@@ -243,7 +243,7 @@ ${commandRow({ id: 'model-source-gguf', title: 'Unsloth GGUF', description: 'Rea
 ${commandRow({ id: 'model-source-layers', title: 'mesh-llm layer packages', description: 'Pre-split models for serving one model across several machines.', actions: '<a class="btn" id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">Browse packages</a>' })}
 ${commandRow({ id: 'model-source-split-guide', title: 'Prepare your own split model', description: 'Turn any model into layer packages with the splitter tool.', actions: '<a class="btn" id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">Open guide</a>' })}
 </div>
-<div class="form-actions">${button({ action: 'model-add', label: '+ Model', variant: 'primary', out: 'model-add-output' })}</div>
+<div class="form-actions">${button({ action: 'model-add', label: 'Add', variant: 'primary', out: 'model-add-output' })}</div>
 ${output({ id: 'model-add-output', kind: 'model-add', pre: true })}`
   })
 }
