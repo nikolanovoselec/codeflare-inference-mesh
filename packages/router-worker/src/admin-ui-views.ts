@@ -165,6 +165,7 @@ function overviewSection(): string {
     actions: button({ action: 'status-refresh', label: 'Refresh' }),
     active: true,
     body: `<div class="topology" id="${ADMIN_UI_TOPOLOGY.containerId}">
+<div class="topo-controls"><label for="${ADMIN_UI_TOPOLOGY.meshSelectId}">Mesh</label><span class="slot"><select id="${ADMIN_UI_TOPOLOGY.meshSelectId}" name="topologyMesh" data-topo-mesh-select="true"><option value="all">All meshes</option></select></span></div>
 <p class="topo-caption" id="${ADMIN_UI_TOPOLOGY.captionId}" data-output="topology-caption"></p>
 <div class="toks-trace" id="${ADMIN_UI_TOKS_TRACE.containerId}" data-output="toks-trace" role="img" aria-label="Tokens per second, rolling window"></div>
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
@@ -194,14 +195,17 @@ function nodesSection(): string {
 <tbody id="${ADMIN_UI_NODES_TABLE.bodyId}"><tr><td class="empty-note" colspan="${ADMIN_UI_NODES_TABLE.columns.length}">Nodes appear here once enrolled.</td></tr></tbody>
 </table></div>
 ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}
-<div class="subpanel"><h3>Enroll a node</h3>${enrollControls('')}</div>
-<div class="subpanel"><h3>Meshes</h3>
-<p class="field-hint">Machine groups. Each machine belongs to one mesh, each model is assigned to one mesh, and each mesh's deployed model answers its own callable route.</p>
+<div class="subpanel"><h3>Enroll a node</h3>${enrollControls('')}</div>`
+  })
+}
+
+function meshesCard(): string {
+  return `<div class="subpanel"><h3>Meshes</h3>
+<p class="field-hint">Group machines into meshes and give each group its own model. Every mesh answers at its own route.</p>
 <div class="row-list" id="${ADMIN_UI_MESHES.listId}" data-output="meshes"><p class="empty-note">Meshes appear here after you sign in.</p></div>
-<div class="form-grid">${field({ id: ADMIN_UI_MESHES.nameInputId, label: 'New mesh', control: textInput({ id: ADMIN_UI_MESHES.nameInputId, name: 'meshName', placeholder: 'e.g. Development' }), hint: 'Letters only. Its model answers at codeflare-mesh-&lt;name&gt;.' })}</div>
+<div class="form-grid">${field({ id: ADMIN_UI_MESHES.nameInputId, label: 'New mesh', control: textInput({ id: ADMIN_UI_MESHES.nameInputId, name: 'meshName', placeholder: 'e.g. Development' }), hint: 'Letters only. The mesh answers at codeflare-mesh-<name>.' })}</div>
 <div class="form-actions">${button({ action: 'mesh-create', label: 'Create mesh', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
 ${output({ id: ADMIN_UI_MESHES.outputId, kind: 'mesh', pre: true })}</div>`
-  })
 }
 
 function addModelCard(): string {
@@ -229,11 +233,12 @@ ${output({ id: 'model-add-output', kind: 'model-add', pre: true })}</div>`
 function modelsSection(): string {
   return sectionPanel({
     id: 'models',
-    title: 'Models',
-    description: 'The AI models your machines can run. Deploy one to serve it across the mesh; open Manage to rename it, change what callers ask for, or see the machines running it.',
+    title: 'Mesh & Models',
+    description: 'The AI models your machines can run, grouped into meshes. Deploy a model to serve it in its mesh; open Manage to rename it, move it, or see the machines running it.',
     body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a mesh to share a model. Set it in the deployment and redeploy.</p>
 <div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Deploy one to start serving it.</p></div>
 ${output({ id: 'models-output', kind: 'models', pre: true })}
+${meshesCard()}
 ${addModelCard()}`
   })
 }
@@ -337,7 +342,7 @@ export function dashboardView(active: boolean): string {
   const navItems = [
     navItem({ section: 'overview', label: 'Overview', hint: 'Live mesh health', current: true }),
     navItem({ section: 'nodes', label: 'Nodes', hint: 'Runtime roles' }),
-    navItem({ section: 'models', label: 'Models', hint: 'Profiles and splits' }),
+    navItem({ section: 'models', label: 'Mesh & Models', hint: 'Meshes and models' }),
     navItem({ section: 'routing', label: 'Routing', hint: 'Gateway and domain' }),
     navItem({ section: 'playground', label: 'Playground', hint: 'Probe a route' }),
     navItem({ section: 'settings', label: 'Settings', hint: 'Versions and keys' })

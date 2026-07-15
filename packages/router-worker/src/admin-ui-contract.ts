@@ -103,12 +103,14 @@ export const ADMIN_UI_SETUP_LOCKED_FEEDBACK = {
   variant: 'setup-locked'
 } as const
 
-/** Overview topology: hub-and-spoke, every node selectable, list fallback on mobile. */
+/** Overview topology: hub-and-spoke, every node selectable, list fallback on mobile.
+ * The mesh select filters the rendered machines to one group ('all' shows every mesh). */
 export const ADMIN_UI_TOPOLOGY = {
   containerId: 'overview-topology',
   canvasId: 'topo-canvas',
   listId: 'topo-list',
-  captionId: 'topo-caption'
+  captionId: 'topo-caption',
+  meshSelectId: 'topo-mesh-select'
 } as const
 
 /** Slide-over detail drawer shared by node and model selections. */

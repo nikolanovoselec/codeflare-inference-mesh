@@ -39,6 +39,30 @@ func TestREQOBS011RuntimeLogHandlesSplitWrites(t *testing.T) {
 	}
 }
 
+func TestREQOBS011RuntimeLogIgnoresNonErrorLevelLines(t *testing.T) {
+	// mesh-llm warns freely during QUIC path churn; a warn/info-leveled line — even one
+	// containing "failed" — is runtime chatter, not the reason the runtime failed, so it
+	// must never become the surfaced error detail. REQ-OBS-011.
+	var log runtimeLog
+	_, _ = log.Write([]byte("\x1b[2m2026-07-15T19:14:17Z\x1b[0m \x1b[33m WARN\x1b[0m \x1b[2mnoq_proto::connection\x1b[0m: failed closing path \x1b[3merr\x1b[0m=MultipathNotNegotiated\n"))
+	if log.Detail() != "" {
+		t.Fatalf("a WARN-leveled line must not be captured, got %q", log.Detail())
+	}
+	_, _ = log.Write([]byte(`{"level":"info","msg":"retry failed, backing off"}` + "\n"))
+	if log.Detail() != "" {
+		t.Fatalf("an info-leveled line must not be captured, got %q", log.Detail())
+	}
+	// A hard error token overrides the level gate, and non-leveled raw stderr keeps working.
+	_, _ = log.Write([]byte(`{"level":"warn","msg":"panic recovered in stage lane"}` + "\n"))
+	if !strings.Contains(log.Detail(), "panic recovered") {
+		t.Fatalf("a strong token must override the level gate, got %q", log.Detail())
+	}
+	_, _ = log.Write([]byte("CUDA error: out of memory\n"))
+	if !strings.Contains(log.Detail(), "out of memory") {
+		t.Fatalf("plain error stderr must still be captured, got %q", log.Detail())
+	}
+}
+
 func TestREQOBS011RuntimeErrorDetailReflectsRing(t *testing.T) {
 	// The manager surfaces its stderr ring's latest error line through RuntimeErrorDetail, which
 	// the heartbeat metrics carry to the console. REQ-OBS-011.

@@ -125,7 +125,7 @@ describe('dashboard overview contracts', () => {
     expect(html).toContain('data-nav-item="overview"')
     expect(html).toContain('data-nav-hint="Live mesh health"')
     expect(html).toContain('data-nav-hint="Runtime roles"')
-    expect(html).toContain('data-nav-hint="Profiles and splits"')
+    expect(html).toContain('data-nav-hint="Meshes and models"')
   })
 
   it('REQ-ADM-034 renders endpoint chips inside command rows for action-heavy controls', () => {
@@ -1615,6 +1615,12 @@ describe('mesh console contracts', () => {
     expect(rows.map((row) => row.dataset.meshRow)).toEqual(['default', 'development', 'ops'])
     const aliasOf = (row: StubElement) => descendants(row).find((el) => el.getAttribute('data-mesh-alias') !== null)?.getAttribute('data-mesh-alias')
     expect(aliasOf(rows[1]!)).toBe('codeflare-mesh-development')
+    // Counts are structured per row (machines and models separately), not one prose blob.
+    const countsOf = (row: StubElement) => descendants(row).find((el) => el.getAttribute('data-mesh-machines') !== null)
+    expect(countsOf(rows[2]!)?.getAttribute('data-mesh-machines')).toBe('2')
+    expect(countsOf(rows[2]!)?.getAttribute('data-mesh-models')).toBe('1')
+    // Served hints render entities exactly once — a double-escaped &amp;lt; would show raw markup.
+    expect(harness.html).not.toContain('&amp;lt;')
     const deleteOf = (row: StubElement) => descendants(row).find((el) => el.dataset.action === 'mesh-delete')
     expect(deleteOf(rows[0]!), 'the default mesh never offers Delete').toBeUndefined()
     expect(deleteOf(rows[2]!), 'an occupied mesh offers no Delete').toBeUndefined()
@@ -1718,6 +1724,46 @@ describe('mesh console contracts', () => {
     mode.value = 'single'
     await harness.change(mode)
     expect(sources.dataset.modelSources).toBe('single')
+  })
+
+  it('REQ-RUN-016 the models list shows each profile mesh without opening the drawer', async () => {
+    const profiles = [
+      { id: 'model-default', displayName: 'Default Model', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-dev', displayName: 'Dev Model', publicAliases: ['codeflare-mesh-development', 'dev-coder'], meshId: 'development', active: false, rolloutPercent: 0, meshllm: { split: false } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
+    const rowBadge = (id: string) => {
+      const row = harness.byId('profile-list').children.find((candidate) => candidate.dataset.profileRow === id)
+      return descendants(row!).find((el) => el.getAttribute('data-profile-mesh') !== null)
+    }
+    expect(rowBadge('model-dev')?.getAttribute('data-profile-mesh')).toBe('development')
+    expect(rowBadge('model-dev')?.textContent).toBe('Development')
+    // A legacy row without a stored mesh reads as a Default member.
+    expect(rowBadge('model-default')?.getAttribute('data-profile-mesh')).toBe('default')
+  })
+
+  it('REQ-ADM-015 overview topology filters machines to the selected mesh and survives the poll', async () => {
+    const nodes = [
+      { id: 'node-default', status: 'online', metrics: { runtimeState: 'ready', activeRequests: 0 } },
+      { id: 'node-dev', status: 'online', meshId: 'development', metrics: { runtimeState: 'ready', activeRequests: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshes: consoleMeshes }) })
+    const select = harness.byId(ADMIN_UI_TOPOLOGY.meshSelectId)
+    expect(select.children.map((option) => option.value)).toEqual(['all', 'default', 'development', 'ops'])
+    const topoIds = () => harness.byId(ADMIN_UI_TOPOLOGY.listId).children.map((el) => el.dataset.nodeId)
+    expect(topoIds()).toEqual(['node-default', 'node-dev'])
+
+    select.dataset.topoMeshSelect = 'true'
+    select.value = 'development'
+    await harness.change(select)
+    expect(topoIds()).toEqual(['node-dev'])
+    expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).dataset.nodes).toBe('1')
+
+    // The selection survives the periodic status rebuild instead of snapping back to all.
+    harness.runTimers()
+    await harness.flush(10)
+    expect(select.value).toBe('development')
+    expect(topoIds()).toEqual(['node-dev'])
   })
 
   it("REQ-ADM-031 direct playground lists every mesh's active model by its own alias", async () => {

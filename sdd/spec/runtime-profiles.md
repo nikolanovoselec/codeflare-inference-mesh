@@ -439,6 +439,8 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 6. The console model drawer offers a mesh selection listing every mesh, pre-selected to the model's group and sent only when actually changed. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-016 model drawer saves the mesh selection only when changed) -->
 
+7. Every row in the console models list carries a mesh badge resolving the model's group name, so the assignment is visible without opening the drawer; rows without a stored mesh read as Default members. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-016 the models list shows each profile mesh without opening the drawer) -->
+
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P1

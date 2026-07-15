@@ -538,8 +538,10 @@ function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: stri
   const runtime = (metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp') ? 'llamacpp' : 'meshllm'
   const desiredVersion = runtime === 'llamacpp' ? desired.llamacpp : desired.meshllm
   const installedVersion = runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion
-  const error = metrics.lastError || metrics.runtimeDetail || undefined
-  const failed = metrics.runtimeState === 'dependency-missing' || Boolean(error && !installedVersion)
+  // An install failure is what the agent reports as dependency-missing (its installer
+  // wraps every failure into that state). Startup stderr chatter on a runtime that has
+  // not reported its version yet is not an install failure — that node stays pending.
+  const failed = metrics.runtimeState === 'dependency-missing'
   const state = metrics.runtimeState === 'downloading'
     ? 'installing'
     : (failed ? 'failed' : (installedVersion ? 'installed' : 'pending'))
@@ -548,7 +550,7 @@ function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: stri
     desiredVersion,
     installedVersion: installedVersion ?? null,
     state,
-    error: state === 'failed' ? (error ?? null) : null
+    error: failed ? (metrics.lastError || metrics.runtimeDetail || null) : null
   }
 }
 

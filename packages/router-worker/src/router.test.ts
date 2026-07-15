@@ -5342,6 +5342,21 @@ describe('multi-mesh machine groups', () => {
     expect((await store.listProfiles()).find((profile) => profile.id === sourceId)?.displayName).toBe('Coder')
   })
 
+  it('REQ-ADM-033 a starting runtime with stderr chatter is never reported as an install failure', async () => {
+    const { router, store } = routerFixture()
+    const token = await mintKey(router)
+    // The runtime has not reported its version yet (still starting) and mesh-llm emitted a
+    // benign WARN on stderr; the install status must stay pending, not phantom-fail.
+    await store.upsertNode({
+      ...nodeFixture(),
+      metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', activeRequests: 0, runtimeDetail: 'WARN noq_proto::connection: failed closing path err=MultipathNotNegotiated' }
+    })
+
+    const res = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(token) }))
+    const node = (await res.json() as { nodes: Array<{ runtimeInstall?: Record<string, unknown> }> }).nodes[0]
+    expect(node?.runtimeInstall).toMatchObject({ runtime: 'meshllm', installedVersion: null, state: 'pending', error: null })
+  })
+
   it('REQ-RUN-017 the automation duplicate twin mirrors the console behavior', async () => {
     const { router, store } = routerFixture()
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)

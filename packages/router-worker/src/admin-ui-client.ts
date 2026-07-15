@@ -16,6 +16,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   let nodeSort = { key: '', dir: 1 };
   let nodeFilter = 'all';
   let nodeSearch = '';
+  let topologyMeshFilter = 'all';
   let pollTimer;
   // Confirm-arm state lives at this scope (not only inside the confirm closure) so the
   // status poll can see it and skip the re-render that would otherwise destroy an armed
@@ -761,7 +762,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const installed = node.runtimeInstall && node.runtimeInstall.installedVersion ? node.runtimeInstall.installedVersion : (runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion);
     if (node.deactivated) return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: 'paused', error: null };
     const error = currentRuntimeError(metrics);
-    const state = metrics.runtimeState === 'downloading' ? 'installing' : ((metrics.runtimeState === 'dependency-missing' || (error && !installed)) ? 'failed' : (installed ? 'installed' : 'pending'));
+    // Install failure = the agent's dependency-missing state; startup stderr chatter on a
+    // not-yet-versioned runtime must not read as a failed install (mirrors the router derivation).
+    const state = metrics.runtimeState === 'downloading' ? 'installing' : (metrics.runtimeState === 'dependency-missing' ? 'failed' : (installed ? 'installed' : 'pending'));
     return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: state, error: state === 'failed' ? (error || null) : null };
   }
   const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : 'MeshLLM';
@@ -962,6 +965,27 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     button.textContent = nodeDisplayName(node);
     return button;
   };
+  // The overview topology can focus on one machine group; 'all' shows every mesh.
+  const topologyNodes = (nodes) => topologyMeshFilter === 'all' ? nodes : nodes.filter((node) => nodeMeshId(node) === topologyMeshFilter);
+  // Rebuilt on every status render, preserving the operator's selection; a filter
+  // whose mesh was deleted falls back to all so the canvas never sticks empty.
+  function syncTopoMeshSelect(meshes) {
+    const select = byId(config.topology.meshSelectId);
+    if (!select) return;
+    select.textContent = '';
+    const all = document.createElement('option');
+    all.value = 'all';
+    all.textContent = 'All meshes';
+    select.appendChild(all);
+    meshes.forEach((mesh) => {
+      const option = document.createElement('option');
+      option.value = mesh.id;
+      option.textContent = mesh.name;
+      select.appendChild(option);
+    });
+    if (topologyMeshFilter !== 'all' && !meshes.some((mesh) => mesh.id === topologyMeshFilter)) topologyMeshFilter = 'all';
+    select.value = topologyMeshFilter;
+  }
   function renderTopology(nodes) {
     const canvas = byId(config.topology.canvasId);
     const list = byId(config.topology.listId);
@@ -1657,7 +1681,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       badge.setAttribute('data-serving-mode', split ? 'split' : 'single');
       const runtimeBadge = chipEl(direct ? 'accent' : null, direct ? 'llama.cpp direct' : 'mesh-llm');
       runtimeBadge.setAttribute('data-runtime', direct ? 'llamacpp' : 'meshllm');
-      nameRow.append(name, badge, runtimeBadge);
+      // The mesh assignment is first-class in the list — no drawer needed to see the
+      // group a model serves; a non-default mesh stands out in accent.
+      const profileMesh = profile.meshId || 'default';
+      const meshBadge = chipEl(profileMesh === 'default' ? null : 'accent', meshDisplayName(profileMesh));
+      meshBadge.setAttribute('data-profile-mesh', profileMesh);
+      nameRow.append(name, meshBadge, badge, runtimeBadge);
       const detail = document.createElement('small');
       const ready = readiness.find((item) => item.profileId === profile.id);
       const serving = servingCount(profile);
@@ -1886,7 +1915,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     }
     const pruneInput = byId('prune-seconds');
     if (pruneInput && status.offlinePruneSeconds != null && pruneInput.value === '') pruneInput.value = String(status.offlinePruneSeconds);
-    renderTopology(nodes);
+    syncTopoMeshSelect(Array.isArray(status.meshes) ? status.meshes : []);
+    renderTopology(topologyNodes(nodes));
     pushToksSample(nodes.reduce((total, node) => total + (nodeToks(node) || 0), 0));
     renderToksTrace();
     const rollup = byId('overview-mesh');
@@ -1960,13 +1990,25 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       row.setAttribute('data-mesh-row', mesh.id);
       const copy = document.createElement('div');
       copy.className = 'command-copy';
+      const head = document.createElement('div');
+      head.className = 'mesh-row-head';
       const title = document.createElement('strong');
       title.textContent = mesh.name;
-      copy.appendChild(title);
-      const detail = document.createElement('span');
-      detail.setAttribute('data-mesh-alias', mesh.alias || '');
-      detail.textContent = 'Route ' + (mesh.alias || '') + ' · ' + (mesh.machineCount || 0) + ' machines · ' + (mesh.modelCount || 0) + ' models';
-      copy.appendChild(detail);
+      head.appendChild(title);
+      const route = document.createElement('span');
+      route.className = 'endpoint-chip';
+      route.setAttribute('data-mesh-alias', mesh.alias || '');
+      route.textContent = mesh.alias || '';
+      head.appendChild(route);
+      copy.appendChild(head);
+      const machines = mesh.machineCount || 0;
+      const models = mesh.modelCount || 0;
+      const counts = document.createElement('span');
+      counts.className = 'mesh-counts';
+      counts.setAttribute('data-mesh-machines', String(machines));
+      counts.setAttribute('data-mesh-models', String(models));
+      counts.textContent = machines + (machines === 1 ? ' machine' : ' machines') + ' · ' + models + (models === 1 ? ' model' : ' models');
+      copy.appendChild(counts);
       row.appendChild(copy);
       const actions = document.createElement('div');
       actions.className = 'command-actions';
@@ -2865,6 +2907,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       // layer packages + the prepare guide (CSS keys off this dataset). REQ-ADM-025.
       const sources = byId('model-add-sources');
       if (sources) sources.dataset.modelSources = split ? 'split' : 'single';
+      return;
+    }
+    const topoSelect = event.target.closest('[data-topo-mesh-select]');
+    if (topoSelect) {
+      topologyMeshFilter = topoSelect.value || 'all';
+      const statusNodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
+      renderTopology(topologyNodes(statusNodes));
       return;
     }
     const targetSelect = event.target.closest('[data-playground-target-select]');
