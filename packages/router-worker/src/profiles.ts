@@ -74,8 +74,13 @@ const BIND_PORT_BASE = 4300
 const BIND_PORT_STEP = 10
 
 export const LLAMACPP_PROFILE_DEFAULTS = {
+  // parallel -1 = Auto: llama-server plans the slot count (4) with unified KV.
+  // kvUnified stays pinned on even for explicit slot counts: non-unified splits
+  // --ctx-size across slots (262144/4 = 65536 per request), which 400s any longer
+  // request and forces coding agents into early compaction.
   contextWindow: 262144,
-  parallel: 4,
+  parallel: -1,
+  kvUnified: true,
   cachePrompt: true,
   cacheReuse: 256,
   cacheTypeK: 'q4_0',
@@ -189,6 +194,7 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
         bindPort,
         contextWindow: LLAMACPP_PROFILE_DEFAULTS.contextWindow,
         parallel: LLAMACPP_PROFILE_DEFAULTS.parallel,
+        kvUnified: LLAMACPP_PROFILE_DEFAULTS.kvUnified,
         cachePrompt: LLAMACPP_PROFILE_DEFAULTS.cachePrompt,
         cacheReuse: LLAMACPP_PROFILE_DEFAULTS.cacheReuse,
         cacheTypeK: LLAMACPP_PROFILE_DEFAULTS.cacheTypeK,
@@ -259,6 +265,9 @@ export function normalizeModelProfile(profile: ModelProfile): ModelProfile {
         contextWindow: profile.llamacpp.contextWindow || profile.contextWindow || LLAMACPP_PROFILE_DEFAULTS.contextWindow,
         parallel: profile.llamacpp.parallel || LLAMACPP_PROFILE_DEFAULTS.parallel,
         cachePrompt: profile.llamacpp.cachePrompt !== false,
+        // Stored blobs predating the field coerce to on, so deployed profiles regain
+        // the full per-request context on the next heartbeat without a migration.
+        kvUnified: profile.llamacpp.kvUnified !== false,
         cacheReuse: profile.llamacpp.cacheReuse ?? LLAMACPP_PROFILE_DEFAULTS.cacheReuse
       }
     }

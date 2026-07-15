@@ -59,9 +59,13 @@ export interface LlamaCppProfileSettings {
   readonly quant?: string
   readonly bindPort: number
   readonly contextWindow: number
+  // -1 = Auto: llama-server plans the slot count itself (and enables unified KV).
   readonly parallel: number
   readonly cachePrompt: boolean
   readonly cacheReuse: number
+  // Absent = on. Unified KV shares one buffer across slots so a single request can
+  // use the whole context window; false divides the context evenly per slot.
+  readonly kvUnified?: boolean
   readonly cacheTypeK?: string
   readonly cacheTypeV?: string
   readonly batch?: number

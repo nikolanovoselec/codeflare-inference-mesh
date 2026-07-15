@@ -818,6 +818,7 @@ interface LlamaCppConfigBody {
   readonly batch?: unknown
   readonly ubatch?: unknown
   readonly flashAttn?: unknown
+  readonly kvUnified?: unknown
   readonly maxOutputTokens?: unknown
   readonly gpuLayers?: unknown
   readonly bindPort?: unknown
@@ -832,10 +833,18 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return { error: 'invalid_llamacpp' }
   const body = value as LlamaCppConfigBody
   const next: Record<string, unknown> = { ...existing }
-  const applyInt = (key: 'contextWindow' | 'parallel' | 'cacheReuse' | 'bindPort', raw: unknown, min: number): string | null => {
+  const applyInt = (key: 'contextWindow' | 'cacheReuse' | 'bindPort', raw: unknown, min: number): string | null => {
     if (raw === undefined) return null
     if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < min) return `invalid_${key}`
     next[key] = raw
+    return null
+  }
+  // parallel -1 = Auto (llama-server plans the slot count with unified KV);
+  // otherwise a fixed slot count >= 1. 0 is invalid upstream and rejected here.
+  const applyParallel = (raw: unknown): string | null => {
+    if (raw === undefined) return null
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || (raw !== -1 && raw < 1)) return 'invalid_parallel'
+    next.parallel = raw
     return null
   }
   const applyOptionalInt = (key: 'batch' | 'ubatch' | 'maxOutputTokens', raw: unknown, min: number): string | null => {
@@ -864,7 +873,7 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
   }
   for (const err of [
     applyInt('contextWindow', body.contextWindow, 4096),
-    applyInt('parallel', body.parallel, 1),
+    applyParallel(body.parallel),
     applyInt('cacheReuse', body.cacheReuse, 0),
     applyInt('bindPort', body.bindPort, 1),
     applyOptionalInt('batch', body.batch, 1),
@@ -886,6 +895,14 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
     else if (typeof body.flashAttn === 'boolean') next.flashAttn = body.flashAttn
     else return { error: 'invalid_flash_attn' }
   }
+  if (body.kvUnified !== undefined) {
+    if (body.kvUnified === null) delete next.kvUnified
+    else if (typeof body.kvUnified === 'boolean') next.kvUnified = body.kvUnified
+    else return { error: 'invalid_kv_unified' }
+  }
+  // llama-server force-enables unified KV under Auto slot planning, so an explicit
+  // off with Auto parallel would silently lie; require a fixed slot count instead.
+  if (next.parallel === -1 && next.kvUnified === false) return { error: 'kv_unified_auto_conflict' }
   for (const key of ['hfRepo', 'hfFile', 'quant'] as const) {
     const raw = body[key]
     if (raw === undefined) continue

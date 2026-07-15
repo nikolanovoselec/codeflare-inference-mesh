@@ -631,6 +631,7 @@ describe('router worker behavioral contracts', () => {
     const modelDrawer = descendants(harness.byId('drawer-body'))
     expect(modelDrawer.find((item) => item.dataset.drawerField === 'runtime')?.dataset.value).toBe('llamacpp')
     expect(modelDrawer.some((item) => item.id === 'model-edit-llama-parallel')).toBe(true)
+    expect(modelDrawer.some((item) => item.id === 'model-edit-llama-kv-unified')).toBe(true)
     expect(modelDrawer.some((item) => item.id === 'model-edit-parallel')).toBe(false)
     expect(modelDrawer.some((item) => item.id === 'model-edit-vram')).toBe(false)
 
@@ -655,7 +656,7 @@ describe('router worker behavioral contracts', () => {
       runtime: 'llamacpp',
       contextWindow: 131072,
       modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M',
-      llamacpp: { parallel: 2, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
+      llamacpp: { parallel: 2, kvUnified: true, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
     })
 
     await harness.clickAction('node-detail', { nodeId: 'node-direct' })
@@ -830,7 +831,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.status).toBe(201)
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false, rolloutPercent: 0 })
-    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 4, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
+    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: -1, kvUnified: true, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
   })
 
   it('REQ-RUN-013 rejects direct llama.cpp for split models', async () => {
@@ -2559,21 +2560,32 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ profileId, ...body })
     }))
 
-    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
+    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, kvUnified: false, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
     const configured = (await store.listProfiles()).find((profile) => profile.id === profileId)!
 
     expect(ok.status).toBe(200)
     expect(configured.runtime).toBe('llamacpp')
     expect(configured.contextWindow).toBe(131072)
-    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, kvUnified: false, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
     expect((await configure({ llamacpp: { batch: null, flashAttn: null, maxOutputTokens: null, reasoning: null } })).status).toBe(200)
     const cleared = (await store.listProfiles()).find((profile) => profile.id === profileId)!
     expect(cleared.llamacpp?.batch).toBeUndefined()
     expect(cleared.llamacpp?.flashAttn).toBeUndefined()
     expect(cleared.llamacpp?.maxOutputTokens).toBeUndefined()
     expect(cleared.llamacpp?.reasoning).toBeUndefined()
+    // A null kvUnified clears the stored field; normalization then reads it back as
+    // on — the same coercion that upgrades pre-field profile blobs without a migration.
+    expect((await configure({ llamacpp: { kvUnified: null } })).status).toBe(200)
+    const kvReset = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(kvReset.llamacpp?.kvUnified).toBe(true)
+    expect((await configure({ llamacpp: { parallel: -1 } })).status).toBe(200)
+    const autoParallel = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(autoParallel.llamacpp?.parallel).toBe(-1)
     expect((await configure({ llamacpp: { contextWindow: 2048 } })).status).toBe(400)
     expect((await configure({ llamacpp: { parallel: 0 } })).status).toBe(400)
+    expect((await configure({ llamacpp: { parallel: -2 } })).status).toBe(400)
+    expect((await configure({ llamacpp: { kvUnified: 'yes' } })).status).toBe(400)
+    expect((await configure({ llamacpp: { parallel: -1, kvUnified: false } })).status).toBe(400)
     expect((await configure({ llamacpp: { cacheTypeK: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { gpuLayers: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { bindPort: 9337 } })).status).toBe(400)

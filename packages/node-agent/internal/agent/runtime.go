@@ -33,6 +33,10 @@ type LlamaCppSettings struct {
 	Parallel        int                `json:"parallel"`
 	CachePrompt     bool               `json:"cachePrompt"`
 	CacheReuse      int                `json:"cacheReuse"`
+	// KVUnified nil or true renders --kv-unified so one request can use the whole
+	// context window; false renders --no-kv-unified, which divides --ctx-size
+	// evenly across parallel slots (REQ-RUN-015).
+	KVUnified       *bool              `json:"kvUnified,omitempty"`
 	CacheTypeK      string             `json:"cacheTypeK,omitempty"`
 	CacheTypeV      string             `json:"cacheTypeV,omitempty"`
 	Batch           int                `json:"batch,omitempty"`

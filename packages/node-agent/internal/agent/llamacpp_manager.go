@@ -149,6 +149,14 @@ func RenderLlamaCppArgs(in LlamaCppInput) []string {
 		"--metrics",
 		"--jinja",
 	}
+	// Unified KV shares one buffer across slots so a single request can use the whole
+	// --ctx-size; non-unified divides it per slot (ctx/slots), which 400s long
+	// requests. An absent toggle means on. REQ-RUN-015.
+	if settings.KVUnified != nil && !*settings.KVUnified {
+		args = append(args, "--no-kv-unified")
+	} else {
+		args = append(args, "--kv-unified")
+	}
 	if settings.HFFile != "" {
 		args = append(args, "--hf-file", settings.HFFile)
 	}

@@ -1149,7 +1149,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (metrics.llamacppVersion && !(install.runtime === 'llamacpp' && install.installedVersion)) bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion));
     if (isDirectRuntime) {
       bodyEl.appendChild(drawerField('direct-context', 'Direct context tokens', reportedText(metrics.ctxSize), metrics.ctxSize != null ? String(metrics.ctxSize) : ''));
-      const slotsCapacity = metrics.slotCount != null ? metrics.slotCount : metrics.parallel;
+      // parallel -1 = Auto: the configured value is not a slot count, so only the
+      // live slotCount reported by llama-server is meaningful until it arrives.
+      const slotsCapacity = metrics.slotCount != null ? metrics.slotCount : (metrics.parallel !== -1 ? metrics.parallel : null);
       const slotsText = metrics.activeSlots != null && slotsCapacity != null ? (metrics.activeSlots + ' / ' + slotsCapacity) : (slotsCapacity != null ? 'parallel ' + slotsCapacity : 'not reported');
       const slotsRow = drawerField('direct-parallel', 'Direct slots', slotsText, slotsCapacity != null ? String(slotsCapacity) : '');
       if (metrics.activeSlots != null) slotsRow.setAttribute('data-active-slots', String(metrics.activeSlots));
@@ -1377,7 +1379,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const reasoning = llamacpp.reasoning || {};
       const flashValue = llamacpp.flashAttn === true ? 'on' : llamacpp.flashAttn === false ? 'off' : '';
       const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
-      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel, placeholder: '4', hint: 'Concurrent direct slots for this node-local llama-server. More slots can serve more overlapping requests but reserve more KV memory.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel === -1 ? '' : llamacpp.parallel, placeholder: 'Auto', hint: 'Concurrent direct slots for this node-local llama-server. Blank = Auto (llama.cpp plans 4 slots with unified KV). With Unified KV on, more slots serve more overlapping requests without shrinking the per-request context.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-kv-unified', label: 'Unified KV cache', value: llamacpp.kvUnified === false ? 'off' : 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], hint: 'llama.cpp --kv-unified. On shares one KV buffer so a single request can use the whole context window; Off splits the context evenly across parallel slots (context ÷ slots per request).' }));
       bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-gpu-layers', label: 'GPU layers (-ngl / --gpu-layers)', value: llamacpp.gpuLayers || '', placeholder: '99', hint: 'Max model layers stored in VRAM. Higher values usually improve generation speed; 0 means CPU-only; blank uses llama.cpp default auto.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-k', label: 'KV cache type (keys)', value: llamacpp.cacheTypeK || '', options: kvOptions, hint: 'llama.cpp --cache-type-k. Lower precision uses less KV memory and can fit larger contexts; higher precision uses more memory.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-v', label: 'KV cache type (values)', value: llamacpp.cacheTypeV || '', options: kvOptions, hint: 'llama.cpp --cache-type-v. Match the key type unless you are testing a specific memory/quality tradeoff.' }));
@@ -2433,7 +2436,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         const llamaFlashRaw = readInput('model-edit-llama-flash');
         const llamaReasoningRaw = readInput('model-edit-llama-reasoning');
         payload.llamacpp = {
-          parallel: llamaParallelRaw === '' ? 1 : Number(llamaParallelRaw),
+          parallel: llamaParallelRaw === '' ? -1 : Number(llamaParallelRaw),
+          kvUnified: readInput('model-edit-llama-kv-unified') !== 'off',
           cacheReuse: llamaCacheReuseRaw === '' ? 256 : Number(llamaCacheReuseRaw),
           cachePrompt: llamaCachePromptRaw !== 'off',
           cacheTypeK: readInput('model-edit-llama-cache-k'),

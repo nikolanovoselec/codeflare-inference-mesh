@@ -36,6 +36,34 @@ func TestREQRUN015LlamaCppRenderArgsIncludesCacheAndAlias(t *testing.T) {
 			t.Fatalf("rendered args missing %q in %q", want, joined)
 		}
 	}
+	if !hasExactArg(args, "--kv-unified") || hasExactArg(args, "--no-kv-unified") {
+		t.Fatalf("an absent kvUnified must render --kv-unified, got %q", joined)
+	}
+}
+
+func TestREQRUN015LlamaCppRenderArgsKVUnifiedAndAutoParallel(t *testing.T) {
+	settings := LlamaCppSettings{
+		HFRepo:        "unsloth/Code-Model-GGUF",
+		BindPort:      4300,
+		ContextWindow: 262144,
+		Parallel:      -1,
+		CacheReuse:    256,
+	}
+	args := RenderLlamaCppArgs(LlamaCppInput{UpstreamModel: "m", Settings: settings})
+	if !containsArgSequence(joinArgs(args), "--parallel -1") {
+		t.Fatalf("auto parallel must pass through as -1, got %v", args)
+	}
+	if !hasExactArg(args, "--kv-unified") || hasExactArg(args, "--no-kv-unified") {
+		t.Fatalf("auto parallel render must enable unified KV, got %v", args)
+	}
+
+	off := false
+	settings.KVUnified = &off
+	settings.Parallel = 4
+	args = RenderLlamaCppArgs(LlamaCppInput{UpstreamModel: "m", Settings: settings})
+	if !hasExactArg(args, "--no-kv-unified") || hasExactArg(args, "--kv-unified") {
+		t.Fatalf("explicit off must render --no-kv-unified, got %v", args)
+	}
 }
 
 func TestREQNODE013LlamaCppLaunchEnvIncludesRuntimeLibraryPath(t *testing.T) {
@@ -92,4 +120,15 @@ func joinArgs(args []string) string {
 
 func containsArgSequence(joined string, want string) bool {
 	return strings.Contains(joined, want)
+}
+
+// hasExactArg matches a whole argv element; --kv-unified is a substring of
+// --no-kv-unified, so substring matching cannot tell the two flags apart.
+func hasExactArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
 }

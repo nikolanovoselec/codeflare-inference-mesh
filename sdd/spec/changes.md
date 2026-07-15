@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-07-15
+
+- Fixed direct llama.cpp long-context 400s: explicit `--parallel 4` without unified KV made llama-server split `--ctx-size` across slots (262144/4 = 65536 per request), rejecting coding-agent requests past ~64k tokens and forcing early compaction. Direct profiles now render `--kv-unified` by default (explicit off renders `--no-kv-unified`), the parallel default is Auto (`-1`, llama-server plans 4 slots with unified KV), the Manage drawer exposes a Unified KV toggle plus a blank-equals-Auto parallel field, profiles stored before the field normalize to unified KV on so deployed fleets pick up the full per-request context without a migration, and disabling unified KV with Auto parallel is rejected because llama-server force-enables unified KV under Auto slot planning. ([REQ-RUN-013](runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles), [REQ-RUN-015](runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering))
+
 ## 2026-07-10
 
 - Reworked first-run setup to use the same Codeflare operator-console shell as the day-two dashboard, with the shared hero treatment, milestone tiles, and a left setup step rail that collapses cleanly on mobile. ([REQ-ADM-011](setup-admin.md#req-adm-011-guided-first-run-setup))
