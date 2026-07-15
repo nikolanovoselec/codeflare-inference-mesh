@@ -18,6 +18,10 @@ type DashboardStatus struct {
 	Metrics      NodeMetrics `json:"metrics"`
 	RuntimeState string      `json:"runtimeState"`
 	Version      string      `json:"version"`
+	// LastHeartbeatError carries why the node cannot check in with the router
+	// (auth rejection, invalid body, network), empty while heartbeats succeed —
+	// without it a rejected node is invisible both locally and centrally.
+	LastHeartbeatError string `json:"lastHeartbeatError,omitempty"`
 }
 
 func DashboardHandler(status func() DashboardStatus, controllers ...RuntimeController) http.Handler {

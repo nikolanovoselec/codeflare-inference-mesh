@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1245,5 +1247,78 @@ func TestREQOBS008DashboardStatusAndControlsTrackCurrentManager(t *testing.T) {
 	liveEvents := live.eventLog()
 	if len(liveEvents) == 0 || liveEvents[len(liveEvents)-1] != "stop" {
 		t.Fatalf("shutdown-path Stop must reach the current manager, events=%v", liveEvents)
+	}
+}
+
+func TestREQNODE002HeartbeatFailuresSurfaceAndClear(t *testing.T) {
+	// A rejected heartbeat is the node's lifeline going dark: the failure must reach the
+	// operator (stderr once per state change, local dashboard until recovery) instead of
+	// being silently swallowed forever. REQ-NODE-002.
+	var status atomic.Int64
+	status.Store(401)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		code := int(status.Load())
+		if code != 200 {
+			w.WriteHeader(code)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(agent.HeartbeatResponse{})
+	}))
+	t.Cleanup(server.Close)
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	cfg := agent.Config{RouterURL: server.URL, NodeToken: "node-secret", ActiveProfileIDs: []string{"p1"}}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	logBuffer := &bytes.Buffer{}
+	loop.errLog = logBuffer
+
+	loop.tick(context.Background())
+	loop.tick(context.Background())
+	if got := loop.dashboardStatus("v").LastHeartbeatError; !strings.Contains(got, "401") {
+		t.Fatalf("dashboard must carry the heartbeat rejection, got %q", got)
+	}
+	if count := strings.Count(logBuffer.String(), "heartbeat failed"); count != 1 {
+		t.Fatalf("an unchanged failure must be logged exactly once, got %d in %q", count, logBuffer.String())
+	}
+
+	status.Store(200)
+	loop.tick(context.Background())
+	if got := loop.dashboardStatus("v").LastHeartbeatError; got != "" {
+		t.Fatalf("a successful heartbeat must clear the error, got %q", got)
+	}
+	if !strings.Contains(logBuffer.String(), "heartbeat recovered") {
+		t.Fatalf("recovery must be logged once, got %q", logBuffer.String())
+	}
+}
+
+func TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart(t *testing.T) {
+	// The initial runtime start (binary download, mesh-llm launch) must never block the
+	// heartbeat loop: launchInitialRuntime returns immediately and the manager lands
+	// through setManager once the start completes. REQ-NODE-002 / REQ-OBS-008.
+	counter := &agent.ActiveCounter{}
+	loop := newLoopForTest(t, agent.Config{}, counter, nil, &fakeUpdater{}, nil)
+	release := make(chan struct{})
+	started := newFakeMeshRuntime(counter)
+	launchInitialRuntime(context.Background(), loop, agent.Config{}, agent.ModelProfile{ID: "p1"}, nil, func(context.Context, agent.Config, agent.ModelProfile, *agent.MeshBootstrap) (meshRuntime, string, error) {
+		<-release
+		return started, "install-detail", nil
+	})
+	if loop.currentManager() != nil {
+		t.Fatal("launchInitialRuntime must return before the runtime start completes")
+	}
+
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for loop.currentManager() == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the started manager must land through setManager")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if loop.currentManager() != meshRuntime(started) {
+		t.Fatal("the CURRENT manager must be the started runtime")
+	}
+	if loop.currentInstallError() != "install-detail" {
+		t.Fatalf("the start's install detail must land with the manager, got %q", loop.currentInstallError())
 	}
 }

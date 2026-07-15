@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -119,28 +120,12 @@ func runService(args []string) error {
 		claimBootstrap = claim.MeshBootstrap
 	}
 	loadState := &runtimeLoadState{}
-	var manager meshRuntime
-	installError := ""
-	if profile, ok := agent.SelectedProfile(cfg); ok {
-		provisionMeshPeerFirewall(serviceCtx, execCommandRunner, runtime.GOOS, warpIface, profile)
-		loadState.SetStarting(profile)
-		started, startInstallError, err := startRuntimeForProfile(serviceCtx, cfg, profile, claimBootstrap)
-		if err != nil {
-			return err
-		}
-		manager = started
-		installError = startInstallError
-		if manager.State() == "ready" {
-			loadState.Set(profile)
-		}
-	}
 	var stateMu sync.RWMutex
 	telemetry := &runtimeTelemetry{}
 	loop := &serviceLoop{
 		configPath:     agent.ConfigPath(),
 		stateMu:        &stateMu,
 		cfg:            &cfg,
-		manager:        manager,
 		loadState:      loadState,
 		telemetry:      telemetry,
 		activeRequests: activeRequests,
@@ -149,7 +134,6 @@ func runService(args []string) error {
 			os.Exit(0)
 		},
 		agentVersion:   version,
-		installError:   installError,
 		drainTimeout:   2 * time.Minute,
 		restartTimeout: defaultRestartTimeout,
 		cmdRunner:      execCommandRunner,
@@ -165,11 +149,17 @@ func runService(args []string) error {
 			_ = current.Stop(stopCtx)
 		}
 	}()
-	dashboardControllers := []agent.RuntimeController{}
-	if manager != nil {
-		dashboardControllers = append(dashboardControllers, &currentRuntimeController{loop: loop})
-	}
+	// Heartbeats are the node's lifeline and must never wait on runtime provisioning:
+	// a hanging binary download or a wedged mesh-llm start previously blocked the FIRST
+	// heartbeat forever, leaving the node permanently offline with no control-plane
+	// trace. The initial runtime starts in the background and lands via setManager.
 	go heartbeatLoop(serviceCtx, loop)
+	if profile, ok := agent.SelectedProfile(cfg); ok {
+		provisionMeshPeerFirewall(serviceCtx, execCommandRunner, runtime.GOOS, warpIface, profile)
+		loadState.SetStarting(profile)
+		launchInitialRuntime(serviceCtx, loop, cfg, profile, claimBootstrap, startRuntimeForProfile)
+	}
+	dashboardControllers := []agent.RuntimeController{&currentRuntimeController{loop: loop}}
 	proxy, err := agent.ProxyHandler(runtimeTargetFunc(func() string {
 		if current := loop.currentManager(); current != nil {
 			return current.TargetURL()
@@ -201,6 +191,26 @@ func runService(args []string) error {
 		}
 		return err
 	}
+}
+
+// launchInitialRuntime provisions and starts the boot profile's runtime in the
+// background, landing the manager through setManager so dashboard, proxy, controls,
+// and shutdown follow it. A start failure is logged and leaves the node up with no
+// manager (ineligible, dashboard "external") instead of killing the service —
+// heartbeats keep flowing either way. The starter is injected so tests can prove a
+// blocking start never delays the heartbeat loop.
+func launchInitialRuntime(ctx context.Context, loop *serviceLoop, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap, start func(context.Context, agent.Config, agent.ModelProfile, *agent.MeshBootstrap) (meshRuntime, string, error)) {
+	go func() {
+		started, installError, err := start(ctx, cfg, profile, bootstrap)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "runtime start failed: %v\n", err)
+			return
+		}
+		loop.setManager(started, installError)
+		if started.State() == "ready" {
+			loop.loadState.Set(profile)
+		}
+	}()
 }
 
 func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (meshRuntime, string, error) {
@@ -375,6 +385,13 @@ type serviceLoop struct {
 	updateMu       sync.Mutex
 	updateError    string
 
+	// A failing heartbeat is the node's lifeline going dark: it is recorded for the
+	// local dashboard and logged to errLog on every change, never swallowed. errLog
+	// defaults to os.Stderr; tests inject a buffer.
+	heartbeatErrMu     sync.Mutex
+	lastHeartbeatError string
+	errLog             io.Writer
+
 	lastReloadNonce string
 	lastMetrics     agent.NodeMetrics
 
@@ -428,7 +445,7 @@ func (s *serviceLoop) setManager(manager meshRuntime, installError string) {
 func (s *serviceLoop) dashboardStatus(version string) agent.DashboardStatus {
 	current := s.currentConfig()
 	metrics := s.telemetry.Snapshot(runtimeMetrics(s.currentManager(), s.loadState, current, s.activeRequests.Value(), s.currentInstallError()))
-	return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version}
+	return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version, LastHeartbeatError: s.currentHeartbeatError()}
 }
 
 // currentRuntimeController dispatches dashboard runtime controls to the manager that
@@ -462,9 +479,39 @@ func (s *serviceLoop) tick(ctx context.Context) {
 	client := agent.Client{RouterURL: current.RouterURL, HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 	response, err := client.Heartbeat(ctx, current.NodeToken, agent.HeartbeatFromConfig(current, metrics, s.activeRequests.Value(), identity))
 	if err != nil {
+		s.recordHeartbeatError(err.Error())
 		return
 	}
+	s.recordHeartbeatError("")
 	s.handleResponse(ctx, response)
+}
+
+// recordHeartbeatError keeps the latest heartbeat failure for the local dashboard and
+// logs each state CHANGE (fail, different failure, recovery) once — a rejected node
+// must be diagnosable from its own host without guessing. Steady states stay quiet.
+func (s *serviceLoop) recordHeartbeatError(message string) {
+	s.heartbeatErrMu.Lock()
+	previous := s.lastHeartbeatError
+	s.lastHeartbeatError = message
+	log := s.errLog
+	s.heartbeatErrMu.Unlock()
+	if log == nil {
+		log = os.Stderr
+	}
+	if message == previous {
+		return
+	}
+	if message != "" {
+		fmt.Fprintf(log, "heartbeat failed: %s\n", message)
+	} else if previous != "" {
+		fmt.Fprintln(log, "heartbeat recovered")
+	}
+}
+
+func (s *serviceLoop) currentHeartbeatError() string {
+	s.heartbeatErrMu.Lock()
+	defer s.heartbeatErrMu.Unlock()
+	return s.lastHeartbeatError
 }
 
 // execCommandRunner is the production agent.CommandRunner: it shells out to the
