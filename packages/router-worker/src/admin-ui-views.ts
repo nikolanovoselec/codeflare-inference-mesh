@@ -171,7 +171,7 @@ function overviewSection(): string {
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
 <div class="topo-list" id="${ADMIN_UI_TOPOLOGY.listId}" data-output="topology-list"></div>
 </div>
-<div class="subpanel"><h3>Mesh status</h3><div class="row-list" id="overview-mesh"></div></div>`
+<div class="subpanel"><h3>Mesh status</h3><div class="mesh-cards" id="overview-mesh"></div></div>`
   })
 }
 
@@ -307,7 +307,9 @@ ${output({ id: ADMIN_UI_PLAYGROUND.speedOutputId, kind: 'playground-speed', pre:
   })
 }
 
-const API_REFERENCE_DOCS_URL = 'https://github.com/nikolanovoselec/codeflare-inference-mesh/blob/llama/documentation/lanes/api-reference-admin.md'
+// Pinned to develop: integration deploys build from develop, so the linked docs always
+// describe the console actually serving the link.
+const API_REFERENCE_DOCS_URL = 'https://github.com/nikolanovoselec/codeflare-inference-mesh/blob/develop/documentation/lanes/api-reference-admin.md'
 
 function apiReferenceDocsHref(method: string, path: string): string {
   const anchor = `${method} ${path}`

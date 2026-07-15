@@ -1435,11 +1435,14 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(row('default').getAttribute('data-toks')).toBe('42')
     expect(row('default').getAttribute('data-state')).toBe('Serving')
     expect(row('default').getAttribute('data-state-tone')).toBe('ok')
-    // The card merges the mesh identity (purple pill + route) with the model's own pills.
-    const meshPill = descendants(row('default')).find((el) => el.getAttribute('data-profile-mesh') !== null)!
-    expect(meshPill.dataset.tone).toBe('purple')
+    // The card merges the mesh identity (purple card title + route) with the model's own pills.
+    const title = descendants(row('default')).find((el) => el.getAttribute('data-profile-mesh') !== null)!
+    expect(title.className).toBe('mesh-card-name')
     expect(descendants(row('default')).find((el) => el.getAttribute('data-runtime') !== null)!.getAttribute('data-runtime')).toBe('meshllm')
     expect(descendants(row('default')).find((el) => el.getAttribute('data-serving-mode') !== null)!.getAttribute('data-serving-mode')).toBe('single')
+    // The serving-capacity track fills to the served fraction of the mesh's machines.
+    expect(descendants(row('default')).find((el) => el.getAttribute('data-fill') !== null)!.getAttribute('data-fill')).toBe('100')
+    expect(descendants(row('ops')).find((el) => el.getAttribute('data-fill') !== null)!.getAttribute('data-fill')).toBe('0')
     // Ops: model on but its machine has not adopted it yet — amber, zero serving, no throughput.
     expect(row('ops').getAttribute('data-serving')).toBe('0')
     expect(row('ops').getAttribute('data-toks')).toBeNull()

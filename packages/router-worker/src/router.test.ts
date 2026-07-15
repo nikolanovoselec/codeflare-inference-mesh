@@ -265,7 +265,9 @@ describe('router worker behavioral contracts', () => {
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     const apiDocLinks = [...html.matchAll(/data-api-docs-link="([^"]+)"/g)].map((match) => match[1])
     expect(apiDocLinks).toEqual(config.actions.map((action) => action.id))
-    expect(html).toContain('documentation/lanes/api-reference-admin.md#post-adminsetup')
+    // The full href is the contract, branch included: a link into a deleted branch is a
+    // dead Docs button even though the path and anchor look right.
+    expect(html).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/blob/develop/documentation/lanes/api-reference-admin.md#post-adminsetup')
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
     // Only the wizard keeps a zone picker; Routing matches the zone from the hostname server-side.

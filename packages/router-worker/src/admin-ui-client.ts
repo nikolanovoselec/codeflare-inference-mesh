@@ -2021,16 +2021,29 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     head.appendChild(routeChipEl(alias));
     return head;
   }
-  // Overview "Mesh status": one card per machine group merging the mesh identity
-  // (purple pill + status word + callable route), the deployed model with its
-  // provider/mode pills, and the group's collective machine state — what is running,
-  // at a glance, in the same pill vocabulary as the models list.
+  // Overview "Mesh status": a grid of tone-edged cards, one per machine group. Each
+  // card is a mini dashboard — mesh name (purple, the mesh vocabulary color) with the
+  // live status word, the callable route in mono, the deployed model with its
+  // provider/mode pills, a machines/serving/tok-s metric strip, and a serving-capacity
+  // track in the status tone. What is running, structured, at a glance.
   function renderMeshStatus(status) {
     const rollup = byId('overview-mesh');
     if (!rollup) return;
     rollup.textContent = '';
     const nodes = Array.isArray(status.nodes) ? status.nodes : [];
     const profiles = Array.isArray(status.profiles) ? status.profiles : [];
+    const stat = (value, label) => {
+      const cell = document.createElement('div');
+      cell.className = 'mesh-stat';
+      const number = document.createElement('span');
+      number.className = 'metric-value';
+      number.textContent = value;
+      const caption = document.createElement('span');
+      caption.className = 'mesh-stat-label';
+      caption.textContent = label;
+      cell.append(number, caption);
+      return cell;
+    };
     (Array.isArray(status.meshes) ? status.meshes : []).forEach((mesh) => {
       const meshNodes = nodes.filter((node) => (node.meshId || 'default') === mesh.id);
       const model = profiles.find((profile) => profile.active && (profile.meshId || 'default') === mesh.id);
@@ -2039,28 +2052,29 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       // A mesh with no model stays neutral grey — an empty group is a choice, not an alarm.
       const word = model ? (serving.length > 0 ? 'Serving' : (meshNodes.length > 0 ? 'Preparing' : 'No machines')) : 'No model';
       const tone = model ? (serving.length > 0 ? 'ok' : 'warn') : 'idle';
-      const row = document.createElement('div');
-      row.className = 'command-row';
-      row.setAttribute('data-mesh-status', mesh.id);
-      row.setAttribute('data-machines', String(meshNodes.length));
-      row.setAttribute('data-serving', String(serving.length));
-      row.setAttribute('data-state', word);
-      row.setAttribute('data-state-tone', tone);
-      if (toks > 0) row.setAttribute('data-toks', String(Math.round(toks)));
-      const copy = document.createElement('div');
-      copy.className = 'command-copy';
-      const head = document.createElement('div');
-      head.className = 'mesh-row-head';
-      head.appendChild(pillEl(PROFILE_PILLS.mesh, 'data-profile-mesh', mesh.id, mesh.name || mesh.id));
-      head.appendChild(statusDot(tone, word));
-      head.appendChild(routeChipEl(mesh.alias));
-      copy.appendChild(head);
+      const card = document.createElement('article');
+      card.className = 'mesh-card';
+      card.setAttribute('data-mesh-status', mesh.id);
+      card.setAttribute('data-machines', String(meshNodes.length));
+      card.setAttribute('data-serving', String(serving.length));
+      card.setAttribute('data-state', word);
+      card.setAttribute('data-state-tone', tone);
+      if (toks > 0) card.setAttribute('data-toks', String(Math.round(toks)));
+      const head = document.createElement('header');
+      head.className = 'mesh-card-head';
+      const title = document.createElement('strong');
+      title.className = 'mesh-card-name';
+      title.setAttribute('data-profile-mesh', mesh.id);
+      title.textContent = mesh.name || mesh.id;
+      head.append(title, statusDot(tone, word));
+      card.appendChild(head);
+      card.appendChild(routeChipEl(mesh.alias));
       const modelRow = document.createElement('div');
-      modelRow.className = 'model-name-row';
+      modelRow.className = 'mesh-card-model';
       if (model) {
         const name = document.createElement('strong');
         name.textContent = modelName(model);
-        // The mesh pill is the card itself, so the model line carries provider + mode.
+        // The mesh identity is the card itself, so the model line carries provider + mode.
         const pills = profilePills(model, model.runtime === 'llamacpp', Boolean(model.meshllm && model.meshllm.split));
         modelRow.append(name, pills[0], pills[1]);
       } else {
@@ -2068,13 +2082,25 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         none.textContent = 'no model deployed';
         modelRow.appendChild(none);
       }
-      copy.appendChild(modelRow);
-      const detail = document.createElement('span');
-      detail.className = 'mesh-counts';
-      detail.textContent = meshNodes.length + (meshNodes.length === 1 ? ' machine' : ' machines') + (model ? ' · ' + serving.length + ' serving' : '') + (toks > 0 ? ' · ' + Math.round(toks) + ' tok/s' : '');
-      copy.appendChild(detail);
-      row.appendChild(copy);
-      rollup.appendChild(row);
+      card.appendChild(modelRow);
+      const stats = document.createElement('div');
+      stats.className = 'mesh-card-stats';
+      stats.append(
+        stat(String(meshNodes.length), meshNodes.length === 1 ? 'machine' : 'machines'),
+        stat(model ? String(serving.length) : '—', 'serving'),
+        stat(toks > 0 ? String(Math.round(toks)) : '—', 'tok/s')
+      );
+      card.appendChild(stats);
+      const track = document.createElement('div');
+      track.className = 'mesh-track';
+      const fill = document.createElement('div');
+      fill.className = 'mesh-track-fill';
+      const pct = meshNodes.length > 0 ? Math.round((serving.length / meshNodes.length) * 100) : 0;
+      fill.style.width = pct + '%';
+      track.setAttribute('data-fill', String(pct));
+      track.appendChild(fill);
+      card.appendChild(track);
+      rollup.appendChild(card);
     });
   }
   function renderMeshList(meshes) {

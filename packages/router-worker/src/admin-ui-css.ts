@@ -196,6 +196,24 @@ main{width:min(1120px,100%);max-width:100%;overflow:hidden;margin:0 auto;padding
 .nav-item small{color:var(--muted);font-size:var(--fs-xs)}
 .sections{grid-area:sections;display:grid;gap:1rem;min-width:0}
 .panel{border:1px solid var(--line);border-radius:var(--radius-lg);background:linear-gradient(180deg,rgb(var(--surface-rgb)/.95),var(--surface));box-shadow:0 12px 42px rgb(0 0 0/.16);padding:clamp(.9rem,2.5vw,1.25rem);display:grid;gap:.9rem;min-width:0}
+.mesh-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.75rem}
+.mesh-card{display:grid;gap:.55rem;align-content:start;border:1px solid var(--line);border-left:3px solid var(--line-strong);border-radius:var(--radius-md);background:var(--surface-2);padding:.85rem .95rem;min-width:0}
+.mesh-card[data-state-tone=ok]{border-left-color:var(--ok)}
+.mesh-card[data-state-tone=warn]{border-left-color:var(--warn)}
+.mesh-card-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem;min-width:0}
+.mesh-card-name{color:rgb(var(--pill-purple-rgb));font-size:var(--fs-lg);letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mesh-card>.endpoint-chip{justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.mesh-card-model{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;min-width:0}
+.mesh-card-model strong{color:var(--text)}
+.mesh-card-model small{color:var(--muted)}
+.mesh-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;border-top:1px solid var(--line);padding-top:.6rem}
+.mesh-stat{display:grid;gap:.1rem;min-width:0}
+.mesh-stat .metric-value{font-size:var(--fs-xl);color:var(--text);line-height:1.1}
+.mesh-stat-label{color:var(--muted);font-size:var(--fs-xs);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.mesh-track{height:4px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.mesh-track-fill{height:100%;border-radius:999px;background:var(--line-strong);transition:width var(--speed-base) ease-out}
+.mesh-card[data-state-tone=ok] .mesh-track-fill{background:var(--ok)}
+.mesh-card[data-state-tone=warn] .mesh-track-fill{background:var(--warn)}
 .panel-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.6rem}
 .panel-head h2{display:flex;align-items:center;gap:.55rem}
 .panel-head h2::before{content:"";width:.5rem;height:.5rem;border-radius:2px;background:var(--accent);flex:none}
