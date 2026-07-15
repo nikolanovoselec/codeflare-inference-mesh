@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"regexp"
 	"strings"
 )
 
@@ -24,6 +25,9 @@ func GPUFallbackMetrics(ctx context.Context, goos string, run CommandRunner) Nod
 			metrics := parseSystemProfilerVRAM(string(out))
 			if metrics.GPUMemoryTotalMiB == 0 {
 				metrics.GPUMemoryTotalMiB = appleUnifiedMemoryBudgetMiB(ctx, run)
+			}
+			if metrics.GPUMemoryUsedMiB == 0 {
+				metrics.GPUMemoryUsedMiB = appleGPUInUseMiB(ctx, run)
 			}
 			return metrics
 		}
@@ -50,6 +54,23 @@ func appleUnifiedMemoryBudgetMiB(ctx context.Context, run CommandRunner) int {
 	}
 	return memBytes / (1024 * 1024) * 3 / 4
 }
+
+// appleGPUInUseMiB reads the GPU driver's allocated unified memory from the
+// IORegistry accelerator statistics — the same counter desktop system monitors
+// display. Best-effort: any failure or absent key reports zero (unknown).
+func appleGPUInUseMiB(ctx context.Context, run CommandRunner) int {
+	out, err := run(ctx, "ioreg", "-r", "-d", "1", "-c", "IOAccelerator")
+	if err != nil {
+		return 0
+	}
+	match := appleGPUInUsePattern.FindStringSubmatch(string(out))
+	if match == nil {
+		return 0
+	}
+	return atoi(match[1]) / (1024 * 1024)
+}
+
+var appleGPUInUsePattern = regexp.MustCompile(`"In use system memory"\s*=\s*(\d+)`)
 
 func nvidiaSMIArgs() []string {
 	return []string{"--query-gpu=name,memory.used,memory.total", "--format=csv,noheader,nounits"}
