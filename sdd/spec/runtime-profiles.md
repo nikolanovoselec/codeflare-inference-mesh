@@ -39,7 +39,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Acceptance Criteria:**
 
-1. The shipped catalog is exactly one profile: `mesh-smoke-qwen25-1.5b`, active with display name `Qwen2.5 Coder 1.5B`, rollout percent `100`, aliases `codeflare-mesh`, `mesh-smoke`, and `smoke-test`, model ref `unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M`, split disabled, mesh bind port `4320`, and default-mesh membership. <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 ships only the starter profile and seeds it exactly once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
+1. The shipped catalog is exactly one profile: `mesh-smoke-qwen25-1.5b`, active with display name `Qwen2.5 Coder 1.5B`, rollout percent `100`, aliases `codeflare-mesh`, `mesh-smoke`, and `smoke-test`, model ref `unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M`, split disabled, mesh bind port `4320`, and default-mesh membership. <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 ships only the starter profile and seeds it exactly once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the smoke starter with contract values and leaves stored legacy rows intact) -->
 2. The starter is seeded only while the seeding marker is absent; existing rows are never refreshed or retired, and a deleted starter never re-seeds. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 ships only the starter profile and seeds it exactly once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes the switched-off starter like any other model and it never re-seeds) -->
 3. When an active non-default profile already owns a starter alias at first seed, the starter arrives inactive so the alias keeps a single active owner. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultActivation --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 first seed yields an inactive starter when an active custom already owns its alias) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 preserves active llama.cpp custom profiles during first seeding) -->
 4. A profile definition enumerates a display name, public aliases, upstream model name, source mode `meshllm-ref`, context limit (`0` = Auto), runtime `meshllm` settings (model ref, split, mandatory bind port, optional max VRAM, and the runtime tunables), profile version, rollout percent, and active flag. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and meshllm contract values) -->
@@ -412,6 +412,70 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-RUN-001](#req-run-001-stable-public-model), [REQ-RUN-002](#req-run-002-default-model-profiles)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-016: Per-mesh model assignment
+
+**Intent:** Every model profile belongs to exactly one mesh (operator-named machine group), and that mesh's stable route name is the profile's leading public alias. Operators onboard a model directly into a mesh or move it later; a moved model arrives switched off in its new group so activation there is always an explicit decision. Serving the same model in two meshes is done by duplicating the profile and reassigning the copy ([REQ-RUN-017](#req-run-017-profile-duplication)).
+
+**Applies To:** Admin, Automation
+
+**Acceptance Criteria:**
+
+1. Every model profile carries exactly one mesh membership; stored rows without a mesh field read back as members of the default mesh. <!-- @impl: packages/router-worker/src/profiles.ts::normalizeModelProfile --> <!-- @impl: packages/router-worker/src/profiles.ts::profileMeshId --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-016 coerces stored profiles and nodes without meshId to the default mesh) -->
+
+2. A profile's leading public alias is its mesh's stable route name: `codeflare-mesh` for the default mesh and `codeflare-mesh-<mesh>` otherwise. <!-- @impl: packages/router-worker/src/meshes.ts::meshAliasFor --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-RUN-016 meshAliasFor pins default and derives per-mesh aliases) -->
+
+3. Model onboarding accepts an optional target mesh, defaulting to the default mesh; the created profile carries the target mesh's membership and alias, and an unknown mesh is rejected with status 400 creating nothing. <!-- @impl: packages/router-worker/src/router.ts::resolveOnboardingMesh --> <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 onboarding accepts a target mesh and stamps its alias) -->
+
+4. Reassigning a model through the profile-config path swaps its leading alias to the new mesh's route name, keeps its own aliases, switches it off (`active` false, rollout `0`), bumps its version, and records a `model_mesh_assigned` audit event with the from/to groups; an unknown mesh is rejected with status 400 changing nothing. <!-- @impl: packages/router-worker/src/router.ts::resolveMeshReassignment --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 reassigning a model swaps its mesh alias and deactivates it) -->
+
+5. Call-name edits preserve the profile's mesh alias as the leading alias and reject any reserved stable route name (`codeflare-mesh` or any `codeflare-mesh-` prefix) with status 409. <!-- @impl: packages/router-worker/src/router.ts::resolveCallNameAliases --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 call-name edits preserve the mesh alias and reject reserved names) -->
+
+6. The console model drawer offers a mesh selection listing every mesh, pre-selected to the model's group and sent only when actually changed. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-016 model drawer saves the mesh selection only when changed) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](#req-run-001-stable-public-model), [REQ-RUN-011](#req-run-011-custom-model-onboarding)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-017: Profile duplication
+
+**Intent:** Operators must be able to clone an existing model profile into an independent copy — identical model reference, runtime, and tunables — so a variant can be tuned or moved to another mesh without touching the profile currently serving. The copy is an ordinary profile afterwards: editable, reassignable, activatable, and deletable like any other.
+
+**Applies To:** Admin, Automation
+
+**Acceptance Criteria:**
+
+1. `POST /admin/profiles/duplicate` creates a switched-off copy in the source's mesh with the same model reference, runtime, context, and tunables; display name `<source name> (copy)`; a derived unique call name (`<alias>-copy`, then `-copy-2`, …); its own profile id and bind port; version `1`; and rollout `0`. <!-- @impl: packages/router-worker/src/router.ts::duplicateProfileCore --> <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+
+2. Duplicating an unknown profile returns status 404; repeated duplicates of the same source coexist under successive derived names. <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+
+3. The copy is edited independently through the ordinary profile-config path and the source keeps its own settings. <!-- @impl: packages/router-worker/src/router.ts::handleProfileConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+
+4. `POST /api/v1/models/{id}/duplicate` is the automation twin: automation-key authenticated, same duplication core, returning the created model projection. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDuplicate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 the automation duplicate twin mirrors the console behavior) -->
+
+5. The console model drawer offers Duplicate for any model — including the active one — posting through the admin endpoint and closing the drawer so the refreshed catalog shows the copy. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-017 model drawer duplicates a model through the duplicate endpoint) -->
+
+6. A successful duplicate records a `model_duplicated` audit event targeting the copy and naming the source. <!-- @impl: packages/router-worker/src/router.ts::duplicateProfileCore --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-RUN-016](#req-run-016-per-mesh-model-assignment)
 
 **Verification:** Automated test
 

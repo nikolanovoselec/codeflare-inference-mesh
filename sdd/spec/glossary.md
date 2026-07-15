@@ -12,6 +12,7 @@
 | Runtime | Supervised `mesh-llm` process on the node that exposes the local OpenAI-compatible inference API. |
 | MeshLLM | Rust inference runtime (`mesh-llm`) that embeds llama.cpp, serves an OpenAI-compatible API, and links nodes into a private inference mesh. |
 | MeshLLM Mesh | Private mesh of MeshLLM processes, also called the inference mesh, that shares models and routes inference between member nodes; distinct from Cloudflare Mesh, the Cloudflare One network layer this traffic crosses. |
+| Mesh (Machine Group) | Operator-named group of machines (e.g. Development, Operations); every node and every model profile belongs to exactly one, distribution and eligibility are scoped to it, and its active model answers the group's stable route name (`codeflare-mesh` for Default, `codeflare-mesh-<mesh>` otherwise). Distinct from the MeshLLM Mesh (the per-profile runtime network) and Cloudflare Mesh (the transport layer). See [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership). |
 | Mesh Invite Token | MeshLLM credential that embeds a member node's dialable address and admits its holder into that private mesh; the router stores it encrypted and distributes it only in heartbeat responses. |
 | Mesh Coordinator | MeshLLM node that owns stage 0 of a split model and becomes the model's routable entry once every stage reports ready. |
 | Ready Models | Model identifiers a node's MeshLLM API reports in `/v1/models` — the mesh-wide union of routable models that scheduling eligibility checks against. |

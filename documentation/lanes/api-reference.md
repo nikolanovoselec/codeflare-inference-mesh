@@ -372,9 +372,9 @@ Then operate and retire — configure and switch on a model, pin the agent versi
 
 ```bash
 # 5. Configure a model (context window + VRAM budget), switch it on, and pin the fleet's node-agent version.
-curl -s -X POST "$BASE/api/v1/models/mesh-default-qwen36-35b" \
+curl -s -X POST "$BASE/api/v1/models/mesh-smoke-qwen25-1.5b" \
   -H "$AUTH" -H "content-type: application/json" -d '{"contextWindow":8192,"maxVramGb":20}'
-curl -s -X POST "$BASE/api/v1/models/mesh-default-qwen36-35b/enable" -H "$AUTH"
+curl -s -X POST "$BASE/api/v1/models/mesh-smoke-qwen25-1.5b/enable" -H "$AUTH"
 curl -s -X PUT "$BASE/api/v1/agent-version" \
   -H "$AUTH" -H "content-type: application/json" -d '{"version":"v1.2.0"}'
 
@@ -574,6 +574,8 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 
 `NodeProjection.runtimeInstall` reports the node runtime binary state for automation and UI parity: `{ "runtime": "meshllm" | "llamacpp", "desiredVersion": string, "installedVersion": string | null, "state": "pending" | "installing" | "installed" | "failed", "error": string | null }`.
 
+`NodeProjection.meshId` is the machine group the node serves; a newly claimed node joins the default mesh, and reassignment goes through `POST /api/v1/nodes/{id}/reconfigure`. ([REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership))
+
 **Request body:** None.
 
 **Response**
@@ -635,7 +637,7 @@ DELETE /api/v1/nodes/{id}
 
 ### POST /api/v1/nodes/{id}/reconfigure
 
-Sets a persistent node display name and/or a per-node VRAM override, capping that node's inference VRAM below the model's global budget. Requires an automation key. The display name is stored in D1 and survives heartbeats; the override is applied to the desired profiles the node receives on its next heartbeat.
+Sets a persistent node display name, a per-node VRAM override (capping that node's inference VRAM below the model's global budget), and/or the node's mesh assignment. Requires an automation key. The display name is stored in D1 and survives heartbeats; the override and mesh assignment apply to the desired profiles the node receives on its next heartbeat.
 
 ```http
 POST /api/v1/nodes/{id}/reconfigure
@@ -645,18 +647,18 @@ POST /api/v1/nodes/{id}/reconfigure
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** `{ "displayName"?: string, "maxVramGbOverride"?: number | null }` — a non-blank `displayName` renames the node; a number `≥ 0` caps this node (0 = uncapped on this node); `null` clears the override so the node follows the model's global budget.
+**Request body:** `{ "displayName"?: string, "maxVramGbOverride"?: number | null, "meshId"?: string }` — a non-blank `displayName` renames the node; a number `≥ 0` caps this node (0 = uncapped on this node); `null` clears the override so the node follows the model's global budget; `meshId` must name an existing mesh and moves the node to that machine group. A mesh change drops the node's invite tokens from its old mesh's profiles and appends a `node_mesh_assigned` audit event with `{ "from": string, "to": string }`.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The node was reconfigured. | `{ "ok": true, "node": NodeProjection }` — the projection includes `displayName` and `maxVramGbOverride` (`null` when unset). |
-| `400` | The display name was blank/non-string, or the override was a negative or non-numeric value. | `invalid_display_name` / `invalid_max_vram` error body. |
+| `200` | The node was reconfigured. | `{ "ok": true, "node": NodeProjection }` — the projection includes `displayName`, `maxVramGbOverride` (`null` when unset), and `meshId`. |
+| `400` | The display name was blank/non-string, the override was a negative or non-numeric value, or `meshId` named no existing mesh. | `invalid_display_name` / `invalid_max_vram` / `unknown_mesh` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No node with that id exists, or the node is revoked (a revoked tombstone is treated as gone). | `unknown_node` error body. |
 
-**Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-settings)
+**Implements:** [REQ-ADM-023](../../sdd/spec/setup-admin.md#req-adm-023-per-node-settings), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 ### POST /api/v1/nodes/{id}/deactivate
 
@@ -730,6 +732,80 @@ POST /api/v1/nodes/{id}/reload
 
 **Implements:** [REQ-ADM-032](../../sdd/spec/setup-admin.md#req-adm-032-node-force-reload), [REQ-NODE-012](../../sdd/spec/node-agent.md#req-node-012-on-demand-runtime-reload)
 
+### GET /api/v1/meshes
+
+Lists the machine groups (meshes) with their route aliases and membership counts. The automation twin of `GET /admin/meshes`, with the identical response shape.
+
+```http
+GET /api/v1/meshes
+```
+
+**Authentication:** automation key
+
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | Meshes listed, the implicit default mesh first. | `{ "meshes": [{ "id": string, "name": string, "alias": string, "machineCount": number, "modelCount": number, "createdAt"?: number }] }` — `alias` is the mesh's stable route (`codeflare-mesh` for the default mesh, `codeflare-mesh-<id>` otherwise); `createdAt` is absent on the implicit default mesh. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model)
+
+### POST /api/v1/meshes
+
+Creates a new mesh (machine group) whose active model will answer `codeflare-mesh-<id>`. The automation twin of `POST /admin/meshes`, with the identical body, response, and error shapes.
+
+```http
+POST /api/v1/meshes
+```
+
+**Authentication:** automation key
+
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
+
+**Request body:** `{ "name": string }` — letters only, up to 32 characters (`^[A-Za-z]{1,32}$`), normalized to a capitalized display name (for example `Development`) and a lowercase id.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `201` | The mesh is created and a `mesh_created` audit event records its name and alias. | `{ "ok": true, "mesh": { "id": string, "name": string, "alias": string } }`. |
+| `400` | The name is missing, blank, or not letters-only up to 32 characters. | `invalid_mesh_name` error body. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `409` | A mesh with that id already exists, or an existing model already owns `codeflare-mesh-<id>` as a callable name. | `mesh_exists` or `mesh_alias_conflict` error body. |
+
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model)
+
+### DELETE /api/v1/meshes/{id}
+
+Deletes an empty mesh; the default mesh is undeletable. The automation twin of `DELETE /admin/meshes/{id}`, with the identical response and error shapes.
+
+```http
+DELETE /api/v1/meshes/{id}
+```
+
+**Authentication:** automation key
+
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `200` | The mesh is removed from the registry and a `mesh_deleted` audit event records the orphaned gateway `routeName` in its detail; the mesh's AI Gateway dynamic route is intentionally left in place (it answers `404 no-profile` at the router), so deletion never depends on gateway availability. | `{ "ok": true }`. |
+| `400` | The id names the default mesh, which cannot be deleted. | `mesh_undeletable` error body. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No mesh with that id exists. | `unknown_mesh` error body. |
+| `409` | The mesh still has a machine or model assigned; nothing was removed. | `mesh_not_empty` error body. |
+
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
+
 ### GET /api/v1/models
 
 Lists the models as machine-facing projections.
@@ -751,7 +827,7 @@ GET /api/v1/models
 | `200` | The models. | `{ "models": [ModelProjection] }` (schema below). |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-A `ModelProjection` is `{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "split": boolean, "maxVramGb": number, "tunables": { "parallel": number|null, "cacheTypeK": string|null, "cacheTypeV": string|null, "batch": number|null, "ubatch": number|null, "flashAttn": boolean|null, "maxOutputTokens": number|null, "reasoning": object|null } }`. `split` is `true` when the model serves as a layer package across several machines. `contextWindow` `0` means Auto. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). Each `tunables` field is `null` when Auto (unset, MeshLLM auto-plans it).
+A `ModelProjection` is `{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "split": boolean, "meshId": string, "maxVramGb": number, "tunables": { "parallel": number|null, "cacheTypeK": string|null, "cacheTypeV": string|null, "batch": number|null, "ubatch": number|null, "flashAttn": boolean|null, "maxOutputTokens": number|null, "reasoning": object|null } }`. `split` is `true` when the model serves as a layer package across several machines. `meshId` is the machine group the model is assigned to; the leading callable name is that mesh's stable alias. `contextWindow` `0` means Auto. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). Each `tunables` field is `null` when Auto (unset, MeshLLM auto-plans it).
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management)
 
@@ -767,22 +843,22 @@ POST /api/v1/models
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** `{ "modelRef": string, "mode"?: "single" | "split", "runtime"?: "meshllm" | "llamacpp", "name"?: string }` — `modelRef` is required, trimmed, and non-empty; `mode` defaults to `single` (`split` builds a layer-package profile); `runtime` defaults to `meshllm`. Direct `llamacpp` profiles are single-machine only and ship with prompt caching/cache reuse enabled for coding-session affinity. `name` is an optional display name (defaults to the model-file segment). The model id and callable alias are derived from the reference.
+**Request body:** `{ "modelRef": string, "mode"?: "single" | "split", "runtime"?: "meshllm" | "llamacpp", "name"?: string, "meshId"?: string }` — `modelRef` is required, trimmed, and non-empty; `mode` defaults to `single` (`split` builds a layer-package profile); `runtime` defaults to `meshllm`. Direct `llamacpp` profiles are single-machine only and ship with prompt caching/cache reuse enabled for coding-session affinity. `name` is an optional display name (defaults to the model-file segment). `meshId` is an optional existing mesh id (absent means the default mesh). The model id and own callable alias are derived from the reference.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `201` | A new inactive model is created carrying the stable `codeflare-mesh` callable name; it reaches production only through `POST /api/v1/models/{id}/enable`. | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | `modelRef` is missing/blank, `runtime` is invalid, or `runtime: "llamacpp"` was requested with `mode: "split"`. | `invalid_model_ref` / `invalid_runtime` / `split_requires_meshllm` error body. |
+| `201` | A new inactive model is created in its mesh carrying that mesh's stable callable name (`codeflare-mesh` for the default mesh); it reaches production only through `POST /api/v1/models/{id}/enable`. | `{ "ok": true, "model": ModelProjection }`. |
+| `400` | `modelRef` is missing/blank, `runtime` is invalid, `runtime: "llamacpp"` was requested with `mode: "split"`, or `meshId` named no existing mesh. | `invalid_model_ref` / `invalid_runtime` / `split_requires_meshllm` / `unknown_mesh` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `409` | The reference's derived id already exists. | `duplicate_profile` error body. |
 
-**Implements:** [REQ-API-007](../../sdd/spec/control-plane-api.md#req-api-007-programmatic-model-onboarding), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
+**Implements:** [REQ-API-007](../../sdd/spec/control-plane-api.md#req-api-007-programmatic-model-onboarding), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 ### POST /api/v1/models/{id}
 
-Updates a model's context window, model reference, VRAM budget, display name, callable name, and runtime-specific tunables.
+Updates a model's context window, model reference, VRAM budget, display name, callable name, mesh assignment, and runtime-specific tunables.
 
 ```http
 POST /api/v1/models/{id}
@@ -792,7 +868,7 @@ POST /api/v1/models/{id}
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "runtime"?: "meshllm" | "llamacpp", "llamacpp"?: { "parallel"?: number, "kvUnified"?: boolean | null, "gpuLayers"?: number | string | null, "cachePrompt"?: boolean, "cacheReuse"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean | null, "maxOutputTokens"?: number | null, "reasoning"?: object | null, "bindPort"?: number }, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "reasoning"?: object }`. Every field is optional; an omitted field is left unchanged. MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama.cpp context window must be at least `4096`; model reference must be non-empty; VRAM budget is MeshLLM-only and must be a number `≥ 0` (`0` = no cap); `name` sets the display name (non-blank); `callName` sets the model's own callable alias (slugified, non-empty, not the reserved `codeflare-mesh`, not a collision) while keeping the shared alias.
+**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "meshId"?: string, "runtime"?: "meshllm" | "llamacpp", "llamacpp"?: { "parallel"?: number, "kvUnified"?: boolean | null, "gpuLayers"?: number | string | null, "cachePrompt"?: boolean, "cacheReuse"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean | null, "maxOutputTokens"?: number | null, "reasoning"?: object | null, "bindPort"?: number }, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "reasoning"?: object }`. Every field is optional; an omitted field is left unchanged. MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama.cpp context window must be at least `4096`; model reference must be non-empty; VRAM budget is MeshLLM-only and must be a number `≥ 0` (`0` = no cap); `name` sets the display name (non-blank); `callName` sets the model's own callable alias (slugified, non-empty, not a reserved mesh stable alias — neither `codeflare-mesh` nor any name starting with `codeflare-mesh-` — and not a collision) while keeping the model's mesh stable alias. `meshId` must name an existing mesh; a changed `meshId` moves the model to that machine group, swapping in the new mesh's stable alias, deactivating the model (rollout zero) so it arrives switched off there, bumping the version, and appending a `model_mesh_assigned` audit event with `{ "from": string, "to": string }`.
 
 For MeshLLM profiles, the tunables mirror `POST /admin/profiles/config`: `parallel`/`batch`/`ubatch`/`maxOutputTokens` are positive integers, `cacheTypeK`/`cacheTypeV` one of `f16`/`q8_0`/`q4_0`, `flashAttn` a boolean, and `reasoning` a `{ enabled?, format?, budget? }` object (layered onto the existing block). A `null` / `0` / `""` value clears a tunable back to Auto. For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block; `parallel` is `-1` (Auto: llama-server plans the slot count with unified KV) or `>= 1`, `kvUnified` is a boolean (`null` clears back to on; `false` together with Auto parallel is rejected because llama-server force-enables unified KV under Auto), `gpuLayers` accepts `0` or a positive integer plus `"auto"` / `"all"` (`null`/`""` clears), `cacheReuse` must be `>= 0`, `cachePrompt` is boolean, `cacheTypeK`/`cacheTypeV` accept llama.cpp KV cache types, `batch`/`ubatch`/`maxOutputTokens` are positive integers (`null`/`0` clears optional values), `flashAttn` is boolean (`null` clears), `reasoning` layers or clears the direct reasoning block, and reserved bind ports are rejected.
 
@@ -801,16 +877,16 @@ For MeshLLM profiles, the tunables mirror `POST /admin/profiles/config`: `parall
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The updated model projection (`callableNames` reflects a changed call name). | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | The context window, model reference, VRAM budget, display name, call name, runtime, or runtime tunable was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_kv_unified` / `kv_unified_auto_conflict` / `invalid_reasoning` / `invalid_llamacpp` / `invalid_cachePrompt` / `bind_port_conflict` / `invalid_model_config` error body. |
+| `400` | The context window, model reference, VRAM budget, display name, call name, mesh id, runtime, or runtime tunable was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `unknown_mesh` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_kv_unified` / `kv_unified_auto_conflict` / `invalid_reasoning` / `invalid_llamacpp` / `invalid_cachePrompt` / `bind_port_conflict` / `invalid_model_config` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
-| `409` | The call name is the reserved `codeflare-mesh` alias or collides with another model. | `call_name_conflict` error body. |
+| `409` | The call name is a reserved mesh stable alias (`codeflare-mesh` or a `codeflare-mesh-` prefix) or collides with another model. | `call_name_conflict` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename)
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 ### POST /api/v1/models/{id}/enable
 
-Switches a model on, switching off any other model that answers to the same callable name.
+Switches a model on, switching off the other switched-on models in its mesh plus any model anywhere that answers to one of the same callable names.
 
 ```http
 POST /api/v1/models/{id}/enable
@@ -826,7 +902,7 @@ POST /api/v1/models/{id}/enable
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The model was switched on. | `{ "ok": true, "activated": string, "deactivated": string[] }`. |
+| `200` | The model was switched on; each mesh keeps at most one switched-on model. | `{ "ok": true, "activated": string, "deactivated": string[] }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 
@@ -856,9 +932,33 @@ POST /api/v1/models/{id}/disable
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management)
 
+### POST /api/v1/models/{id}/duplicate
+
+Clones a model into a switched-off copy in the same mesh — same model reference, runtime, context, and tunables — with display name `<source name> (copy)`, a derived unique call name (`<alias>-copy`, then `-copy-2`, …), its own profile id and bind port, version `1`, and rollout zero. Shares the duplication core with the console's `POST /admin/profiles/duplicate`.
+
+```http
+POST /api/v1/models/{id}/duplicate
+```
+
+**Authentication:** automation key
+
+**Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
+
+**Request body:** None.
+
+**Response**
+
+| Status | Outcome | Body |
+| --- | --- | --- |
+| `201` | The copy was created switched off in the source's mesh and a `model_duplicated` audit event targets the copy with `{ "from": string }` naming the source. | `{ "ok": true, "profileId": string, "model": Model }`. |
+| `401` | No valid automation key was presented. | `unauthorized` error body. |
+| `404` | No model with that id exists. | `unknown_profile` error body. |
+
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-RUN-017](../../sdd/spec/runtime-profiles.md#req-run-017-profile-duplication)
+
 ### DELETE /api/v1/models/{id}
 
-Permanently removes a custom, switched-off model from the catalog.
+Permanently removes any switched-off model from the catalog, including the seed-once starter (a deleted starter never re-seeds).
 
 ```http
 DELETE /api/v1/models/{id}
@@ -877,7 +977,7 @@ DELETE /api/v1/models/{id}
 | `200` | The model was removed. | `{ "ok": true, "id": string }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
-| `409` | The model is a built-in (it re-seeds on boot) or is active; nothing was removed. | `model_builtin` or `model_active` error body. |
+| `409` | The model is active — deleting it would leave its mesh's stable route without a target; nothing was removed. | `model_active` error body. |
 
 **Implements:** [REQ-API-008](../../sdd/spec/control-plane-api.md#req-api-008-programmatic-model-deletion)
 
@@ -940,13 +1040,13 @@ POST /api/v1/gateway/sync
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** Optional JSON with `accountId`, `gatewayId`, and `providerName`; omitted values fall back to stored settings and environment defaults. Route name and public model stay pinned to `codeflare-mesh`.
+**Request body:** Optional JSON with `accountId`, `gatewayId`, and `providerName`; omitted values fall back to stored settings and environment defaults. The default route's name and public model stay pinned to `codeflare-mesh`, and one additional dynamic route is ensured per non-default mesh, named by that mesh's alias (`codeflare-mesh-<id>`); none of the route names are read from the body.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Gateway resources were reconciled, prior provider tokens were retired, and a fresh provider token was created for the public `/v1/chat/completions` route. | Gateway sync metadata plus `{ "providerToken": string, "byokInstruction": string }`. |
+| `200` | Gateway resources were reconciled — one dynamic route per mesh — prior provider tokens were retired, and a fresh provider token was created for the public `/v1/chat/completions` route. | Gateway sync metadata plus `{ "routes": [{ "routeName": string, "publicModel": string, "routeId": string }], "providerToken": string, "byokInstruction": string }` — `routes` carries one entry per ensured route, default first. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `409` | A custom-domain or Worker URL prerequisite is missing. | `custom_domain_required` / `custom_domain_not_provisioned` error body. |
 | `424` | Cloudflare rejected the sync; the raw cause is recorded to audit only. | Actionable sync failure error body. |
@@ -1107,4 +1207,5 @@ PUT /api/v1/settings
 | Forwarding routes | [router-worker.md](../../sdd/spec/router-worker.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
 | Node proxy | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/proxy.go::ProxyAnchors` <!-- @impl: packages/node-agent/internal/agent/proxy.go::ProxyAnchors --> |
 | Mesh bootstrap | [runtime-profiles.md](../../sdd/spec/runtime-profiles.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
+| Mesh registry | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/meshes.ts::MESHES_ANCHORS`, `packages/router-worker/src/router.ts::meshListCore` <!-- @impl: packages/router-worker/src/meshes.ts::MESHES_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::meshListCore --> |
 | Dashboard controls | [security.md](../../sdd/spec/security.md) | `packages/node-agent/internal/agent/dashboard.go::DashboardAnchors` <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardAnchors --> |

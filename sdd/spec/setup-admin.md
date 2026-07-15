@@ -688,7 +688,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ### REQ-ADM-023: Per-node settings
 
-**Intent:** Operators need stable human names for machines and may need to cap a specific node's inference VRAM below a model's global budget, so the console and API must persist both settings after the node has registered.
+**Intent:** Operators need stable human names for machines, may need to cap a specific node's inference VRAM below a model's global budget, and must be able to move a machine between meshes, so the console and API must persist these operator-owned settings after the node has registered.
 
 **Applies To:** Admin, Automation
 
@@ -698,12 +698,14 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 2. `POST /admin/nodes/{id}/config` persists a non-blank display name in the D1 node JSON, sets or clears a node's VRAM override, rejects a blank name or negative VRAM value, and returns `404` for an unknown or revoked node. <!-- @impl: packages/router-worker/src/router.ts::handleNodeConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 persists node name and VRAM override across heartbeat) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 refuses reconfigure and admin config for a revoked node) -->
 3. Stored display names survive future heartbeats, and node VRAM overrides replace each model budget in heartbeat desired profiles. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 persists node name and VRAM override across heartbeat) -->
 4. `POST /api/v1/nodes/{id}/reconfigure` persists the same display name and VRAM override for an automation caller, returns the node projection including them, and returns `404` for an unknown or revoked node. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeReconfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reconfigures node name and VRAM override through the automation API) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 refuses reconfigure and admin config for a revoked node) -->
+5. The node drawer offers a mesh selection listing every machine group, pre-selected to the node's group and sent only when actually changed, so saving an unrelated setting never re-triggers a reassignment. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-023 node drawer saves the mesh selection only when changed) -->
+6. A mesh reassignment through the shared node-reconfigure core validates the target against the registry (status 400 `unknown_mesh` otherwise), drops the node's mesh invite tokens — which later heartbeats must not re-add — and records a `node_mesh_assigned` audit event with the from/to groups; the automation reconfigure twin accepts the same field and returns the node projection carrying its mesh. <!-- @impl: packages/router-worker/src/router.ts::reconfigureNode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reassigning a node drops its mesh tokens and heartbeats do not re-add them) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 the reconfigure twin accepts meshId and api nodes carry it) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
 **Priority:** P2
 
-**Dependencies:** [REQ-ADM-021](#req-adm-021-model-serving-configuration), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-API-004](control-plane-api.md#req-api-004-programmatic-node-management)
+**Dependencies:** [REQ-ADM-021](#req-adm-021-model-serving-configuration), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-API-004](control-plane-api.md#req-api-004-programmatic-node-management), [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 **Verification:** Automated test
 
@@ -755,6 +757,8 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 4. The form does not submit an empty model reference. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 does not submit an empty model ref) -->
 
+5. A visible "Where to find models" panel inside the add-model card presents the model-reference format as a copyable code example and the sources as first-class rows; the single-machine context surfaces the GGUF catalog while split surfaces the layer packages and preparation guide, switched by a dataset marker the stylesheet keys off — the panel's content is visible by default and never gated on a script reveal. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 renders the model sources panel visible by default with CSS-keyed contextual switching) -->
+
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P2
@@ -769,19 +773,19 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ### REQ-ADM-026: Delete-a-model console control
 
-**Intent:** An admin must be able to remove a custom model from the console once it is no longer needed, with a delete control that appears only where deletion is allowed and a confirm that cannot be lost to a background refresh before the operator commits.
+**Intent:** An admin must be able to remove any switched-off model from the console — including the seed-once starter — with a delete control that appears only where deletion is allowed and a confirm that cannot be lost to a background refresh before the operator commits.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. The model Manage drawer shows a Delete control only for a custom, switched-off model, and hides it for a built-in model or the active model. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 shows a Delete control only for a custom, switched-off model) -->
+1. The model Manage drawer shows a Delete control for any switched-off model and hides it only for the active model, which owns its mesh's stable route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 shows a Delete control for any switched-off model) -->
 
 2. Deleting from the drawer posts to the profile-delete endpoint and closes the drawer, so the removed model leaves the list on the next refresh. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 deletes a model from the drawer through the profiles delete endpoint and closes the drawer) -->
 
-3. `POST /admin/profiles/delete` under admin authentication removes the named custom model. <!-- @impl: packages/router-worker/src/router.ts::handleProfileDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 deletes a custom model from the console) -->
+3. `POST /admin/profiles/delete` under admin authentication removes the named switched-off model. <!-- @impl: packages/router-worker/src/router.ts::handleProfileDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 deletes a custom model from the console) -->
 
-4. The console delete refuses a built-in model with status 409. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console deletion of a built-in model) -->
+4. The console delete refuses only the active model, with status 409. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console deletion only while the model is active) -->
 
 5. The console delete refuses a request that carries no admin credential. <!-- @impl: packages/router-worker/src/router.ts::handleProfileDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console model deletion without an admin credential) -->
 
@@ -887,7 +891,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The direct target offers one option per model that is on, valued by the model's own callable name and labeled with that callable name paired with the model name, from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 lists one playground option per model on, valued by callable name and labeled with the model name) -->
+1. The direct target offers one option per model that is on — every mesh's active model — valued by the model's own callable name (never a mesh's stable route name) and labeled with that callable name paired with the model name, from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 lists one playground option per model on, valued by callable name and labeled with the model name) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 direct playground lists every mesh's active model by its own alias) -->
 2. A gateway target lists that gateway's dynamic routes in the dependent selector and sends the chosen route to the gateway playground endpoint. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::updatePlaygroundModels --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
@@ -944,6 +948,38 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Priority:** P2
 
 **Dependencies:** [REQ-ADM-016](#req-adm-016-operator-playground), [REQ-ADM-029](#req-adm-029-playground-inference-endpoints)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-037: Console mesh management
+
+**Intent:** Operators create and dissolve machine groups and see membership at a glance from the console: a Meshes card lists every group with its callable route and machine/model counts, the nodes table shows each machine's group, and the admin status feed carries the mesh list both console roles need to render names.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. `GET /admin/meshes` lists every mesh — the implicit undeletable Default first — with its id, display name, callable route alias, and machine and model counts. <!-- @impl: packages/router-worker/src/router.ts::meshListCore --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-037 creates and lists meshes with machine and model counts) -->
+
+2. `POST /admin/meshes` creates a mesh from a letters-only name normalized to first-letter-upper: an invalid name is rejected with status 400 `invalid_mesh_name`, a case-insensitive duplicate (including Default) with 409 `mesh_exists`, and a name whose derived route alias is already a stored profile alias with 409 `mesh_alias_conflict`; a successful create records a `mesh_created` audit event. <!-- @impl: packages/router-worker/src/router.ts::meshCreateCore --> <!-- @impl: packages/router-worker/src/meshes.ts::validateMeshName --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-037 rejects invalid, duplicate, and alias-colliding mesh names) --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-SCH-006 validates and normalizes mesh names) -->
+
+3. `DELETE /admin/meshes/{id}` deletes only an empty non-default mesh: the default mesh is refused with status 400 `mesh_undeletable`, an unknown mesh returns 404, and a mesh still holding machines or models returns 409 `mesh_not_empty`; a successful delete records a `mesh_deleted` audit event carrying the orphaned gateway route name. <!-- @impl: packages/router-worker/src/router.ts::meshDeleteCore --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-037 deletes only empty non-default meshes) -->
+
+4. Admin status carries the mesh list with route aliases and machine/model counts for console rendering. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-037 admin status lists meshes with counts) -->
+
+5. The Meshes console card lists each group with its route and counts, offers a create input posting the entered name, and shows a confirm-armed Delete control only on an empty non-default mesh. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::nodesSection --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderMeshList --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-037 meshes card lists groups, gates Delete to empty non-default meshes, and posts create/delete) -->
+
+6. The nodes table renders a mesh column resolved to group display names with a data-driven sort key, and rows without a stored mesh read as Default members. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_NODES_TABLE --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-037 nodes table renders a mesh column resolved to group names) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-API-011](control-plane-api.md#req-api-011-programmatic-mesh-management)
 
 **Verification:** Automated test
 

@@ -98,6 +98,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 5. `DELETE /api/v1/nodes/{id}` decommissions a node — deleting its record (reaching even a revoked tombstone row so it can be reaped) and revoking its node and mesh tokens so it must re-enroll — records a `node_revoked` audit event, and returns `404` for an unknown node. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeDecommission --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 decommissions a node and revokes its credentials) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 decommission reaps a lingering revoked tombstone row) -->
 6. The node endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 refuses node access without an automation key) -->
 7. `POST /api/v1/nodes/{id}/deactivate` and `POST /api/v1/nodes/{id}/activate` set and clear the node's deactivated taint, record a `node_deactivated` / `node_activated` audit event, return the updated node projection (which carries `deactivated`), and `404` for an unknown node. <!-- @impl: packages/router-worker/src/router.ts::apiSetNodeDeactivated --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-002 REQ-ADM-030 deactivates and reactivates a node over the automation API) -->
+8. `POST /api/v1/nodes/{id}/reconfigure` accepts a mesh reassignment through the shared node-reconfigure core, and node projections carry the node's mesh. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeReconfigure --> <!-- @impl: packages/router-worker/src/router.ts::toApiNode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 the reconfigure twin accepts meshId and api nodes carry it) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -124,12 +125,14 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 3. `POST /api/v1/models/{id}/enable` switches a model on and switches off any other model that answers to the same callable name. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelEnable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 enables a model and switches off another with the same callable name) -->
 4. `POST /api/v1/models/{id}/disable` drops a model's traffic to zero. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDisable --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 disables a model by dropping its traffic to zero) -->
 5. The model endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::requireAutomation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-010 refuses model and version endpoints without an automation key) -->
+6. `POST /api/v1/models/{id}` accepts a mesh reassignment through the shared reassignment core, and model projections carry the model's mesh. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelConfigure --> <!-- @impl: packages/router-worker/src/router.ts::toApiModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 the model configure twin accepts meshId and api models carry it) -->
+7. `POST /api/v1/models/{id}/duplicate` clones a model through the shared duplication core and returns the created model projection. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDuplicate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 the automation duplicate twin mirrors the console behavior) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P1
 
-**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout)
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-004](runtime-profiles.md#req-run-004-profile-rollout), [REQ-RUN-016](runtime-profiles.md#req-run-016-per-mesh-model-assignment), [REQ-RUN-017](runtime-profiles.md#req-run-017-profile-duplication)
 
 **Verification:** Automated test
 
@@ -219,15 +222,15 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ### REQ-API-008: Programmatic model deletion
 
-**Intent:** Fleet managers must remove a custom model programmatically, wrapping the same deletion rules the console uses, so automation can prune onboarded models without an Access session and the API and console never diverge.
+**Intent:** Fleet managers must remove any switched-off model programmatically — including the seed-once starter — wrapping the same deletion rules the console uses, so automation can prune onboarded models without an Access session and the API and console never diverge.
 
 **Applies To:** Automation
 
 **Acceptance Criteria:**
 
-1. `DELETE /api/v1/models/{id}` with an automation key removes a custom, switched-off model and returns `{ ok, id }`. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes a custom inactive model over the API) -->
+1. `DELETE /api/v1/models/{id}` with an automation key removes a switched-off model and returns `{ ok, id }`. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes a custom inactive model over the API) -->
 2. Deleting the active model is rejected with status 409 without removing it. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 refuses deleting the active model) -->
-3. Deleting a built-in model is rejected with status 409 without removing it. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 refuses deleting a built-in model) -->
+3. Deleting the switched-off starter succeeds like any other model, and the seed-once marker keeps it from re-seeding. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes the switched-off starter like any other model and it never re-seeds) -->
 4. Deleting an unknown model returns status 404. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 returns 404 deleting an unknown model) -->
 5. Deleting a model refuses a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 refuses model deletion without an automation key) -->
 
@@ -260,6 +263,32 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 **Priority:** P2
 
 **Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-ADM-034](setup-admin.md#req-adm-034-direct-router-speed-test)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-API-011: Programmatic mesh management
+
+**Intent:** Fleet managers must create, list, and delete machine groups programmatically through the same validated cores the console uses, so MDM tooling can shape the fleet's mesh layout without console access.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `GET /api/v1/meshes` lists every mesh — the implicit Default first — with id, display name, callable route alias, and machine and model counts, through the same core as the console. <!-- @impl: packages/router-worker/src/router.ts::handleApiMeshList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-011 automation manages meshes through the /api/v1 twins) -->
+
+2. `POST /api/v1/meshes` and `DELETE /api/v1/meshes/{id}` create and delete meshes through the shared cores with the same validation and error contract as the console endpoints, auditing under the automation actor. <!-- @impl: packages/router-worker/src/router.ts::handleApiMeshCreate --> <!-- @impl: packages/router-worker/src/router.ts::handleApiMeshDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-011 automation manages meshes through the /api/v1 twins) -->
+
+3. The mesh endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::requireAutomation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-011 automation manages meshes through the /api/v1 twins) -->
+
+**Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-ADM-037](setup-admin.md#req-adm-037-console-mesh-management)
 
 **Verification:** Automated test
 

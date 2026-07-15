@@ -22,6 +22,40 @@ This ledger records binding technical choices for the first implementation. It i
 | [AD-014](#ad-014-public-model-alias-renamed-to-codeflare-mesh) | Accepted | Rename the default public model alias and gateway route from `mesh-default` to `codeflare-mesh` across code, spec, and docs; internal profile IDs and derived mesh-network names are unchanged. | [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation) |
 | [AD-015](#ad-015-stateless-thin-forwarder-with-mesh-owned-routing) | Accepted | Make the router a stateless thin forwarder; `mesh-llm` owns concurrency and KV-aware routing; discovery moves from mdns to Nostr with iroh data pinned to the WARP overlay; add reversible node deactivation. | [REQ-SCH-002](../../sdd/spec/state-scheduling.md#req-sch-002-stateless-entry-node-forwarding), [REQ-SEC-004](../../sdd/spec/security.md#req-sec-004-runtime-api-exposure), [REQ-ADM-030](../../sdd/spec/setup-admin.md#req-adm-030-node-deactivation-and-activation), [REQ-NODE-011](../../sdd/spec/node-agent.md#req-node-011-deactivated-nodes-run-no-model) |
 | [AD-016](#ad-016-direct-llamacpp-cache-local-runtime) | Accepted | Support direct llama.cpp only for single-node cache-local profiles while MeshLLM remains the split-serving runtime. | [REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-NODE-013](../../sdd/spec/node-agent.md#req-node-013-runtime-binary-bootstrap) |
+| [AD-017](#ad-017-operator-defined-meshes-with-per-mesh-gateway-routes) | Accepted | Group nodes and models into operator-named meshes; each mesh's active model answers its own stable route alias, membership is router authority, and mesh deletion never depends on gateway availability. | [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-RUN-009](../../sdd/spec/runtime-profiles.md#req-run-009-profile-seeding-and-activation-exclusivity) |
+| [AD-018](#ad-018-seed-once-single-starter-model-catalog) | Accepted | Ship exactly one starter model seeded exactly once behind a config marker; any switched-off model, including the starter, is deletable and only the active model is protected. | [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-012](../../sdd/spec/runtime-profiles.md#req-run-012-model-removal), [REQ-API-008](../../sdd/spec/control-plane-api.md#req-api-008-programmatic-model-deletion) |
+
+## AD-018: Seed-once single-starter model catalog
+
+**Status:** Accepted
+
+**Context:** The previous refresh-and-retire seeding resurrected deleted defaults on the next request and kept part of the catalog ship-owned, so operators could never fully own their model list. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES -->
+
+**Decision:** The shipped catalog is exactly one starter profile (`mesh-smoke-qwen25-1.5b`, Qwen2.5 Coder 1.5B), written only while the `default_profiles_seeded` router-config marker is absent. After first seed, rows are never refreshed or retired; any switched-off model — including the starter — is permanently deletable, and only the active model is refused deletion because removing it would leave its mesh's stable route without a target.
+
+**Alternatives considered:** Keeping refresh-and-retire re-seeding with a per-profile tombstone; shipping no starter at all.
+
+**Rationale:** A cheap active smoke-test model still verifies inference end to end on a fresh deployment, while seed-once hands the catalog to the operator: a deletion sticks, and the `model_builtin` protection class disappears.
+
+**Consequences:** Deployments seeded from earlier catalogs keep those rows as ordinary deletable profiles; nothing re-seeds after the marker is set, so an operator who deletes every model must onboard a new one before the stable route serves again.
+
+**Related requirements:** [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-012](../../sdd/spec/runtime-profiles.md#req-run-012-model-removal), [REQ-API-008](../../sdd/spec/control-plane-api.md#req-api-008-programmatic-model-deletion)
+
+## AD-017: Operator-defined meshes with per-mesh gateway routes
+
+**Status:** Accepted
+
+**Context:** One fleet needed to serve different models to different machine groups, but a single stable alias forced every node onto one active model. <!-- @impl: packages/router-worker/src/meshes.ts::MESHES_ANCHORS -->
+
+**Decision:** Nodes and model profiles each belong to exactly one operator-named mesh; the implicit `default` mesh always exists and is undeletable. Each mesh's active model answers its own stable alias (`codeflare-mesh` for the default mesh, `codeflare-mesh-<id>` otherwise) and gateway sync ensures one dynamic route per mesh. Membership is router authority: profile distribution, scheduler eligibility, seed election, mesh-state membership, and readiness are all mesh-scoped server-side, and activation is single-active per mesh. Deleting a mesh requires it to be empty and intentionally leaves its gateway dynamic route in place — the orphaned route answers no-profile at the router — so deletion never depends on Cloudflare API availability.
+
+**Alternatives considered:** Per-model routes without grouping; trusting agent-reported profile ids for membership; deleting the gateway route during mesh deletion.
+
+**Rationale:** Grouping at the mesh level keeps the stable-alias contract per audience while server-side gates preserve routing correctness even when an agent lags a reassignment.
+
+**Consequences:** A node moved to a mesh with no active model keeps running its previous model until the new mesh's model is activated (the agent ignores empty desired sets); a reassigned model arrives switched off in its new mesh; orphaned gateway routes remain until an operator removes them in the Cloudflare dashboard.
+
+**Related requirements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-RUN-009](../../sdd/spec/runtime-profiles.md#req-run-009-profile-seeding-and-activation-exclusivity)
 
 ## AD-016: Direct llama.cpp cache-local runtime
 

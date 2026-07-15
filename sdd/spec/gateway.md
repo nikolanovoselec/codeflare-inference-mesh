@@ -74,7 +74,31 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Priority:** P0
 
-**Dependencies:** [REQ-GWY-001](#req-gwy-001-gateway-custom-provider), [REQ-GWY-002](#req-gwy-002-provider-token-contract)
+**Dependencies:** [REQ-GWY-001](#req-gwy-001-gateway-custom-provider), [REQ-GWY-002](#req-gwy-002-provider-token-contract), [REQ-GWY-009](#req-gwy-009-per-mesh-dynamic-routes)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-GWY-009: Per-mesh dynamic routes
+
+**Intent:** Every machine group's active model must be reachable through the same AI Gateway: sync ensures one dynamic route per mesh, named by the mesh's stable route alias and forwarding that alias, so clients of the Development mesh call `codeflare-mesh-development` exactly like default-mesh clients call `codeflare-mesh`. Deleting a mesh intentionally leaves its route in place (it resolves to model-not-found) so deletion never depends on Cloudflare API availability; the orphaned route name rides the deletion audit event.
+
+**Applies To:** Admin, Automation
+
+**Acceptance Criteria:**
+
+1. Gateway sync passes one extra route per non-default mesh — route name and forwarded model both the mesh's stable alias — alongside the pinned default route, built from the mesh registry rather than operator input. <!-- @impl: packages/router-worker/src/router.ts::syncGatewayForActor --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-009 gateway sync ensures one dynamic route per mesh) -->
+
+2. The Cloudflare client upserts each extra route with the same ensure-or-reuse semantics as the default route and reports the ensured routes in the sync result. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-009 the gateway client upserts a route per extra mesh route) -->
+
+**Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-GWY-003](#req-gwy-003-dynamic-route-automation), [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-016](runtime-profiles.md#req-run-016-per-mesh-model-assignment)
 
 **Verification:** Automated test
 
