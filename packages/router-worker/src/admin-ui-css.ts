@@ -7,6 +7,28 @@ import { ADMIN_UI_RESPONSIVE } from './admin-ui-contract'
  * and a semantic status set where danger is distinct from the accent.
  * Every size/colour/space flows from the token block below.
  */
+
+/**
+ * Chip tone palette: text and border for every chip/pill tone derive from one row here
+ * (backed by the rgb tokens in :root), so recolouring a tone is a single token edit and
+ * a new tone cannot fork the pattern with hardcoded values.
+ */
+const CHIP_TONES: ReadonlyArray<readonly [tone: string, color: string, line: string]> = [
+  ['ok', 'var(--ok)', 'rgb(var(--ok-rgb)/.35)'],
+  ['warn', 'var(--warn)', 'rgb(var(--warn-rgb)/.35)'],
+  ['danger', 'var(--danger-text)', 'var(--danger-line)'],
+  ['accent', 'var(--accent)', 'var(--accent-line)'],
+  ['red', 'rgb(var(--pill-red-rgb))', 'rgb(var(--pill-red-rgb)/.4)'],
+  ['green', 'rgb(var(--pill-green-rgb))', 'rgb(var(--pill-green-rgb)/.4)'],
+  ['blue', 'rgb(var(--pill-blue-rgb))', 'rgb(var(--pill-blue-rgb)/.4)'],
+  ['orange', 'rgb(var(--pill-orange-rgb))', 'rgb(var(--pill-orange-rgb)/.4)'],
+  ['purple', 'rgb(var(--pill-purple-rgb))', 'rgb(var(--pill-purple-rgb)/.4)']
+]
+
+function chipToneCss(): string {
+  return CHIP_TONES.map(([tone, color, line]) => `.chip[data-tone=${tone}]{color:${color};border-color:${line}}`).join('\n')
+}
+
 export function adminUiCss(): string {
   return `:root{
   color-scheme:dark;
@@ -32,7 +54,14 @@ export function adminUiCss(): string {
   --flare-gradient:linear-gradient(96deg,#ff8a3d 0%,#ff5c3c 52%,#ff3f7c 100%);
   --page-glow:radial-gradient(ellipse 80% 42% at 50% -12%,rgb(var(--accent-rgb)/.16),transparent 64%);
   --ok:#22c55e;
+  --ok-rgb:34 197 94;
   --warn:#f59e0b;
+  --warn-rgb:245 158 11;
+  --pill-red-rgb:248 113 113;
+  --pill-green-rgb:74 222 128;
+  --pill-blue-rgb:96 165 250;
+  --pill-orange-rgb:251 146 60;
+  --pill-purple-rgb:192 132 252;
   --danger:#ef4444;
   --danger-text:#f87171;
   --danger-hover:#dc2626;
@@ -88,10 +117,7 @@ input:focus-visible,select:focus-visible{border-color:var(--accent)}
 .check input{min-height:auto;width:auto;accent-color:var(--accent)}
 .chip{display:inline-flex;align-items:center;gap:.3rem;max-width:100%;min-width:0;border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);font-size:var(--fs-xs);font-weight:600;padding:.12rem .55rem;white-space:nowrap}
 .chip>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.chip[data-tone=ok]{color:var(--ok);border-color:rgb(34 197 94/.35)}
-.chip[data-tone=warn]{color:var(--warn);border-color:rgb(245 158 11/.35)}
-.chip[data-tone=danger]{color:var(--danger-text);border-color:var(--danger-line)}
-.chip[data-tone=accent]{color:var(--accent);border-color:var(--accent-line)}
+${chipToneCss()}
 .dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--muted);flex:none}
 .dot[data-tone=ok]{background:var(--ok)}
 .dot[data-tone=warn]{background:var(--warn)}

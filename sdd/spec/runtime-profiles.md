@@ -439,7 +439,9 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 6. The console model drawer offers a mesh selection listing every mesh, pre-selected to the model's group and sent only when actually changed. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-016 model drawer saves the mesh selection only when changed) -->
 
-7. Every row in the console models list carries a mesh badge resolving the model's group name, so the assignment is visible without opening the drawer; rows without a stored mesh read as Default members. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-016 the models list shows each profile mesh without opening the drawer) -->
+7. Every row in the console models list carries a purple mesh pill resolving the model's group name, so the assignment is visible without opening the drawer; rows without a stored mesh read as Default members. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::profilePills --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-016 the models list shows each profile mesh without opening the drawer) -->
+
+8. The model Manage drawer leads with the same pill row — provider, serving mode, mesh — above its status, runtime, alias, and machines-serving fields, so every profile's full identity is readable inside the overlay. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 REQ-RUN-016 model rows and the drawer lead with the runtime, serving-mode, and mesh pills) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 

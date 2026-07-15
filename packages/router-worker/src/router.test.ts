@@ -3003,6 +3003,23 @@ describe('router worker behavioral contracts', () => {
     expect(node?.metrics?.activeRequests).toBe(0)
   })
 
+  it('REQ-NODE-002 accepts the llama.cpp Auto parallel sentinel in heartbeat metrics', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
+
+    // parallel -1 is the documented Auto value the profile editor stores (REQ-RUN-013); the agent
+    // echoes it back, and the heartbeat must refresh the lease instead of 400ing the node offline.
+    const response = await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: heartbeatBody({ runtime: 'llamacpp', metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, parallel: -1 } })
+    }))
+    const node = await store.getNode('node-a')
+
+    expect(response.status).toBe(200)
+    expect(node?.metrics?.parallel).toBe(-1)
+  })
+
   it('REQ-SEC-007 node revoke removes the node mesh tokens from distribution', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })

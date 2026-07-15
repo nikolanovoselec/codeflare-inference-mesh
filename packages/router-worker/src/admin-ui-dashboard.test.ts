@@ -231,7 +231,8 @@ describe('dashboard overview contracts', () => {
     expect(statusCell.dataset.statusDetail).toBe('standby')
     const chip = descendants(statusCell).find((node) => node.className === 'chip')!
     expect(chip.dataset.tone).toBe('ok')
-    expect(statusCell.dataset.statusLabelKind).toBe('work-state')
+    // Ready models make the node a Serving participant in the fixed status vocabulary.
+    expect(descendants(chip).map((node) => node.textContent).join('')).toBe('Serving')
     await harness.clickAction('node-detail', { nodeId: 'battlestation' })
     const drawerFields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(drawerFields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
@@ -405,7 +406,8 @@ describe('dashboard overview contracts', () => {
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
 
     expect(statusCell.dataset.statusDetail).toBe('split-mesh-peer-discovery')
-    expect(descendants(statusCell).find((node) => node.className === 'chip')!.dataset.tone).toBe('danger')
+    // A starting split runtime is Preparing (yellow) in the table; the drawer blocker below carries the alarm.
+    expect(descendants(statusCell).find((node) => node.className === 'chip')!.dataset.tone).toBe('warn')
 
     await harness.clickAction('node-detail', { nodeId: 'mac-worker' })
     const blocker = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.dataset.drawerField === 'mesh-discovery-blocker')!
@@ -634,7 +636,9 @@ describe('dashboard overview contracts', () => {
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'linux-node')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
     expect(descendants(statusCell).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
-    expect(statusCell.dataset.statusLabelKind).toBe('mesh-role')
+    const servingChip = descendants(statusCell).find((node) => node.className === 'chip')!
+    expect(servingChip.dataset.tone).toBe('ok')
+    expect(descendants(servingChip).map((node) => node.textContent).join('')).toBe('Serving')
 
     await harness.clickAction('node-detail', { nodeId: 'linux-node' })
     let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
@@ -1384,11 +1388,11 @@ describe('dashboard throughput trace and playground contracts', () => {
     const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
     const rows = harness.byId('profile-list').children.filter((row) => row.dataset.profileRow)
     const badge = (id: string) => descendants(rows.find((row) => row.dataset.profileRow === id)!).find((node) => node.dataset.servingMode)!
-    // Serving mode is carried by a badge attribute; a split model's badge stands out in accent.
+    // Serving mode is carried by a pill attribute with the fixed tone vocabulary: singular = blue, sharded = orange.
     expect(badge('single-a').dataset.servingMode).toBe('single')
     expect(badge('split-b').dataset.servingMode).toBe('split')
-    expect(badge('split-b').dataset.tone).toBe('accent')
-    expect(badge('single-a').dataset.tone).toBeUndefined()
+    expect(badge('split-b').dataset.tone).toBe('orange')
+    expect(badge('single-a').dataset.tone).toBe('blue')
   })
 
   it('REQ-OBS-007 labels overview mesh chips by model name and stays neutral when a model is not shared', async () => {
@@ -1768,6 +1772,37 @@ describe('mesh console contracts', () => {
     expect(rowBadge('model-dev')?.textContent).toBe('Development')
     // A legacy row without a stored mesh reads as a Default member.
     expect(rowBadge('model-default')?.getAttribute('data-profile-mesh')).toBe('default')
+  })
+
+  it('REQ-ADM-018 REQ-RUN-016 model rows and the drawer lead with the runtime, serving-mode, and mesh pills', async () => {
+    const profiles = [
+      { id: 'direct-a', displayName: 'Direct A', publicAliases: ['codeflare-mesh', 'direct-a'], active: true, rolloutPercent: 100, runtime: 'llamacpp', llamacpp: { modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', bindPort: 4500 } },
+      { id: 'shard-b', displayName: 'Shard B', publicAliases: ['codeflare-mesh-development', 'shard-b'], meshId: 'development', active: false, rolloutPercent: 0, runtime: 'meshllm', meshllm: { split: true } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
+    const pill = (id: string, attr: string) => {
+      const row = harness.byId('profile-list').children.find((candidate) => candidate.dataset.profileRow === id)
+      return descendants(row!).find((el) => el.getAttribute(attr) !== null)!
+    }
+    // Provider pill: llama.cpp = red, meshllm = green.
+    expect(pill('direct-a', 'data-runtime').getAttribute('data-runtime')).toBe('llamacpp')
+    expect(pill('direct-a', 'data-runtime').dataset.tone).toBe('red')
+    expect(pill('shard-b', 'data-runtime').getAttribute('data-runtime')).toBe('meshllm')
+    expect(pill('shard-b', 'data-runtime').dataset.tone).toBe('green')
+    // Serving-mode pill combines with the provider pill: a sharded meshllm model reads green + orange.
+    expect(pill('shard-b', 'data-serving-mode').dataset.tone).toBe('orange')
+    expect(pill('direct-a', 'data-serving-mode').dataset.tone).toBe('blue')
+    // Mesh pill is always purple.
+    expect(pill('shard-b', 'data-profile-mesh').dataset.tone).toBe('purple')
+    expect(pill('direct-a', 'data-profile-mesh').getAttribute('data-profile-mesh')).toBe('default')
+
+    // The Manage overlay leads with the same pill row, so provider, mode, and mesh are visible there too.
+    await harness.clickAction('model-detail', { profileId: 'shard-b' })
+    const drawerPills = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.getAttribute('data-drawer-pills') === 'shard-b')!
+    const drawerPill = (attr: string) => descendants(drawerPills).find((el) => el.getAttribute(attr) !== null)!
+    expect(drawerPill('data-runtime').getAttribute('data-runtime')).toBe('meshllm')
+    expect(drawerPill('data-serving-mode').getAttribute('data-serving-mode')).toBe('split')
+    expect(drawerPill('data-profile-mesh').getAttribute('data-profile-mesh')).toBe('development')
   })
 
   it('REQ-ADM-015 overview topology filters machines to the selected mesh and survives the poll', async () => {

@@ -2669,7 +2669,10 @@ function validNodeMetrics(metrics: unknown): boolean {
   if (value.readyModels !== undefined && (!Array.isArray(value.readyModels) || !value.readyModels.every((item) => typeof item === 'string'))) return false
   for (const key of ['gpuMemoryUsedMiB', 'gpuMemoryTotalMiB', 'activeRequests', 'tokensPerSecond', 'promptTokensPerSecond', 'generationTokensPerSecond', 'peerCount', 'stageCount', 'meshMaxVramGb', 'ctxSize', 'parallel', 'cacheReuse', 'slotCount', 'activeSlots', 'cachedTokensLast']) {
     const raw = value[key]
-    if (raw !== undefined && (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0)) return false
+    // parallel -1 is the profile editor's own Auto slot-planning sentinel (REQ-RUN-013); a node
+    // echoing it back is valid telemetry, and rejecting it froze Auto-parallel nodes into a
+    // phantom Offline (every heartbeat 400'd while llama-server ran fine locally).
+    if (raw !== undefined && (typeof raw !== 'number' || !Number.isFinite(raw) || (raw < 0 && !(key === 'parallel' && raw === -1)))) return false
   }
   return true
 }

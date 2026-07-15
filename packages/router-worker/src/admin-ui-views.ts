@@ -199,24 +199,36 @@ ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}
   })
 }
 
+/** Native details/summary disclosure: the summary is the styled action button, the body its revealed content. */
+function disclosure(input: { id: string; action: string; label: string; body: string }): string {
+  return `<details class="disclosure" id="${input.id}">
+<summary class="btn btn-primary" data-disclosure="${input.action}">${input.label}</summary>
+<div class="disclosure-body">
+${input.body}
+</div></details>`
+}
+
 function meshesCard(): string {
   return `<div class="subpanel"><div class="mesh-head"><h3>Meshes</h3>
-<details class="disclosure" id="mesh-add-details">
-<summary class="btn btn-primary" data-disclosure="mesh-add">Add Mesh</summary>
-<div class="disclosure-body">
-<div class="form-actions mesh-add-row"><input id="${ADMIN_UI_MESHES.nameInputId}" name="meshName" type="text" placeholder="Mesh name, e.g. Development" aria-label="Mesh name" autocomplete="off">${button({ action: 'mesh-create', label: 'Add', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
-<span class="field-hint">Letters only. The mesh answers at codeflare-mesh-&lt;name&gt;.</span>
-</div></details></div>
+${disclosure({
+    id: 'mesh-add-details',
+    action: 'mesh-add',
+    label: 'Add Mesh',
+    body: `<label for="${ADMIN_UI_MESHES.nameInputId}">Mesh name</label>
+<div class="form-actions mesh-add-row"><input id="${ADMIN_UI_MESHES.nameInputId}" name="meshName" type="text" placeholder="e.g. Development" autocomplete="off">${button({ action: 'mesh-create', label: 'Add', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
+<span class="field-hint">Letters only. The mesh answers at codeflare-mesh-&lt;name&gt;.</span>`
+  })}</div>
 <p class="field-hint">Group machines into meshes and give each group its own model. Every mesh answers at its own route.</p>
 <div class="row-list" id="${ADMIN_UI_MESHES.listId}" data-output="meshes"><p class="empty-note">Meshes appear here after you sign in.</p></div>
 ${output({ id: ADMIN_UI_MESHES.outputId, kind: 'mesh', pre: true })}</div>`
 }
 
 function addModelCard(): string {
-  return `<div class="subpanel model-add"><details class="disclosure" id="model-add-details">
-<summary class="btn btn-primary" data-disclosure="model-add">Add Model</summary>
-<div class="disclosure-body">
-<p class="field-hint">Add a model reference and choose its runtime. MeshLLM can run single-machine or split models; llama.cpp is direct and cache-local for single-machine coding sessions.</p>
+  return `<div class="subpanel model-add">${disclosure({
+    id: 'model-add-details',
+    action: 'model-add',
+    label: 'Add Model',
+    body: `<p class="field-hint">Add a model reference and choose its runtime. MeshLLM can run single-machine or split models; llama.cpp is direct and cache-local for single-machine coding sessions.</p>
 <div class="form-grid">
 ${field({ id: 'model-add-name', label: 'Name', control: textInput({ id: 'model-add-name', name: 'name', placeholder: 'e.g. Fast Coder' }), hint: 'Shown in the console. Leave blank to name it after the model file.' })}
 ${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine (full model each)</option><option value="split">Split across machines</option></select></span>' })}
@@ -233,8 +245,8 @@ ${commandRow({ id: 'model-source-layers', title: 'mesh-llm layer packages', desc
 ${commandRow({ id: 'model-source-split-guide', title: 'Prepare your own split model', description: 'Turn any model into layer packages with the splitter tool.', actions: '<a class="btn" id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">Open guide</a>' })}
 </div>
 <div class="form-actions">${button({ action: 'model-add', label: 'Add model', variant: 'primary', out: 'model-add-output' })}</div>
-${output({ id: 'model-add-output', kind: 'model-add', pre: true })}
-</div></details></div>`
+${output({ id: 'model-add-output', kind: 'model-add', pre: true })}`
+  })}</div>`
 }
 
 function modelsSection(): string {

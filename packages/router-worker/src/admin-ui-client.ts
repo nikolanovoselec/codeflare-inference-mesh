@@ -1339,8 +1339,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!profile) return;
     const bodyEl = openDrawer(modelName(profile));
     if (!bodyEl) return;
+    // The drawer leads with the same identity pills as the list row, so every profile
+    // shows its provider, serving mode, and mesh assignment at a glance.
+    const pillRow = document.createElement('div');
+    pillRow.className = 'model-name-row';
+    pillRow.setAttribute('data-drawer-pills', profile.id);
+    pillRow.append(...profilePills(profile, profile.runtime === 'llamacpp', Boolean(profile.meshllm && profile.meshllm.split)));
+    bodyEl.appendChild(pillRow);
     bodyEl.appendChild(drawerField('active', 'Status', profile.active ? 'On' : 'Off'));
-    bodyEl.appendChild(drawerField('runtime', 'Runtime', profile.runtime === 'llamacpp' ? 'llama.cpp' : 'mesh-llm', profile.runtime || 'meshllm'));
+    bodyEl.appendChild(drawerField('runtime', 'Runtime', profile.runtime === 'llamacpp' ? 'llama.cpp' : 'meshllm', profile.runtime || 'meshllm'));
     // Editable settings, saved through the validated profile-config endpoint. Name is
     // the human label; call name is this model's own public alias. Apps can always
     // also reach whichever model is on through the shared codeflare-mesh name. Only a
@@ -1654,6 +1661,29 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   function servingCount(profile) {
     return nodesServingProfile(profile).length;
   }
+  // Pill vocabulary: tone + label per variant live in this one map (content), pillEl builds
+  // the DOM (structure), and the CSS tone tokens colour it (style). Both the models list and
+  // the Manage drawer compose the same pills, so a vocabulary change is a single edit here.
+  const PROFILE_PILLS = {
+    runtime: { llamacpp: { tone: 'red', label: 'llama.cpp' }, meshllm: { tone: 'green', label: 'meshllm' } },
+    mode: { split: { tone: 'orange', label: 'sharded model' }, single: { tone: 'blue', label: 'singular model' } },
+    mesh: { tone: 'purple' }
+  };
+  function pillEl(spec, attr, value, label) {
+    const pill = chipEl(spec.tone, label === undefined ? spec.label : label);
+    pill.setAttribute(attr, value);
+    return pill;
+  }
+  function profilePills(profile, direct, split) {
+    const runtime = direct ? 'llamacpp' : 'meshllm';
+    const mode = split ? 'split' : 'single';
+    const profileMesh = profile.meshId || 'default';
+    return [
+      pillEl(PROFILE_PILLS.runtime[runtime], 'data-runtime', runtime),
+      pillEl(PROFILE_PILLS.mode[mode], 'data-serving-mode', mode),
+      pillEl(PROFILE_PILLS.mesh, 'data-profile-mesh', profileMesh, meshDisplayName(profileMesh))
+    ];
+  }
   function renderProfiles(profiles, readiness) {
     const list = byId('profile-list');
     if (!list) return;
@@ -1672,24 +1702,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const name = document.createElement('strong');
       name.setAttribute('data-model-name', profile.id);
       name.textContent = modelName(profile);
-      // Serving mode and runtime are badges, not part of the name: split stands out in accent,
-      // and llama.cpp direct profiles surface their cache-local routing contract.
+      // Fixed pill vocabulary: provider (llama.cpp = red, meshllm = green), serving mode
+      // (singular = blue, sharded = orange), and mesh assignment (purple). Combinations
+      // read side by side — e.g. a singular model on meshllm is green + blue.
       const direct = profile.runtime === 'llamacpp';
       const split = Boolean(profile.meshllm && profile.meshllm.split);
-      const badge = chipEl(split ? 'accent' : null, split ? 'Split across machines' : 'Full model per machine');
-      badge.setAttribute('data-serving-mode', split ? 'split' : 'single');
-      const runtimeBadge = chipEl(direct ? 'accent' : null, direct ? 'llama.cpp direct' : 'mesh-llm');
-      runtimeBadge.setAttribute('data-runtime', direct ? 'llamacpp' : 'meshllm');
-      // The mesh assignment is first-class in the list — no drawer needed to see the
-      // group a model serves; a non-default mesh stands out in accent.
-      const profileMesh = profile.meshId || 'default';
-      const meshBadge = chipEl(profileMesh === 'default' ? null : 'accent', meshDisplayName(profileMesh));
-      meshBadge.setAttribute('data-profile-mesh', profileMesh);
-      nameRow.append(name, meshBadge, badge, runtimeBadge);
+      nameRow.append(name, ...profilePills(profile, direct, split));
       const detail = document.createElement('small');
       const ready = readiness.find((item) => item.profileId === profile.id);
       const serving = servingCount(profile);
-      detail.textContent = 'Alias: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (direct ? ' · requires body.user' : '') + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
+      detail.textContent = 'Alias: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
       body.append(nameRow, detail);
       row.appendChild(body);
       const toggle = document.createElement('button');
