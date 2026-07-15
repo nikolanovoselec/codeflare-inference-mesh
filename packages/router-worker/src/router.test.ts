@@ -4527,7 +4527,7 @@ describe('control-plane API (/api/v1)', () => {
 
     expect(body.model.runtime).toBe('llamacpp')
     expect(body.model.tunables).toBeNull()
-    expect(body.model.llamacpp).toMatchObject({ cachePrompt: true, cacheReuse: 256, parallel: 4, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
+    expect(body.model.llamacpp).toMatchObject({ cachePrompt: true, cacheReuse: 256, parallel: -1, kvUnified: true, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false })
   })
 
