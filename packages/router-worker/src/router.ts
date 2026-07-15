@@ -9,7 +9,7 @@ import { decideDirectSession, directSessionKey, type DirectSessionDecision, type
 import { InvalidJsonBodyError } from './errors'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
-import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
+import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, nodeMeshId, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
@@ -280,14 +280,16 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
   await deps.store.putToken(await createTokenRecord('node', nodeToken, now, nodeId))
   await deps.store.revokeToken('setup', setupToken.id, now)
   await deps.store.appendAudit({ id: requestId, type: 'node_claimed', at: now, actor: 'setup', target: nodeId, detail: { displayName: body.displayName } })
-  const meshProfile = await selectedMeshProfile(deps.store, body.activeProfileIds)
+  const meshProfile = await selectedMeshProfile(deps.store, nodeRecord, body.activeProfileIds)
   const meshBootstrap = meshProfile ? await meshBootstrapFor(deps.store, deps.env, nodeRecord, meshProfile, now) : undefined
   const desiredVersion = await desiredAgentVersion(deps.store)
   return json({
     nodeId,
     nodeToken,
     upstreamToken,
-    profiles: await deps.store.listProfiles(),
+    // A node only ever receives its own machine group's profiles (REQ-SCH-006);
+    // a fresh claim joins the default mesh.
+    profiles: meshProfilesFor(await deps.store.listProfiles(), nodeRecord),
     desiredRuntimeVersions: await desiredRuntimeVersions(deps.store),
     ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
@@ -342,10 +344,11 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
       ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
     }, 200, requestId)
   }
-  const meshProfile = await selectedMeshProfile(deps.store, next.activeProfileIds)
+  const meshProfile = await selectedMeshProfile(deps.store, next, next.activeProfileIds)
   const meshBootstrap = meshProfile ? await meshBootstrapFor(deps.store, deps.env, next, meshProfile, now) : undefined
   // A per-node VRAM override caps this node's models below the model's global budget.
-  const desiredProfiles = applyNodeVramOverride(await deps.store.listProfiles(), next.maxVramGbOverride)
+  // Distribution is mesh-scoped (REQ-SCH-006): the node receives only its group's profiles.
+  const desiredProfiles = applyNodeVramOverride(meshProfilesFor(await deps.store.listProfiles(), next), next.maxVramGbOverride)
   return json({
     ok: true,
     desiredProfiles,
@@ -356,13 +359,20 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   }, 200, requestId)
 }
 
-async function selectedMeshProfile(store: Store, activeProfileIds: readonly string[]): Promise<ModelProfile | undefined> {
-  const profiles = await store.listProfiles()
+// Only profiles in the node's own machine group qualify (REQ-SCH-006): after a mesh
+// reassignment the node still self-reports its old profile ids for a tick, and an
+// ungated pick would hand it a bootstrap (and re-add its token) for the old mesh.
+async function selectedMeshProfile(store: Store, node: NodeRecord, activeProfileIds: readonly string[]): Promise<ModelProfile | undefined> {
+  const profiles = meshProfilesFor(await store.listProfiles(), node)
   for (const profileId of activeProfileIds) {
     const profile = profiles.find((item) => item.id === profileId)
     if (profile?.active && profile.runtime === 'meshllm') return profile
   }
   return undefined
+}
+
+function meshProfilesFor(profiles: readonly ModelProfile[], node: NodeRecord): readonly ModelProfile[] {
+  return profiles.filter((profile) => profileMeshId(profile) === nodeMeshId(node))
 }
 
 async function handleNodeUnregister(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -525,7 +535,9 @@ function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: stri
 
 function profileReadiness(profiles: readonly ModelProfile[], nodes: readonly NodeRecord[]): Array<{ profileId: string; version: number; ready: number; downloading: number; failed: number }> {
   return profiles.map((profile) => {
-    const matching = nodes.filter((node) => node.activeProfileIds.includes(profile.id))
+    // Readiness counts only same-group machines (REQ-SCH-006): a reassigned node
+    // still self-reporting the profile id must not count toward another mesh.
+    const matching = nodes.filter((node) => nodeMeshId(node) === profileMeshId(profile) && node.activeProfileIds.includes(profile.id))
     const readyNodes = matching.filter((node) => nodeReadyForProfile(node, profile))
     const ready = readyNodes.length
     const readyIds = new Set(readyNodes.map((node) => node.id))

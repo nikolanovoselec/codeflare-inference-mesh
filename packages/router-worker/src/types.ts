@@ -94,6 +94,8 @@ export interface ModelProfile {
   readonly version: number
   readonly rolloutPercent: number
   readonly active: boolean
+  /** Machine group this model serves (REQ-RUN-016); absent means the default mesh. */
+  readonly meshId?: string
 }
 
 export interface StageAssignment {
@@ -230,6 +232,12 @@ export interface NodeRecord {
   readonly metrics?: NodeMetrics
   /** Per-node VRAM budget in GB that overrides the model's global maxVramGb for this node (0 = uncapped on this node). */
   readonly maxVramGbOverride?: number
+  /**
+   * Operator-assigned machine group (REQ-SCH-006); absent means the default mesh.
+   * NOT the mesh-llm network id — that is HeartbeatRequest.meshId / NodeMetrics.meshId,
+   * which the heartbeat merge never copies into this field.
+   */
+  readonly meshId?: string
   /** Operator taint (REQ-ADM-030): a deactivated node stays enrolled and heartbeating but runs no model and is never selected for inference. */
   readonly deactivated?: boolean
   /** Pending one-shot Force Reload directive (REQ-NODE-012): a nonce stamped when an operator requests a reload, echoed to the node in its heartbeat and retired once the node acks it. */

@@ -1,3 +1,4 @@
+import { nodeMeshId, profileMeshId } from './profiles'
 import type { EntrySelection, EntrySelectionRequest, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store } from './types'
 
 const HEARTBEAT_TTL_MS = 45_000
@@ -30,6 +31,9 @@ export function eligibleDirectNodes(nodes: readonly NodeRecord[], profile: Model
 
 export function isEligible(node: NodeRecord, profile: ModelProfile, now: number, env: Pick<RouterEnv, 'MESH_ALLOWED_CIDRS' | 'MESH_ALLOWED_PORTS'> = {}): boolean {
   if (profile.runtime !== 'meshllm') return false
+  // Mesh membership is router authority (REQ-SCH-006): a node self-reporting a
+  // foreign profile id must never serve another mesh's model.
+  if (nodeMeshId(node) !== profileMeshId(profile)) return false
   if (node.status !== 'online') return false
   if (node.deactivated === true) return false
   if (now - node.lastSeenAt > HEARTBEAT_TTL_MS) return false
@@ -46,6 +50,7 @@ export function isEligible(node: NodeRecord, profile: ModelProfile, now: number,
 
 export function isDirectEligible(node: NodeRecord, profile: ModelProfile, publicModel: string, now: number, env: Pick<RouterEnv, 'MESH_ALLOWED_CIDRS' | 'MESH_ALLOWED_PORTS'> = {}): boolean {
   if (profile.runtime !== 'llamacpp') return false
+  if (nodeMeshId(node) !== profileMeshId(profile)) return false
   if (node.status !== 'online') return false
   if (node.deactivated === true) return false
   if (now - node.lastSeenAt > HEARTBEAT_TTL_MS) return false
