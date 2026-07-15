@@ -2096,7 +2096,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const fill = document.createElement('div');
       fill.className = 'mesh-track-fill';
       const pct = meshNodes.length > 0 ? Math.round((serving.length / meshNodes.length) * 100) : 0;
-      fill.style.width = pct + '%';
+      // Width rides the style attribute (data-fill is the tested contract): the render
+      // must stay attribute-only so it cannot depend on a live CSSOM.
+      fill.setAttribute('style', 'width:' + pct + '%');
       track.setAttribute('data-fill', String(pct));
       track.appendChild(fill);
       card.appendChild(track);
