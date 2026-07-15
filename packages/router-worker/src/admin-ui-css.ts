@@ -188,6 +188,11 @@ main{width:min(1120px,100%);max-width:100%;overflow:hidden;margin:0 auto;padding
 .form-actions{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;min-width:0}
 .form-actions>*{max-width:100%;min-width:0}
 .command-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.75rem;align-items:center;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:linear-gradient(180deg,rgb(var(--surface-rgb)/.96),var(--surface-2));padding:.75rem;min-width:0}
+.model-sources{display:grid;gap:.6rem;margin:.75rem 0;min-width:0}
+.model-sources h4{margin:0;color:var(--text);font-size:var(--fs-sm);font-weight:800;letter-spacing:-.01em}
+.model-sources .source-format{margin:0;color:var(--muted);font-size:var(--fs-sm)}
+.model-sources[data-model-sources="single"] .command-row[data-command-row="model-source-layers"],.model-sources[data-model-sources="single"] .command-row[data-command-row="model-source-split-guide"]{display:none}
+.model-sources[data-model-sources="split"] .command-row[data-command-row="model-source-gguf"]{display:none}
 .command-copy{display:grid;gap:.35rem;min-width:0}
 .command-copy strong{color:var(--text);font-weight:800;letter-spacing:-.02em}
 .command-copy span{color:var(--muted);font-size:var(--fs-sm)}

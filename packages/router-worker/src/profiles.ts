@@ -1,4 +1,5 @@
-import type { ModelProfile, RuntimeKind } from './types'
+import { meshAliasFor } from './meshes'
+import type { ModelProfile, NodeRecord, RuntimeKind } from './types'
 
 // The single stable public model id AI Gateway forwards. Every model profile
 // carries it as a shared public alias, and the single-active invariant
@@ -7,41 +8,10 @@ import type { ModelProfile, RuntimeKind } from './types'
 // never changes the Gateway route or the public model id clients call.
 export const STABLE_PUBLIC_MODEL = 'codeflare-mesh'
 
+// The shipped catalog is a single small starter so a fresh deployment can smoke-test
+// inference end-to-end. It is seeded exactly once (REQ-RUN-002) and is deletable like
+// any onboarded profile once switched off (REQ-RUN-012).
 export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
-  {
-    id: 'mesh-default-qwen36-35b',
-    displayName: 'Qwen3.6 35B',
-    publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
-    upstreamModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
-    sourceMode: 'meshllm-ref',
-    contextWindow: 262144,
-    runtime: 'meshllm',
-    meshllm: {
-      modelRef: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
-      split: false,
-      bindPort: 4300
-    },
-    version: 1,
-    rolloutPercent: 0,
-    active: false
-  },
-  {
-    id: 'mesh-split-qwen36-35b',
-    displayName: 'Qwen3.6 35B (multi-machine)',
-    publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
-    upstreamModel: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd',
-    sourceMode: 'meshllm-ref',
-    contextWindow: 262144,
-    runtime: 'meshllm',
-    meshllm: {
-      modelRef: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd',
-      split: true,
-      bindPort: 4310
-    },
-    version: 1,
-    rolloutPercent: 0,
-    active: false
-  },
   {
     id: 'mesh-smoke-qwen25-1.5b',
     displayName: 'Qwen2.5 Coder 1.5B',
@@ -57,7 +27,8 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
     },
     version: 1,
     rolloutPercent: 100,
-    active: true
+    active: true,
+    meshId: 'default'
   }
 ]
 
@@ -162,9 +133,10 @@ export function slugifyModelRef(ref: string): string {
 // advances past every existing profile so a later live process never collides on
 // the mesh bind port. The profile ships with the MESHLLM_TUNABLE_DEFAULTS runtime
 // tunables and an Auto (0) context window; an operator refines both per model.
-export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string | undefined; runtime?: RuntimeKind }): ModelProfile {
+export function buildCustomProfile(input: { modelRef: string; split: boolean; existing: readonly ModelProfile[]; name?: string | undefined; runtime?: RuntimeKind; meshId?: string }): ModelProfile {
   const ref = input.modelRef.trim()
   const runtime = input.runtime ?? 'meshllm'
+  const meshId = input.meshId ?? 'default'
   const slug = slugifyModelRef(ref)
   const segment = modelRefSegment(ref)
   const name = input.name?.trim()
@@ -172,11 +144,13 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
   const bindPort = highestBindPort + BIND_PORT_STEP
   const common = {
     displayName: name && name.length > 0 ? name : segment,
-    publicAliases: [STABLE_PUBLIC_MODEL, slug],
+    // The first alias is the mesh's stable callable name (REQ-RUN-016).
+    publicAliases: [meshAliasFor(meshId), slug],
     upstreamModel: ref,
     version: 1,
     rolloutPercent: 0,
-    active: false
+    active: false,
+    meshId
   } as const
   if (runtime === 'llamacpp') {
     const parsed = parseLlamaCppModelRef(ref)
@@ -238,6 +212,32 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
   }
 }
 
+// buildDuplicateProfile clones an existing profile into an inactive sibling the
+// operator edits independently (REQ-RUN-017): same mesh, model reference, runtime,
+// and tunables, but its own derived call name, id, and bind port. Version resets
+// to 1 — the copy is a brand-new operator row, never a shipped default.
+export function buildDuplicateProfile(source: ModelProfile, existing: readonly ModelProfile[]): ModelProfile {
+  const ownAlias = source.publicAliases.find((alias) => alias !== STABLE_PUBLIC_MODEL && !alias.startsWith(`${STABLE_PUBLIC_MODEL}-`))
+  const base = slugify(ownAlias ?? source.id)
+  const duplicateId = (slug: string) => (source.runtime === 'llamacpp' ? `custom-${slug}-llamacpp` : `custom-${slug}`)
+  const taken = new Set(existing.flatMap((profile) => [profile.id, ...profile.publicAliases]))
+  let slug = `${base}-copy`
+  for (let n = 2; taken.has(slug) || taken.has(duplicateId(slug)); n += 1) slug = `${base}-copy-${n}`
+  const highestBindPort = existing.reduce((max, profile) => Math.max(max, profile.meshllm?.bindPort ?? profile.llamacpp?.bindPort ?? BIND_PORT_BASE), BIND_PORT_BASE)
+  const bindPort = highestBindPort + BIND_PORT_STEP
+  return {
+    ...source,
+    id: duplicateId(slug),
+    displayName: `${source.displayName} (copy)`,
+    publicAliases: [meshAliasFor(profileMeshId(source)), slug],
+    version: 1,
+    rolloutPercent: 0,
+    active: false,
+    ...(source.meshllm ? { meshllm: { ...source.meshllm, bindPort } } : {}),
+    ...(source.llamacpp ? { llamacpp: { ...source.llamacpp, bindPort } } : {})
+  }
+}
+
 function parseLlamaCppModelRef(ref: string): { readonly hfRepo: string; readonly hfFile?: string; readonly quant?: string } {
   const withoutScheme = ref.replace(/^hf:\/\//, '')
   const quantSeparator = withoutScheme.lastIndexOf(':')
@@ -250,12 +250,15 @@ function parseLlamaCppModelRef(ref: string): { readonly hfRepo: string; readonly
 
 export function normalizeModelProfile(profile: ModelProfile): ModelProfile {
   const runtime = profile.runtime ?? 'meshllm'
+  // Profiles stored before machine groups existed belong to the default mesh.
+  const meshId = profile.meshId ?? 'default'
   if (runtime === 'llamacpp' && profile.llamacpp) {
     const { meshllm: _meshllm, ...withoutMesh } = profile
     void _meshllm
     return {
       ...withoutMesh,
       runtime,
+      meshId,
       sourceMode: 'llamacpp-hf',
       contextWindow: profile.contextWindow || profile.llamacpp.contextWindow,
       upstreamModel: profile.upstreamModel || profile.llamacpp.alias,
@@ -275,14 +278,19 @@ export function normalizeModelProfile(profile: ModelProfile): ModelProfile {
   return {
     ...profile,
     runtime: 'meshllm',
+    meshId,
     sourceMode: 'meshllm-ref'
   }
 }
 
-// A default (shipped) profile re-seeds on boot, so it cannot be permanently deleted;
-// deletion is reserved for custom onboarded models.
-export function isDefaultModelId(profileId: string): boolean {
-  return DEFAULT_MODEL_PROFILES.some((profile) => profile.id === profileId)
+/** The machine group a profile serves; profiles stored before machine groups coerce to the default mesh. */
+export function profileMeshId(profile: ModelProfile): string {
+  return profile.meshId ?? 'default'
+}
+
+/** The machine group a node belongs to; nodes claimed before machine groups coerce to the default mesh. */
+export function nodeMeshId(node: NodeRecord): string {
+  return node.meshId ?? 'default'
 }
 
 export const PROFILE_ANCHORS = {

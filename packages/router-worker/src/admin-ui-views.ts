@@ -2,6 +2,7 @@ import {
   ADMIN_UI_ACTIONS,
   ADMIN_UI_AGENT_VERSION,
   ADMIN_UI_DRAWER,
+  ADMIN_UI_MESHES,
   ADMIN_UI_MESH_HEALTH,
   ADMIN_UI_NAV,
   ADMIN_UI_NODES_TABLE,
@@ -193,7 +194,13 @@ function nodesSection(): string {
 <tbody id="${ADMIN_UI_NODES_TABLE.bodyId}"><tr><td class="empty-note" colspan="${ADMIN_UI_NODES_TABLE.columns.length}">Nodes appear here once enrolled.</td></tr></tbody>
 </table></div>
 ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}
-<div class="subpanel"><h3>Enroll a node</h3>${enrollControls('')}</div>`
+<div class="subpanel"><h3>Enroll a node</h3>${enrollControls('')}</div>
+<div class="subpanel"><h3>Meshes</h3>
+<p class="field-hint">Machine groups. Each machine belongs to one mesh, each model is assigned to one mesh, and each mesh's deployed model answers its own callable route.</p>
+<div class="row-list" id="${ADMIN_UI_MESHES.listId}" data-output="meshes"><p class="empty-note">Meshes appear here after you sign in.</p></div>
+<div class="form-grid">${field({ id: ADMIN_UI_MESHES.nameInputId, label: 'New mesh', control: textInput({ id: ADMIN_UI_MESHES.nameInputId, name: 'meshName', placeholder: 'e.g. Development' }), hint: 'Letters only. Its model answers at codeflare-mesh-&lt;name&gt;.' })}</div>
+<div class="form-actions">${button({ action: 'mesh-create', label: 'Create mesh', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
+${output({ id: ADMIN_UI_MESHES.outputId, kind: 'mesh', pre: true })}</div>`
   })
 }
 
@@ -206,9 +213,15 @@ ${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><
 ${field({ id: 'model-add-runtime', label: 'Runtime', control: '<span class="slot"><select id="model-add-runtime" name="runtime" data-model-add-runtime="true"><option value="meshllm">mesh-llm (mesh / split)</option><option value="llamacpp">llama.cpp (direct cache-local)</option></select></span>', hint: 'llama.cpp is for single-machine coding sessions and requires body.user. Split models always use mesh-llm.' })}
 </div>
 <div class="form-grid">
-${field({ id: 'model-add-ref', label: 'Model file', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'The Hugging Face model file to serve, as repo:quant. Paste one, or find one below.' })}
+${field({ id: 'model-add-ref', label: 'Model file', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'The Hugging Face model file to serve, as repo:quant.' })}
 </div>
-<p class="field-hint">Find a model: <a id="model-add-search-single" href="https://huggingface.co/unsloth?search_models=GGUF" target="_blank" rel="noopener">Unsloth GGUF (single machine)</a> · <a id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">mesh-llm layer packages (split)</a> · <a id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">prepare your own split model</a></p>
+<div class="model-sources" id="model-add-sources" data-model-sources="single">
+<h4>Where to find models</h4>
+<p class="source-format">Reference format: <code>repo:quant</code> — for example <code>unsloth/Qwen3-14B-GGUF:Q4_K_M</code></p>
+${commandRow({ id: 'model-source-gguf', title: 'Unsloth GGUF', description: 'Ready-to-serve model files for single-machine serving. Pick a model, copy its repo:quant reference, paste it above.', actions: '<a class="btn" id="model-add-search-single" href="https://huggingface.co/unsloth?search_models=GGUF" target="_blank" rel="noopener">Browse Unsloth</a>' })}
+${commandRow({ id: 'model-source-layers', title: 'mesh-llm layer packages', description: 'Pre-split models for serving one model across several machines.', actions: '<a class="btn" id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">Browse packages</a>' })}
+${commandRow({ id: 'model-source-split-guide', title: 'Prepare your own split model', description: 'Turn any model into layer packages with the splitter tool.', actions: '<a class="btn" id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">Open guide</a>' })}
+</div>
 <div class="form-actions">${button({ action: 'model-add', label: 'Add model', variant: 'primary', out: 'model-add-output' })}</div>
 ${output({ id: 'model-add-output', kind: 'model-add', pre: true })}</div>`
 }

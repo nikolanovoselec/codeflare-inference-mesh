@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_MODEL_PROFILES } from './profiles'
+import { DEFAULT_MODEL_PROFILES, nodeMeshId, profileMeshId } from './profiles'
 import { StoreScheduler } from './scheduler'
-import { D1Store } from './store'
-import { nodeFixture } from './test-helpers'
-import type { AuditEvent, TokenRecord } from './types'
+import { D1Store, singleActiveActivation } from './store'
+import { MemoryStore, nodeFixture } from './test-helpers'
+import type { AuditEvent, ModelProfile, TokenRecord } from './types'
 
 type Row = Record<string, unknown>
 
@@ -170,9 +170,9 @@ describe('D1 store behavioral contracts', () => {
   it('REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1', async () => {
     const db = new FakeD1Database()
     const writer = new D1Store(db as unknown as D1Database, () => 1_700_000_000_000)
-    // Index 2 is the smoke profile: the single active default, so it is the one
-    // getProfileByPublicModel('codeflare-mesh') (WHERE active = 1) resolves to.
-    const profile = DEFAULT_MODEL_PROFILES[2]!
+    // The starter smoke profile: the single shipped default, active, so it is the
+    // one getProfileByPublicModel('codeflare-mesh') (WHERE active = 1) resolves to.
+    const profile = DEFAULT_MODEL_PROFILES[0]!
     const node = nodeFixture({ nodeTokenVerifier: 'sha256:node-token', upstreamTokenVerifier: 'sha256:upstream-token' })
     const config = { setupComplete: true, defaultPublicModel: 'codeflare-mesh', resources: { d1DatabaseId: 'd1-a', workerName: 'router-a' } }
     const providerToken: TokenRecord = { kind: 'provider', id: 'provider-a', verifier: 'sha256:provider', active: true, createdAt: 1_700_000_000_001 }
@@ -215,6 +215,58 @@ describe('D1 store behavioral contracts', () => {
     expect((await store.getNode('ghost'))?.status).toBe('revoked')
     // ... but listNodes drops it, so it never reappears in any fleet listing.
     expect((await store.listNodes(1_700_000_000_000)).map((node) => node.id)).toEqual(['live'])
+  })
+
+  it('REQ-RUN-016 coerces stored profiles and nodes without meshId to the default mesh', async () => {
+    const store = new MemoryStore()
+    const { meshId: _meshId, ...legacy } = DEFAULT_MODEL_PROFILES[0]!
+    void _meshId
+    await store.setProfile(legacy as ModelProfile)
+
+    expect((await store.listProfiles())[0]?.meshId).toBe('default')
+    expect(profileMeshId(legacy as ModelProfile)).toBe('default')
+    expect(nodeMeshId(nodeFixture({}))).toBe('default')
+    expect(nodeMeshId({ ...nodeFixture({}), meshId: 'development' })).toBe('development')
+  })
+
+  it('REQ-RUN-002 ships only the starter profile and seeds it exactly once', async () => {
+    expect(DEFAULT_MODEL_PROFILES.map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
+
+    const store = new MemoryStore()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    expect((await store.listProfiles()).map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
+
+    // Deleting the starter sticks: the seeded marker blocks resurrection on later boots.
+    await store.deleteProfile('mesh-smoke-qwen25-1.5b')
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    expect(await store.listProfiles()).toEqual([])
+  })
+
+  it('REQ-RUN-002 first seed yields an inactive starter when an active custom already owns its alias', async () => {
+    const store = new MemoryStore()
+    const custom: ModelProfile = { ...DEFAULT_MODEL_PROFILES[0]!, id: 'custom-owner', publicAliases: ['codeflare-mesh', 'owner'], version: 3 }
+    await store.setProfile(custom)
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+
+    const starter = (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')
+    expect(starter).toMatchObject({ active: false, rolloutPercent: 0 })
+    expect((await store.getProfileByPublicModel('codeflare-mesh'))?.id).toBe('custom-owner')
+  })
+
+  it('REQ-RUN-016 activation deactivates only same-mesh and alias-overlapping actives', () => {
+    const base = DEFAULT_MODEL_PROFILES[0]!
+    const profiles: readonly ModelProfile[] = [
+      { ...base, id: 'a', publicAliases: ['codeflare-mesh', 'shared'], active: false, rolloutPercent: 0, meshId: 'default', version: 1 },
+      { ...base, id: 'a2', publicAliases: ['codeflare-mesh', 'other'], active: true, rolloutPercent: 100, meshId: 'default', version: 1 },
+      { ...base, id: 'b', publicAliases: ['codeflare-mesh-development', 'b'], active: true, rolloutPercent: 100, meshId: 'development', version: 1 },
+      { ...base, id: 'c', publicAliases: ['codeflare-mesh-operations', 'shared'], active: true, rolloutPercent: 100, meshId: 'operations', version: 1 }
+    ]
+
+    const activation = singleActiveActivation(profiles, 'a')!
+    expect(activation.activated).toMatchObject({ id: 'a', active: true, rolloutPercent: 100, version: 2 })
+    // a2 shares the mesh; c shares the 'shared' alias from another mesh; b is untouched.
+    expect(activation.deactivated.map((profile) => profile.id).sort()).toEqual(['a2', 'c'])
+    expect(activation.deactivated.every((profile) => !profile.active && profile.rolloutPercent === 0 && profile.version === 2)).toBe(true)
   })
 
   it('gate config cache elides D1 reads within the TTL and invalidates on write', async () => {

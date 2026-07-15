@@ -7,7 +7,7 @@
 
 export interface AdminUiAction {
   readonly id: string
-  readonly method: 'GET' | 'POST'
+  readonly method: 'GET' | 'POST' | 'DELETE'
   readonly path: string
   readonly auth: 'open' | 'admin'
 }
@@ -31,9 +31,12 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'node-revoke', method: 'POST', path: '/admin/nodes/{nodeId}/revoke', auth: 'admin' },
   { id: 'node-deactivate', method: 'POST', path: '/admin/nodes/{nodeId}/deactivate', auth: 'admin' },
   { id: 'node-activate', method: 'POST', path: '/admin/nodes/{nodeId}/activate', auth: 'admin' },
+  { id: 'mesh-create', method: 'POST', path: '/admin/meshes', auth: 'admin' },
+  { id: 'mesh-delete', method: 'DELETE', path: '/admin/meshes/{meshId}', auth: 'admin' },
   { id: 'profile-rollout', method: 'POST', path: '/admin/profiles/rollout', auth: 'admin' },
   { id: 'profile-activate', method: 'POST', path: '/admin/profiles/activate', auth: 'admin' },
   { id: 'profile-config', method: 'POST', path: '/admin/profiles/config', auth: 'admin' },
+  { id: 'profile-duplicate', method: 'POST', path: '/admin/profiles/duplicate', auth: 'admin' },
   { id: 'agent-versions-refresh', method: 'GET', path: '/admin/agent-versions', auth: 'admin' },
   { id: 'agent-version-set', method: 'POST', path: '/admin/agent-version', auth: 'admin' },
   { id: 'runtime-versions-refresh', method: 'GET', path: '/admin/runtime-versions', auth: 'admin' },
@@ -125,7 +128,14 @@ export const ADMIN_UI_POLLING = {
 export const ADMIN_UI_NODES_TABLE = {
   bodyId: 'nodes-table-body',
   sortAttribute: 'data-sort',
-  columns: ['id', 'status', 'vram', 'models', 'version']
+  columns: ['id', 'status', 'mesh', 'vram', 'models', 'version']
+} as const
+
+/** Mesh (machine group) management card in the nodes section (REQ-ADM-037). */
+export const ADMIN_UI_MESHES = {
+  listId: 'mesh-list',
+  nameInputId: 'mesh-create-name',
+  outputId: 'mesh-output'
 } as const
 
 /**

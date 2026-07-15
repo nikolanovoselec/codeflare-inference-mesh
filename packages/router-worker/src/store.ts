@@ -4,7 +4,9 @@ import type { AuditEvent, CredentialKind, DirectSessionRecord, ModelProfile, Nod
 // The host gate reads these two config keys on every request; cache them
 // per D1 binding with a short TTL so the hot path avoids two D1 round-trips.
 // putConfig invalidates the cached entry, keeping same-isolate reads exact.
-const GATE_CONFIG_KEYS = new Set(['setup_state', 'custom_domain'])
+// default_profiles_seeded is checked on every request by seedDefaultProfiles;
+// caching it keeps the seed-once guard from costing a D1 read per request.
+const GATE_CONFIG_KEYS = new Set(['setup_state', 'custom_domain', 'default_profiles_seeded'])
 const GATE_CONFIG_TTL_MS = 5000
 const gateConfigCache = new WeakMap<D1Database, Map<string, { at: number; value: unknown }>>()
 
@@ -18,14 +20,17 @@ export const OPERATIONAL_EVENT_CHURN_TYPES = ['mesh_state_stored', 'mesh_state_c
 export class D1Store implements Store {
   constructor(private readonly db: D1Database, private readonly now: () => number = Date.now) {}
 
+  // Seed-once (REQ-RUN-002): the starter catalog is written only while the seeded
+  // marker is absent, so deleting a starter profile sticks instead of resurrecting
+  // on the next request. Existing rows are never refreshed or retired.
   async seedDefaultProfiles(profiles: readonly ModelProfile[]): Promise<void> {
+    if (await this.getConfig<boolean>(DEFAULT_PROFILES_SEEDED_KEY)) return
     const existingProfiles = await this.listProfiles()
-    for (const profile of retiredDefaultProfiles(existingProfiles, profiles)) await this.setProfile(profile)
-    const seededDefaults = profiles.map((profile) => seedDefaultActivation(profile, existingProfiles, profiles))
-    for (const profile of seededDefaults) {
-      const existing = existingProfiles.find((item) => item.id === profile.id)
-      if (!existing || shouldRefreshDefaultProfile(existing, profile)) await this.setProfile(profile)
+    for (const profile of profiles) {
+      if (existingProfiles.some((item) => item.id === profile.id)) continue
+      await this.setProfile(seedDefaultActivation(profile, existingProfiles, profiles))
     }
+    await this.putConfig(DEFAULT_PROFILES_SEEDED_KEY, true)
   }
 
   async getProfileByPublicModel(publicModel: string): Promise<ModelProfile | undefined> {
@@ -249,34 +254,28 @@ function nodeFromRow(row: NodeRow): NodeRecord {
   return { ...node, inFlight: row.in_flight }
 }
 
-function shouldRefreshDefaultProfile(existing: ModelProfile, next: ModelProfile): boolean {
-  return existing.version <= next.version && JSON.stringify(existing) !== JSON.stringify(next)
-}
+export const DEFAULT_PROFILES_SEEDED_KEY = 'default_profiles_seeded'
 
-function seedDefaultActivation(profile: ModelProfile, existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): ModelProfile {
+export function seedDefaultActivation(profile: ModelProfile, existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): ModelProfile {
   if (!profile.active) return profile
   const defaultIds = new Set(defaults.map((item) => item.id))
   const claimed = existing.some((item) => item.active && !defaultIds.has(item.id) && item.publicAliases.some((alias) => profile.publicAliases.includes(alias)))
   return claimed ? { ...profile, active: false, rolloutPercent: 0 } : profile
 }
 
-function retiredDefaultProfiles(existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): readonly ModelProfile[] {
-  const defaultIds = new Set(defaults.map((profile) => profile.id))
-  const defaultAliases = new Set(defaults.flatMap((profile) => [...profile.publicAliases]))
-  return existing
-    .filter((profile) => profile.active && profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
-    .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
-}
-
-// Single-active activation: activating one model deactivates every other active
-// model, so a mesh serves exactly one model at a time (one mesh, one active model).
+// Per-mesh single-active activation (REQ-RUN-016): activating one model deactivates
+// the other actives in ITS mesh, plus any alias-overlapping active anywhere — the
+// alias-exclusive invariant must hold globally or getProfileByPublicModel resolves
+// a shared alias arbitrarily. Other meshes' disjoint active models stay untouched.
 export function singleActiveActivation(profiles: readonly ModelProfile[], profileId: string): { readonly activated: ModelProfile; readonly deactivated: readonly ModelProfile[] } | undefined {
   const target = profiles.find((profile) => profile.id === profileId)
   if (!target) return undefined
+  const targetMesh = target.meshId ?? 'default'
   return {
     activated: { ...target, active: true, rolloutPercent: 100, version: target.version + 1 },
     deactivated: profiles
-      .filter((profile) => profile.id !== target.id && profile.active)
+      .filter((profile) => profile.id !== target.id && profile.active
+        && ((profile.meshId ?? 'default') === targetMesh || profile.publicAliases.some((alias) => target.publicAliases.includes(alias))))
       .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
   }
 }

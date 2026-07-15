@@ -1201,3 +1201,49 @@ func TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted(t *testing.T) {
 		})
 	})
 }
+
+// After a runtime-mode switch replaces serviceLoop.manager, the dashboard status and
+// runtime controls must follow the CURRENT manager. The startup-captured manager
+// previously kept reporting runtimeState=stopped while the live runtime served
+// traffic (apiReady=true), an internally impossible status. REQ-OBS-008 / REQ-NODE-004.
+func TestREQOBS008DashboardStatusAndControlsTrackCurrentManager(t *testing.T) {
+	counter := &agent.ActiveCounter{}
+	stale := newFakeMeshRuntime(counter)
+	stale.SetState("stopped")
+	live := newFakeMeshRuntime(counter)
+	live.SetState("ready")
+	var stateMu sync.RWMutex
+	cfg := agent.Config{DisplayName: "node-a"}
+	loop := &serviceLoop{
+		stateMu:        &stateMu,
+		cfg:            &cfg,
+		manager:        stale,
+		loadState:      &runtimeLoadState{},
+		telemetry:      &runtimeTelemetry{},
+		activeRequests: counter,
+	}
+
+	if got := loop.dashboardStatus("v-test").Metrics.RuntimeState; got != "stopped" {
+		t.Fatalf("startup manager state = %q, want stopped", got)
+	}
+
+	loop.setManager(live, "")
+	if got := loop.dashboardStatus("v-test").Metrics.RuntimeState; got != "ready" {
+		t.Fatalf("dashboard must report the current manager after a runtime switch, got %q", got)
+	}
+
+	controller := &currentRuntimeController{loop: loop}
+	if err := controller.Restart(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if live.restartCount() != 1 || stale.restartCount() != 0 {
+		t.Fatalf("runtime controls must dispatch to the current manager (live=%d stale=%d)", live.restartCount(), stale.restartCount())
+	}
+	if err := controller.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	liveEvents := live.eventLog()
+	if len(liveEvents) == 0 || liveEvents[len(liveEvents)-1] != "stop" {
+		t.Fatalf("shutdown-path Stop must reach the current manager, events=%v", liveEvents)
+	}
+}

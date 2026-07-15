@@ -9,7 +9,8 @@ import { decideDirectSession, directSessionKey, type DirectSessionDecision, type
 import { InvalidJsonBodyError } from './errors'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
-import { buildCustomProfile, DEFAULT_MODEL_PROFILES, isDefaultModelId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
+import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName } from './meshes'
+import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, nodeMeshId, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
@@ -97,11 +98,15 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/activate$/) && request.method === 'POST') return await handleNodeActivate(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/reload$/) && request.method === 'POST') return await handleNodeReload(request, deps, url, id, now())
       if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/config$/) && request.method === 'POST') return await handleNodeConfig(request, deps, url, id, now())
+      if (url.pathname === '/admin/meshes' && request.method === 'GET') return await handleMeshList(request, deps, id, now())
+      if (url.pathname === '/admin/meshes' && request.method === 'POST') return await handleMeshCreate(request, deps, id, now())
+      if (url.pathname.match(/^\/admin\/meshes\/[^/]+$/) && request.method === 'DELETE') return await handleMeshDelete(request, deps, url, id, now())
       if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
       if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
       if (url.pathname === '/admin/profiles/add' && request.method === 'POST') return await handleProfileAdd(request, deps, id, now())
       if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
       if (url.pathname === '/admin/profiles/delete' && request.method === 'POST') return await handleProfileDelete(request, deps, id, now())
+      if (url.pathname === '/admin/profiles/duplicate' && request.method === 'POST') return await handleProfileDuplicate(request, deps, id, now())
       if (url.pathname === '/admin/settings' && request.method === 'POST') return await handleAdminSettings(request, deps, id, now())
       if (url.pathname === '/admin/runtime-versions' && request.method === 'GET') return await handleAdminRuntimeVersions(request, deps, id, now())
       if (url.pathname === '/admin/runtime-versions' && request.method === 'POST') return await handleAdminRuntimeVersionSelect(request, deps, id, now())
@@ -131,6 +136,7 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/models' && request.method === 'POST') return await handleApiModelAdd(request, deps, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/enable$/) && request.method === 'POST') return await handleApiModelEnable(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/disable$/) && request.method === 'POST') return await handleApiModelDisable(request, deps, url, id, now())
+      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/duplicate$/) && request.method === 'POST') return await handleApiModelDuplicate(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'DELETE') return await handleApiModelDelete(request, deps, url, id, now())
       if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'POST') return await handleApiModelConfigure(request, deps, url, id, now())
       if (url.pathname === '/api/v1/agent-versions' && request.method === 'GET') return await handleApiAgentVersions(request, deps, id, now())
@@ -140,6 +146,9 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if (url.pathname === '/api/v1/settings' && request.method === 'PUT') return await handleApiSettingsSet(request, deps, id, now())
       if (url.pathname === '/api/v1/runtime-versions' && request.method === 'GET') return await handleApiRuntimeVersions(request, deps, id, now())
       if (url.pathname === '/api/v1/runtime-versions' && request.method === 'PUT') return await handleApiRuntimeVersionSet(request, deps, id, now())
+      if (url.pathname === '/api/v1/meshes' && request.method === 'GET') return await handleApiMeshList(request, deps, id, now())
+      if (url.pathname === '/api/v1/meshes' && request.method === 'POST') return await handleApiMeshCreate(request, deps, id, now())
+      if (url.pathname.match(/^\/api\/v1\/meshes\/[^/]+$/) && request.method === 'DELETE') return await handleApiMeshDelete(request, deps, url, id, now())
       if (url.pathname === '/api/v1/events' && request.method === 'GET') return await handleApiEvents(request, deps, url, id, now())
       return json({ error: 'not_found', requestId: id }, 404, id)
     } catch (error) {
@@ -280,14 +289,16 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
   await deps.store.putToken(await createTokenRecord('node', nodeToken, now, nodeId))
   await deps.store.revokeToken('setup', setupToken.id, now)
   await deps.store.appendAudit({ id: requestId, type: 'node_claimed', at: now, actor: 'setup', target: nodeId, detail: { displayName: body.displayName } })
-  const meshProfile = await selectedMeshProfile(deps.store, body.activeProfileIds)
+  const meshProfile = await selectedMeshProfile(deps.store, nodeRecord, body.activeProfileIds)
   const meshBootstrap = meshProfile ? await meshBootstrapFor(deps.store, deps.env, nodeRecord, meshProfile, now) : undefined
   const desiredVersion = await desiredAgentVersion(deps.store)
   return json({
     nodeId,
     nodeToken,
     upstreamToken,
-    profiles: await deps.store.listProfiles(),
+    // A node only ever receives its own machine group's profiles (REQ-SCH-006);
+    // a fresh claim joins the default mesh.
+    profiles: meshProfilesFor(await deps.store.listProfiles(), nodeRecord),
     desiredRuntimeVersions: await desiredRuntimeVersions(deps.store),
     ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
@@ -342,10 +353,11 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
       ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
     }, 200, requestId)
   }
-  const meshProfile = await selectedMeshProfile(deps.store, next.activeProfileIds)
+  const meshProfile = await selectedMeshProfile(deps.store, next, next.activeProfileIds)
   const meshBootstrap = meshProfile ? await meshBootstrapFor(deps.store, deps.env, next, meshProfile, now) : undefined
   // A per-node VRAM override caps this node's models below the model's global budget.
-  const desiredProfiles = applyNodeVramOverride(await deps.store.listProfiles(), next.maxVramGbOverride)
+  // Distribution is mesh-scoped (REQ-SCH-006): the node receives only its group's profiles.
+  const desiredProfiles = applyNodeVramOverride(meshProfilesFor(await deps.store.listProfiles(), next), next.maxVramGbOverride)
   return json({
     ok: true,
     desiredProfiles,
@@ -356,13 +368,20 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   }, 200, requestId)
 }
 
-async function selectedMeshProfile(store: Store, activeProfileIds: readonly string[]): Promise<ModelProfile | undefined> {
-  const profiles = await store.listProfiles()
+// Only profiles in the node's own machine group qualify (REQ-SCH-006): after a mesh
+// reassignment the node still self-reports its old profile ids for a tick, and an
+// ungated pick would hand it a bootstrap (and re-add its token) for the old mesh.
+async function selectedMeshProfile(store: Store, node: NodeRecord, activeProfileIds: readonly string[]): Promise<ModelProfile | undefined> {
+  const profiles = meshProfilesFor(await store.listProfiles(), node)
   for (const profileId of activeProfileIds) {
     const profile = profiles.find((item) => item.id === profileId)
     if (profile?.active && profile.runtime === 'meshllm') return profile
   }
   return undefined
+}
+
+function meshProfilesFor(profiles: readonly ModelProfile[], node: NodeRecord): readonly ModelProfile[] {
+  return profiles.filter((profile) => profileMeshId(profile) === nodeMeshId(node))
 }
 
 async function handleNodeUnregister(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -496,9 +515,19 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   const redacted = redactSecrets({ nodes: statusNodes, profiles, profileReadiness: profileReadiness(profiles, nodes), ...(lastSpeedTest ? { lastSpeedTest } : {}), ...adminOnly, generatedAt: now }) as Record<string, unknown>
   // meshHealth is composed after redaction: its contract carries token presence/age/count
   // fields (never values), which the key-name redactor would otherwise blank out.
+  // Machine groups are visible to both console roles (the nodes table and drawers
+  // render group names); the shape carries no secret-like keys. REQ-ADM-037.
+  const meshes = (await listMeshes(deps.store)).map((mesh) => ({
+    id: mesh.id,
+    name: mesh.name,
+    alias: meshAliasFor(mesh.id),
+    machineCount: nodes.filter((node) => nodeMeshId(node) === mesh.id).length,
+    modelCount: profiles.filter((profile) => profileMeshId(profile) === mesh.id).length
+  }))
   return json({
     ...redacted,
     viewerRole: viewer.role,
+    meshes,
     meshHealth: await meshHealth(deps.store, deps.env, profiles, nodes, now),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
   }, 200, requestId)
@@ -525,7 +554,9 @@ function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: stri
 
 function profileReadiness(profiles: readonly ModelProfile[], nodes: readonly NodeRecord[]): Array<{ profileId: string; version: number; ready: number; downloading: number; failed: number }> {
   return profiles.map((profile) => {
-    const matching = nodes.filter((node) => node.activeProfileIds.includes(profile.id))
+    // Readiness counts only same-group machines (REQ-SCH-006): a reassigned node
+    // still self-reporting the profile id must not count toward another mesh.
+    const matching = nodes.filter((node) => nodeMeshId(node) === profileMeshId(profile) && node.activeProfileIds.includes(profile.id))
     const readyNodes = matching.filter((node) => nodeReadyForProfile(node, profile))
     const ready = readyNodes.length
     const readyIds = new Set(readyNodes.map((node) => node.id))
@@ -610,6 +641,11 @@ async function syncGatewayForActor(request: Request, deps: RouterDeps, requestId
   const client = deps.cloudflareClient ?? new CloudflareGatewayClient(token!)
   let result: GatewaySyncResult
   try {
+    // Every non-default machine group gets its own dynamic route named by its stable
+    // alias, so clients reach that mesh's active model through the same gateway (REQ-GWY-009).
+    const extraRoutes = (await listMeshes(deps.store))
+      .filter((mesh) => mesh.id !== 'default')
+      .map((mesh) => ({ routeName: meshAliasFor(mesh.id), publicModel: meshAliasFor(mesh.id) }))
     result = await client.syncCustomProvider({
       accountId: settings.accountId,
       gatewayId: settings.gatewayId,
@@ -617,6 +653,7 @@ async function syncGatewayForActor(request: Request, deps: RouterDeps, requestId
       providerName: settings.providerName,
       routeName: settings.routeName,
       publicModel: settings.publicModel,
+      ...(extraRoutes.length > 0 ? { extraRoutes } : {}),
       providerTokenInstructions: 'Paste the router provider token into the AI Gateway provider key field.'
     })
   } catch (error) {
@@ -755,12 +792,121 @@ async function handleNodeConfig(request: Request, deps: RouterDeps, url: URL, re
   const node = await deps.store.getNode(nodeId)
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
   const body = await readJson<NodeConfigBody>(request)
-  const updated = nodeWithConfig(node, body)
+  const result = await reconfigureNode(deps, node, body, actor, requestId, now)
+  if (result instanceof Response) return result
+  return json({ ok: true, id: nodeId, displayName: result.displayName, maxVramGbOverride: result.maxVramGbOverride ?? null, meshId: nodeMeshId(result) }, 200, requestId)
+}
+
+// Shared node-reconfigure core (admin console + automation twin). A mesh reassignment
+// is validated against the registry, drops the node's invite tokens from its old mesh's
+// profiles (its running process is foreign there now — the next heartbeat's mesh gate
+// keeps the token from being re-added), and is audited with the from/to groups.
+async function reconfigureNode(deps: RouterDeps, node: NodeRecord, body: NodeConfigBody | undefined, actor: string, requestId: string, now: number): Promise<NodeRecord | Response> {
+  let updated = nodeWithConfig(node, body)
   if (updated === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
   if (updated === INVALID_NODE_NAME) return json({ error: 'invalid_display_name', requestId }, 400, requestId)
+  const fromMesh = nodeMeshId(node)
+  let meshChanged = false
+  if (body?.meshId !== undefined) {
+    if (typeof body.meshId !== 'string' || !(await listMeshes(deps.store)).some((mesh) => mesh.id === body.meshId)) {
+      return json({ error: 'unknown_mesh', requestId }, 400, requestId)
+    }
+    if (body.meshId !== fromMesh) {
+      updated = { ...updated, meshId: body.meshId }
+      meshChanged = true
+    }
+  }
   await deps.store.upsertNode(updated)
-  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor, target: nodeId, detail: { displayName: updated.displayName, maxVramGbOverride: updated.maxVramGbOverride ?? null } })
-  return json({ ok: true, id: nodeId, displayName: updated.displayName, maxVramGbOverride: updated.maxVramGbOverride ?? null }, 200, requestId)
+  if (meshChanged) {
+    await removeNodeMeshTokens(deps.store, deps.env, node.id, now)
+    await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'node_mesh_assigned', at: now, actor, target: node.id, detail: { from: fromMesh, to: nodeMeshId(updated) } })
+  }
+  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor, target: node.id, detail: { displayName: updated.displayName, maxVramGbOverride: updated.maxVramGbOverride ?? null, meshId: nodeMeshId(updated) } })
+  return updated
+}
+
+// Mesh management cores shared by the admin console and the automation API
+// (REQ-ADM-037 / REQ-API-011). A mesh is an operator-named machine group; its
+// active model answers meshAliasFor(id). Deletion requires an empty mesh and
+// leaves any gateway dynamic route in place (it resolves to no-profile), so
+// delete never depends on Cloudflare API availability.
+async function meshListCore(deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const [meshes, nodes, profiles] = await Promise.all([listMeshes(deps.store), deps.store.listNodes(now), deps.store.listProfiles()])
+  return json({
+    meshes: meshes.map((mesh) => ({
+      id: mesh.id,
+      name: mesh.name,
+      alias: meshAliasFor(mesh.id),
+      machineCount: nodes.filter((node) => nodeMeshId(node) === mesh.id).length,
+      modelCount: profiles.filter((profile) => profileMeshId(profile) === mesh.id).length,
+      ...(mesh.createdAt !== undefined ? { createdAt: mesh.createdAt } : {})
+    }))
+  }, 200, requestId)
+}
+
+async function meshCreateCore(request: Request, deps: RouterDeps, actor: string, requestId: string, now: number): Promise<Response> {
+  const body = await readJson<{ name?: unknown }>(request)
+  const name = typeof body?.name === 'string' ? body.name.trim() : ''
+  const validated = name ? validateMeshName(name) : undefined
+  if (!validated) return json({ error: 'invalid_mesh_name', requestId }, 400, requestId)
+  // Duplicate-name first: recreating an existing mesh (whose alias a profile
+  // legitimately owns) must read as mesh_exists, not a phantom alias conflict.
+  if ((await listMeshes(deps.store)).some((mesh) => mesh.id === validated.id)) return json({ error: 'mesh_exists', requestId }, 409, requestId)
+  // A pre-existing callable name equal to the would-be mesh alias would give the
+  // alias two owners the moment a model is activated in the new mesh.
+  const profiles = await deps.store.listProfiles()
+  if (profiles.some((profile) => profile.publicAliases.includes(meshAliasFor(validated.id)))) return json({ error: 'mesh_alias_conflict', requestId }, 409, requestId)
+  const created = await createMesh(deps.store, name, now)
+  if (!created) return json({ error: 'mesh_exists', requestId }, 409, requestId)
+  await deps.store.appendAudit({ id: requestId, type: 'mesh_created', at: now, actor, target: created.id, detail: { name: created.name, alias: meshAliasFor(created.id) } })
+  return json({ ok: true, mesh: { id: created.id, name: created.name, alias: meshAliasFor(created.id) } }, 201, requestId)
+}
+
+async function meshDeleteCore(deps: RouterDeps, meshId: string, actor: string, requestId: string, now: number): Promise<Response> {
+  if (meshId === 'default') return json({ error: 'mesh_undeletable', requestId }, 400, requestId)
+  const meshes = await listMeshes(deps.store)
+  if (!meshes.some((mesh) => mesh.id === meshId)) return json({ error: 'unknown_mesh', requestId }, 404, requestId)
+  const [nodes, profiles] = await Promise.all([deps.store.listNodes(now), deps.store.listProfiles()])
+  if (nodes.some((node) => nodeMeshId(node) === meshId) || profiles.some((profile) => profileMeshId(profile) === meshId)) {
+    return json({ error: 'mesh_not_empty', requestId }, 409, requestId)
+  }
+  await deleteMesh(deps.store, meshId)
+  await deps.store.appendAudit({ id: requestId, type: 'mesh_deleted', at: now, actor, target: meshId, detail: { routeName: meshAliasFor(meshId) } })
+  return json({ ok: true }, 200, requestId)
+}
+
+async function handleMeshList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await requireUser(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  return meshListCore(deps, requestId, now)
+}
+
+async function handleMeshCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return meshCreateCore(request, deps, actor, requestId, now)
+}
+
+async function handleMeshDelete(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  return meshDeleteCore(deps, decodeURIComponent(url.pathname.split('/').at(-1) ?? ''), actor, requestId, now)
+}
+
+async function handleApiMeshList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+  return meshListCore(deps, requestId, now)
+}
+
+async function handleApiMeshCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return meshCreateCore(request, deps, `automation:${automation.id}`, requestId, now)
+}
+
+async function handleApiMeshDelete(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return meshDeleteCore(deps, decodeURIComponent(url.pathname.split('/').at(-1) ?? ''), `automation:${automation.id}`, requestId, now)
 }
 
 async function handleProfileRollout(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -806,6 +952,34 @@ function resolveMaxVram(value: number | undefined): number | undefined | typeof 
 function resolveRuntime(value: unknown): RuntimeKind | 'invalid_runtime' {
   if (value === undefined || value === null || value === '') return 'meshllm'
   return value === 'meshllm' || value === 'llamacpp' ? value : 'invalid_runtime'
+}
+
+// A model's own callable alias sits alongside its mesh's stable alias. Editing it must
+// preserve that mesh alias — the old hardcoded [codeflare-mesh, alias] silently
+// repatriated non-default-mesh profiles — and may not take the reserved stable alias
+// of any mesh (codeflare-mesh or any codeflare-mesh-*). REQ-RUN-016.
+function resolveCallNameAliases(existing: ModelProfile, rawCallName: unknown, profiles: readonly ModelProfile[]): readonly string[] | { readonly error: string; readonly status: number } {
+  const alias = slugify(typeof rawCallName === 'string' ? rawCallName : '')
+  if (!alias) return { error: 'invalid_call_name', status: 400 }
+  if (alias === STABLE_PUBLIC_MODEL || alias.startsWith(`${STABLE_PUBLIC_MODEL}-`)) return { error: 'call_name_conflict', status: 409 }
+  if (profiles.some((profile) => profile.id !== existing.id && profile.publicAliases.includes(alias))) return { error: 'call_name_conflict', status: 409 }
+  return [meshAliasFor(profileMeshId(existing)), alias]
+}
+
+// Applies a requested mesh reassignment to a profile before the rest of its config is
+// resolved (REQ-RUN-016): the mesh's stable alias is swapped in, and the model arrives
+// in its new group INACTIVE (rollout 0) so the operator activates it there explicitly.
+// The caller's later version bump also protects the row from any default re-seed.
+async function resolveMeshReassignment(deps: RouterDeps, existing: ModelProfile, rawMeshId: unknown): Promise<{ readonly profile: ModelProfile; readonly change?: { readonly from: string; readonly to: string } } | { readonly error: string }> {
+  if (rawMeshId === undefined) return { profile: existing }
+  if (typeof rawMeshId !== 'string' || !(await listMeshes(deps.store)).some((mesh) => mesh.id === rawMeshId)) return { error: 'unknown_mesh' }
+  const from = profileMeshId(existing)
+  if (rawMeshId === from) return { profile: existing }
+  const ownAliases = existing.publicAliases.filter((alias) => alias !== meshAliasFor(from))
+  return {
+    profile: { ...existing, meshId: rawMeshId, publicAliases: [meshAliasFor(rawMeshId), ...ownAliases], active: false, rolloutPercent: 0 },
+    change: { from, to: rawMeshId }
+  }
 }
 
 interface LlamaCppConfigBody {
@@ -923,7 +1097,7 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
   return { settings: next as unknown as LlamaCppProfileSettings }
 }
 
-type NodeConfigBody = { readonly maxVramGbOverride?: number | null; readonly displayName?: unknown; readonly name?: unknown }
+type NodeConfigBody = { readonly maxVramGbOverride?: number | null; readonly displayName?: unknown; readonly name?: unknown; readonly meshId?: unknown }
 const INVALID_NODE_NAME = Symbol('invalid_node_name')
 
 function normalizeNodeDisplayName(value: unknown): string | undefined | typeof INVALID_NODE_NAME {
@@ -1044,7 +1218,7 @@ function resolvePrefixCache(existing: PrefixCacheBlock | undefined, value: unkno
 // cache type, or a boolean sets it; null / 0 / "" clears it back to Auto by removing
 // the key (never assigning undefined, which JSON.stringify would silently strip from
 // the stored blob). An invalid value yields an error code the caller returns as 400.
-type ModelConfigBody = { profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string; runtime?: unknown; llamacpp?: unknown } & MeshllmTunablesBody
+type ModelConfigBody = { profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string; runtime?: unknown; llamacpp?: unknown; meshId?: unknown } & MeshllmTunablesBody
 
 function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, body: MeshllmTunablesBody): { meshllm: NonNullable<ModelProfile['meshllm']> } | { error: string } {
   const next: Record<string, unknown> = { ...existing }
@@ -1128,11 +1302,9 @@ function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly Mod
   }
   let publicAliases = existing.publicAliases
   if (body.callName !== undefined) {
-    const alias = slugify(typeof body.callName === 'string' ? body.callName : '')
-    if (!alias) return { error: 'invalid_call_name', status: 400 }
-    if (alias === STABLE_PUBLIC_MODEL) return { error: 'call_name_conflict', status: 409 }
-    if (profiles.some((profile) => profile.id !== existing.id && profile.publicAliases.includes(alias))) return { error: 'call_name_conflict', status: 409 }
-    publicAliases = [STABLE_PUBLIC_MODEL, alias]
+    const resolved = resolveCallNameAliases(existing, body.callName, profiles)
+    if (!Array.isArray(resolved)) return resolved as { error: string; status: number }
+    publicAliases = resolved
   }
   const { meshllm: _meshllm, ...withoutMesh } = existing
   void _meshllm
@@ -1164,8 +1336,11 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
   const body = await readJson<ModelConfigBody>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
   const profiles = await deps.store.listProfiles()
-  const existing = profiles.find((profile) => profile.id === body.profileId)
-  if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const found = profiles.find((profile) => profile.id === body.profileId)
+  if (!found) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const reassignment = await resolveMeshReassignment(deps, found, body.meshId)
+  if ('error' in reassignment) return json({ error: reassignment.error, requestId }, 400, requestId)
+  const existing = reassignment.profile
   const runtime = resolveRuntime(body.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   if (body.llamacpp !== undefined && runtime !== 'llamacpp' && existing.runtime !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
@@ -1173,6 +1348,7 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
     const direct = configureLlamaCppProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
     await deps.store.setProfile(direct.profile)
+    if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor, target: direct.profile.id, detail: { ...reassignment.change } })
     await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
     return json({ ok: true, profileId: direct.profile.id, contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, displayName: direct.profile.displayName, callableNames: direct.profile.publicAliases, runtime: 'llamacpp', model: toApiModel(direct.profile) }, 200, requestId)
   }
@@ -1205,18 +1381,17 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
   }
   let publicAliases = existing.publicAliases
   if (body.callName !== undefined) {
-    const alias = slugify(typeof body.callName === 'string' ? body.callName : '')
-    if (!alias) return json({ error: 'invalid_call_name', requestId }, 400, requestId)
-    if (alias === STABLE_PUBLIC_MODEL) return json({ error: 'call_name_conflict', requestId }, 409, requestId)
-    if (profiles.some((profile) => profile.id !== existing.id && profile.publicAliases.includes(alias))) return json({ error: 'call_name_conflict', requestId }, 409, requestId)
-    publicAliases = [STABLE_PUBLIC_MODEL, alias]
+    const resolved = resolveCallNameAliases(existing, body.callName, profiles)
+    if (!Array.isArray(resolved)) return json({ error: (resolved as { error: string }).error, requestId }, (resolved as { status: number }).status, requestId)
+    publicAliases = resolved
   }
-  // Bump the version so a later deploy's default re-seed (shouldRefreshDefaultProfile
-  // refreshes only when stored version <= shipped version) does not overwrite this edit.
+  // Bump the version so a stored row edited by an operator is never mistaken for a
+  // shipped default row by any future seeding logic.
   const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, displayName, publicAliases, version: existing.version + 1 }
   await deps.store.setProfile(updated)
+  if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor, target: updated.id, detail: { ...reassignment.change } })
   await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: updated.id, detail: { contextWindow, modelRef: meshllm.modelRef, maxVramGb: meshllm.maxVramGb ?? 0 } })
-  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: meshllm.modelRef, maxVramGb: meshllm.maxVramGb ?? 0, displayName: updated.displayName, callableNames: updated.publicAliases }, 200, requestId)
+  return json({ ok: true, profileId: updated.id, contextWindow, modelRef: meshllm.modelRef, maxVramGb: meshllm.maxVramGb ?? 0, displayName: updated.displayName, callableNames: updated.publicAliases, meshId: profileMeshId(updated) }, 200, requestId)
 }
 
 // handleProfileAdd creates a new inactive model profile from an operator-supplied
@@ -1228,20 +1403,30 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
 async function handleProfileAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ modelRef?: string; mode?: string; runtime?: unknown; name?: string }>(request)
+  const body = await readJson<{ modelRef?: string; mode?: string; runtime?: unknown; name?: string; meshId?: unknown }>(request)
   const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
   if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
   const split = body?.mode === 'split'
   const runtime = resolveRuntime(body?.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   if (split && runtime === 'llamacpp') return json({ error: 'split_requires_meshllm', requestId }, 400, requestId)
+  const meshId = await resolveOnboardingMesh(deps, body?.meshId)
+  if (meshId === undefined) return json({ error: 'unknown_mesh', requestId }, 400, requestId)
   const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
-  const profile = buildCustomProfile({ modelRef, split, existing, name, runtime })
+  const profile = buildCustomProfile({ modelRef, split, existing, name, runtime, meshId })
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor, target: profile.id, detail: { modelRef, split, runtime } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor, target: profile.id, detail: { modelRef, split, runtime, meshId } })
   return json({ ok: true, profileId: profile.id, displayName: profile.displayName, split, runtime, model: toApiModel(profile) }, 201, requestId)
+}
+
+// Resolves an optional onboarding mesh: absent means the default mesh; a present
+// value must name an existing mesh (undefined result = unknown_mesh).
+async function resolveOnboardingMesh(deps: RouterDeps, rawMeshId: unknown): Promise<string | undefined> {
+  if (rawMeshId === undefined || rawMeshId === null || rawMeshId === '') return 'default'
+  if (typeof rawMeshId !== 'string') return undefined
+  return (await listMeshes(deps.store)).some((mesh) => mesh.id === rawMeshId) ? rawMeshId : undefined
 }
 
 async function handleAdminMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -1973,6 +2158,7 @@ function toApiNode(node: NodeRecord, runtimeVersions?: { readonly meshllm: strin
     ...(node.metrics !== undefined ? { metrics: node.metrics } : {}),
     ...(runtimeVersions !== undefined ? { runtimeInstall: runtimeBinaryStatus(node, runtimeVersions) } : {}),
     maxVramGbOverride: node.maxVramGbOverride ?? null,
+    meshId: nodeMeshId(node),
     deactivated: node.deactivated === true
   }
 }
@@ -2012,12 +2198,9 @@ async function handleApiNodeReconfigure(request: Request, deps: RouterDeps, url:
   const node = await deps.store.getNode(nodeId)
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
   const body = await readJson<NodeConfigBody>(request)
-  const updated = nodeWithConfig(node, body)
-  if (updated === INVALID_MAX_VRAM) return json({ error: 'invalid_max_vram', requestId }, 400, requestId)
-  if (updated === INVALID_NODE_NAME) return json({ error: 'invalid_display_name', requestId }, 400, requestId)
-  await deps.store.upsertNode(updated)
-  await deps.store.appendAudit({ id: requestId, type: 'node_reconfigured', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: { displayName: updated.displayName, maxVramGbOverride: updated.maxVramGbOverride ?? null } })
-  return json({ ok: true, node: toApiNode(updated, await desiredRuntimeVersions(deps.store)) }, 200, requestId)
+  const result = await reconfigureNode(deps, node, body, `automation:${automation.id}`, requestId, now)
+  if (result instanceof Response) return result
+  return json({ ok: true, node: toApiNode(result, await desiredRuntimeVersions(deps.store)) }, 200, requestId)
 }
 
 async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
@@ -2098,6 +2281,7 @@ function toApiModel(profile: ModelProfile) {
     runtime: profile.runtime,
     modelRef: l?.modelRef ?? m?.modelRef ?? profile.upstreamModel,
     split: m?.split ?? false,
+    meshId: profileMeshId(profile),
     maxVramGb: m?.maxVramGb ?? 0,
     tunables: m ? {
       parallel: m.parallel ?? null,
@@ -2127,16 +2311,18 @@ async function handleApiModelList(request: Request, deps: RouterDeps, requestId:
 async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  const body = await readJson<{ modelRef?: string; mode?: string; runtime?: unknown; name?: string }>(request)
+  const body = await readJson<{ modelRef?: string; mode?: string; runtime?: unknown; name?: string; meshId?: unknown }>(request)
   const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
   if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
   const split = body?.mode === 'split'
   const runtime = resolveRuntime(body?.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   if (split && runtime === 'llamacpp') return json({ error: 'split_requires_meshllm', requestId }, 400, requestId)
+  const meshId = await resolveOnboardingMesh(deps, body?.meshId)
+  if (meshId === undefined) return json({ error: 'unknown_mesh', requestId }, 400, requestId)
   const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
-  const profile = buildCustomProfile({ modelRef, split, existing, name, runtime })
+  const profile = buildCustomProfile({ modelRef, split, existing, name, runtime, meshId })
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
   await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: `automation:${automation.id}`, target: profile.id, detail: { modelRef, split, runtime } })
@@ -2144,13 +2330,12 @@ async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: 
 }
 
 // classifyModelDeletion is the single deletion rule the console and API both obey so
-// they never diverge: a model can be removed only when it is a custom (non-default)
-// profile that is switched off. A default profile re-seeds on boot, and deleting the
-// active model would 404 the stable codeflare-mesh route, so both are refused.
+// they never diverge: any switched-off model can be removed, including the seed-once
+// starter (REQ-RUN-012). Deleting the active model would 404 its mesh's stable route,
+// so that alone is refused.
 function classifyModelDeletion(profiles: readonly ModelProfile[], profileId: string): { profile: ModelProfile } | { error: string; status: number } {
   const profile = profiles.find((candidate) => candidate.id === profileId)
   if (!profile) return { error: 'unknown_profile', status: 404 }
-  if (isDefaultModelId(profileId)) return { error: 'model_builtin', status: 409 }
   if (profile.active) return { error: 'model_active', status: 409 }
   return { profile }
 }
@@ -2180,6 +2365,32 @@ async function handleProfileDelete(request: Request, deps: RouterDeps, requestId
   return json({ ok: true, profileId }, 200, requestId)
 }
 
+// Duplication clones a profile into an inactive same-mesh sibling with a derived
+// call name so the operator tunes a variant without touching the original (REQ-RUN-017).
+async function duplicateProfileCore(deps: RouterDeps, profileId: string, actor: string, requestId: string, now: number): Promise<Response> {
+  const profiles = await deps.store.listProfiles()
+  const source = profiles.find((profile) => profile.id === profileId)
+  if (!source) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const copy = buildDuplicateProfile(source, profiles)
+  await deps.store.setProfile(copy)
+  await deps.store.appendAudit({ id: requestId, type: 'model_duplicated', at: now, actor, target: copy.id, detail: { from: source.id } })
+  return json({ ok: true, profileId: copy.id, model: toApiModel(copy) }, 201, requestId)
+}
+
+async function handleProfileDuplicate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
+  const actor = await requireAdmin(request, deps, now)
+  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+  const body = await readJson<{ profileId?: unknown }>(request)
+  if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
+  return duplicateProfileCore(deps, body.profileId, actor, requestId, now)
+}
+
+async function handleApiModelDuplicate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
+  const automation = await requireAutomation(request, deps, now)
+  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+  return duplicateProfileCore(deps, decodeURIComponent(url.pathname.split('/').at(-2) ?? ''), `automation:${automation.id}`, requestId, now)
+}
+
 async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
@@ -2187,8 +2398,11 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   const body = await readJson<ModelConfigBody>(request)
   if (!body) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   const profiles = await deps.store.listProfiles()
-  const existing = profiles.find((profile) => profile.id === profileId)
-  if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const found = profiles.find((profile) => profile.id === profileId)
+  if (!found) return json({ error: 'unknown_profile', requestId }, 404, requestId)
+  const reassignment = await resolveMeshReassignment(deps, found, body.meshId)
+  if ('error' in reassignment) return json({ error: reassignment.error, requestId }, 400, requestId)
+  const existing = reassignment.profile
   const runtime = resolveRuntime(body.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   if (body.llamacpp !== undefined && runtime !== 'llamacpp' && existing.runtime !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
@@ -2196,6 +2410,7 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
     const direct = configureLlamaCppProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
     await deps.store.setProfile(direct.profile)
+    if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor: `automation:${automation.id}`, target: direct.profile.id, detail: { ...reassignment.change } })
     await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
     return json({ ok: true, model: toApiModel(direct.profile) }, 200, requestId)
   }
@@ -2227,14 +2442,13 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   }
   let publicAliases = existing.publicAliases
   if (body.callName !== undefined) {
-    const alias = slugify(typeof body.callName === 'string' ? body.callName : '')
-    if (!alias) return json({ error: 'invalid_call_name', requestId }, 400, requestId)
-    if (alias === STABLE_PUBLIC_MODEL) return json({ error: 'call_name_conflict', requestId }, 409, requestId)
-    if (profiles.some((profile) => profile.id !== existing.id && profile.publicAliases.includes(alias))) return json({ error: 'call_name_conflict', requestId }, 409, requestId)
-    publicAliases = [STABLE_PUBLIC_MODEL, alias]
+    const resolved = resolveCallNameAliases(existing, body.callName, profiles)
+    if (!Array.isArray(resolved)) return json({ error: (resolved as { error: string }).error, requestId }, (resolved as { status: number }).status, requestId)
+    publicAliases = resolved
   }
   const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, displayName, publicAliases, version: existing.version + 1 }
   await deps.store.setProfile(updated)
+  if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { ...reassignment.change } })
   await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { contextWindow, modelRef: meshllm.modelRef } })
   return json({ ok: true, model: toApiModel(updated) }, 200, requestId)
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
-import { eligibleNodes, isEligible, selectNode, StoreScheduler } from './scheduler'
+import { eligibleNodes, isDirectEligible, isEligible, selectNode, StoreScheduler } from './scheduler'
 import { MemoryStore, nodeFixture } from './test-helpers'
 import type { ModelProfile, NodeMetrics } from './types'
 
@@ -30,6 +30,20 @@ describe('scheduler entry-node selection', () => {
     expect(isEligible(nodeFixture({ metrics: { ...READY, runtimeState: 'starting' } }), SMOKE, NOW)).toBe(false)
     expect(isEligible(nodeFixture({ metrics: { ...READY, apiReady: false } }), SMOKE, NOW)).toBe(false)
     expect(isEligible(nodeFixture({ meshIp: '8.8.8.8' }), SMOKE, NOW)).toBe(false)
+  })
+
+  it('REQ-SCH-003 rejects nodes outside the profile mesh even when they self-report the profile id', () => {
+    // A ready node claiming the profile id but assigned to another machine group must
+    // never serve this mesh's model (REQ-SCH-006 server-side authority).
+    expect(isEligible(nodeFixture({ meshId: 'development' }), SMOKE, NOW)).toBe(false)
+    expect(isEligible(nodeFixture({ meshId: 'default' }), SMOKE, NOW)).toBe(true)
+    expect(isEligible(nodeFixture({}), { ...SMOKE, meshId: 'development' }, NOW)).toBe(false)
+    expect(isEligible(nodeFixture({ meshId: 'development' }), { ...SMOKE, meshId: 'development' }, NOW)).toBe(true)
+
+    const direct: ModelProfile = { ...SMOKE, id: 'direct-a', runtime: 'llamacpp', publicAliases: ['codeflare-mesh-development', 'direct-a'], meshId: 'development', llamacpp: { modelRef: 'unsloth/x:Q4', hfRepo: 'unsloth/x', bindPort: 4330, contextWindow: 8192, parallel: -1, cachePrompt: true, cacheReuse: 256, alias: 'unsloth/x:Q4' } }
+    const directNode = nodeFixture({ runtime: 'llamacpp', publicModels: ['codeflare-mesh-development', 'direct-a'], activeProfileIds: ['direct-a'], metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] } })
+    expect(isDirectEligible({ ...directNode, meshId: 'development' }, direct, 'direct-a', NOW)).toBe(true)
+    expect(isDirectEligible(directNode, direct, 'direct-a', NOW)).toBe(false)
   })
 
   it('REQ-SCH-002 selectNode picks the least-loaded ready node by active requests', () => {
