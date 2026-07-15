@@ -497,7 +497,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   const desiredVersion = await desiredAgentVersion(deps.store)
   const runtimeVersions = await desiredRuntimeVersions(deps.store)
   const lastSpeedTest = await deps.store.getConfig<LastSpeedTestSummary>(LAST_SPEED_TEST_CONFIG_KEY)
-  const statusNodes = nodes.map((node) => ({ ...node, runtimeInstall: runtimeBinaryStatus(node, runtimeVersions) }))
+  const statusNodes = nodes.map((node) => ({ ...node, displayStatus: nodeDisplayStatus(node), runtimeInstall: runtimeBinaryStatus(node, runtimeVersions) }))
   // The read-only user role sees the live operational picture (nodes, profiles,
   // mesh health, throughput) but never configuration state or the admin action log:
   // those carry gateway/domain internals and operator emails and stay admin-only,
@@ -531,6 +531,25 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
     meshHealth: await meshHealth(deps.store, deps.env, profiles, nodes, now),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
   }, 200, requestId)
+}
+
+// nodeDisplayStatus reduces a node's raw signals to the operator status vocabulary —
+// Serving, Preparing, Disconnected, Offline, Error (plus the Deactivated/Removed/Draining
+// lifecycle labels) — derived once here so the console and the automation API can never
+// disagree about what a machine is doing (REQ-ADM-020 / REQ-API-004).
+function nodeDisplayStatus(node: NodeRecord): string {
+  if (node.status === 'offline') return 'Offline'
+  if (node.status === 'revoked') return 'Removed'
+  if (node.status === 'draining') return 'Draining'
+  if (node.deactivated) return 'Deactivated'
+  const metrics = node.metrics
+  const runtimeState = metrics?.runtimeState ?? ''
+  if (runtimeState === 'failed' || runtimeState === 'dependency-missing') return 'Error'
+  const serving = (metrics?.readyModels?.length ?? 0) > 0
+    || ((metrics?.stageCount ?? 0) > 0 && metrics?.apiReady === true && metrics?.consoleReady === true)
+  if (serving) return 'Serving'
+  if (runtimeState === 'downloading' || runtimeState === 'starting' || runtimeState === 'loading' || metrics?.apiReady === true || metrics?.consoleReady === true) return 'Preparing'
+  return 'Disconnected'
 }
 
 function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: string; readonly llamacpp: string }) {
@@ -2148,6 +2167,7 @@ function toApiNode(node: NodeRecord, runtimeVersions?: { readonly meshllm: strin
     id: node.id,
     displayName: node.displayName,
     status: node.status,
+    displayStatus: nodeDisplayStatus(node),
     meshIp: node.meshIp,
     publicModels: node.publicModels,
     activeProfileIds: node.activeProfileIds,

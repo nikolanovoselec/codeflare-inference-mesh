@@ -576,6 +576,8 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 
 `NodeProjection.meshId` is the machine group the node serves; a newly claimed node joins the default mesh, and reassignment goes through `POST /api/v1/nodes/{id}/reconfigure`. ([REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership))
 
+`NodeProjection.displayStatus` is the router-derived operator status vocabulary — `"Serving"` (a model or split stage is actually served), `"Preparing"` (online, starting/downloading/loading), `"Disconnected"` (heartbeating with no reachable runtime), `"Offline"` (not checking in), `"Error"` (runtime failure or missing dependency), plus the `"Deactivated"`/`"Removed"`/`"Draining"` lifecycle labels. It is derived once server-side so automation reads exactly the status the console shows. ([REQ-ADM-020](../../sdd/spec/setup-admin.md#req-adm-020-node-status-clarity-and-filtering), [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management))
+
 **Request body:** None.
 
 **Response**

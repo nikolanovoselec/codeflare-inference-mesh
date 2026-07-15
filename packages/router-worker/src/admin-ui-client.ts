@@ -687,16 +687,25 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     wrap.append(dot, text);
     return wrap;
   };
-  const nodeTone = (node) => {
-    const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
-    if (node.status === 'offline') return 'danger';
-    if (node.deactivated) return 'warn';
-    if (splitReadinessBlocksRuntime(node.metrics && node.metrics.splitReadiness, node.metrics || {})) return 'warn';
-    if (runtime === 'failed') return 'danger';
-    if (nodeServingCapacity(node)) return 'ok';
-    if (node.status === 'online' && (runtime === 'running' || runtime === 'ready')) return 'ok';
-    return 'warn';
+  // The router derives the operator status vocabulary once (displayStatus) so the
+  // console and the automation API never disagree; the tone follows the word. The
+  // local derivation is a mirror-image fallback for status payloads predating the field.
+  const nodeDisplayStatus = (node) => {
+    if (node.displayStatus) return node.displayStatus;
+    if (node.status === 'offline') return 'Offline';
+    if (node.status === 'revoked') return 'Removed';
+    if (node.status === 'draining') return 'Draining';
+    if (node.deactivated) return 'Deactivated';
+    const m = node.metrics || {};
+    const rt = m.runtimeState || '';
+    if (rt === 'failed' || rt === 'dependency-missing') return 'Error';
+    const serving = (Array.isArray(m.readyModels) && m.readyModels.length > 0) || ((m.stageCount || 0) > 0 && m.apiReady === true && m.consoleReady === true);
+    if (serving) return 'Serving';
+    if (rt === 'downloading' || rt === 'starting' || rt === 'loading' || m.apiReady === true || m.consoleReady === true) return 'Preparing';
+    return 'Disconnected';
   };
+  const DISPLAY_STATUS_TONES = { Serving: 'ok', Preparing: 'warn', Disconnected: 'warn', Draining: 'warn', Deactivated: 'warn', Offline: 'danger', Error: 'danger', Removed: 'danger' };
+  const nodeTone = (node) => DISPLAY_STATUS_TONES[nodeDisplayStatus(node)] || 'warn';
   const nodeReady = (node) => Boolean(node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.length > 0);
   function nodeRelAge(node) {
     if (!node.lastSeenAt) return '';
@@ -767,16 +776,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const state = metrics.runtimeState === 'downloading' ? 'installing' : (metrics.runtimeState === 'dependency-missing' ? 'failed' : (installed ? 'installed' : 'pending'));
     return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: state, error: state === 'failed' ? (error || null) : null };
   }
-  const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : 'MeshLLM';
+  const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : 'meshllm';
   const runtimeInstallTone = (info) => info.state === 'failed' ? 'danger' : (info.state === 'installed' ? 'ok' : 'warn');
+  // Chip text always leads with the runtime's name ("llama.cpp b9928", "meshllm 0.72.2"),
+  // never a bare version an operator has to guess the runtime for.
   const runtimeInstallText = (node) => {
     const info = runtimeInstallInfo(node);
+    const label = runtimeInstallLabel(info);
     const desired = info.desiredVersion || 'selected';
-    if (info.state === 'paused') return info.installedVersion ? (info.installedVersion + ' installed') : (runtimeInstallLabel(info) + ' paused');
-    if (info.state === 'installing') return 'Installing ' + runtimeInstallLabel(info) + ' ' + desired;
-    if (info.state === 'failed') return runtimeInstallLabel(info) + ' install failed';
-    if (info.installedVersion) return info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? ' installed' : ' → ' + desired);
-    return runtimeInstallLabel(info) + ' pending ' + desired;
+    if (info.state === 'paused') return info.installedVersion ? (label + ' ' + info.installedVersion + ' · paused') : (label + ' paused');
+    if (info.state === 'installing') return label + ' installing ' + desired;
+    if (info.state === 'failed') return label + ' install failed';
+    if (info.installedVersion) return label + ' ' + info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? '' : ' → ' + desired);
+    return label + ' pending ' + desired;
   };
   function nodeMeshRoleLabel(metrics) {
     if (!metrics) return '';
@@ -832,17 +844,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     revoke.dataset.confirm = 'Confirm revoke?';
     revoke.dataset.out = 'node-output';
     return revoke;
-  };
-  // Row action: a right-aligned Manage button that opens the node drawer (Revoke + Deactivate/Activate),
-  // mirroring the model rows. Replaces the inline Revoke button that used to sit mid-row.
-  const manageButton = (nodeId) => {
-    const manage = document.createElement('button');
-    manage.type = 'button';
-    manage.className = 'btn btn-ghost';
-    manage.textContent = 'Manage';
-    manage.dataset.action = 'node-detail';
-    manage.dataset.nodeId = nodeId;
-    return manage;
   };
   const versionCode = (node, desiredVersion) => {
     const reported = node.agentVersion || 'unreported';
@@ -936,12 +937,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       else if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
       if (node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-mesh-role', nodeMeshRoleLabel(node.metrics));
       if (node.metrics && node.metrics.splitReadiness) annotateSplitReadiness(statusCell, node.metrics.splitReadiness);
-      const statusLabel = nodeStatusText(node);
-      const roleLabel = node.metrics ? nodeMeshRoleLabel(node.metrics) : '';
-      if (nodeServingCapacity(node) && roleLabel && statusLabel === roleLabel) statusCell.setAttribute('data-status-label-kind', 'mesh-role');
-      else if (nodeServingCapacity(node)) statusCell.setAttribute('data-status-label-kind', 'work-state');
-      const statusTone = blocker && !blocker.splitReadiness ? 'danger' : nodeTone(node);
-      statusCell.appendChild(statusDot(statusTone, statusLabel));
+      // The visible label is the fixed status vocabulary; role/work detail lives in the
+      // drawer diagnostics and the cell's data attributes, never in the label.
+      const statusWord = nodeDisplayStatus(node);
+      const statusLabel = statusWord === 'Offline' ? statusWord + (nodeRelAge(node) ? ' · last seen ' + nodeRelAge(node) : '') : statusWord;
+      statusCell.appendChild(statusDot(nodeTone(node), statusLabel));
       const install = runtimeInstallInfo(node);
       const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));
       installChip.setAttribute('data-runtime-install-chip', node.id);
@@ -952,7 +952,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
       versionCell.appendChild(versionCode(node, desiredVersion));
-      versionCell.appendChild(manageButton(node.id));
       bodyEl.appendChild(row);
     });
   }
@@ -1143,7 +1142,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(errRow);
     }
     const install = runtimeInstallInfo(node);
-    const installRow = drawerField('runtime-install', runtimeInstallLabel(install), runtimeInstallText(node));
+    const installRow = drawerField('runtime-install', 'Runtime', runtimeInstallText(node));
     installRow.setAttribute('data-runtime', install.runtime);
     installRow.setAttribute('data-runtime-install-state', install.state);
     if (install.desiredVersion) installRow.setAttribute('data-desired-version', install.desiredVersion);
@@ -2653,6 +2652,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const name = nameEl ? nameEl.value.trim() : '';
       await request('/admin/meshes', { method: 'POST', headers: headers(true), body: JSON.stringify({ name: name }) });
       if (nameEl) nameEl.value = '';
+      const meshDisclosure = byId('mesh-add-details');
+      if (meshDisclosure) meshDisclosure.open = false;
       setOutput(out, 'Mesh created.');
       toast('Mesh created');
       await refreshStatus().catch(() => undefined);

@@ -5342,6 +5342,33 @@ describe('multi-mesh machine groups', () => {
     expect((await store.listProfiles()).find((profile) => profile.id === sourceId)?.displayName).toBe('Coder')
   })
 
+  it('REQ-ADM-020 REQ-API-004 node projections carry the derived operator status vocabulary', async () => {
+    const { router, store } = routerFixture()
+    const token = await mintKey(router)
+    const base = nodeFixture()
+    await store.upsertNode({ ...base, id: 'n-serving', metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['m'] } })
+    await store.upsertNode({ ...base, id: 'n-preparing', metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: [] } })
+    await store.upsertNode({ ...base, id: 'n-disconnected', metrics: { runtimeState: 'stopped', activeRequests: 0 } })
+    await store.upsertNode({ ...base, id: 'n-error', metrics: { runtimeState: 'dependency-missing', activeRequests: 0 } })
+    await store.upsertNode({ ...base, id: 'n-offline', status: 'offline', metrics: { runtimeState: 'starting', activeRequests: 0 } })
+    await store.upsertNode({ ...base, id: 'n-deactivated', deactivated: true, metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['m'] } })
+
+    const res = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(token) }))
+    const nodes = (await res.json() as { nodes: Array<{ id: string; displayStatus: string }> }).nodes
+    const statusOf = (id: string) => nodes.find((node) => node.id === id)?.displayStatus
+    expect(statusOf('n-serving')).toBe('Serving')
+    expect(statusOf('n-preparing')).toBe('Preparing')
+    expect(statusOf('n-disconnected')).toBe('Disconnected')
+    expect(statusOf('n-error')).toBe('Error')
+    expect(statusOf('n-offline')).toBe('Offline')
+    expect(statusOf('n-deactivated')).toBe('Deactivated')
+
+    // Admin status nodes carry the same field, so the console renders the identical contract.
+    const status = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+    const statusNodes = (await status.json() as { nodes: Array<{ id: string; displayStatus?: string }> }).nodes
+    expect(statusNodes.find((node) => node.id === 'n-serving')?.displayStatus).toBe('Serving')
+  })
+
   it('REQ-ADM-033 a starting runtime with stderr chatter is never reported as an install failure', async () => {
     const { router, store } = routerFixture()
     const token = await mintKey(router)

@@ -361,11 +361,14 @@ describe('dashboard overview contracts', () => {
       const cell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
       return { category: cell.dataset.value, detail: cell.dataset.statusDetail, text: descendants(cell).map((node) => node.textContent).filter(Boolean).join(' ') }
     }
+    // The visible label is the fixed operator vocabulary; detail stays in data attributes.
     expect(statusOf('ready-node').category).toBe('ready')
-    expect(statusOf('ready-node').text).toContain('Serving model')
+    expect(statusOf('ready-node').text).toContain('Serving')
     expect(statusOf('loading-node').category).toBe('active')
+    expect(statusOf('loading-node').text).toContain('Preparing')
     expect(statusOf('loading-node').detail).toBe('loading model next-upstream')
     expect(statusOf('failed-node').category).toBe('active')
+    expect(statusOf('failed-node').text).toContain('Error')
     expect(statusOf('failed-node').detail).toBe('loading model next-upstream')
     // Live per-node throughput is not a reliable MeshLLM table field; the Nodes table omits it entirely.
     expect(descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'loading-node')!).some((cell) => cell.dataset.cell === 'toks')).toBe(false)
@@ -522,15 +525,16 @@ describe('dashboard overview contracts', () => {
     const chip = descendants(row).find((node) => node.className === 'chip')!
     expect(chip.dataset.tone).toBe('warn')
     expect(descendants(row).some((node) => node.textContent === 'Deactivated')).toBe(true)
-    // Row action is Manage (opens the drawer), never an inline revoke.
-    expect(descendants(row).some((node) => node.dataset.action === 'node-detail' && node.textContent === 'Manage')).toBe(true)
+    // The node name itself opens the drawer; there is no separate Manage button and never an inline revoke.
+    expect(descendants(row).some((node) => node.dataset.action === 'node-detail')).toBe(true)
+    expect(descendants(row).some((node) => node.textContent === 'Manage')).toBe(false)
     expect(descendants(row).some((node) => node.dataset.action === 'node-revoke')).toBe(false)
 
     await harness.clickAction('node-detail', { nodeId: 'node-off' })
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const textOf = (item: StubElement) => descendants(item).map((node) => node.textContent).join(' ')
     const runtimeInstall = fields.find((node) => node.dataset.drawerField === 'runtime-install')!
-    expect(textOf(runtimeInstall)).toContain('0.72.2 installed')
+    expect(textOf(runtimeInstall)).toContain('meshllm 0.72.2')
     expect(textOf(runtimeInstall)).not.toContain('deactivated')
     expect(textOf(runtimeInstall)).not.toContain('install failed')
     expect(runtimeInstall.dataset.runtimeInstallState).toBe('paused')
@@ -557,8 +561,10 @@ describe('dashboard overview contracts', () => {
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'mac-100-96-0-14')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
     expect(statusCell.dataset.meshRole).toBe('Stage owner')
+    // A stage owner reads as Serving (active work), never standby/API client; the role
+    // detail rides the data attribute and the drawer, not the visible label.
     const statusChip = descendants(statusCell).find((node) => node.className === 'chip')!
-    expect(descendants(statusChip).map((node) => node.textContent).join(' ')).toContain('Stage owner')
+    expect(descendants(statusChip).map((node) => node.textContent).join(' ')).toContain('Serving')
 
     await harness.clickAction('node-detail', { nodeId: 'mac-100-96-0-14' })
     let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
@@ -683,7 +689,7 @@ describe('dashboard overview contracts', () => {
     expect(field('stages')!.dataset.value).toBe('2')
     expect(field('reachability')!.dataset.value).toBe('api:down;console:ready')
     expect(textOf(field('reachability')!)).toContain('down / ready')
-    expect(textOf(field('runtime-install')!)).toContain('0.72.2 installed')
+    expect(textOf(field('runtime-install')!)).toContain('meshllm 0.72.2')
     expect(fields.some((node) => node.dataset.drawerField === 'meshllm')).toBe(false)
 
     // A healthy node shows derived work state but stale stderr warnings are not rendered as current
@@ -1630,11 +1636,13 @@ describe('mesh console contracts', () => {
     expect(del!.dataset.confirm, 'mesh delete arms before submitting').toBeTruthy()
 
     harness.byId(ADMIN_UI_MESHES.nameInputId).value = ' Noobs '
+    ;(harness.byId('mesh-add-details') as StubElement & { open?: boolean }).open = true
     await harness.clickAction('mesh-create', { out: ADMIN_UI_MESHES.outputId })
     await harness.flush(5)
     const createCall = harness.fetchCalls.find((call) => call.path === '/admin/meshes' && call.init?.method === 'POST')
     expect(JSON.parse(String(createCall?.init?.body))).toEqual({ name: 'Noobs' })
     expect(harness.byId(ADMIN_UI_MESHES.nameInputId).value, 'a successful create clears the input').toBe('')
+    expect((harness.byId('mesh-add-details') as StubElement & { open?: boolean }).open, 'a successful create collapses the disclosure').toBe(false)
 
     await harness.clickAction('mesh-delete', { meshId: 'development', out: ADMIN_UI_MESHES.outputId })
     await harness.flush(5)
@@ -1699,7 +1707,27 @@ describe('mesh console contracts', () => {
     expect(harness.byId(ADMIN_UI_DRAWER.containerId).hidden, 'drawer closes so the refreshed list shows the copy').toBe(true)
   })
 
-  it('REQ-ADM-025 renders the model sources panel visible by default with CSS-keyed contextual switching', async () => {
+  it('REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    // Both affordances are <details>/<summary> — present in markup, revealed by a click,
+    // never gated on a script state. The mesh disclosure sits in the Meshes header row.
+    for (const id of ['model-add-details', 'mesh-add-details']) {
+      const at = html.indexOf(`<details class="disclosure" id="${id}">`)
+      expect(at, `${id} must be a native disclosure`).toBeGreaterThan(-1)
+      expect(html.indexOf('<summary', at)).toBeGreaterThan(at)
+    }
+    const meshHeadAt = html.indexOf('class="mesh-head"')
+    expect(meshHeadAt).toBeGreaterThan(-1)
+    expect(html.indexOf('id="mesh-add-details"', meshHeadAt)).toBeGreaterThan(meshHeadAt)
+    // The add-model form fields live inside the disclosure body.
+    const modelDetailsAt = html.indexOf('id="model-add-details"')
+    expect(html.indexOf('id="model-add-ref"', modelDetailsAt)).toBeGreaterThan(modelDetailsAt)
+    // Mesh rows right-align the route chip; a successful create collapses the mesh disclosure.
+    expect(adminUiCss()).toContain('.mesh-row-head .endpoint-chip{margin-left:auto}')
+  })
+
+  it('REQ-ADM-025 renders the model sources panel with CSS-keyed contextual switching', async () => {
     const harness = await dashboardHarness()
     const html = harness.html
     const panelAt = html.indexOf('id="model-add-sources"')
