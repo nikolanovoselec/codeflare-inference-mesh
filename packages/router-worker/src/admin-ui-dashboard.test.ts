@@ -1793,10 +1793,21 @@ describe('mesh console contracts', () => {
     expect(html.indexOf('id="mesh-add-details"', meshHeadAt)).toBeGreaterThan(meshHeadAt)
     // The add-model form fields live inside the disclosure body.
     expect(html.indexOf('id="model-add-ref"', modelDetailsAt)).toBeGreaterThan(modelDetailsAt)
-    // Mesh rows right-align the route chip; disclosure summaries, section-header actions,
-    // and disclosure submits all share the compact button tokens.
-    expect(adminUiCss()).toContain('.mesh-row-head .endpoint-chip{margin-left:auto}')
-    expect(adminUiCss()).toContain('.row-item .btn,.disclosure>summary.btn,.panel-head>.btn,.disclosure-body .form-actions .btn{min-height:var(--btn-sm-h)')
+    // Mesh rows right-align the route chip.
+    const css = adminUiCss()
+    expect(css).toContain('.mesh-row-head .endpoint-chip{margin-left:auto}')
+    // One reusable button size: the base .btn rule carries the size tokens, and no other
+    // rule resizes buttons — except the email-chip inline micro control and the mobile
+    // touch-target floor.
+    expect(css).toMatch(/\.btn\{[^}]*min-height:var\(--btn-h\)[^}]*padding:var\(--btn-pad\)[^}]*\}/)
+    const btnSizingSelectors = css
+      .split('\n')
+      .filter((line) => {
+        const brace = line.indexOf('{')
+        return brace > 0 && line.slice(0, brace).includes('.btn') && line.slice(brace).includes('min-height')
+      })
+      .map((line) => line.slice(0, line.indexOf('{')))
+    expect(btnSizingSelectors).toEqual(['.btn', '.email-chip .btn', '.btn,input,select'])
   })
 
   it('REQ-ADM-025 renders the model sources panel with CSS-keyed contextual switching', async () => {
