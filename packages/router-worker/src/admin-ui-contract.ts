@@ -130,7 +130,7 @@ export const ADMIN_UI_POLLING = {
 export const ADMIN_UI_NODES_TABLE = {
   bodyId: 'nodes-table-body',
   sortAttribute: 'data-sort',
-  columns: ['id', 'status', 'mesh', 'vram', 'model', 'version']
+  columns: ['id', 'status', 'mesh', 'vram', 'version']
 } as const
 
 /** Mesh (machine group) management card in the nodes section (REQ-ADM-037). */
