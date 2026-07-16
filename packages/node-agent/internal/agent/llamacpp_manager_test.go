@@ -1,10 +1,16 @@
 package agent
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestREQRUN015LlamaCppRenderArgsIncludesCacheAndAlias(t *testing.T) {
@@ -147,5 +153,131 @@ func TestREQRUN015LlamaCppRenderArgsAutoContext(t *testing.T) {
 	})
 	if !containsArgSequence(joinArgs(args), "--ctx-size 0") {
 		t.Fatalf("Auto context must render --ctx-size 0, got %q", joinArgs(args))
+	}
+}
+
+type fakeLlamaMetrics struct {
+	mu     sync.Mutex
+	body   string
+	broken bool
+}
+
+func (f *fakeLlamaMetrics) set(prompt float64, predicted float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.body = "# HELP llamacpp:prompt_tokens_total number of prompt tokens processed\n" +
+		fmt.Sprintf("llamacpp:prompt_tokens_total %g\n", prompt) +
+		"llamacpp:requests_processing 0\n" +
+		fmt.Sprintf("llamacpp:tokens_predicted_total %g\n", predicted)
+	f.broken = false
+}
+
+func (f *fakeLlamaMetrics) fail() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.broken = true
+}
+
+func (f *fakeLlamaMetrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r.URL.Path != "/metrics" || f.broken {
+		http.Error(w, "unavailable", http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write([]byte(f.body))
+}
+
+func portOf(t *testing.T, rawURL string) int {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return port
+}
+
+func throughputManager(t *testing.T, fake *fakeLlamaMetrics) (*LlamaCppManager, *time.Time) {
+	t.Helper()
+	server := httptest.NewServer(fake)
+	t.Cleanup(server.Close)
+	manager := NewLlamaCppManager(LlamaCppInput{
+		UpstreamModel: "unsloth/Test-GGUF:Q4",
+		Settings:      LlamaCppSettings{BindPort: portOf(t, server.URL)},
+	})
+	now := time.Unix(1_700_000_000, 0)
+	manager.nowFn = func() time.Time { return now }
+	return manager, &now
+}
+
+func TestREQOBS009LlamaCppLiveThroughputFromCounterDeltas(t *testing.T) {
+	fake := &fakeLlamaMetrics{}
+	fake.set(1000, 100)
+	manager, now := throughputManager(t, fake)
+
+	manager.PollThroughput(context.Background())
+	if metrics := manager.Metrics(); metrics.PromptTokensPerSecond != 0 || metrics.GenerationTokensPerSecond != 0 || metrics.TokensPerSecond != 0 {
+		t.Fatalf("seed poll must not fabricate rates: %+v", metrics)
+	}
+
+	fake.set(1000+33450, 100+1845)
+	*now = now.Add(15 * time.Second)
+	manager.PollThroughput(context.Background())
+	metrics := manager.Metrics()
+	if metrics.PromptTokensPerSecond != 2230 {
+		t.Fatalf("prompt rate = %v, want 2230", metrics.PromptTokensPerSecond)
+	}
+	if metrics.GenerationTokensPerSecond != 123 {
+		t.Fatalf("generation rate = %v, want 123", metrics.GenerationTokensPerSecond)
+	}
+	if metrics.TokensPerSecond != 123 {
+		t.Fatalf("aggregate tok/s must ride the generation rate, got %v", metrics.TokensPerSecond)
+	}
+
+	// An idle window reports zero, never the previous burst.
+	*now = now.Add(15 * time.Second)
+	manager.PollThroughput(context.Background())
+	if metrics := manager.Metrics(); metrics.GenerationTokensPerSecond != 0 || metrics.TokensPerSecond != 0 {
+		t.Fatalf("idle window must decay to zero: %+v", metrics)
+	}
+}
+
+func TestREQOBS009LlamaCppThroughputResetsOnRestartAndFailure(t *testing.T) {
+	fake := &fakeLlamaMetrics{}
+	fake.set(5000, 500)
+	manager, now := throughputManager(t, fake)
+	manager.PollThroughput(context.Background())
+
+	// Counters going backwards mean llama-server restarted: zero rates, reseed.
+	fake.set(100, 10)
+	*now = now.Add(15 * time.Second)
+	manager.PollThroughput(context.Background())
+	if metrics := manager.Metrics(); metrics.PromptTokensPerSecond != 0 || metrics.GenerationTokensPerSecond != 0 {
+		t.Fatalf("restart must not produce negative-delta rates: %+v", metrics)
+	}
+	fake.set(400, 40)
+	*now = now.Add(15 * time.Second)
+	manager.PollThroughput(context.Background())
+	if metrics := manager.Metrics(); metrics.PromptTokensPerSecond != 20 || metrics.GenerationTokensPerSecond != 2 {
+		t.Fatalf("post-restart deltas must compute from the reseeded counters: %+v", metrics)
+	}
+
+	// A failed poll zeroes the rates and forces a reseed so the next good sample
+	// never pairs with pre-failure counters.
+	fake.fail()
+	*now = now.Add(15 * time.Second)
+	manager.PollThroughput(context.Background())
+	if metrics := manager.Metrics(); metrics.PromptTokensPerSecond != 0 || metrics.GenerationTokensPerSecond != 0 {
+		t.Fatalf("failed poll must zero the rates: %+v", metrics)
+	}
+	fake.set(700, 70)
+	*now = now.Add(15 * time.Second)
+	manager.PollThroughput(context.Background())
+	if metrics := manager.Metrics(); metrics.PromptTokensPerSecond != 0 || metrics.GenerationTokensPerSecond != 0 {
+		t.Fatalf("first poll after a failure must reseed, not compute a bogus delta: %+v", metrics)
 	}
 }

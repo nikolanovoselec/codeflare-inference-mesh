@@ -533,6 +533,9 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 	if manager != nil {
 		if manager.Runtime() == "llamacpp" {
 			if direct, ok := manager.(*agent.LlamaCppManager); ok {
+				// Live throughput rides the same tick: counter deltas since the
+				// previous heartbeat become this heartbeat's tok/s. REQ-OBS-009.
+				direct.PollThroughput(ctx)
 				metrics = agent.MergeRuntimeMetrics(metrics, direct.Metrics())
 			}
 		} else {

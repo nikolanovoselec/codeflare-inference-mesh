@@ -1167,8 +1167,8 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(rendered.throughput).toEqual(result.throughput)
     // The refreshed status lands the measurement on the model's mesh card.
     const card = descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === 'default')!
-    expect(card.getAttribute('data-speed-prompt')).toBe('1800.5')
-    expect(card.getAttribute('data-speed-gen')).toBe('67.2')
+    expect(card.getAttribute('data-speed-prompt')).toBe('1801')
+    expect(card.getAttribute('data-speed-gen')).toBe('67')
   })
 
   it('REQ-ADM-029 forwards tools and a max-token cap and surfaces tool calls on the dynamic route', async () => {
@@ -1444,8 +1444,11 @@ describe('dashboard throughput trace and playground contracts', () => {
     // stored speed test.
     expect(row('default').getAttribute('data-machines')).toBe('1')
     expect(row('default').getAttribute('data-serving')).toBe('1')
-    expect(row('default').getAttribute('data-speed-prompt')).toBe('726.7')
-    expect(row('default').getAttribute('data-speed-gen')).toBe('60.4')
+    // Speed figures render as whole numbers with a spaced slash (726.7 / 60.4 stored).
+    expect(row('default').getAttribute('data-speed-prompt')).toBe('727')
+    expect(row('default').getAttribute('data-speed-gen')).toBe('60')
+    const speedCell = descendants(row('default')).find((el) => el.className === 'mesh-stat mesh-stat-speed')!
+    expect(descendants(speedCell).find((el) => el.className === 'metric-value')!.textContent).toBe('727 / 60')
     expect(row('default').getAttribute('data-state')).toBe('Serving')
     expect(row('default').getAttribute('data-state-tone')).toBe('ok')
     // The card merges the mesh identity (purple card title + route) with the model's own pills.

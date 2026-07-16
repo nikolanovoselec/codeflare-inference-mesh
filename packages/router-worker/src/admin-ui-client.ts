@@ -2079,8 +2079,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       card.setAttribute('data-state', word);
       card.setAttribute('data-state-tone', tone);
       if (speedPrompt != null && speedGen != null) {
-        card.setAttribute('data-speed-prompt', round1(speedPrompt));
-        card.setAttribute('data-speed-gen', round1(speedGen));
+        card.setAttribute('data-speed-prompt', String(Math.round(speedPrompt)));
+        card.setAttribute('data-speed-gen', String(Math.round(speedGen)));
       }
       const head = document.createElement('header');
       head.className = 'mesh-card-head';
@@ -2118,7 +2118,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       stats.append(
         stat(String(meshNodes.length), meshNodes.length === 1 ? 'machine' : 'machines'),
         stat(model ? String(serving.length) : '—', 'serving'),
-        stat(speedPrompt != null && speedGen != null ? round1(speedPrompt) + '/' + round1(speedGen) : '—', 'p/g tok/s', 'mesh-stat-speed')
+        stat(speedPrompt != null && speedGen != null ? Math.round(speedPrompt) + ' / ' + Math.round(speedGen) : '—', 'p/g tok/s', 'mesh-stat-speed')
       );
       card.appendChild(stats);
       const track = document.createElement('div');
