@@ -203,9 +203,10 @@ main{width:min(1120px,100%);max-width:100%;overflow:hidden;margin:0 auto;padding
 .mesh-card-head{display:flex;align-items:center;justify-content:space-between;gap:.6rem;min-width:0}
 .mesh-card-name{color:rgb(var(--pill-purple-rgb));font-size:var(--fs-lg);letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mesh-card>.endpoint-chip{justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis}
-.mesh-card-model{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;min-width:0}
+.mesh-card-model{display:grid;gap:.35rem;min-width:0}
 .mesh-card-model strong{color:var(--text)}
 .mesh-card-model small{color:var(--muted)}
+.mesh-card-pills{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
 .mesh-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;border-top:1px solid var(--line);padding-top:.6rem}
 .mesh-stat{display:grid;gap:.1rem;min-width:0}
 .mesh-stat .metric-value{font-size:var(--fs-xl);color:var(--text);line-height:1.1}

@@ -1440,6 +1440,8 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(title.className).toBe('mesh-card-name')
     expect(descendants(row('default')).find((el) => el.getAttribute('data-runtime') !== null)!.getAttribute('data-runtime')).toBe('meshllm')
     expect(descendants(row('default')).find((el) => el.getAttribute('data-serving-mode') !== null)!.getAttribute('data-serving-mode')).toBe('single')
+    // The pills sit on their own row under the model name.
+    expect(descendants(row('default')).find((el) => el.className === 'mesh-card-pills')).toBeDefined()
     // The serving-capacity track fills to the served fraction of the mesh's machines.
     expect(descendants(row('default')).find((el) => el.getAttribute('data-fill') !== null)!.getAttribute('data-fill')).toBe('100')
     expect(descendants(row('ops')).find((el) => el.getAttribute('data-fill') !== null)!.getAttribute('data-fill')).toBe('0')

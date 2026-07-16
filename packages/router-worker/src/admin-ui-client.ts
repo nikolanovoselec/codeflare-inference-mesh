@@ -2074,9 +2074,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       if (model) {
         const name = document.createElement('strong');
         name.textContent = modelName(model);
-        // The mesh identity is the card itself, so the model line carries provider + mode.
+        modelRow.appendChild(name);
+        // The mesh identity is the card itself, so the model block carries provider +
+        // mode as its own pill row under the name.
+        const pillRow = document.createElement('div');
+        pillRow.className = 'mesh-card-pills';
         const pills = profilePills(model, model.runtime === 'llamacpp', Boolean(model.meshllm && model.meshllm.split));
-        modelRow.append(name, pills[0], pills[1]);
+        pillRow.append(pills[0], pills[1]);
+        modelRow.appendChild(pillRow);
       } else {
         const none = document.createElement('small');
         none.textContent = 'no model deployed';
