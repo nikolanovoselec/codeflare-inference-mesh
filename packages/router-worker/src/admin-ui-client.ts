@@ -460,6 +460,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const fmtGb = (value) => value == null ? 'not reported' : (Math.round(Number(value) * 10) / 10) + ' GB';
   const fmtVramLimit = (value) => value == null || Number(value) === 0 ? 'no limit' : fmtGb(value);
   const fmtGibFromMiB = (value) => value == null || !Number.isFinite(Number(value)) || Number(value) <= 0 ? 'not reported' : (Math.round(Number(value) / 102.4) / 10) + ' GiB';
+  // Hero VRAM tile: consumed / total with a single trailing unit; consumption is omitted
+  // (never shown as 0) while no machine reports a live used figure.
+  const fmtVramPair = (usedMiB, totalMiB) => {
+    if (totalMiB == null || !Number.isFinite(Number(totalMiB)) || Number(totalMiB) <= 0) return 'not reported';
+    const gib = (value) => String(Math.round(Number(value) / 102.4) / 10);
+    return (usedMiB > 0 ? gib(usedMiB) + ' / ' : '') + gib(totalMiB) + ' GB';
+  };
   const fmtVramTelemetry = (node) => {
     const vram = nodeVramInfo(node);
     if (vram.totalMiB <= 0) return '—';
@@ -1661,12 +1668,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     setPlaygroundModelSelect(routes.map((name) => ({ value: name, label: name })));
   }
   function modelName(profile) { return (profile.displayName && String(profile.displayName)) || profile.id; }
-  // A machine serves a profile, not a model string: it must have adopted the profile
-  // (activeProfileIds) AND report its upstream ref ready (readyModels carries upstream
-  // refs exactly as the scheduler matches on, never public aliases). Twin profiles
-  // sharing one modelRef must never inherit each other's serving count.
+  // A machine serves a profile, not a model string: it must be online and activated
+  // (a deactivated or offline node keeps its last adopted/ready state in its record,
+  // exactly like the scheduler's eligibility gate excludes it), must have adopted the
+  // profile (activeProfileIds), AND report its upstream ref ready (readyModels carries
+  // upstream refs exactly as the scheduler matches on, never public aliases). Twin
+  // profiles sharing one modelRef must never inherit each other's serving count.
   function nodeServesProfile(node, profile) {
-    return Array.isArray(node.activeProfileIds) && node.activeProfileIds.indexOf(profile.id) >= 0
+    return node.status === 'online' && !node.deactivated
+      && Array.isArray(node.activeProfileIds) && node.activeProfileIds.indexOf(profile.id) >= 0
       && Boolean(node.metrics) && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.indexOf(profile.upstreamModel) >= 0;
   }
   function nodesServingProfile(profile) {
@@ -1938,13 +1948,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const domain = status.customDomain || {};
       const serving = nodes.filter(nodeServingCapacity).length;
       const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
+      // Consumption sums only live reports: an offline machine's stored record carries
+      // stale used figures; its hardware still counts toward the known total.
+      const vramUsedMiB = nodes.reduce((total, node) => {
+        const used = node.status === 'online' ? nodeVramInfo(node).usedMiB : null;
+        return total + (used == null ? 0 : used);
+      }, 0);
       // How many machine groups exist, and how many have their model actually served.
       const servingMeshes = meshList.filter((mesh) => {
         const model = profiles.find((profile) => profile.active && (profile.meshId || 'default') === mesh.id);
         return Boolean(model) && nodes.some((node) => (node.meshId || 'default') === mesh.id && nodeServesProfile(node, model));
       }).length;
-      tiles.appendChild(tile('Available machines', serving + '/' + nodes.length, 'nodes'));
-      tiles.appendChild(tile('Known VRAM', fmtGibFromMiB(vramMiB), 'vram'));
+      tiles.appendChild(tile('Available nodes', serving + '/' + nodes.length, 'nodes'));
+      tiles.appendChild(tile('VRAM', fmtVramPair(vramUsedMiB, vramMiB), 'vram'));
       // Speed tests live on the per-mesh cards; the hero carries the live fleet number.
       tiles.appendChild(tile('Live throughput', Math.round(liveToks) + ' tok/s', 'throughput'));
       tiles.appendChild(tile('Meshes', meshList.length + ' · ' + servingMeshes + ' serving', 'meshes'));

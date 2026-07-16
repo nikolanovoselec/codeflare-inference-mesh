@@ -187,7 +187,8 @@ describe('dashboard overview contracts', () => {
     // Six tiles, in order — the last speed test moved into the per-mesh cards.
     expect(tiles.filter((candidate) => candidate.dataset.stat).map((candidate) => candidate.dataset.stat)).toEqual(['nodes', 'vram', 'throughput', 'meshes', 'domain', 'version'])
     expect(stat('nodes')).toBe('2/3')
-    expect(stat('vram')).toBe('32 GiB')
+    // Consumed / total: online machines report 20000 + 4000 MiB used of 32768 known.
+    expect(stat('vram')).toBe('23.4 / 32 GB')
     // Live fleet throughput sums per-machine tok/s from heartbeat metrics (42.5 + 61.25).
     expect(stat('throughput')).toBe('104 tok/s')
     // One mesh known, its active model served by adopted machines.
@@ -331,8 +332,8 @@ describe('dashboard overview contracts', () => {
     expect(stats).not.toContain('models')
     expect(stats).not.toContain('gateway')
     const labels = descendants(harness.byId('overview-tiles')).filter((node) => node.tagName === 'strong').map((node) => node.textContent)
-    expect(labels).toContain('Available machines')
-    expect(labels).toContain('Known VRAM')
+    expect(labels).toContain('Available nodes')
+    expect(labels).toContain('VRAM')
     expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).textContent).toContain('available')
   })
 
@@ -1421,15 +1422,20 @@ describe('dashboard throughput trace and playground contracts', () => {
     const meshes = [
       { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 },
       { id: 'ops', name: 'Ops', alias: 'codeflare-mesh-ops', machineCount: 1, modelCount: 1 },
-      { id: 'empty', name: 'Empty', alias: 'codeflare-mesh-empty', machineCount: 0, modelCount: 0 }
+      { id: 'empty', name: 'Empty', alias: 'codeflare-mesh-empty', machineCount: 0, modelCount: 0 },
+      { id: 'research', name: 'Research', alias: 'codeflare-mesh-research', machineCount: 1, modelCount: 1 }
     ]
     const profiles = [
       { id: 'model-default', displayName: 'Default Model', upstreamModel: 'unsloth/Default-GGUF:Q4', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
-      { id: 'model-ops', displayName: 'Ops Model', upstreamModel: 'unsloth/Ops-GGUF:Q4', publicAliases: ['codeflare-mesh-ops', 'ops'], meshId: 'ops', active: true, rolloutPercent: 100, meshllm: { split: false } }
+      { id: 'model-ops', displayName: 'Ops Model', upstreamModel: 'unsloth/Ops-GGUF:Q4', publicAliases: ['codeflare-mesh-ops', 'ops'], meshId: 'ops', active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-research', displayName: 'Research Model', upstreamModel: 'unsloth/Research-GGUF:Q4', publicAliases: ['codeflare-mesh-research', 'research'], meshId: 'research', active: true, rolloutPercent: 100, meshllm: { split: false } }
     ]
     const nodes = [
       { id: 'node-serving', status: 'online', activeProfileIds: ['model-default'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['unsloth/Default-GGUF:Q4'], tokensPerSecond: 42 } },
-      { id: 'node-ops', status: 'online', meshId: 'ops', activeProfileIds: [], metrics: { runtimeState: 'starting', activeRequests: 0 } }
+      { id: 'node-ops', status: 'online', meshId: 'ops', activeProfileIds: [], metrics: { runtimeState: 'starting', activeRequests: 0 } },
+      // Deactivated with stale adopted/ready state: the record still says it runs the
+      // Research model, but a deactivated machine must never count as serving.
+      { id: 'node-research', status: 'online', deactivated: true, meshId: 'research', activeProfileIds: ['model-research'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['unsloth/Research-GGUF:Q4'] } }
     ]
     const lastSpeedTests = { 'unsloth/Default-GGUF:Q4': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'main', promptTokensPerSecond: 726.7, generationTokensPerSecond: 60.4 } }
     const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes, lastSpeedTests }) })
@@ -1459,6 +1465,11 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(row('ops').getAttribute('data-serving')).toBe('0')
     expect(row('ops').getAttribute('data-speed-gen')).toBeNull()
     expect(row('ops').getAttribute('data-state-tone')).toBe('warn')
+    // Research: its only machine is deactivated but its record still carries adopted +
+    // ready state — a deactivated (or offline) machine never counts as serving.
+    expect(row('research').getAttribute('data-serving')).toBe('0')
+    expect(row('research').getAttribute('data-state')).not.toBe('Serving')
+    expect(row('research').getAttribute('data-state-tone')).toBe('warn')
     // An empty mesh with no model stays neutral — a group without a model is a choice, not an
     // alarm — and carries no model pills.
     expect(row('empty').getAttribute('data-state-tone')).toBe('idle')
