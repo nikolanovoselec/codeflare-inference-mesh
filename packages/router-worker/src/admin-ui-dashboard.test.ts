@@ -352,7 +352,10 @@ describe('dashboard overview contracts', () => {
     const bigVram = cells.find((cell) => cell.dataset.cell === 'vram')!
     expect(bigVram.dataset.value).toBe('24576')
     expect(bigVram.textContent).toBe('19.5 GiB / 24 GiB')
-    expect(cells.find((cell) => cell.dataset.cell === 'models')!.dataset.value).toBe('2')
+    // The Model column names what the machine runs (its adopted profile), never a count.
+    expect(cells.find((cell) => cell.dataset.cell === 'model')!.dataset.value).toBe('Qwen3.6 35B')
+    const downCells = descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'node-down')!)
+    expect(downCells.find((cell) => cell.dataset.cell === 'model')!.textContent).toBe('—')
   })
 
   it('REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline', async () => {
@@ -1491,7 +1494,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((child) => child.dataset.nodeRow)
     expect(row, 'a node row should render').toBeDefined()
     // Every cell carries a data-label so the mobile card layout prints "Label: value" without side-scroll.
-    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'Mesh', 'VRAM', 'Models', 'Version'])
+    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'Mesh', 'VRAM', 'Model', 'Version'])
   })
 })
 

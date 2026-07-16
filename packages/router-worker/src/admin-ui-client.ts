@@ -454,7 +454,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     };
   }
   const nodeVramTotal = (node) => nodeVramInfo(node).totalMiB || 0;
-  const nodeModelCount = (node) => (node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0);
+  // The model a machine runs: its adopted profile's display name, falling back to
+  // the first ready upstream ref while adoption has not landed yet.
+  const nodeModelLabel = (node) => {
+    const profiles = lastStatus && Array.isArray(lastStatus.profiles) ? lastStatus.profiles : [];
+    const adopted = Array.isArray(node.activeProfileIds) ? node.activeProfileIds : [];
+    const profile = profiles.find((entry) => adopted.indexOf(entry.id) >= 0);
+    if (profile) return modelName(profile);
+    const ready = node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels : [];
+    return ready.length ? String(ready[0]) : '';
+  };
   const reportedText = (value) => value == null ? 'not reported' : String(value);
   const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
   const fmtGb = (value) => value == null ? 'not reported' : (Math.round(Number(value) * 10) / 10) + ' GB';
@@ -867,11 +876,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (key === 'status') { const tone = nodeTone(node); return tone === 'ok' ? 2 : tone === 'warn' ? 1 : 0; }
     if (key === 'mesh') return nodeMeshId(node);
     if (key === 'vram') return nodeVramTotal(node);
-    if (key === 'models') return nodeModelCount(node);
+    if (key === 'model') return nodeModelLabel(node).toLowerCase();
     if (key === 'version') return node.agentVersion || '';
     return node.id;
   };
-  const nodeCellLabel = { id: 'Machine', status: 'Status', mesh: 'Mesh', vram: 'VRAM', models: 'Models', version: 'Version' };
+  const nodeCellLabel = { id: 'Machine', status: 'Status', mesh: 'Mesh', vram: 'VRAM', model: 'Model', version: 'Version' };
   const nodeMeshId = (node) => node.meshId || 'default';
   // Display name for a machine group, resolved from the status mesh list.
   const meshDisplayName = (meshId) => {
@@ -957,7 +966,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       statusCell.appendChild(installChip);
       cell('mesh', nodeMeshId(node), meshDisplayName(nodeMeshId(node)));
       cell('vram', String(nodeVramTotal(node)), fmtVramTelemetry(node));
-      cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
+      cell('model', nodeModelLabel(node) || '—', nodeModelLabel(node));
       const versionCell = cell('version', undefined, undefined);
       versionCell.appendChild(versionCode(node, desiredVersion));
       bodyEl.appendChild(row);
