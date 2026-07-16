@@ -966,7 +966,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       statusCell.appendChild(installChip);
       cell('mesh', nodeMeshId(node), meshDisplayName(nodeMeshId(node)));
       cell('vram', String(nodeVramTotal(node)), fmtVramTelemetry(node));
-      cell('model', nodeModelLabel(node) || '—', nodeModelLabel(node));
+      const modelLabel = nodeModelLabel(node);
+      cell('model', modelLabel, modelLabel || '—');
       const versionCell = cell('version', undefined, undefined);
       versionCell.appendChild(versionCode(node, desiredVersion));
       bodyEl.appendChild(row);
