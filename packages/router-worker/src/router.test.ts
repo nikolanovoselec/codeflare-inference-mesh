@@ -3292,7 +3292,7 @@ describe('Access-first setup and host gating contracts', () => {
     }))
 
     expect(response.status).toBe(401)
-    expect(await store.getConfig<LastSpeedTestSummary>('last_speed_test')).toBeUndefined()
+    expect(await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')).toBeUndefined()
   })
 
   function roleConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -3480,7 +3480,7 @@ describe('Access-first setup and host gating contracts', () => {
     }))
     const measured = await response.json() as { nodeId?: string; cacheTokens?: number; tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number; chunks: number; outputChars: number; upstreamTimings: { cache_n: number; prompt_per_second: number; predicted_per_second: number } }
     const forwarded = await capture.request!.json() as { model: string; user?: string; max_tokens?: number; messages: Array<{ role: string; content: string }> }
-    const stored = await store.getConfig<LastSpeedTestSummary>('last_speed_test')
+    const stored = await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')
 
     expect(response.status).toBe(200)
     expect(forwarded.model).toBe(SMOKE_UPSTREAM)
@@ -3498,7 +3498,9 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.upstreamTimings).toMatchObject({ cache_n: 0, prompt_per_second: 2000, predicted_per_second: 100 })
     expect(measured.throughput.promptTokensPerSecond).toBe(2000)
     expect(measured.throughput.generationTokensPerSecond).toBe(100)
-    expect(stored).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 256, completionTokens: 2, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, cacheTokens: 0 })
+    // The run is stored keyed by the resolved profile's upstream model, so each mesh
+    // card can look up its own model's latest measurement.
+    expect(stored?.[SMOKE_UPSTREAM]).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 256, completionTokens: 2, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, cacheTokens: 0 })
   })
 
   it('REQ-API-009 exposes the direct router speed test to automation callers', async () => {
@@ -3522,7 +3524,7 @@ describe('Access-first setup and host gating contracts', () => {
     const response = await router(new Request('https://router.test/api/v1/speed-test', { method: 'POST', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 64, maxTokens: 16 }) }))
     const measured = await response.json() as { tokens: { prompt: number; completion: number }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number } }
     const status = await router(new Request('https://router.test/api/v1/status', { headers: bearer('auto-secret') }))
-    const statusBody = await status.json() as { lastSpeedTest?: LastSpeedTestSummary }
+    const statusBody = await status.json() as { lastSpeedTest?: LastSpeedTestSummary; lastSpeedTests?: Record<string, LastSpeedTestSummary> }
 
     expect(unauthorized.status).toBe(401)
     expect(response.status).toBe(200)
@@ -3531,6 +3533,21 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.throughput.promptTokensPerSecond).toBeGreaterThan(0)
     expect(measured.throughput.generationTokensPerSecond).toBeGreaterThan(0)
     expect(statusBody.lastSpeedTest).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 64, completionTokens: 1 })
+    expect(statusBody.lastSpeedTests?.[SMOKE_UPSTREAM]).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh' })
+  })
+
+  it('REQ-API-009 surfaces a pre-map stored speed test as the seed map entry', async () => {
+    const { router, store } = routerFixture({})
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    const legacy: LastSpeedTestSummary = { at: 5, requestId: 'request-legacy', model: 'codeflare-mesh', requestedPromptTokens: 64, requestedMaxTokens: 16, promptTokens: 64, completionTokens: 1, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, timeToFirstTokenMs: 10, generationMs: 10, totalMs: 20 }
+    await store.putConfig('last_speed_test', legacy)
+
+    const status = await router(new Request('https://router.test/api/v1/status', { headers: bearer('auto-secret') }))
+    const statusBody = await status.json() as { lastSpeedTest?: LastSpeedTestSummary; lastSpeedTests?: Record<string, LastSpeedTestSummary> }
+
+    expect(status.status).toBe(200)
+    expect(statusBody.lastSpeedTests?.['codeflare-mesh']).toMatchObject({ requestId: 'request-legacy' })
+    expect(statusBody.lastSpeedTest).toMatchObject({ requestId: 'request-legacy' })
   })
 
   it('REQ-ADM-029 direct playground forwards the session user required by llama.cpp profiles', async () => {

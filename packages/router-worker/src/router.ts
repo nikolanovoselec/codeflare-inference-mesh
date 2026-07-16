@@ -22,6 +22,7 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024
 const SETUP_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 const LAST_SPEED_TEST_CONFIG_KEY = 'last_speed_test'
+const LAST_SPEED_TESTS_CONFIG_KEY = 'last_speed_tests'
 
 export interface RouterDeps {
   readonly store: Store
@@ -496,7 +497,8 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
   const runtimeVersions = await desiredRuntimeVersions(deps.store)
-  const lastSpeedTest = await deps.store.getConfig<LastSpeedTestSummary>(LAST_SPEED_TEST_CONFIG_KEY)
+  const lastSpeedTests = await storedSpeedTests(deps.store)
+  const lastSpeedTest = newestSpeedTest(lastSpeedTests)
   const statusNodes = nodes.map((node) => ({ ...node, displayStatus: nodeDisplayStatus(node), runtimeInstall: runtimeBinaryStatus(node, runtimeVersions) }))
   // The read-only user role sees the live operational picture (nodes, profiles,
   // mesh health, throughput) but never configuration state or the admin action log:
@@ -512,7 +514,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
         audit: await deps.store.listAudit(20)
       }
     : {}
-  const redacted = redactSecrets({ nodes: statusNodes, profiles, profileReadiness: profileReadiness(profiles, nodes), ...(lastSpeedTest ? { lastSpeedTest } : {}), ...adminOnly, generatedAt: now }) as Record<string, unknown>
+  const redacted = redactSecrets({ nodes: statusNodes, profiles, profileReadiness: profileReadiness(profiles, nodes), ...(lastSpeedTest ? { lastSpeedTest, lastSpeedTests } : {}), ...adminOnly, generatedAt: now }) as Record<string, unknown>
   // meshHealth is composed after redaction: its contract carries token presence/age/count
   // fields (never values), which the key-name redactor would otherwise blank out.
   // Machine groups are visible to both console roles (the nodes table and drawers
@@ -1610,8 +1612,25 @@ async function runSpeedTest(deps: RouterDeps, body: SpeedTestBody | undefined, r
   const nodeId = upstream.headers.get('x-inference-mesh-node') ?? upstream.headers.get('x-inference-mesh-session-node') ?? undefined
   const cacheTokens = timingNumber(measured.upstreamTimings ?? undefined, 'cache_n')
   const result = { model, ...(nodeId ? { nodeId } : {}), promptChars: prompt.length, requestedPromptTokens: promptTokens, requestedMaxTokens: maxTokens, ...(cacheTokens !== undefined ? { cacheTokens } : {}), ...measured }
-  await deps.store.putConfig(LAST_SPEED_TEST_CONFIG_KEY, speedTestSummary(result, now, requestId))
+  // Runs are stored per resolved model so each mesh card can show its own model's
+  // latest measurement (a gateway-route run credits the profile it resolved to).
+  const speedProfile = await deps.store.getProfileByPublicModel(routablePublicModel(model))
+  const priorSpeedTests = await deps.store.getConfig<Record<string, LastSpeedTestSummary>>(LAST_SPEED_TESTS_CONFIG_KEY) ?? {}
+  await deps.store.putConfig(LAST_SPEED_TESTS_CONFIG_KEY, { ...priorSpeedTests, [speedProfile?.upstreamModel ?? model]: speedTestSummary(result, now, requestId) })
   return json(result, 200, requestId)
+}
+
+// The newest entry doubles as the single lastSpeedTest status field; a record stored
+// before the per-model map existed surfaces as the seed entry.
+async function storedSpeedTests(store: Store): Promise<Record<string, LastSpeedTestSummary>> {
+  const map = await store.getConfig<Record<string, LastSpeedTestSummary>>(LAST_SPEED_TESTS_CONFIG_KEY)
+  if (map && Object.keys(map).length > 0) return map
+  const legacy = await store.getConfig<LastSpeedTestSummary>(LAST_SPEED_TEST_CONFIG_KEY)
+  return legacy ? { [legacy.model]: legacy } : {}
+}
+
+function newestSpeedTest(map: Record<string, LastSpeedTestSummary>): LastSpeedTestSummary | undefined {
+  return Object.values(map).reduce<LastSpeedTestSummary | undefined>((latest, entry) => !latest || entry.at > latest.at ? entry : latest, undefined)
 }
 
 function speedTestSummary(result: SpeedTestMeasurement & { readonly model: string; readonly nodeId?: string; readonly requestedPromptTokens: number; readonly requestedMaxTokens: number; readonly cacheTokens?: number }, now: number, requestId: string): LastSpeedTestSummary {
@@ -2137,14 +2156,15 @@ async function handleApiStatus(request: Request, deps: RouterDeps, requestId: st
   const profiles = await deps.store.listProfiles()
   const desiredVersion = await desiredAgentVersion(deps.store)
   const runtimeVersions = await desiredRuntimeVersions(deps.store)
-  const lastSpeedTest = await deps.store.getConfig<LastSpeedTestSummary>(LAST_SPEED_TEST_CONFIG_KEY)
+  const lastSpeedTests = await storedSpeedTests(deps.store)
+  const lastSpeedTest = newestSpeedTest(lastSpeedTests)
   const runtimeInstalls = nodes.map((node) => ({ nodeId: node.id, ...runtimeBinaryStatus(node, runtimeVersions) }))
   return json({
     generatedAt: now,
     nodes: { total: nodes.length, online: nodes.filter((node) => node.status === 'online').length },
     models: { total: profiles.length, active: profiles.filter((profile) => profile.active).length },
     runtimeVersions,
-    ...(lastSpeedTest ? { lastSpeedTest } : {}),
+    ...(lastSpeedTest ? { lastSpeedTest, lastSpeedTests } : {}),
     runtimeInstalls,
     ...(detailed ? {
       details: {

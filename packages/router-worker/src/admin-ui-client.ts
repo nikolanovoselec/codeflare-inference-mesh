@@ -436,11 +436,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const nodeToks = (node) => (node.metrics && typeof node.metrics.tokensPerSecond === 'number') ? node.metrics.tokensPerSecond : null;
   const speedNumber = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
   const round1 = (value) => String(Math.round(value * 10) / 10);
-  const lastSpeedTest = (status) => status && status.lastSpeedTest && typeof status.lastSpeedTest === 'object' ? status.lastSpeedTest : null;
-  const lastSpeedLabel = (summary) => {
-    const prompt = speedNumber(summary && summary.promptTokensPerSecond);
-    const generation = speedNumber(summary && summary.generationTokensPerSecond);
-    return prompt == null || generation == null ? 'not run' : 'prompt ' + round1(prompt) + ' / gen ' + round1(generation) + ' tok/s';
+  const profileModelRef = (profile) => (profile.llamacpp && profile.llamacpp.modelRef) || (profile.meshllm && profile.meshllm.modelRef) || profile.upstreamModel || '';
+  // Speed tests are stored per resolved model; each mesh card reads its own model's entry.
+  const speedTestFor = (status, model) => {
+    const map = status && status.lastSpeedTests && typeof status.lastSpeedTests === 'object' ? status.lastSpeedTests : null;
+    const entry = map && model ? map[model.upstreamModel] : null;
+    return entry && typeof entry === 'object' ? entry : null;
   };
   function nodeVramInfo(node) {
     const metrics = (node && node.metrics) || {};
@@ -1929,32 +1930,32 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const readiness = Array.isArray(status.profileReadiness) ? status.profileReadiness : [];
     const audit = Array.isArray(status.audit) ? status.audit : [];
     const meshEntries = Array.isArray(status.meshHealth) ? status.meshHealth : [];
+    const meshList = Array.isArray(status.meshes) ? status.meshes : [];
+    const liveToks = nodes.reduce((total, node) => total + (nodeToks(node) || 0), 0);
     const tiles = byId('overview-tiles');
     if (tiles) {
       tiles.textContent = '';
       const domain = status.customDomain || {};
       const serving = nodes.filter(nodeServingCapacity).length;
       const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
-      const speed = lastSpeedTest(status);
+      // How many machine groups exist, and how many have their model actually served.
+      const servingMeshes = meshList.filter((mesh) => {
+        const model = profiles.find((profile) => profile.active && (profile.meshId || 'default') === mesh.id);
+        return Boolean(model) && nodes.some((node) => (node.meshId || 'default') === mesh.id && nodeServesProfile(node, model));
+      }).length;
       tiles.appendChild(tile('Available machines', serving + '/' + nodes.length, 'nodes'));
       tiles.appendChild(tile('Known VRAM', fmtGibFromMiB(vramMiB), 'vram'));
-      const speedTile = tile('Last speed test', speed ? lastSpeedLabel(speed) : 'not run', 'speed');
-      if (speed) {
-        if (speed.promptTokensPerSecond != null) speedTile.dataset.promptTps = String(speed.promptTokensPerSecond);
-        if (speed.generationTokensPerSecond != null) speedTile.dataset.generationTps = String(speed.generationTokensPerSecond);
-        if (speed.cacheTokens != null) speedTile.dataset.cacheTokens = String(speed.cacheTokens);
-        if (speed.nodeId) speedTile.dataset.nodeId = speed.nodeId;
-        if (speed.at != null) speedTile.dataset.at = String(speed.at);
-      }
-      tiles.appendChild(speedTile);
+      // Speed tests live on the per-mesh cards; the hero carries the live fleet number.
+      tiles.appendChild(tile('Live throughput', Math.round(liveToks) + ' tok/s', 'throughput'));
+      tiles.appendChild(tile('Meshes', meshList.length + ' · ' + servingMeshes + ' serving', 'meshes'));
       tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured', 'domain'));
       tiles.appendChild(tile('Agent version', status.desiredAgentVersion || 'not set', 'version'));
     }
     const pruneInput = byId('prune-seconds');
     if (pruneInput && status.offlinePruneSeconds != null && pruneInput.value === '') pruneInput.value = String(status.offlinePruneSeconds);
-    syncTopoMeshSelect(Array.isArray(status.meshes) ? status.meshes : []);
+    syncTopoMeshSelect(meshList);
     renderTopology(topologyNodes(nodes));
-    pushToksSample(nodes.reduce((total, node) => total + (nodeToks(node) || 0), 0));
+    pushToksSample(liveToks);
     renderToksTrace();
     renderMeshStatus(status);
     const gatewayCurrent = byId('gateway-current');
@@ -2022,19 +2023,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     return head;
   }
   // Overview "Mesh status": a grid of tone-edged cards, one per machine group. Each
-  // card is a mini dashboard — mesh name (purple, the mesh vocabulary color) with the
-  // live status word, the callable route in mono, the deployed model with its
-  // provider/mode pills, a machines/serving/tok-s metric strip, and a serving-capacity
-  // track in the status tone. What is running, structured, at a glance.
+  // card is a mini dashboard — mesh name (purple, the mesh vocabulary color) paired
+  // with its callable route (the tone edge alone carries state), the deployed model
+  // over its mono file reference and provider/mode pills, a machines/serving/speed-test
+  // metric strip, and a serving-capacity track. What is running, structured, at a glance.
   function renderMeshStatus(status) {
     const rollup = byId('overview-mesh');
     if (!rollup) return;
     rollup.textContent = '';
     const nodes = Array.isArray(status.nodes) ? status.nodes : [];
     const profiles = Array.isArray(status.profiles) ? status.profiles : [];
-    const stat = (value, label) => {
+    const stat = (value, label, cls) => {
       const cell = document.createElement('div');
-      cell.className = 'mesh-stat';
+      cell.className = cls ? 'mesh-stat ' + cls : 'mesh-stat';
       const number = document.createElement('span');
       number.className = 'metric-value';
       number.textContent = value;
@@ -2048,7 +2049,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const meshNodes = nodes.filter((node) => (node.meshId || 'default') === mesh.id);
       const model = profiles.find((profile) => profile.active && (profile.meshId || 'default') === mesh.id);
       const serving = model ? meshNodes.filter((node) => nodeServesProfile(node, model)) : [];
-      const toks = serving.reduce((total, node) => total + (nodeToks(node) || 0), 0);
+      const speed = speedTestFor(status, model);
+      const speedPrompt = speed ? speedNumber(speed.promptTokensPerSecond) : null;
+      const speedGen = speed ? speedNumber(speed.generationTokensPerSecond) : null;
       // A mesh with no model stays neutral grey — an empty group is a choice, not an alarm.
       const word = model ? (serving.length > 0 ? 'Serving' : (meshNodes.length > 0 ? 'Preparing' : 'No machines')) : 'No model';
       const tone = model ? (serving.length > 0 ? 'ok' : 'warn') : 'idle';
@@ -2059,24 +2062,30 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       card.setAttribute('data-serving', String(serving.length));
       card.setAttribute('data-state', word);
       card.setAttribute('data-state-tone', tone);
-      if (toks > 0) card.setAttribute('data-toks', String(Math.round(toks)));
+      if (speedPrompt != null && speedGen != null) {
+        card.setAttribute('data-speed-prompt', round1(speedPrompt));
+        card.setAttribute('data-speed-gen', round1(speedGen));
+      }
       const head = document.createElement('header');
       head.className = 'mesh-card-head';
       const title = document.createElement('strong');
       title.className = 'mesh-card-name';
       title.setAttribute('data-profile-mesh', mesh.id);
       title.textContent = mesh.name || mesh.id;
-      head.append(title, statusDot(tone, word));
+      head.append(title, routeChipEl(mesh.alias));
       card.appendChild(head);
-      card.appendChild(routeChipEl(mesh.alias));
       const modelRow = document.createElement('div');
       modelRow.className = 'mesh-card-model';
       if (model) {
         const name = document.createElement('strong');
         name.textContent = modelName(model);
         modelRow.appendChild(name);
-        // The mesh identity is the card itself, so the model block carries provider +
-        // mode as its own pill row under the name.
+        // The mesh identity is the card itself, so the model block reads name, then the
+        // mono model file reference, then provider + mode as its own pill row.
+        const file = document.createElement('code');
+        file.className = 'mesh-card-file';
+        file.textContent = profileModelRef(model);
+        modelRow.appendChild(file);
         const pillRow = document.createElement('div');
         pillRow.className = 'mesh-card-pills';
         const pills = profilePills(model, model.runtime === 'llamacpp', Boolean(model.meshllm && model.meshllm.split));
@@ -2093,7 +2102,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       stats.append(
         stat(String(meshNodes.length), meshNodes.length === 1 ? 'machine' : 'machines'),
         stat(model ? String(serving.length) : '—', 'serving'),
-        stat(toks > 0 ? String(Math.round(toks)) : '—', 'tok/s')
+        stat(speedPrompt != null && speedGen != null ? round1(speedPrompt) + '/' + round1(speedGen) : '—', 'p/g tok/s', 'mesh-stat-speed')
       );
       card.appendChild(stats);
       const track = document.createElement('div');

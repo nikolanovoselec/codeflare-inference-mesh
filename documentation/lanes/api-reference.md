@@ -500,16 +500,16 @@ GET /api/v1/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string }, "runtimeInstalls": RuntimeInstallStatus[], "lastSpeedTest"?: LastSpeedTestSummary, "agentVersion"?: string, "details"?: { "nodes": ApiNode[], "profiles": ApiModel[], "profileReadiness": ProfileReadiness[], "meshHealth": MeshHealthEntry[] } }`. |
+| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string }, "runtimeInstalls": RuntimeInstallStatus[], "lastSpeedTest"?: LastSpeedTestSummary, "lastSpeedTests"?: Record<string, LastSpeedTestSummary>, "agentVersion"?: string, "details"?: { "nodes": ApiNode[], "profiles": ApiModel[], "profileReadiness": ProfileReadiness[], "meshHealth": MeshHealthEntry[] } }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Notes:** `lastSpeedTest`, when present, carries `{ at, requestId, model, nodeId?, requestedPromptTokens, requestedMaxTokens, promptTokens, completionTokens, promptTokensEstimated, completionTokensEstimated, promptTokensPerSecond, generationTokensPerSecond, timeToFirstTokenMs, generationMs, totalMs, cacheTokens? }`. Add `?detail=full` or `?include=details` to include the same redacted operational details the console needs for automation: per-node runtime installs/metrics, profile readiness, profile metadata, mesh health, and stage/layer ownership. The detailed shape still excludes secrets.
+**Notes:** `lastSpeedTest`, when present, carries `{ at, requestId, model, nodeId?, requestedPromptTokens, requestedMaxTokens, promptTokens, completionTokens, promptTokensEstimated, completionTokensEstimated, promptTokensPerSecond, generationTokensPerSecond, timeToFirstTokenMs, generationMs, totalMs, cacheTokens? }`; `lastSpeedTests` maps each resolved upstream model to its own latest summary of the same shape, and `lastSpeedTest` is the newest entry (a record stored before the per-model map existed surfaces as the seed entry). Add `?detail=full` or `?include=details` to include the same redacted operational details the console needs for automation: per-node runtime installs/metrics, profile readiness, profile metadata, mesh health, and stage/layer ownership. The detailed shape still excludes secrets.
 
 **Implements:** [REQ-API-002](../../sdd/spec/control-plane-api.md#req-api-002-control-plane-access-and-status)
 
 ### POST /api/v1/speed-test
 
-Runs a bounded synthetic prompt through the router's direct scheduling path, returns prompt-ingestion and generation throughput for automation, and stores the result as the latest Speed Test summary returned by status endpoints. This bypasses AI Gateway and measures the Worker → node-agent → runtime leg. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
+Runs a bounded synthetic prompt through the router's direct scheduling path, returns prompt-ingestion and generation throughput for automation, and stores the result keyed by the resolved profile's upstream model in the per-model Speed Test map returned by status endpoints. This bypasses AI Gateway and measures the Worker → node-agent → runtime leg. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
 
 ```http
 POST /api/v1/speed-test

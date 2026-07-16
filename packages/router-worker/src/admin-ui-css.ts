@@ -206,10 +206,12 @@ main{width:min(1120px,100%);max-width:100%;overflow:hidden;margin:0 auto;padding
 .mesh-card-model{display:grid;gap:.35rem;min-width:0}
 .mesh-card-model strong{color:var(--text)}
 .mesh-card-model small{color:var(--muted)}
+.mesh-card-file{color:var(--muted);font-size:var(--fs-xs);overflow-wrap:anywhere}
 .mesh-card-pills{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
 .mesh-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;border-top:1px solid var(--line);padding-top:.6rem}
 .mesh-stat{display:grid;gap:.1rem;min-width:0}
 .mesh-stat .metric-value{font-size:var(--fs-xl);color:var(--text);line-height:1.1}
+.mesh-stat-speed .metric-value{font-size:var(--fs-md)}
 .mesh-stat-label{color:var(--muted);font-size:var(--fs-xs);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
 .mesh-track{height:4px;border-radius:999px;background:var(--surface-3);overflow:hidden}
 .mesh-track-fill{height:100%;border-radius:999px;background:var(--line-strong);transition:width var(--speed-base) ease-out}

@@ -42,7 +42,8 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
     profileReadiness: [],
     audit: [],
     generatedAt: 1_700_000_200_000,
-    lastSpeedTest: { at: 1_700_000_100_000, requestId: 'speed-a', model: 'codeflare-mesh', nodeId: 'node-big', requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100, cacheTokens: 0 },
+    lastSpeedTests: { 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'codeflare-mesh', nodeId: 'node-big', requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100, cacheTokens: 0 } },
+    meshes: [{ id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 3, modelCount: 2 }],
     gateway: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' },
     customDomain: { hostname: 'router.test', status: 'provisioned' },
     desiredAgentVersion: 'v1.3.0',
@@ -183,21 +184,22 @@ describe('dashboard overview contracts', () => {
       expect(tile, `no stat tile ${key}`).toBeDefined()
       return descendants(tile!).find((node) => node.dataset.value !== undefined)!.dataset.value
     }
+    // Six tiles, in order — the last speed test moved into the per-mesh cards.
+    expect(tiles.filter((candidate) => candidate.dataset.stat).map((candidate) => candidate.dataset.stat)).toEqual(['nodes', 'vram', 'throughput', 'meshes', 'domain', 'version'])
     expect(stat('nodes')).toBe('2/3')
     expect(stat('vram')).toBe('32 GiB')
-    expect(stat('speed')).toBeTruthy()
-    const speedTile = tiles.find((candidate) => candidate.dataset.stat === 'speed')!
-    expect(speedTile.dataset.promptTps).toBe('1800.5')
-    expect(speedTile.dataset.generationTps).toBe('67.2')
-    expect(speedTile.dataset.nodeId).toBe('node-big')
+    // Live fleet throughput sums per-machine tok/s from heartbeat metrics (42.5 + 61.25).
+    expect(stat('throughput')).toBe('104 tok/s')
+    // One mesh known, its active model served by adopted machines.
+    expect(stat('meshes')).toBe('1 · 1 serving')
   })
 
-  it('REQ-OBS-010 does not fabricate a last Speed Test before one is reported', async () => {
-    const harness = await dashboardHarness({ status: statusFixture({ lastSpeedTest: undefined }) })
-    const speedTile = descendants(harness.byId('overview-tiles')).find((node) => node.dataset.stat === 'speed')!
+  it('REQ-ADM-015 does not fabricate a mesh-card speed test before one is reported', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ lastSpeedTests: undefined }) })
+    const card = descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === 'default')!
 
-    expect(speedTile.dataset.promptTps).toBeUndefined()
-    expect(speedTile.dataset.generationTps).toBeUndefined()
+    expect(card.getAttribute('data-speed-prompt')).toBeNull()
+    expect(card.getAttribute('data-speed-gen')).toBeNull()
   })
 
   it('REQ-ADM-007 toggles mobile navigation from the top-bar menu and closes it after section changes', async () => {
@@ -1140,14 +1142,15 @@ describe('dashboard throughput trace and playground contracts', () => {
       tokens: { prompt: 2048, completion: 80, promptEstimated: false, completionEstimated: false },
       throughput: { promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2 }
     }
-    let lastSpeedTest: Record<string, unknown> | undefined
+    let lastSpeedTests: Record<string, unknown> | undefined
     const harness = await dashboardHarness({
       respond: (path) => {
         if (path === ADMIN_UI_PLAYGROUND.speedPath) {
-          lastSpeedTest = { at: 1_700_000_300_000, requestId: 'speed-b', model: result.model, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100 }
+          // The router stores the run keyed by the resolved profile's upstream model.
+          lastSpeedTests = { 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S': { at: 1_700_000_300_000, requestId: 'speed-b', model: result.model, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100 } }
           return Response.json(result)
         }
-        if (path === '/admin/status') return Response.json(statusFixture(lastSpeedTest ? { lastSpeedTest } : { lastSpeedTest: undefined }))
+        if (path === '/admin/status') return Response.json(statusFixture(lastSpeedTests ? { lastSpeedTests } : { lastSpeedTests: undefined }))
         return undefined
       }
     })
@@ -1161,9 +1164,10 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(payload.model).toBe('qwen3.6:35b-a3b')
     expect(rendered.tokens).toEqual(result.tokens)
     expect(rendered.throughput).toEqual(result.throughput)
-    const speedTile = descendants(harness.byId('overview-tiles')).find((node) => node.dataset.stat === 'speed')!
-    expect(speedTile.dataset.promptTps).toBe('1800.5')
-    expect(speedTile.dataset.generationTps).toBe('67.2')
+    // The refreshed status lands the measurement on the model's mesh card.
+    const card = descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === 'default')!
+    expect(card.getAttribute('data-speed-prompt')).toBe('1800.5')
+    expect(card.getAttribute('data-speed-gen')).toBe('67.2')
   })
 
   it('REQ-ADM-029 forwards tools and a max-token cap and surfaces tool calls on the dynamic route', async () => {
@@ -1413,7 +1417,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(rowOf('twin-meshllm').dataset.serving).toBe('0')
   })
 
-  it('REQ-ADM-015 overview mesh status rows summarize each mesh: model, machines, serving, throughput', async () => {
+  it('REQ-ADM-015 overview mesh status cards summarize each mesh: model, machines, serving, last speed test', async () => {
     const meshes = [
       { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 },
       { id: 'ops', name: 'Ops', alias: 'codeflare-mesh-ops', machineCount: 1, modelCount: 1 },
@@ -1427,12 +1431,15 @@ describe('dashboard throughput trace and playground contracts', () => {
       { id: 'node-serving', status: 'online', activeProfileIds: ['model-default'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['unsloth/Default-GGUF:Q4'], tokensPerSecond: 42 } },
       { id: 'node-ops', status: 'online', meshId: 'ops', activeProfileIds: [], metrics: { runtimeState: 'starting', activeRequests: 0 } }
     ]
-    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes }) })
+    const lastSpeedTests = { 'unsloth/Default-GGUF:Q4': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'main', promptTokensPerSecond: 726.7, generationTokensPerSecond: 60.4 } }
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes, lastSpeedTests }) })
     const row = (id: string) => descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === id)!
-    // Default: its model is adopted and ready on one machine — Serving, with live throughput.
+    // Default: its model is adopted and ready on one machine, and its model has a
+    // stored speed test.
     expect(row('default').getAttribute('data-machines')).toBe('1')
     expect(row('default').getAttribute('data-serving')).toBe('1')
-    expect(row('default').getAttribute('data-toks')).toBe('42')
+    expect(row('default').getAttribute('data-speed-prompt')).toBe('726.7')
+    expect(row('default').getAttribute('data-speed-gen')).toBe('60.4')
     expect(row('default').getAttribute('data-state')).toBe('Serving')
     expect(row('default').getAttribute('data-state-tone')).toBe('ok')
     // The card merges the mesh identity (purple card title + route) with the model's own pills.
@@ -1440,21 +1447,27 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(title.className).toBe('mesh-card-name')
     expect(descendants(row('default')).find((el) => el.getAttribute('data-runtime') !== null)!.getAttribute('data-runtime')).toBe('meshllm')
     expect(descendants(row('default')).find((el) => el.getAttribute('data-serving-mode') !== null)!.getAttribute('data-serving-mode')).toBe('single')
-    // The pills sit on their own row under the model name.
-    expect(descendants(row('default')).find((el) => el.className === 'mesh-card-pills')).toBeDefined()
+    // The model block reads name, then the mono model file reference, then the pill row.
+    const modelBlock = descendants(row('default')).find((el) => el.className === 'mesh-card-model')!
+    expect(modelBlock.children.map((child) => child.className)).toEqual(['', 'mesh-card-file', 'mesh-card-pills'])
+    expect(descendants(row('default')).find((el) => el.className === 'mesh-card-file')!.textContent).toBe('unsloth/Default-GGUF:Q4')
     // The serving-capacity track fills to the served fraction of the mesh's machines.
     expect(descendants(row('default')).find((el) => el.getAttribute('data-fill') !== null)!.getAttribute('data-fill')).toBe('100')
     expect(descendants(row('ops')).find((el) => el.getAttribute('data-fill') !== null)!.getAttribute('data-fill')).toBe('0')
-    // Ops: model on but its machine has not adopted it yet — amber, zero serving, no throughput.
+    // Ops: model on but its machine has not adopted it yet — amber, zero serving, and no
+    // speed test on record for its model.
     expect(row('ops').getAttribute('data-serving')).toBe('0')
-    expect(row('ops').getAttribute('data-toks')).toBeNull()
+    expect(row('ops').getAttribute('data-speed-gen')).toBeNull()
     expect(row('ops').getAttribute('data-state-tone')).toBe('warn')
     // An empty mesh with no model stays neutral — a group without a model is a choice, not an
     // alarm — and carries no model pills.
     expect(row('empty').getAttribute('data-state-tone')).toBe('idle')
     expect(descendants(row('empty')).find((el) => el.getAttribute('data-runtime') !== null)).toBeUndefined()
-    // Each card head carries the mesh's callable route.
-    expect(descendants(row('ops')).find((el) => el.getAttribute('data-mesh-alias') !== null)!.getAttribute('data-mesh-alias')).toBe('codeflare-mesh-ops')
+    // The card head pairs the mesh name with its callable route — the status word is gone;
+    // the tone edge carries state, so no dot chip renders inside the card.
+    const opsHead = descendants(row('ops')).find((el) => el.className === 'mesh-card-head')!
+    expect(descendants(opsHead).find((el) => el.getAttribute('data-mesh-alias') !== null)!.getAttribute('data-mesh-alias')).toBe('codeflare-mesh-ops')
+    expect(descendants(row('ops')).find((el) => el.className === 'dot')).toBeUndefined()
     // The activity feed is gone from the Overview: logs live in Settings only.
     expect(() => harness.byId('overview-audit')).toThrow()
   })
