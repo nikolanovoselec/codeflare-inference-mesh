@@ -2,6 +2,8 @@
 
 ## 2026-07-17
 
+- Split profiles now launch with WARP-optimized staged-transport defaults — q8 activation frames and adaptive-ramp prefill pacing — so inference load no longer inflates the WARP stage lane's latency past mesh-llm's tolerance and evicts stage peers. All node traffic stays on WARP by design. ([REQ-RUN-014](runtime-profiles.md#req-run-014-meshllm-runtime-configuration-and-versioning))
+- The Custom domain card moved from Routing to Settings. ([REQ-ADM-006](setup-admin.md#req-adm-006-admin-configuration-ui))
 - De-duplicated the model Manage drawer's mesh detail: the serving-machine list, standalone Mesh heading, and duplicated stage-ownership field are gone — the mesh card alone carries participants and stage owners, and its Technical details now name the model's machine group. ([REQ-ADM-038](setup-admin.md#req-adm-038-console-mesh-assignment-surface))
 - Added a per-model MeshLLM tool-calling tunable: Forced emulation routes tool calls through mesh-llm's text-convention protocol (`MESH_FORCE_TOOL_EMULATION=1`) for models whose template advertises a native tool grammar mesh-llm cannot parse, such as ERNIE Thinking. ([REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-010](runtime-profiles.md#req-run-010-meshllm-process-lifecycle))
 - Fixed ghost Serving: an api-client mesh-llm advertising the mesh catalog without a ready runtime or a stage assignment no longer reads as serving anywhere — node status, mesh cards, or serving counts. ([REQ-ADM-020](setup-admin.md#req-adm-020-node-status-clarity-and-filtering), [REQ-ADM-039](setup-admin.md#req-adm-039-overview-mesh-status-cards))

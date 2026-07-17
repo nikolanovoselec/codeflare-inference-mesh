@@ -283,6 +283,19 @@ func TestREQSEC004NostrRelaysAppendWhenConfiguredOnly(t *testing.T) {
 }
 
 // REQ-RUN-014: MeshLLM config rendering and unset-value omission are covered here.
+func TestREQRUN014SplitProfilesRenderWarpTransportDefaults(t *testing.T) {
+	// The stage lane rides the WARP overlay, so split profiles always carry the
+	// WARP-optimized staged-transport defaults; single-node profiles never do.
+	split := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "meshllm/E-layers", Split: true}, 0)
+	if !strings.Contains(split, "[models.skippy]") || !strings.Contains(split, "activation_wire_dtype = \"q8\"") || !strings.Contains(split, "prefill_chunking = \"adaptive-ramp\"") {
+		t.Fatalf("split profile must render WARP transport defaults, got:\n%s", split)
+	}
+	single := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "meshllm/E"}, 0)
+	if strings.Contains(single, "skippy") {
+		t.Fatalf("single-node profile must not render the skippy table, got:\n%s", single)
+	}
+}
+
 func TestREQRUN014ContextLimitConfigRendering(t *testing.T) {
 	on := true
 	off := false

@@ -164,7 +164,7 @@
 
 ## Setup step fails after a Cloudflare permission or API error
 
-**Symptom:** A setup or Routing action (Enable Access, Provision domain) shows "The router hit a temporary error", and the `router_error` audit entry reads `Cloudflare Access API failed: 403` or `Cloudflare API failed: 400`.
+**Symptom:** A setup or console action (Enable Access, Connect domain in Settings) shows "The router hit a temporary error", and the `router_error` audit entry reads `Cloudflare Access API failed: 403` or `Cloudflare API failed: 400`.
 
 **Cause:** The Worker's `CLOUDFLARE_API_TOKEN_RUNTIME` reached Cloudflare but the call was rejected. A `403` means the token lacks a permission the step needs; the private operations README in https://github.com/nikolanovoselec/codeflare-inference-mesh-private maintains the current token-scope matrix. A `400` means Cloudflare rejected the request payload. ([REQ-GWY-006](../../sdd/spec/gateway.md#req-gwy-006-cloudflare-api-error-surfacing)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md#req-adm-012-domain-and-access-provisioning))
 

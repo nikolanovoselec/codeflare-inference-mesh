@@ -446,6 +446,12 @@ describe('dashboard overview contracts', () => {
     expect(rowOrder(harness)).toEqual(['node-small'])
   })
 
+  it('REQ-ADM-006 the custom domain card lives in Settings', async () => {
+    const harness = await dashboardHarness()
+    expect(descendants(harness.byId('settings')).some((node) => node.id === 'custom-domain-current')).toBe(true)
+    expect(descendants(harness.byId('routing')).some((node) => node.id === 'custom-domain-current')).toBe(false)
+  })
+
   it('REQ-ADM-020 saves the offline-machine prune window from Settings', async () => {
     const harness = await dashboardHarness()
     const input = harness.byId('prune-seconds')

@@ -266,7 +266,7 @@ function routingSection(): string {
   return sectionPanel({
     id: 'routing',
     title: 'Routing',
-    description: 'The address people use to reach your models, and how requests find this router. Connected resources stay visible here; changes are synced through Cloudflare for you.',
+    description: 'How requests reach your models through the AI Gateway. Connected resources stay visible here; changes are synced through Cloudflare for you.',
     body: `<div class="subpanel"><h3>AI Gateway</h3>
 <div class="state-card is-empty" id="gateway-current"><span class="state-label">AI Gateway</span><span class="state-value">Not connected yet</span></div>
 <p class="field-hint">Choose the gateway that should expose <code>codeflare-mesh</code>. The route and provider stay managed by the router.</p>
@@ -277,14 +277,7 @@ ${field({ id: 'rt-gateway-provider-name', label: 'Provider name', control: textI
 </div>
 <div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
 <div class="form-actions">${button({ action: 'gateway-sync', label: 'Provision Gateway', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
-${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}</div>
-<div class="subpanel"><h3>Custom domain</h3>
-<div class="state-card is-empty" id="custom-domain-current"><span class="state-label">Custom domain</span><span class="state-value">Not set yet</span></div>
-<div class="form-grid">
-${field({ id: 'custom-domain', label: 'Public address', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }), hint: 'Enter only the hostname. The matching Cloudflare zone is resolved automatically.' })}
-</div>
-<div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Connect domain', out: 'domain-output' })}</div>
-${output({ id: 'domain-output', kind: 'custom-domain', pre: true })}</div>`
+${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}</div>`
   })
 }
 
@@ -328,7 +321,7 @@ function settingsSection(): string {
   return sectionPanel({
     id: 'settings',
     title: 'Settings',
-    description: 'Machine software version, activity log, session, and recovery.',
+    description: 'Machine software version, custom domain, activity log, session, and recovery.',
     body: `<h3>Machine software version</h3>
 <div class="form-actions">${button({ action: 'agent-versions-refresh', label: 'Load available versions' })}</div>
 ${field({ id: ADMIN_UI_AGENT_VERSION.selectId, label: 'Version to run on every machine', control: emptySlotSelect(ADMIN_UI_AGENT_VERSION.slotId, ADMIN_UI_AGENT_VERSION.selectId, 'agentVersion', 'data-agent-version-select="true" data-stale="false"'), hint: 'Each machine updates to this version the next time it checks in.' })}
@@ -352,6 +345,13 @@ ${output({ id: 'api-key-output', kind: 'api-key', pre: true, extraClass: 'copyab
 ${field({ id: 'prune-seconds', label: 'Remove a machine after it is offline for (seconds)', control: textInput({ id: 'prune-seconds', name: 'offlinePruneSeconds', type: 'number', min: 0 }), hint: 'A removed machine must re-enroll. 0 keeps offline machines forever. Example: 3600 = one hour, 2592000 = 30 days.' })}
 <div class="form-actions">${button({ action: 'settings-save', label: 'Save', out: 'settings-output' })}</div>
 ${output({ id: 'settings-output', kind: 'settings', pre: true })}</div>
+<div class="subpanel"><h3>Custom domain</h3>
+<div class="state-card is-empty" id="custom-domain-current"><span class="state-label">Custom domain</span><span class="state-value">Not set yet</span></div>
+<div class="form-grid">
+${field({ id: 'custom-domain', label: 'Public address', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }), hint: 'Enter only the hostname. The matching Cloudflare zone is resolved automatically.' })}
+</div>
+<div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Connect domain', out: 'domain-output' })}</div>
+${output({ id: 'domain-output', kind: 'custom-domain', pre: true })}</div>
 <div class="subpanel"><h3>Activity log</h3><div class="feed" id="audit-log"><p class="empty-note">Activity appears here after you sign in.</p></div></div>
 <div class="subpanel"><h3>Session</h3><p class="empty-note">The admin token lives only in this browser's storage.</p><div class="form-actions">${button({ action: 'sign-out', label: 'Sign out and forget token', variant: 'ghost' })}</div></div>
 <div class="subpanel"><h3>Recovery</h3><p class="empty-note">Lost the admin token? <code>POST /admin/recovery/reset</code> with the <code>ADMIN_RECOVERY_TOKEN</code> Worker secret mints a replacement.</p></div>

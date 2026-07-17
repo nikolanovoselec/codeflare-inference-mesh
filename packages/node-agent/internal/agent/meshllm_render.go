@@ -173,10 +173,20 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 		}
 	}
 
+	// WARP-optimized staged-transport defaults. The stage lane rides the WARP
+	// overlay (never LAN), where load-induced queueing inflates RTT past the
+	// stage tolerance mesh-llm enforces: q8 activation frames halve the wire
+	// volume and adaptive-ramp prefill paces bursts so the lane stays under it.
+	var sk strings.Builder
+	if in.Split {
+		sk.WriteString("activation_wire_dtype = \"q8\"\n")
+		sk.WriteString("prefill_chunking = \"adaptive-ramp\"\n")
+	}
+
 	// Nothing overrides the mesh-llm defaults: render no config file so the
 	// runtime keeps its own auto-planning (backward-compatible with a bare
 	// profile that carried no context limit and no tunables).
-	if fit.Len() == 0 && pc.Len() == 0 && req.Len() == 0 && t.Parallel <= 0 {
+	if fit.Len() == 0 && pc.Len() == 0 && req.Len() == 0 && sk.Len() == 0 && t.Parallel <= 0 {
 		return ""
 	}
 
@@ -198,6 +208,10 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 	if req.Len() > 0 {
 		b.WriteString("\n[models.request_defaults]\n")
 		b.WriteString(req.String())
+	}
+	if sk.Len() > 0 {
+		b.WriteString("\n[models.skippy]\n")
+		b.WriteString(sk.String())
 	}
 	return b.String()
 }
