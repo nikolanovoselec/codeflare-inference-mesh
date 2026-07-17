@@ -471,7 +471,7 @@ GET /admin/meshes
 | `200` | Meshes listed, the implicit default mesh first. | `{ "meshes": [{ "id": string, "name": string, "alias": string, "machineCount": number, "modelCount": number, "createdAt"?: number }] }` — `alias` is the mesh's stable route (`codeflare-mesh` for the default mesh, `codeflare-mesh-<id>` otherwise); `createdAt` is absent on the implicit default mesh. |
 | `401` | No valid console role resolved for the caller. | `{ "error": "unauthorized" }` |
 
-**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model)
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-ADM-037](../../sdd/spec/setup-admin.md#req-adm-037-console-mesh-management)
 
 ### POST /admin/meshes
 
@@ -496,7 +496,7 @@ POST /admin/meshes
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `409` | A mesh with that id already exists, or an existing model already owns `codeflare-mesh-<id>` as a callable name (the alias would gain two owners on first activation). | `{ "error": "mesh_exists" \| "mesh_alias_conflict", "requestId": string }` |
 
-**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model)
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-ADM-037](../../sdd/spec/setup-admin.md#req-adm-037-console-mesh-management)
 
 ### DELETE /admin/meshes/:id
 
@@ -524,7 +524,7 @@ DELETE /admin/meshes/{id}
 | `404` | No mesh with that id exists. | `{ "error": "unknown_mesh", "requestId": string }` |
 | `409` | The mesh still has a machine or model assigned; nothing was removed. | `{ "error": "mesh_not_empty", "requestId": string }` |
 
-**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-ADM-037](../../sdd/spec/setup-admin.md#req-adm-037-console-mesh-management)
 
 **Notes:** The mesh's AI Gateway dynamic route is intentionally left in place — deletion never depends on gateway availability, and the orphaned route answers `404 no-profile` at the router. Remove it in the Cloudflare dashboard, or leave it. ([REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership))
 
@@ -552,7 +552,7 @@ POST /admin/cloudflare/gateway/sync
 | `424` | Cloudflare rejected the sync call itself (bad token, missing gateway, route conflict). The raw cause is recorded to the audit log as a `gateway_sync_failed` event and never returned to the caller. | `{ "error": "The AI Gateway sync could not be completed. Confirm the gateway exists and the router Cloudflare token has AI Gateway access, then re-sync." }` |
 | `503` | Required runtime Cloudflare configuration is missing. | `{ "error": "cloudflare_runtime_config_missing" }` |
 
-**Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md), [REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances)
+**Implements:** [REQ-GWY-003](../../sdd/spec/gateway.md), [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-010](../../sdd/spec/setup-admin.md), [REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances), [REQ-GWY-009](../../sdd/spec/gateway.md#req-gwy-009-per-mesh-dynamic-routes)
 
 **Notes:** The custom-provider slug is derived from the provider name alone (not the Worker origin), so re-running sync from a different Worker URL reconciles the same provider instead of creating a duplicate. After upgrading to this behavior the first sync may create a new stable-slug provider — paste the returned `providerToken` into that provider's BYOK key field as the response's `byokInstruction` directs. ([REQ-GWY-007](../../sdd/spec/gateway.md#req-gwy-007-provider-identity-stability-across-worker-origins)) ([REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation))
 
@@ -821,6 +821,8 @@ POST /admin/profiles/config
 **Request body:** JSON body with `profileId` (required) plus any of `runtime` (`meshllm` or `llamacpp`), `contextWindow`, `modelRef` (non-empty string), `maxVramGb` (MeshLLM-only number `≥ 0`, `0` = no cap), `name` (display name; non-blank), `callName` (slugified callable alias; non-empty, not a reserved mesh stable alias — neither `codeflare-mesh` nor any name starting with `codeflare-mesh-` — and not a collision), and `meshId` (an existing mesh id; moves the model to that machine group). A changed call name keeps the profile's mesh stable alias. A changed `meshId` swaps in the new mesh's stable alias, deactivates the model (rollout zero) so it arrives switched off in its new mesh, bumps the profile version, and appends a `model_mesh_assigned` audit event with `{ "from": string, "to": string }`. Each field besides `profileId` is optional; an omitted field is left unchanged. The context window accepts `0` for Auto on both runtimes (direct llama.cpp Auto renders `--ctx-size 0`, loading the model's native training context); a fixed direct llama.cpp value must be at least `4096`.
 
 MeshLLM profiles accept the per-model runtime tunables: `parallel`, `batch`, `ubatch`, `maxOutputTokens` (positive integers), `cacheTypeK` / `cacheTypeV` (`f16` \| `q8_0` \| `q4_0`), `flashAttn` (boolean), `reasoning` (`{ enabled?, format?, budget? }`, layered onto the existing block), and `prefixCache` (`{ enabled?, payloadMode?, maxEntries?, sharedStrideTokens?, sharedRecordLimit? }`, layered; `payloadMode` is `resident-kv` \| `kv-recurrent` \| `full-state`, `maxEntries` is `1`-`128`). A positive integer / allowed string / boolean sets a tunable; `null` / `0` / `""` clears it back to Auto (the field is removed, so MeshLLM auto-plans it). Direct llama.cpp profiles accept a `llamacpp` block with `parallel` (`-1` = Auto, else `>= 1`), `kvUnified` (boolean; `null` clears back to on; `false` together with Auto parallel is rejected), `gpuLayers` (`0` or a positive integer, or `"auto"` / `"all"`; `null`/`""` clears), `cachePrompt` (boolean), `cacheReuse` (`>= 0`), `cacheTypeK` / `cacheTypeV` (`f32` \| `f16` \| `bf16` \| `q8_0` \| `q4_0` \| `q4_1` \| `iq4_nl` \| `q5_0` \| `q5_1`), `batch`, `ubatch`, `maxOutputTokens` (positive integers; `null`/`0` clears), `flashAttn` (boolean; `null` clears), `reasoning` (`{ enabled?, format?, budget? }`, `null` clears), and optional `bindPort`; reserved bind ports are rejected.
+
+New direct llama.cpp profiles apply the proven direct defaults: context Auto (`0`), parallel Auto (`-1`), unified KV on, GPU layers `99`, `q4_0` KV cache, batch `8192`, micro-batch `2048`, flash attention on, prompt cache on with reuse `256`, generation cap `16384`, and `deepseek` reasoning. ([REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles))
 
 **Response**
 

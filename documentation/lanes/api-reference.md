@@ -755,7 +755,7 @@ GET /api/v1/meshes
 | `200` | Meshes listed, the implicit default mesh first. | `{ "meshes": [{ "id": string, "name": string, "alias": string, "machineCount": number, "modelCount": number, "createdAt"?: number }] }` — `alias` is the mesh's stable route (`codeflare-mesh` for the default mesh, `codeflare-mesh-<id>` otherwise); `createdAt` is absent on the implicit default mesh. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model)
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-API-011](../../sdd/spec/control-plane-api.md#req-api-011-programmatic-mesh-management)
 
 ### POST /api/v1/meshes
 
@@ -780,7 +780,7 @@ POST /api/v1/meshes
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `409` | A mesh with that id already exists, or an existing model already owns `codeflare-mesh-<id>` as a callable name. | `mesh_exists` or `mesh_alias_conflict` error body. |
 
-**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model)
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-API-011](../../sdd/spec/control-plane-api.md#req-api-011-programmatic-mesh-management)
 
 ### DELETE /api/v1/meshes/{id}
 
@@ -806,7 +806,7 @@ DELETE /api/v1/meshes/{id}
 | `404` | No mesh with that id exists. | `unknown_mesh` error body. |
 | `409` | The mesh still has a machine or model assigned; nothing was removed. | `mesh_not_empty` error body. |
 
-**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
+**Implements:** [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-API-011](../../sdd/spec/control-plane-api.md#req-api-011-programmatic-mesh-management)
 
 ### GET /api/v1/models
 
@@ -1054,7 +1054,7 @@ POST /api/v1/gateway/sync
 | `424` | Cloudflare rejected the sync; the raw cause is recorded to audit only. | Actionable sync failure error body. |
 | `503` | Cloudflare runtime configuration is missing. | `cloudflare_runtime_config_missing` error body. |
 
-**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation)
+**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management), [REQ-GWY-003](../../sdd/spec/gateway.md#req-gwy-003-dynamic-route-automation), [REQ-GWY-009](../../sdd/spec/gateway.md#req-gwy-009-per-mesh-dynamic-routes)
 
 ### GET /api/v1/runtime-versions
 
