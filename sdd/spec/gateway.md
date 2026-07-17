@@ -74,7 +74,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 
 **Priority:** P0
 
-**Dependencies:** [REQ-GWY-001](#req-gwy-001-gateway-custom-provider), [REQ-GWY-002](#req-gwy-002-provider-token-contract), [REQ-GWY-009](#req-gwy-009-per-mesh-dynamic-routes)
+**Dependencies:** [REQ-GWY-001](#req-gwy-001-gateway-custom-provider), [REQ-GWY-002](#req-gwy-002-provider-token-contract)
 
 **Verification:** Automated test
 

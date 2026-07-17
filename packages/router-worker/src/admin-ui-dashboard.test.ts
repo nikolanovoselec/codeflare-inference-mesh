@@ -195,7 +195,7 @@ describe('dashboard overview contracts', () => {
     expect(stat('meshes')).toBe('1 · 1 serving')
   })
 
-  it('REQ-ADM-015 does not fabricate a mesh-card speed test before one is reported', async () => {
+  it('REQ-ADM-039 does not fabricate a mesh-card speed test before one is reported', async () => {
     const harness = await dashboardHarness({ status: statusFixture({ lastSpeedTests: undefined }) })
     const card = descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === 'default')!
 
@@ -1419,7 +1419,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(rowOf('twin-meshllm').dataset.serving).toBe('0')
   })
 
-  it('REQ-ADM-015 overview mesh status cards summarize each mesh: model, machines, serving, last speed test', async () => {
+  it('REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test', async () => {
     const meshes = [
       { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 },
       { id: 'ops', name: 'Ops', alias: 'codeflare-mesh-ops', machineCount: 1, modelCount: 1 },
@@ -1760,7 +1760,7 @@ describe('mesh console contracts', () => {
     expect(JSON.parse(String(calls[calls.length - 1]?.init?.body)).meshId).toBe('development')
   })
 
-  it('REQ-RUN-016 model drawer saves the mesh selection only when changed', async () => {
+  it('REQ-ADM-038 model drawer saves the mesh selection only when changed', async () => {
     const profiles = [{ id: 'custom-tune', displayName: 'Tune', publicAliases: ['codeflare-mesh-development', 'tune'], meshId: 'development', active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } }]
     const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
     await harness.clickAction('model-detail', { profileId: 'custom-tune' })
@@ -1824,6 +1824,10 @@ describe('mesh console contracts', () => {
     // Mesh rows right-align the route chip.
     const css = adminUiCss()
     expect(css).toContain('.mesh-row-head .endpoint-chip{margin-left:auto}')
+  })
+
+  it('REQ-ADM-036 one token pair sizes every console button with only the email-chip and mobile exceptions', () => {
+    const css = adminUiCss()
     // One reusable button size: the base .btn rule carries the size tokens, and no other
     // rule resizes buttons — except the email-chip inline micro control and the mobile
     // touch-target floor.
@@ -1836,6 +1840,19 @@ describe('mesh console contracts', () => {
       })
       .map((line) => line.slice(0, line.indexOf('{')))
     expect(btnSizingSelectors).toEqual(['.btn', '.email-chip .btn', '.btn,input,select'])
+  })
+
+  it('REQ-ADM-039 the overview carries no activity feed while settings does', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    const overviewAt = html.indexOf('<section class="panel section-panel" id="overview"')
+    const settingsAt = html.indexOf('<section class="panel section-panel" id="settings"')
+    expect(overviewAt).toBeGreaterThan(-1)
+    expect(settingsAt).toBeGreaterThan(overviewAt)
+    // The audit feed mounts exactly once, inside Settings — never on the Overview.
+    const auditAt = html.indexOf('id="audit-log"')
+    expect(auditAt).toBeGreaterThan(settingsAt)
+    expect(html.indexOf('id="audit-log"', auditAt + 1)).toBe(-1)
   })
 
   it('REQ-ADM-025 renders the model sources panel with CSS-keyed contextual switching', async () => {
@@ -1865,7 +1882,7 @@ describe('mesh console contracts', () => {
     expect(sources.dataset.modelSources).toBe('single')
   })
 
-  it('REQ-RUN-016 the models list shows each profile mesh without opening the drawer', async () => {
+  it('REQ-ADM-038 the models list shows each profile mesh without opening the drawer', async () => {
     const profiles = [
       { id: 'model-default', displayName: 'Default Model', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
       { id: 'model-dev', displayName: 'Dev Model', publicAliases: ['codeflare-mesh-development', 'dev-coder'], meshId: 'development', active: false, rolloutPercent: 0, meshllm: { split: false } }
@@ -1881,7 +1898,7 @@ describe('mesh console contracts', () => {
     expect(rowBadge('model-default')?.getAttribute('data-profile-mesh')).toBe('default')
   })
 
-  it('REQ-ADM-018 REQ-RUN-016 model rows and the drawer lead with the runtime, serving-mode, and mesh pills', async () => {
+  it('REQ-ADM-018 REQ-ADM-038 model rows and the drawer lead with the runtime, serving-mode, and mesh pills', async () => {
     const profiles = [
       { id: 'direct-a', displayName: 'Direct A', publicAliases: ['codeflare-mesh', 'direct-a'], active: true, rolloutPercent: 100, runtime: 'llamacpp', llamacpp: { modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', bindPort: 4500 } },
       { id: 'shard-b', displayName: 'Shard B', publicAliases: ['codeflare-mesh-development', 'shard-b'], meshId: 'development', active: false, rolloutPercent: 0, runtime: 'meshllm', meshllm: { split: true } }

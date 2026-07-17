@@ -1315,11 +1315,12 @@ func TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if loop.currentManager() != meshRuntime(started) {
+	manager, installError := loop.managerSnapshot()
+	if manager != meshRuntime(started) {
 		t.Fatal("the CURRENT manager must be the started runtime")
 	}
-	if loop.currentInstallError() != "install-detail" {
-		t.Fatalf("the start's install detail must land with the manager, got %q", loop.currentInstallError())
+	if installError != "install-detail" {
+		t.Fatalf("the start's install detail must land with the manager, got %q", installError)
 	}
 }
 

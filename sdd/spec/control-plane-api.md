@@ -289,7 +289,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Priority:** P1
 
-**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-ADM-037](setup-admin.md#req-adm-037-console-mesh-management)
+**Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 **Verification:** Automated test
 

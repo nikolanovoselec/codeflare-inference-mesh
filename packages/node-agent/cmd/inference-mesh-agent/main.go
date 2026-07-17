@@ -427,10 +427,13 @@ func (s *serviceLoop) currentManager() meshRuntime {
 	return s.manager
 }
 
-func (s *serviceLoop) currentInstallError() string {
+// managerSnapshot reads the manager and its install error under one lock
+// acquisition, so a concurrent setManager can never pair a new manager with a
+// stale install error inside a single status read.
+func (s *serviceLoop) managerSnapshot() (meshRuntime, string) {
 	s.managerMu.RLock()
 	defer s.managerMu.RUnlock()
-	return s.installError
+	return s.manager, s.installError
 }
 
 // setManager swaps in a replacement runtime manager (and the install error from its
@@ -446,7 +449,8 @@ func (s *serviceLoop) setManager(manager meshRuntime, installError string) {
 // and config, never a startup capture. REQ-NODE-004 / REQ-OBS-008.
 func (s *serviceLoop) dashboardStatus(version string) agent.DashboardStatus {
 	current := s.currentConfig()
-	metrics := s.telemetry.Snapshot(runtimeMetrics(s.currentManager(), s.loadState, current, s.activeRequests.Value(), s.currentInstallError()))
+	manager, installError := s.managerSnapshot()
+	metrics := s.telemetry.Snapshot(runtimeMetrics(manager, s.loadState, current, s.activeRequests.Value(), installError))
 	return agent.DashboardStatus{Config: current, Metrics: metrics, RuntimeState: metrics.RuntimeState, Version: version, LastHeartbeatError: s.currentHeartbeatError()}
 }
 
@@ -528,8 +532,8 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 	identity := agent.HeartbeatIdentity{AgentVersion: s.agentVersion, ReloadNonce: s.lastReloadNonce}
 	// One consistent manager per tick: a runtime switch mid-tick must not mix two
 	// managers' state into one metrics object. REQ-OBS-008.
-	manager := s.currentManager()
-	metrics := runtimeMetrics(manager, s.loadState, current, s.activeRequests.Value(), s.currentInstallError())
+	manager, installError := s.managerSnapshot()
+	metrics := runtimeMetrics(manager, s.loadState, current, s.activeRequests.Value(), installError)
 	if manager != nil {
 		if manager.Runtime() == "llamacpp" {
 			if direct, ok := manager.(*agent.LlamaCppManager); ok {
