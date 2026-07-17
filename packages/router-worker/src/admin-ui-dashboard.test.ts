@@ -237,9 +237,10 @@ describe('dashboard overview contracts', () => {
     expect(statusCell.dataset.meshRole).toBe('No stage assigned')
     expect(statusCell.dataset.statusDetail).toBe('standby')
     const chip = descendants(statusCell).find((node) => node.className === 'chip')!
-    expect(chip.dataset.tone).toBe('ok')
-    // Ready models make the node a Serving participant in the fixed status vocabulary.
-    expect(descendants(chip).map((node) => node.textContent).join('')).toBe('Serving')
+    // An api-client advertising ready models without a ready runtime or a stage is
+    // still preparing — catalog claims alone never read as Serving.
+    expect(chip.dataset.tone).toBe('warn')
+    expect(descendants(chip).map((node) => node.textContent).join('')).toBe('Preparing')
     await harness.clickAction('node-detail', { nodeId: 'battlestation' })
     const drawerFields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(drawerFields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
@@ -776,7 +777,7 @@ describe('dashboard overview contracts', () => {
 
   it('REQ-RUN-002 loads and saves per-model runtime tunables from the model drawer', async () => {
     const profiles = [
-      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 0, meshllm: { split: false, modelRef: 'ref-a', parallel: 4, cacheTypeK: 'q8_0' } }
+      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 0, meshllm: { split: false, modelRef: 'ref-a', parallel: 4, cacheTypeK: 'q8_0', toolEmulation: true } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
@@ -784,13 +785,15 @@ describe('dashboard overview contracts', () => {
     expect(harness.byId('model-edit-context').value).toBe('')
     expect(harness.byId('model-edit-parallel').value).toBe('4')
     expect(harness.byId('model-edit-cache-k').value).toBe('q8_0')
+    expect(harness.byId('model-edit-tool-emulation').value).toBe('emulated')
     // Each field carries plain-language help; assert the hint affordance renders (structure, not copy).
     expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).some((node) => node.className === 'drawer-hint')).toBe(true)
     // Editing lanes / KV / max-output and saving posts the tunables to the validated endpoint;
-    // a blank context window is sent as 0 (Auto).
+    // a blank context window is sent as 0 (Auto), a Native tool-calling selection as null.
     harness.byId('model-edit-parallel').value = '2'
     harness.byId('model-edit-cache-v').value = 'q4_0'
     harness.byId('model-edit-maxout').value = '8192'
+    harness.byId('model-edit-tool-emulation').value = ''
     await harness.clickAction('model-save', { profileId: 'mesh-default-qwen36-35b', out: 'model-output' })
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
     const body = JSON.parse(String(call?.init?.body))
@@ -798,6 +801,7 @@ describe('dashboard overview contracts', () => {
     expect(body.cacheTypeV).toBe('q4_0')
     expect(body.maxOutputTokens).toBe(8192)
     expect(body.contextWindow).toBe(0)
+    expect(body.toolEmulation).toBe(null)
   })
 
   it('REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer', async () => {
@@ -1487,6 +1491,54 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(descendants(row('ops')).find((el) => el.className === 'dot')).toBeUndefined()
     // The activity feed is gone from the Overview: logs live in Settings only.
     expect(() => harness.byId('overview-audit')).toThrow()
+  })
+
+  it('REQ-ADM-039 mesh cards expose split state and surface degradation notes', async () => {
+    const meshes = [
+      { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 2, modelCount: 1 },
+      { id: 'solo', name: 'Solo', alias: 'codeflare-mesh-solo', machineCount: 2, modelCount: 1 },
+      { id: 'quiet', name: 'Quiet', alias: 'codeflare-mesh-quiet', machineCount: 1, modelCount: 1 }
+    ]
+    const profiles = [
+      { id: 'split-ok', displayName: 'Split OK', upstreamModel: 'meshllm/A-layers', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, meshllm: { split: true } },
+      { id: 'split-fb', displayName: 'Split FB', upstreamModel: 'meshllm/B-layers', publicAliases: ['codeflare-mesh-solo'], meshId: 'solo', active: true, rolloutPercent: 100, meshllm: { split: true } },
+      { id: 'split-idle', displayName: 'Split idle', upstreamModel: 'meshllm/C-layers', publicAliases: ['codeflare-mesh-quiet'], meshId: 'quiet', active: true, rolloutPercent: 100, meshllm: { split: true } }
+    ]
+    const nodes = [
+      { id: 'n-a1', status: 'online', activeProfileIds: ['split-ok'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['meshllm/A-layers'] } },
+      // A worker holding a stage counts as serving even while its own console idles in
+      // standby (mesh-llm worker-side state): the stage corroborates the catalog claim.
+      { id: 'n-a2', status: 'online', activeProfileIds: ['split-ok'], metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: ['meshllm/A-layers'], stageCount: 2 } },
+      { id: 'n-b1', status: 'online', meshId: 'solo', activeProfileIds: ['split-fb'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['meshllm/B-layers'], runtimeDetail: 'prediction return sink unavailable' } },
+      // Ghost: an api-client advertising the mesh catalog with no ready runtime and no
+      // stage never counts as serving.
+      { id: 'n-b2', status: 'online', meshId: 'solo', activeProfileIds: ['split-fb'], metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: ['meshllm/B-layers'] } },
+      { id: 'n-c1', status: 'online', meshId: 'quiet', activeProfileIds: ['split-idle'], metrics: { runtimeState: 'starting', activeRequests: 0 } }
+    ]
+    const meshHealth = [
+      { profileId: 'split-ok', stageAssignments: [{ stageIndex: 0 }, { stageIndex: 1 }], splitReadiness: { verdict: 'ready' } },
+      { profileId: 'split-fb', stageAssignments: [], splitReadiness: { verdict: 'waiting_for_peers' } },
+      { profileId: 'split-idle', stageAssignments: [], splitReadiness: { verdict: 'waiting_for_peers' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes, meshHealth, lastSpeedTests: undefined }) })
+    const row = (id: string) => descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === id)!
+    // A formed topology reads as split serving: ok tone, no note.
+    expect(row('default').getAttribute('data-split-state')).toBe('split')
+    expect(row('default').getAttribute('data-state-tone')).toBe('ok')
+    expect(row('default').getAttribute('data-serving')).toBe('2')
+    expect(descendants(row('default')).some((el) => el.getAttribute('data-mesh-note') !== null)).toBe(false)
+    // Serving machines without a formed topology read as fallback, and the node's
+    // runtime error rides the card verbatim; the ghost api-client is not serving.
+    expect(row('solo').getAttribute('data-split-state')).toBe('fallback')
+    expect(row('solo').getAttribute('data-state-tone')).toBe('warn')
+    expect(row('solo').getAttribute('data-serving')).toBe('1')
+    const soloNote = descendants(row('solo')).find((el) => el.getAttribute('data-mesh-note') !== null)!
+    expect(soloNote.getAttribute('data-mesh-note')).toBe('error')
+    expect(soloNote.textContent).toBe('prediction return sink unavailable')
+    // Nothing serving on a split mesh surfaces the readiness verdict.
+    expect(row('quiet').getAttribute('data-serving')).toBe('0')
+    const quietNote = descendants(row('quiet')).find((el) => el.getAttribute('data-mesh-note') !== null)!
+    expect(quietNote.getAttribute('data-mesh-note')).toBe('verdict')
   })
 
   it('REQ-ADM-015 tags each node cell with its column label for the stacked mobile layout', async () => {

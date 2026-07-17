@@ -383,7 +383,7 @@ func TestREQRUN014ContextLimitConfigRendering(t *testing.T) {
 
 func TestREQRUN010MeshLLMEnvAppendsNoSelfUpdate(t *testing.T) {
 	base := []string{"PATH=/usr/bin", "HF_TOKEN=secret"}
-	got := MeshLLMEnv(base)
+	got := MeshLLMEnv(base, false)
 	want := []string{"PATH=/usr/bin", "HF_TOKEN=secret", "MESH_LLM_NO_SELF_UPDATE=1"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("MeshLLMEnv = %v, want %v", got, want)
@@ -391,7 +391,11 @@ func TestREQRUN010MeshLLMEnvAppendsNoSelfUpdate(t *testing.T) {
 	if !slices.Equal(base, []string{"PATH=/usr/bin", "HF_TOKEN=secret"}) {
 		t.Fatalf("MeshLLMEnv mutated its input: %v", base)
 	}
-	if empty := MeshLLMEnv(nil); !slices.Equal(empty, []string{"MESH_LLM_NO_SELF_UPDATE=1"}) {
+	forced := MeshLLMEnv(base, true)
+	if !slices.Equal(forced, append(want, "MESH_FORCE_TOOL_EMULATION=1")) {
+		t.Fatalf("forced tool emulation must append the mesh-llm override, got %v", forced)
+	}
+	if empty := MeshLLMEnv(nil, false); !slices.Equal(empty, []string{"MESH_LLM_NO_SELF_UPDATE=1"}) {
 		t.Fatalf("MeshLLMEnv(nil) = %v, want the self-update guard alone", empty)
 	}
 }

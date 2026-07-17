@@ -50,6 +50,10 @@ export interface MeshLLMProfileSettings {
     readonly sharedStrideTokens?: number
     readonly sharedRecordLimit?: number
   }
+  // Forces mesh-llm's server-side tool-call emulation (MESH_FORCE_TOOL_EMULATION=1)
+  // for models whose template advertises a native tool grammar mesh-llm cannot
+  // parse (e.g. ERNIE Thinking). Absent = native (mesh-llm decides).
+  readonly toolEmulation?: boolean
 }
 
 export interface LlamaCppProfileSettings {

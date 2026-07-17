@@ -207,6 +207,7 @@ main{width:min(1120px,100%);max-width:100%;overflow:hidden;margin:0 auto;padding
 .mesh-card-model strong{color:var(--text)}
 .mesh-card-model small{color:var(--muted)}
 .mesh-card-file{color:var(--muted);font-size:var(--fs-xs);overflow-wrap:anywhere}
+.mesh-card-note{color:var(--warn);font-family:var(--font-mono);font-size:var(--fs-xs);overflow-wrap:anywhere}
 .mesh-card-pills{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
 .mesh-card-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;border-top:1px solid var(--line);padding-top:.6rem}
 .mesh-stat{display:grid;gap:.1rem;min-width:0}

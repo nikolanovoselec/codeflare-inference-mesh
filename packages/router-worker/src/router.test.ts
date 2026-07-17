@@ -2661,9 +2661,10 @@ describe('router worker behavioral contracts', () => {
     }))
     const meshllm = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm!
 
-    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 }, prefixCache: { enabled: true, maxEntries: 16, payloadMode: 'kv-recurrent', sharedStrideTokens: 128, sharedRecordLimit: 4 } })
+    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, toolEmulation: true, reasoning: { enabled: true, format: 'deepseek', budget: 4096 }, prefixCache: { enabled: true, maxEntries: 16, payloadMode: 'kv-recurrent', sharedStrideTokens: 128, sharedRecordLimit: 4 } })
     expect(set.status).toBe(200)
     let m = await meshllm()
+    expect(m.toolEmulation).toBe(true)
     expect(m.parallel).toBe(4)
     expect(m.cacheTypeK).toBe('q4_0')
     expect(m.cacheTypeV).toBe('q4_0')
@@ -2691,11 +2692,12 @@ describe('router worker behavioral contracts', () => {
 
     // Clearing a field back to Auto removes the key entirely, so JSON.stringify never
     // leaves a stale undefined; untouched fields persist.
-    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, reasoning: null, prefixCache: null })).status).toBe(200)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, toolEmulation: null, reasoning: null, prefixCache: null })).status).toBe(200)
     m = await meshllm()
     expect('parallel' in m).toBe(false)
     expect('cacheTypeK' in m).toBe(false)
     expect('flashAttn' in m).toBe(false)
+    expect('toolEmulation' in m).toBe(false)
     expect('reasoning' in m).toBe(false)
     expect('prefixCache' in m).toBe(false)
     expect(m.cacheTypeV).toBe('q4_0')
@@ -2704,6 +2706,7 @@ describe('router worker behavioral contracts', () => {
     // Invalid values are rejected at the boundary.
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 0.5 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', cacheTypeK: 'bogus' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', toolEmulation: 'yes' })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', batch: -1 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', flashAttn: 'yes' })).status).toBe(400)
     // maxEntries is capped at 128 so an operator cannot re-introduce the KV-pool overrun.
@@ -5411,12 +5414,18 @@ describe('multi-mesh machine groups', () => {
     await store.upsertNode({ ...base, id: 'n-error', metrics: { runtimeState: 'dependency-missing', activeRequests: 0 } })
     await store.upsertNode({ ...base, id: 'n-offline', status: 'offline', metrics: { runtimeState: 'starting', activeRequests: 0 } })
     await store.upsertNode({ ...base, id: 'n-deactivated', deactivated: true, metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['m'] } })
+    // An api-client mesh-llm advertises the mesh catalog while holding no stage: ready
+    // models without a ready/running runtime or a stage assignment are not Serving.
+    await store.upsertNode({ ...base, id: 'n-ghost', metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: ['m'] } })
+    await store.upsertNode({ ...base, id: 'n-stage', metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: [], stageCount: 1, apiReady: true, consoleReady: true } })
 
     const res = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(token) }))
     const nodes = (await res.json() as { nodes: Array<{ id: string; displayStatus: string }> }).nodes
     const statusOf = (id: string) => nodes.find((node) => node.id === id)?.displayStatus
     expect(statusOf('n-serving')).toBe('Serving')
     expect(statusOf('n-preparing')).toBe('Preparing')
+    expect(statusOf('n-ghost')).toBe('Preparing')
+    expect(statusOf('n-stage')).toBe('Serving')
     expect(statusOf('n-disconnected')).toBe('Disconnected')
     expect(statusOf('n-error')).toBe('Error')
     expect(statusOf('n-offline')).toBe('Offline')

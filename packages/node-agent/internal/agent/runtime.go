@@ -67,6 +67,10 @@ type MeshLLMSettings struct {
 	MaxOutputTokens int                  `json:"maxOutputTokens,omitempty"`
 	Reasoning       *ReasoningSettings   `json:"reasoning,omitempty"`
 	PrefixCache     *PrefixCacheSettings `json:"prefixCache,omitempty"`
+	// ToolEmulation forces mesh-llm's server-side tool-call emulation
+	// (MESH_FORCE_TOOL_EMULATION=1) for models whose template advertises a
+	// native tool grammar that mesh-llm cannot parse (e.g. ERNIE Thinking).
+	ToolEmulation bool `json:"toolEmulation,omitempty"`
 }
 
 // ReasoningSettings carries the model's thinking-phase config. Enabled nil means

@@ -706,7 +706,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const m = node.metrics || {};
     const rt = m.runtimeState || '';
     if (rt === 'failed' || rt === 'dependency-missing') return 'Error';
-    const serving = (Array.isArray(m.readyModels) && m.readyModels.length > 0) || ((m.stageCount || 0) > 0 && m.apiReady === true && m.consoleReady === true);
+    // Mirrors the router derivation: catalog-advertised ready models need a
+    // ready/running runtime or a stage assignment to corroborate them.
+    const serving = (Array.isArray(m.readyModels) && m.readyModels.length > 0 && (rt === 'ready' || rt === 'running')) || ((m.stageCount || 0) > 0 && m.apiReady === true && m.consoleReady === true);
     if (serving) return 'Serving';
     if (rt === 'downloading' || rt === 'starting' || rt === 'loading' || m.apiReady === true || m.consoleReady === true) return 'Preparing';
     return 'Disconnected';
@@ -1457,6 +1459,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'Enables the model thinking phase (reasoning-capable models only).' }));
       bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'Reasoning output format tag. Usually deepseek.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers. Part of the output budget, so keep it below Max output tokens (a 2:1 split, e.g. 8192 / 4096, leaves room to answer).' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-tool-emulation', label: 'Tool calling', value: meshllm.toolEmulation === true ? 'emulated' : '', options: [{ value: '', label: 'Native (template grammar)' }, { value: 'emulated', label: 'Forced emulation' }], hint: 'Native parses tool calls with the model template grammar. Forced emulation uses the text-convention protocol instead - pick it when agent tool calls fail to parse (e.g. ERNIE Thinking).' }));
     }
     if (isDirect) {
       const reasoning = llamacpp.reasoning || {};
@@ -1672,9 +1675,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // upstream refs exactly as the scheduler matches on, never public aliases). Twin
   // profiles sharing one modelRef must never inherit each other's serving count.
   function nodeServesProfile(node, profile) {
+    // Ready models alone are not serving: an api-client mesh-llm still advertises the
+    // mesh's models while holding no stage, so a ready/running runtime or an actual
+    // split-stage assignment must corroborate the claim.
+    const metrics = node.metrics || {};
+    const corroborated = metrics.runtimeState === 'ready' || metrics.runtimeState === 'running' || (metrics.stageCount || 0) > 0;
     return node.status === 'online' && !node.deactivated
       && Array.isArray(node.activeProfileIds) && node.activeProfileIds.indexOf(profile.id) >= 0
-      && Boolean(node.metrics) && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.indexOf(profile.upstreamModel) >= 0;
+      && Array.isArray(metrics.readyModels) && metrics.readyModels.indexOf(profile.upstreamModel) >= 0
+      && corroborated;
   }
   function nodesServingProfile(profile) {
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
@@ -2065,9 +2074,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const speed = speedTestFor(status, model);
       const speedPrompt = speed ? speedNumber(speed.promptTokensPerSecond) : null;
       const speedGen = speed ? speedNumber(speed.generationTokensPerSecond) : null;
+      // Split-intended models get their split state read from mesh health: a formed
+      // topology (2+ stages) is split serving; serving machines without one means
+      // mesh-llm recovered the model on one node — degraded, surfaced, never silent.
+      const health = model && Array.isArray(status.meshHealth) ? status.meshHealth.find((entry) => entry.profileId === model.id) : null;
+      const stageCount = health && Array.isArray(health.stageAssignments) ? health.stageAssignments.length : 0;
+      const splitIntended = Boolean(model && model.runtime !== 'llamacpp' && model.meshllm && model.meshllm.split);
+      const splitState = splitIntended && serving.length > 0 ? (stageCount >= 2 ? 'split' : 'fallback') : '';
       // A mesh with no model stays neutral grey — an empty group is a choice, not an alarm.
       const word = model ? (serving.length > 0 ? 'Serving' : (meshNodes.length > 0 ? 'Preparing' : 'No machines')) : 'No model';
-      const tone = model ? (serving.length > 0 ? 'ok' : 'warn') : 'idle';
+      const tone = model ? (serving.length > 0 ? (splitState === 'fallback' ? 'warn' : 'ok') : 'warn') : 'idle';
+      // The most actionable line wins: a runtime/planner error, else the fallback
+      // notice, else the split verdict while nothing serves.
+      const nodeError = meshNodes.map((node) => (node.metrics && node.metrics.runtimeDetail) || '').find((detail) => detail !== '') || '';
+      const verdict = health && health.splitReadiness && typeof health.splitReadiness.verdict === 'string' ? health.splitReadiness.verdict : '';
+      let note = null;
+      if (tone !== 'ok' && (nodeError || (health && health.lastError))) note = { kind: 'error', text: nodeError || health.lastError };
+      else if (splitState === 'fallback') note = { kind: 'fallback', text: 'single-node fallback: split not formed' };
+      else if (splitIntended && serving.length === 0 && verdict && verdict !== 'ready') note = { kind: 'verdict', text: verdict.replace(/_/g, ' ') };
       const card = document.createElement('article');
       card.className = 'mesh-card';
       card.setAttribute('data-mesh-status', mesh.id);
@@ -2075,6 +2099,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       card.setAttribute('data-serving', String(serving.length));
       card.setAttribute('data-state', word);
       card.setAttribute('data-state-tone', tone);
+      if (splitState) card.setAttribute('data-split-state', splitState);
       if (speedPrompt != null && speedGen != null) {
         card.setAttribute('data-speed-prompt', String(Math.round(speedPrompt)));
         card.setAttribute('data-speed-gen', String(Math.round(speedGen)));
@@ -2118,6 +2143,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         stat(speedPrompt != null && speedGen != null ? Math.round(speedPrompt) + ' / ' + Math.round(speedGen) : '—', 'p/g tok/s', 'mesh-stat-speed')
       );
       card.appendChild(stats);
+      if (note) {
+        const noteEl = document.createElement('div');
+        noteEl.className = 'mesh-card-note';
+        noteEl.setAttribute('data-mesh-note', note.kind);
+        noteEl.textContent = note.text;
+        card.appendChild(noteEl);
+      }
       const track = document.createElement('div');
       track.className = 'mesh-track';
       const fill = document.createElement('div');
@@ -2773,6 +2805,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
           // the other tunables use; a set value is sent verbatim.
           payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw === '' ? null : fmtRaw, budget: budgetRaw === '' ? null : Number(budgetRaw) };
         }
+        payload.toolEmulation = readInput('model-edit-tool-emulation') === 'emulated' ? true : null;
       }
       await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
       setOutput(out, 'Model settings saved.');

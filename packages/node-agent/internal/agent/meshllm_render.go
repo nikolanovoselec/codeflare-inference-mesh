@@ -85,11 +85,18 @@ func RenderMeshLLMArgs(in MeshLLMRenderInput) []string {
 // MeshLLMEnv returns a new environment slice: the inherited base (so
 // passthrough values like HF_TOKEN survive) plus MESH_LLM_NO_SELF_UPDATE=1,
 // which keeps the upstream self-updater from racing the agent-managed
-// binary install. The input slice is never mutated.
-func MeshLLMEnv(base []string) []string {
-	env := make([]string, 0, len(base)+1)
+// binary install. When the profile forces tool emulation it also sets
+// MESH_FORCE_TOOL_EMULATION=1, routing tool calls through mesh-llm's
+// text-convention emulation instead of the template's native grammar parser.
+// The input slice is never mutated.
+func MeshLLMEnv(base []string, forceToolEmulation bool) []string {
+	env := make([]string, 0, len(base)+2)
 	env = append(env, base...)
-	return append(env, "MESH_LLM_NO_SELF_UPDATE=1")
+	env = append(env, "MESH_LLM_NO_SELF_UPDATE=1")
+	if forceToolEmulation {
+		env = append(env, "MESH_FORCE_TOOL_EMULATION=1")
+	}
+	return env
 }
 
 // MeshLLMConfigTOML renders the per-profile mesh-llm config file: one `[[models]]`

@@ -541,7 +541,10 @@ function nodeDisplayStatus(node: NodeRecord): string {
   const metrics = node.metrics
   const runtimeState = metrics?.runtimeState ?? ''
   if (runtimeState === 'failed' || runtimeState === 'dependency-missing') return 'Error'
-  const serving = (metrics?.readyModels?.length ?? 0) > 0
+  // Ready models alone are not serving: an api-client mesh-llm still advertises the
+  // mesh's models on its local catalog while holding no stage, so a ready/running
+  // runtime or an actual split-stage assignment must corroborate the claim.
+  const serving = ((metrics?.readyModels?.length ?? 0) > 0 && (runtimeState === 'ready' || runtimeState === 'running'))
     || ((metrics?.stageCount ?? 0) > 0 && metrics?.apiReady === true && metrics?.consoleReady === true)
   if (serving) return 'Serving'
   if (runtimeState === 'downloading' || runtimeState === 'starting' || runtimeState === 'loading' || metrics?.apiReady === true || metrics?.consoleReady === true) return 'Preparing'
@@ -1180,6 +1183,7 @@ interface MeshllmTunablesBody {
   maxOutputTokens?: unknown
   reasoning?: unknown
   prefixCache?: unknown
+  toolEmulation?: unknown
 }
 
 // resolveReasoning layers a reasoning update onto the existing block, per sub-field,
@@ -1281,6 +1285,11 @@ function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, 
     if (body.flashAttn === null) delete next.flashAttn
     else if (typeof body.flashAttn === 'boolean') next.flashAttn = body.flashAttn
     else return { error: 'invalid_flash_attn' }
+  }
+  if (body.toolEmulation !== undefined) {
+    if (body.toolEmulation === null || body.toolEmulation === false) delete next.toolEmulation
+    else if (body.toolEmulation === true) next.toolEmulation = true
+    else return { error: 'invalid_tool_emulation' }
   }
   if (body.reasoning !== undefined) {
     if (body.reasoning === null) delete next.reasoning
@@ -2345,7 +2354,8 @@ function toApiModel(profile: ModelProfile) {
       flashAttn: m.flashAttn ?? null,
       maxOutputTokens: m.maxOutputTokens ?? null,
       reasoning: m.reasoning ?? null,
-      prefixCache: m.prefixCache ?? null
+      prefixCache: m.prefixCache ?? null,
+      toolEmulation: m.toolEmulation ?? null
     } : null,
     ...(l ? { llamacpp: l } : {})
   }
