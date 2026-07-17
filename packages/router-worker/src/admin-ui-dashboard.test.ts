@@ -243,7 +243,10 @@ describe('dashboard overview contracts', () => {
     expect(descendants(chip).map((node) => node.textContent).join('')).toBe('Preparing')
     await harness.clickAction('node-detail', { nodeId: 'battlestation' })
     const drawerFields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    expect(drawerFields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
+    // The captured error line rides the drawer as a warn-toned recent-error row even
+    // while the node participates (REQ-OBS-011 AC7).
+    const recentErr = drawerFields.find((node) => node.dataset.drawerField === 'runtime-detail')!
+    expect(recentErr.dataset.tone).toBe('warn')
     const drawerText = (name: string) => descendants(drawerFields.find((node) => node.dataset.drawerField === name)!).map((node) => node.textContent).join(' ')
     expect(drawerText('work-state')).toContain('Serving model')
   })
@@ -446,10 +449,17 @@ describe('dashboard overview contracts', () => {
     expect(rowOrder(harness)).toEqual(['node-small'])
   })
 
-  it('REQ-ADM-006 the custom domain card lives in Settings', async () => {
-    const harness = await dashboardHarness()
-    expect(descendants(harness.byId('settings')).some((node) => node.id === 'custom-domain-current')).toBe(true)
-    expect(descendants(harness.byId('routing')).some((node) => node.id === 'custom-domain-current')).toBe(false)
+  it('REQ-ADM-006 the custom domain card lives in Settings', () => {
+    // The harness never trees static HTML, so placement pins on served source order:
+    // the card renders exactly once, after the Settings section opens (Settings is the
+    // final section, so a greater index means containment) and past the Routing section.
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const settingsAt = html.indexOf('id="settings"')
+    const routingAt = html.indexOf('id="routing"')
+    const domainAt = html.indexOf('id="custom-domain-current"')
+    expect(html.match(/id="custom-domain-current"/g)!.length).toBe(1)
+    expect(routingAt).toBeLessThan(settingsAt)
+    expect(domainAt).toBeGreaterThan(settingsAt)
   })
 
   it('REQ-ADM-020 saves the offline-machine prune window from Settings', async () => {

@@ -775,7 +775,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // A leveled chatter line (warn/info/debug/trace without a hard error token) is never a
   // live degradation signal; old agents forwarded such lines before the stderr gate
   // learned whole-word levels.
-  const chatterDetail = (detail) => /\b(warn|info|debug|trace)\b/i.test(detail) && !/\b(error|fatal|panic)\b/i.test(detail);
+  const chatterDetail = (detail) => /\\b(warn|info|debug|trace)\\b/i.test(detail) && !/\\b(error|fatal|panic)\\b/i.test(detail);
   // A running runtime carrying a captured error line is degraded, not healthy: the split
   // just collapsed around it or a lane failed mid-request. The row and drawer must show
   // it even while the node still serves.
