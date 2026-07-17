@@ -71,6 +71,11 @@ type MeshLLMSettings struct {
 	// (MESH_FORCE_TOOL_EMULATION=1) for models whose template advertises a
 	// native tool grammar that mesh-llm cannot parse (e.g. ERNIE Thinking).
 	ToolEmulation bool `json:"toolEmulation,omitempty"`
+	// Staged-transport tunables. Empty values resolve to the WARP-optimized
+	// defaults on split profiles (q8 wire, adaptive-ramp prefill).
+	WireDtype        string `json:"wireDtype,omitempty"`
+	PrefillChunking  string `json:"prefillChunking,omitempty"`
+	PrefillChunkSize int    `json:"prefillChunkSize,omitempty"`
 }
 
 // ReasoningSettings carries the model's thinking-phase config. Enabled nil means

@@ -173,14 +173,30 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 		}
 	}
 
-	// WARP-optimized staged-transport defaults. The stage lane rides the WARP
-	// overlay (never LAN), where load-induced queueing inflates RTT past the
-	// stage tolerance mesh-llm enforces: q8 activation frames halve the wire
-	// volume and adaptive-ramp prefill paces bursts so the lane stays under it.
-	var sk strings.Builder
+	// Staged-transport table. The stage lane rides the WARP overlay (never LAN),
+	// where load-induced queueing inflates RTT past the stage tolerance mesh-llm
+	// enforces: q8 activation frames halve the wire volume and adaptive-ramp
+	// prefill paces bursts so the lane stays under it. Explicit tunables win;
+	// unset values fall back to those WARP-optimized defaults on split profiles.
+	wire := t.WireDtype
+	chunking := t.PrefillChunking
 	if in.Split {
-		sk.WriteString("activation_wire_dtype = \"q8\"\n")
-		sk.WriteString("prefill_chunking = \"adaptive-ramp\"\n")
+		if wire == "" {
+			wire = "q8"
+		}
+		if chunking == "" {
+			chunking = "adaptive-ramp"
+		}
+	}
+	var sk strings.Builder
+	if wire != "" {
+		fmt.Fprintf(&sk, "activation_wire_dtype = %q\n", wire)
+	}
+	if chunking != "" {
+		fmt.Fprintf(&sk, "prefill_chunking = %q\n", chunking)
+	}
+	if t.PrefillChunkSize > 0 {
+		fmt.Fprintf(&sk, "prefill_chunk_size = %d\n", t.PrefillChunkSize)
 	}
 
 	// Nothing overrides the mesh-llm defaults: render no config file so the

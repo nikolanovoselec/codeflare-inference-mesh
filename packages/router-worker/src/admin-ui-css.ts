@@ -333,7 +333,6 @@ details summary{cursor:pointer;color:var(--text-2);font-size:var(--fs-sm);font-w
 .nodes-table td{border-bottom:1px solid var(--line);padding:.5rem .65rem;vertical-align:middle;min-width:0}
 .nodes-table td>*{min-width:0;max-width:100%}
 .nodes-table td .btn{margin-left:.5rem}
-.nodes-table td[data-cell=version]{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
 .sort-btn{border:0;background:none;color:var(--text-2);font-family:var(--font-mono);font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;cursor:pointer;padding:.45rem .2rem;min-height:${ADMIN_UI_RESPONSIVE.minTouchTargetPx}px}
 .sort-btn:hover{color:var(--text)}
 .link-btn{border:0;background:none;color:var(--text);font-family:var(--font-mono);font-size:var(--fs-sm);cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:.35rem 0;min-height:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

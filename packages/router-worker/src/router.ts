@@ -1184,6 +1184,9 @@ interface MeshllmTunablesBody {
   reasoning?: unknown
   prefixCache?: unknown
   toolEmulation?: unknown
+  wireDtype?: unknown
+  prefillChunking?: unknown
+  prefillChunkSize?: unknown
 }
 
 // resolveReasoning layers a reasoning update onto the existing block, per sub-field,
@@ -1290,6 +1293,20 @@ function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, 
     if (body.toolEmulation === null || body.toolEmulation === false) delete next.toolEmulation
     else if (body.toolEmulation === true) next.toolEmulation = true
     else return { error: 'invalid_tool_emulation' }
+  }
+  const applyChoice = (key: string, value: unknown, allowed: readonly string[], error: string): string | null => {
+    if (value === undefined) return null
+    if (value === null || value === '') { delete next[key]; return null }
+    if (typeof value !== 'string' || !allowed.includes(value)) return error
+    next[key] = value
+    return null
+  }
+  for (const err of [
+    applyChoice('wireDtype', body.wireDtype, ['f16', 'f32', 'q8'], 'invalid_wire_dtype'),
+    applyChoice('prefillChunking', body.prefillChunking, ['fixed', 'adaptive-ramp'], 'invalid_prefill_chunking'),
+    applyInt('prefillChunkSize', body.prefillChunkSize, 1)
+  ]) {
+    if (err) return { error: err }
   }
   if (body.reasoning !== undefined) {
     if (body.reasoning === null) delete next.reasoning
@@ -2355,7 +2372,10 @@ function toApiModel(profile: ModelProfile) {
       maxOutputTokens: m.maxOutputTokens ?? null,
       reasoning: m.reasoning ?? null,
       prefixCache: m.prefixCache ?? null,
-      toolEmulation: m.toolEmulation ?? null
+      toolEmulation: m.toolEmulation ?? null,
+      wireDtype: m.wireDtype ?? null,
+      prefillChunking: m.prefillChunking ?? null,
+      prefillChunkSize: m.prefillChunkSize ?? null
     } : null,
     ...(l ? { llamacpp: l } : {})
   }

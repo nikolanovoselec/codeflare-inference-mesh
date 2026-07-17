@@ -689,6 +689,30 @@ describe('dashboard overview contracts', () => {
     expect(activate?.init?.method).toBe('POST')
   })
 
+  it('REQ-OBS-011 a live runtime error rides the node row and drawer even while serving', async () => {
+    const nodes = [
+      { id: 'node-degraded', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'direct prediction return upstream-opened sink unavailable' } },
+      { id: 'node-clean', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0 } },
+      // Leveled chatter from a pre-gate agent is not a live degradation signal.
+      { id: 'node-chatter', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'WARN failed closing path' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    const statusCell = (id: string) => descendants(tableRows(harness).find((row) => row.dataset.nodeRow === id)!).find((node) => node.dataset.cell === 'status')!
+    const chipOf = (id: string) => descendants(statusCell(id)).find((node) => node.className === 'chip')!
+    expect(statusCell('node-degraded').dataset.runtimeError).toBe('direct prediction return upstream-opened sink unavailable')
+    expect(chipOf('node-degraded').dataset.tone).toBe('warn')
+    expect(statusCell('node-clean').dataset.runtimeError).toBeUndefined()
+    expect(chipOf('node-clean').dataset.tone).toBe('ok')
+    expect(statusCell('node-chatter').dataset.runtimeError).toBeUndefined()
+    expect(chipOf('node-chatter').dataset.tone).toBe('ok')
+
+    await harness.clickAction('node-detail', { nodeId: 'node-degraded' })
+    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const err = fields.find((node) => node.dataset.drawerField === 'runtime-detail')!
+    expect(err.dataset.tone).toBe('warn')
+    expect(descendants(err).map((node) => node.textContent).join(' ')).toContain('sink unavailable')
+  })
+
   it('REQ-OBS-011 the node drawer surfaces runtime errors, work state, and mesh diagnostics', async () => {
     const nodes = [
       { id: 'node-wedged', status: 'online', agentVersion: 'v1.3.0', metrics: {
@@ -792,7 +816,7 @@ describe('dashboard overview contracts', () => {
 
   it('REQ-RUN-002 loads and saves per-model runtime tunables from the model drawer', async () => {
     const profiles = [
-      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 0, meshllm: { split: false, modelRef: 'ref-a', parallel: 4, cacheTypeK: 'q8_0', toolEmulation: true } }
+      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 0, meshllm: { split: false, modelRef: 'ref-a', parallel: 4, cacheTypeK: 'q8_0', toolEmulation: true, wireDtype: 'f16', prefillChunking: 'fixed', prefillChunkSize: 256 } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
@@ -801,6 +825,9 @@ describe('dashboard overview contracts', () => {
     expect(harness.byId('model-edit-parallel').value).toBe('4')
     expect(harness.byId('model-edit-cache-k').value).toBe('q8_0')
     expect(harness.byId('model-edit-tool-emulation').value).toBe('emulated')
+    expect(harness.byId('model-edit-wire-dtype').value).toBe('f16')
+    expect(harness.byId('model-edit-prefill-chunking').value).toBe('fixed')
+    expect(harness.byId('model-edit-prefill-chunk-size').value).toBe('256')
     // Each field carries plain-language help; assert the hint affordance renders (structure, not copy).
     expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).some((node) => node.className === 'drawer-hint')).toBe(true)
     // Editing lanes / KV / max-output and saving posts the tunables to the validated endpoint;
@@ -809,6 +836,9 @@ describe('dashboard overview contracts', () => {
     harness.byId('model-edit-cache-v').value = 'q4_0'
     harness.byId('model-edit-maxout').value = '8192'
     harness.byId('model-edit-tool-emulation').value = ''
+    harness.byId('model-edit-wire-dtype').value = 'q8'
+    harness.byId('model-edit-prefill-chunking').value = ''
+    harness.byId('model-edit-prefill-chunk-size').value = ''
     await harness.clickAction('model-save', { profileId: 'mesh-default-qwen36-35b', out: 'model-output' })
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
     const body = JSON.parse(String(call?.init?.body))
@@ -817,6 +847,9 @@ describe('dashboard overview contracts', () => {
     expect(body.maxOutputTokens).toBe(8192)
     expect(body.contextWindow).toBe(0)
     expect(body.toolEmulation).toBe(null)
+    expect(body.wireDtype).toBe('q8')
+    expect(body.prefillChunking).toBe(null)
+    expect(body.prefillChunkSize).toBe(null)
   })
 
   it('REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer', async () => {

@@ -772,6 +772,20 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (state === 'ready' || state === 'running' || (metrics.apiReady === true && metrics.consoleReady === true && metrics.meshRole)) return '';
     return metrics.lastError || metrics.runtimeDetail || '';
   }
+  // A leveled chatter line (warn/info/debug/trace without a hard error token) is never a
+  // live degradation signal; old agents forwarded such lines before the stderr gate
+  // learned whole-word levels.
+  const chatterDetail = (detail) => /\b(warn|info|debug|trace)\b/i.test(detail) && !/\b(error|fatal|panic)\b/i.test(detail);
+  // A running runtime carrying a captured error line is degraded, not healthy: the split
+  // just collapsed around it or a lane failed mid-request. The row and drawer must show
+  // it even while the node still serves.
+  function degradedRuntimeError(node) {
+    if (node.status !== 'online' || node.deactivated) return '';
+    const metrics = node.metrics || {};
+    const detail = metrics.runtimeDetail || '';
+    if (!detail || chatterDetail(detail)) return '';
+    return detail;
+  }
   function runtimeInstallInfo(node) {
     if (node.runtimeInstall && !node.deactivated) return { ...node.runtimeInstall, error: node.runtimeInstall.state === 'failed' ? node.runtimeInstall.error : null };
     const metrics = node.metrics || {};
@@ -949,7 +963,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       // drawer diagnostics and the cell's data attributes, never in the label.
       const statusWord = nodeDisplayStatus(node);
       const statusLabel = statusWord === 'Offline' ? statusWord + (nodeRelAge(node) ? ' · last seen ' + nodeRelAge(node) : '') : statusWord;
-      statusCell.appendChild(statusDot(nodeTone(node), statusLabel));
+      // A captured runtime error never hides behind a green chip: the cell carries the
+      // exact line and an ok tone escalates to warn while the error stands.
+      const degraded = degradedRuntimeError(node);
+      if (degraded) statusCell.setAttribute('data-runtime-error', degraded);
+      statusCell.appendChild(statusDot(degraded && nodeTone(node) === 'ok' ? 'warn' : nodeTone(node), statusLabel));
       const install = runtimeInstallInfo(node);
       const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));
       installChip.setAttribute('data-runtime-install-chip', node.id);
@@ -1147,6 +1165,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const errRow = drawerField('runtime-detail', 'Runtime error', runtimeError);
       errRow.setAttribute('data-tone', 'danger');
       bodyEl.appendChild(errRow);
+    } else {
+      const degraded = degradedRuntimeError(node);
+      if (degraded) {
+        const errRow = drawerField('runtime-detail', 'Recent runtime error', degraded);
+        errRow.setAttribute('data-tone', 'warn');
+        bodyEl.appendChild(errRow);
+      }
     }
     const install = runtimeInstallInfo(node);
     const installRow = drawerField('runtime-install', 'Runtime', runtimeInstallText(node));
@@ -1460,6 +1485,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'Reasoning output format tag. Usually deepseek.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers. Part of the output budget, so keep it below Max output tokens (a 2:1 split, e.g. 8192 / 4096, leaves room to answer).' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-tool-emulation', label: 'Tool calling', value: meshllm.toolEmulation === true ? 'emulated' : '', options: [{ value: '', label: 'Native (template grammar)' }, { value: 'emulated', label: 'Forced emulation' }], hint: 'Native parses tool calls with the model template grammar. Forced emulation uses the text-convention protocol instead - pick it when agent tool calls fail to parse (e.g. ERNIE Thinking).' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-wire-dtype', label: 'Stage wire precision', value: meshllm.wireDtype || '', options: [{ value: '', label: 'Auto (q8 for split - WARP-optimized)' }, { value: 'q8', label: 'q8 (least traffic)' }, { value: 'f16', label: 'f16 (full precision)' }, { value: 'f32', label: 'f32 (heaviest)' }], hint: 'Numeric precision of activation data streamed between split stages over WARP. q8 halves traffic vs f16 with minimal quality impact, keeping the stage link responsive under load. Single-machine models ignore this.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-prefill-chunking', label: 'Prefill pacing', value: meshllm.prefillChunking || '', options: [{ value: '', label: 'Auto (adaptive ramp for split - WARP-optimized)' }, { value: 'adaptive-ramp', label: 'Adaptive ramp' }, { value: 'fixed', label: 'Fixed chunks' }], hint: 'How long-prompt ingestion is spread across the split. Adaptive ramp paces the bursts so the WARP stage link never queues up and drops a machine mid-request. Single-machine models ignore this.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-prefill-chunk-size', label: 'Prefill chunk size', value: meshllm.prefillChunkSize, placeholder: 'Auto', hint: 'Tokens per prefill chunk under Fixed pacing. Lower keeps WARP traffic smoother at slower ingestion. Blank = runtime default.' }));
     }
     if (isDirect) {
       const reasoning = llamacpp.reasoning || {};
@@ -2794,6 +2822,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
           payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw === '' ? null : fmtRaw, budget: budgetRaw === '' ? null : Number(budgetRaw) };
         }
         payload.toolEmulation = readInput('model-edit-tool-emulation') === 'emulated' ? true : null;
+        const wireRaw = readInput('model-edit-wire-dtype');
+        payload.wireDtype = wireRaw === '' ? null : wireRaw;
+        const chunkingRaw = readInput('model-edit-prefill-chunking');
+        payload.prefillChunking = chunkingRaw === '' ? null : chunkingRaw;
+        const chunkSizeRaw = readInput('model-edit-prefill-chunk-size');
+        payload.prefillChunkSize = chunkSizeRaw === '' ? null : Number(chunkSizeRaw);
       }
       await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
       setOutput(out, 'Model settings saved.');

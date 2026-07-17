@@ -2661,10 +2661,13 @@ describe('router worker behavioral contracts', () => {
     }))
     const meshllm = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm!
 
-    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, toolEmulation: true, reasoning: { enabled: true, format: 'deepseek', budget: 4096 }, prefixCache: { enabled: true, maxEntries: 16, payloadMode: 'kv-recurrent', sharedStrideTokens: 128, sharedRecordLimit: 4 } })
+    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, toolEmulation: true, wireDtype: 'q8', prefillChunking: 'fixed', prefillChunkSize: 512, reasoning: { enabled: true, format: 'deepseek', budget: 4096 }, prefixCache: { enabled: true, maxEntries: 16, payloadMode: 'kv-recurrent', sharedStrideTokens: 128, sharedRecordLimit: 4 } })
     expect(set.status).toBe(200)
     let m = await meshllm()
     expect(m.toolEmulation).toBe(true)
+    expect(m.wireDtype).toBe('q8')
+    expect(m.prefillChunking).toBe('fixed')
+    expect(m.prefillChunkSize).toBe(512)
     expect(m.parallel).toBe(4)
     expect(m.cacheTypeK).toBe('q4_0')
     expect(m.cacheTypeV).toBe('q4_0')
@@ -2692,12 +2695,15 @@ describe('router worker behavioral contracts', () => {
 
     // Clearing a field back to Auto removes the key entirely, so JSON.stringify never
     // leaves a stale undefined; untouched fields persist.
-    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, toolEmulation: null, reasoning: null, prefixCache: null })).status).toBe(200)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, toolEmulation: null, wireDtype: null, prefillChunking: '', prefillChunkSize: null, reasoning: null, prefixCache: null })).status).toBe(200)
     m = await meshllm()
     expect('parallel' in m).toBe(false)
     expect('cacheTypeK' in m).toBe(false)
     expect('flashAttn' in m).toBe(false)
     expect('toolEmulation' in m).toBe(false)
+    expect('wireDtype' in m).toBe(false)
+    expect('prefillChunking' in m).toBe(false)
+    expect('prefillChunkSize' in m).toBe(false)
     expect('reasoning' in m).toBe(false)
     expect('prefixCache' in m).toBe(false)
     expect(m.cacheTypeV).toBe('q4_0')
@@ -2707,6 +2713,9 @@ describe('router worker behavioral contracts', () => {
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 0.5 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', cacheTypeK: 'bogus' })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', toolEmulation: 'yes' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', wireDtype: 'q4' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', prefillChunking: 'schedule' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', prefillChunkSize: 0.5 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', batch: -1 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', flashAttn: 'yes' })).status).toBe(400)
     // maxEntries is capped at 128 so an operator cannot re-introduce the KV-pool overrun.

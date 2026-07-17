@@ -54,6 +54,13 @@ export interface MeshLLMProfileSettings {
   // for models whose template advertises a native tool grammar mesh-llm cannot
   // parse (e.g. ERNIE Thinking). Absent = native (mesh-llm decides).
   readonly toolEmulation?: boolean
+  // Staged-transport tunables for split models. The stage lane rides the WARP
+  // overlay, so unset values resolve to the WARP-optimized defaults on split
+  // profiles (wireDtype q8, prefillChunking adaptive-ramp); single-node profiles
+  // render them only when set.
+  readonly wireDtype?: string
+  readonly prefillChunking?: string
+  readonly prefillChunkSize?: number
 }
 
 export interface LlamaCppProfileSettings {

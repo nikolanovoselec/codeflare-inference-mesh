@@ -294,6 +294,16 @@ func TestREQRUN014SplitProfilesRenderWarpTransportDefaults(t *testing.T) {
 	if strings.Contains(single, "skippy") {
 		t.Fatalf("single-node profile must not render the skippy table, got:\n%s", single)
 	}
+	// Explicit tunables beat the split defaults, and chunk size renders when set.
+	tuned := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "meshllm/E-layers", Split: true, Tunables: MeshLLMSettings{WireDtype: "f16", PrefillChunking: "fixed", PrefillChunkSize: 256}}, 0)
+	if !strings.Contains(tuned, "activation_wire_dtype = \"f16\"") || !strings.Contains(tuned, "prefill_chunking = \"fixed\"") || !strings.Contains(tuned, "prefill_chunk_size = 256") {
+		t.Fatalf("explicit staged-transport tunables must override the defaults, got:\n%s", tuned)
+	}
+	// A single-node profile renders the table only when explicitly tuned.
+	singleTuned := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "meshllm/E", Tunables: MeshLLMSettings{WireDtype: "q8"}}, 0)
+	if !strings.Contains(singleTuned, "activation_wire_dtype = \"q8\"") {
+		t.Fatalf("explicit wire dtype must render for single-node profiles, got:\n%s", singleTuned)
+	}
 }
 
 func TestREQRUN014ContextLimitConfigRendering(t *testing.T) {
