@@ -839,8 +839,22 @@ func TestREQRUN007RestartWithInputRelaunchesWithNewProfileArgs(t *testing.T) {
 			t.Fatalf("restart with new input should relaunch, got %d launches", fixture.launch.count())
 		}
 		args := fixture.launch.record(1).args
-		if models := flagValues(args, "--model"); !equalStrings(models, []string{"hf://meshllm/layers@rev2"}) {
-			t.Fatalf("relaunch must render the new profile's model ref, got %v", models)
+		// A split profile always writes a config file (the WARP staged-transport
+		// table), and a written config owns the [[models]] entry: --model moves off
+		// argv so the config-owned entry drives the load (REQ-RUN-003).
+		if models := flagValues(args, "--model"); len(models) != 0 {
+			t.Fatalf("a config-owned split relaunch must not render --model, got %v", models)
+		}
+		configPaths := flagValues(args, "--config")
+		if len(configPaths) != 1 {
+			t.Fatalf("a split relaunch must render its config file, got %v", args)
+		}
+		written, err := os.ReadFile(configPaths[0])
+		if err != nil {
+			t.Fatalf("read relaunch config: %v", err)
+		}
+		if !strings.Contains(string(written), "model = \"hf://meshllm/layers@rev2\"") {
+			t.Fatalf("relaunch config must carry the new profile's model ref, got:\n%s", written)
 		}
 		if !argvContains(args, "--split") {
 			t.Fatalf("relaunch of a split profile must render --split, got %v", args)
