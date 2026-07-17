@@ -85,7 +85,7 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 ### REQ-API-004: Programmatic node management
 
-**Intent:** Fleet managers must enumerate, inspect, and decommission nodes programmatically — filtering and paginating a large fleet — without ever exposing node token verifiers or internal topology.
+**Intent:** Fleet managers must enumerate, inspect, and decommission nodes programmatically, without ever exposing node token verifiers or internal topology.
 
 **Applies To:** Automation
 
