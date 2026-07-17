@@ -614,8 +614,10 @@ describe('dashboard overview contracts', () => {
 
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    const modelStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
-    expect(descendants(modelStage).map((node) => node.textContent).join(' ')).toContain('L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
+    // Stage ownership lives once, in the mesh card's Technical details.
+    expect(fields.some((node) => node.dataset.drawerField === 'stage-ownership')).toBe(false)
+    const modelStage = fields.find((node) => node.dataset.meshField === 'stage-owners')!
+    expect(modelStage.textContent).toBe('Stage owners: L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
   })
 
   it('REQ-OBS-011 hides model_size_unknown during reload and update transitions', async () => {
@@ -750,15 +752,17 @@ describe('dashboard overview contracts', () => {
     expect(textOf(field('direct-cached-tokens')!)).toContain('not reported')
   })
 
-  it('REQ-ADM-015 opens a model drawer listing the nodes serving each alias', async () => {
+  it('REQ-ADM-015 opens a model drawer with editable identity and no duplicated serving list', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     const drawer = harness.byId(ADMIN_UI_DRAWER.containerId)
     expect(drawer.hidden).toBe(false)
     expect(harness.byId(ADMIN_UI_DRAWER.titleId).textContent).toBe('Qwen3.6 35B')
+    // Machine participation lives in the mesh card alone; the drawer repeats no
+    // serving-node list of its own.
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    const servingNodes = fields.filter((node) => node.dataset.drawerServingNode)
-    expect(servingNodes.map((node) => node.dataset.drawerServingNode).sort()).toEqual(['node-big', 'node-small'])
+    expect(fields.some((node) => node.dataset.drawerServingNode)).toBe(false)
+    expect(fields.some((node) => node.dataset.drawerField === 'serving')).toBe(false)
     // The drawer prefills the editable name and the model's own call name (its non-shared
     // alias) — not the shared codeflare-mesh alias, which apps use to reach the active model.
     expect(harness.byId('model-edit-name').value).toBe('Qwen3.6 35B')
