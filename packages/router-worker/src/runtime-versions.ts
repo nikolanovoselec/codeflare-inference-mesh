@@ -18,7 +18,7 @@ export function meshllmReleaseRepository(env: { readonly MESHLLM_RELEASE_REPOSIT
 }
 
 export interface RuntimeRepositoryOverrides {
-  readonly meshllm?: string
+  readonly meshllm?: string | undefined
 }
 
 const SOURCES = {
