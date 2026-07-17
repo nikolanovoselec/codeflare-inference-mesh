@@ -341,6 +341,32 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 ---
 
+
+### REQ-NODE-014: Configurable runtime release source
+
+**Intent:** The fleet must be able to consume mesh-llm binaries from an alternative GitHub repository — e.g. the overlay-hardened Codeflare fork — through one worker setting, switchable in both directions without touching nodes, so runtime patches ship through the existing runtime-binaries flow.
+
+**Applies To:** Router Worker, Node Agent
+
+**Acceptance Criteria:**
+
+1. A valid `owner/repo` in the `MESHLLM_RELEASE_REPOSITORY` Worker variable redirects mesh-llm release listing and selection to that repository; an unset or invalid value falls back to upstream `Mesh-LLM/mesh-llm`. <!-- @impl: packages/router-worker/src/runtime-versions.ts::meshllmReleaseRepository --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) -->
+2. Claim and heartbeat responses carry `meshllmRepository` inside `desiredRuntimeVersions` when configured, and the agent follows the router's word exactly — adopting a present value and resetting to upstream when absent. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredRuntimeVersions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE014RepositoryFollowsRouterExactly) -->
+3. The agent downloads mesh-llm archives and their checksum sidecars from the configured repository's releases, with unchanged SHA-256 verification. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE014ReleaseRepositoryOverride) -->
+4. A release-tag cache row recorded from a different repository is never served; switching the source refetches from the new repository. <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) -->
+
+**Constraints:** —
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-006](#req-node-006-meshllm-binary-install-and-update), [REQ-ADM-033](setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/architecture.md](../../documentation/lanes/architecture.md)

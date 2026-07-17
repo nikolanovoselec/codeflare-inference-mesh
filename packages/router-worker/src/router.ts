@@ -12,7 +12,7 @@ import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth
 import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName, type MeshRecord } from './meshes'
 import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, nodeMeshId, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
-import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
+import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect, meshllmReleaseRepository } from './runtime-versions'
 import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { singleActiveActivation } from './store'
@@ -300,7 +300,7 @@ async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: st
     // A node only ever receives its own machine group's profiles (REQ-SCH-006);
     // a fresh claim joins the default mesh.
     profiles: meshProfilesFor(await deps.store.listProfiles(), nodeRecord),
-    desiredRuntimeVersions: await desiredRuntimeVersions(deps.store),
+    desiredRuntimeVersions: { ...await desiredRuntimeVersions(deps.store), ...(meshllmReleaseRepository(deps.env) ? { meshllmRepository: meshllmReleaseRepository(deps.env) } : {}) },
     ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
   }, 201, requestId)
@@ -349,7 +349,7 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
     return json({
       ok: true,
       desiredProfiles: [],
-      desiredRuntimeVersions: runtimeVersions,
+      desiredRuntimeVersions: { ...runtimeVersions, ...(meshllmReleaseRepository(deps.env) ? { meshllmRepository: meshllmReleaseRepository(deps.env) } : {}) },
       deactivated: true,
       ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
     }, 200, requestId)
@@ -362,7 +362,7 @@ async function handleNodeHeartbeat(request: Request, deps: RouterDeps, requestId
   return json({
     ok: true,
     desiredProfiles,
-    desiredRuntimeVersions: runtimeVersions,
+    desiredRuntimeVersions: { ...runtimeVersions, ...(meshllmReleaseRepository(deps.env) ? { meshllmRepository: meshllmReleaseRepository(deps.env) } : {}) },
     ...(meshBootstrap !== undefined ? { meshBootstrap } : {}),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {}),
     ...(next.reloadNonce ? { reloadNonce: next.reloadNonce } : {})
@@ -510,7 +510,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
         gateway: await deps.store.getConfig('cloudflare_gateway'),
         customDomain: await deps.store.getConfig('custom_domain'),
         offlinePruneSeconds: await offlinePruneSeconds(deps),
-        desiredRuntimeVersions: runtimeVersions,
+        desiredRuntimeVersions: { ...runtimeVersions, ...(meshllmReleaseRepository(deps.env) ? { meshllmRepository: meshllmReleaseRepository(deps.env) } : {}) },
         audit: await deps.store.listAudit(20)
       }
     : {}
@@ -1508,13 +1508,13 @@ async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps,
 async function handleAdminRuntimeVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleRuntimeVersionsList(request, deps.store, deps.releasesFetcher ?? globalThis.fetch)
+  return await handleRuntimeVersionsList(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, { meshllm: meshllmReleaseRepository(deps.env) })
 }
 
 async function handleAdminRuntimeVersionSelect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const actor = await requireAdmin(request, deps, now)
   if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, actor)
+  return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, actor, { meshllm: meshllmReleaseRepository(deps.env) })
 }
 
 /** REQ-ADM-017: lets the console render the admin vs read-only user surface. */
@@ -2573,7 +2573,7 @@ async function handleApiAgentVersionSet(request: Request, deps: RouterDeps, requ
 
 async function handleApiRuntimeVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleRuntimeVersionsList(request, deps.store, deps.releasesFetcher ?? globalThis.fetch)
+  return await handleRuntimeVersionsList(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, { meshllm: meshllmReleaseRepository(deps.env) })
 }
 
 async function handleApiRuntimeVersionSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {

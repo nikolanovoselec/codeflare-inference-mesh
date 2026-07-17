@@ -86,11 +86,16 @@ func MeshLLMAssetForVersion(goos, goarch, flavor, version string) (MeshLLMAsset,
 	return MeshLLMAsset{AssetName: "mesh-llm-" + version + "-" + target}, nil
 }
 
-func meshLLMReleaseBaseURLFor(version string) string {
+const defaultMeshLLMRepository = "Mesh-LLM/mesh-llm"
+
+func meshLLMReleaseBaseURLFor(version, repository string) string {
 	if version == "" {
 		version = MeshLLMPinnedVersion
 	}
-	return "https://github.com/Mesh-LLM/mesh-llm/releases/download/" + version
+	if repository == "" {
+		repository = defaultMeshLLMRepository
+	}
+	return "https://github.com/" + repository + "/releases/download/" + version
 }
 
 func parseSHA256File(data []byte) string {
@@ -175,6 +180,7 @@ type meshLLMInstallOptions struct {
 	goos         string
 	goarch       string
 	asset        *MeshLLMAsset
+	repository   string
 	lookPath     func(file string) (string, error)
 	queryVersion func(binaryPath string) (string, error)
 	download     func(assetURL string) ([]byte, error)
@@ -189,6 +195,14 @@ func WithMeshLLMPlatform(goos, goarch string) MeshLLMInstallOption {
 	return func(options *meshLLMInstallOptions) {
 		options.goos = goos
 		options.goarch = goarch
+	}
+}
+
+// WithMeshLLMRepository overrides the GitHub owner/repo whose releases serve
+// mesh-llm binaries; empty keeps the upstream default.
+func WithMeshLLMRepository(repository string) MeshLLMInstallOption {
+	return func(options *meshLLMInstallOptions) {
+		options.repository = repository
 	}
 }
 
@@ -295,7 +309,7 @@ func EnsureMeshLLMVersion(dataDir, flavorOverride string, allowUnpinned bool, ve
 		asset = resolved
 	}
 
-	assetURL := meshLLMReleaseBaseURLFor(version) + "/" + asset.AssetName
+	assetURL := meshLLMReleaseBaseURLFor(version, options.repository) + "/" + asset.AssetName
 	data, err := options.download(assetURL)
 	if err != nil {
 		return "", fmt.Errorf("%w: download %s: %v", ErrRuntimeDependencyMissing, asset.AssetName, err)

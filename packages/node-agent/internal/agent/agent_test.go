@@ -18,6 +18,21 @@ import (
 	"time"
 )
 
+func TestREQNODE014RepositoryFollowsRouterExactly(t *testing.T) {
+	current := RuntimeBinaryVersions{MeshLLM: "v1", LlamaCpp: "b1", MeshLLMRepository: "nikolanovoselec/mesh-llm"}
+	adopted := mergeRuntimeVersions(current, RuntimeBinaryVersions{MeshLLMRepository: "other/fork"})
+	if adopted.MeshLLMRepository != "other/fork" {
+		t.Fatalf("a present repository must be adopted, got %q", adopted.MeshLLMRepository)
+	}
+	reset := mergeRuntimeVersions(current, RuntimeBinaryVersions{MeshLLM: "v2"})
+	if reset.MeshLLMRepository != "" {
+		t.Fatalf("an absent repository must reset to upstream, got %q", reset.MeshLLMRepository)
+	}
+	if reset.MeshLLM != "v2" || reset.LlamaCpp != "b1" {
+		t.Fatalf("version merge semantics must be unchanged, got %+v", reset)
+	}
+}
+
 func TestREQNODE001ServiceSkeletonAndListenerPolicy(t *testing.T) {
 	t.Run("REQ-NODE-001", func(t *testing.T) {
 		addr := &net.IPNet{IP: net.ParseIP("100.64.1.10"), Mask: net.CIDRMask(32, 32)}

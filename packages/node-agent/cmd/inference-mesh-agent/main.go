@@ -231,7 +231,7 @@ func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent
 // never eligible: the manager reports dependency-missing and the install
 // error rides heartbeat metrics as the last error.
 func startMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (*agent.MeshLLMManager, string, error) {
-	binaryPath, installErr := agent.EnsureMeshLLMVersion(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned, cfg.RuntimeVersions.MeshLLM)
+	binaryPath, installErr := agent.EnsureMeshLLMVersion(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned, cfg.RuntimeVersions.MeshLLM, agent.WithMeshLLMRepository(cfg.RuntimeVersions.MeshLLMRepository))
 	installError := ""
 	if installErr != nil {
 		installError = installErr.Error()
@@ -933,7 +933,7 @@ func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, man
 		}
 	}
 	if mesh, ok := manager.(*agent.MeshLLMManager); ok {
-		binaryPath, installErr := agent.EnsureMeshLLMVersion(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned, cfg.RuntimeVersions.MeshLLM)
+		binaryPath, installErr := agent.EnsureMeshLLMVersion(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned, cfg.RuntimeVersions.MeshLLM, agent.WithMeshLLMRepository(cfg.RuntimeVersions.MeshLLMRepository))
 		installError := ""
 		if installErr != nil {
 			installError = installErr.Error()

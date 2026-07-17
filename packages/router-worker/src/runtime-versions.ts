@@ -8,6 +8,19 @@ const GITHUB_USER_AGENT = 'codeflare-inference-mesh-router'
 export const DEFAULT_MESHLLM_VERSION = 'v0.72.2'
 export const DEFAULT_LLAMACPP_VERSION = 'b9912'
 
+/** GitHub owner/repo override for mesh-llm releases (REQ-NODE-014): a valid
+ * `owner/repo` in MESHLLM_RELEASE_REPOSITORY redirects release listing and the
+ * fleet's binary downloads (e.g. to an overlay-hardened fork); anything else
+ * falls back to upstream. */
+export function meshllmReleaseRepository(env: { readonly MESHLLM_RELEASE_REPOSITORY?: string }): string | undefined {
+  const value = (env.MESHLLM_RELEASE_REPOSITORY ?? '').trim()
+  return /^[\w.-]+\/[\w.-]+$/.test(value) ? value : undefined
+}
+
+export interface RuntimeRepositoryOverrides {
+  readonly meshllm?: string
+}
+
 const SOURCES = {
   meshllm: {
     repository: 'Mesh-LLM/mesh-llm',
@@ -33,6 +46,8 @@ export interface RuntimeBinaryVersions {
 interface RuntimeVersionsCache {
   readonly fetchedAt: number
   readonly tags: readonly string[]
+  /** Repository the tags came from; a repo switch invalidates the cache. */
+  readonly repository?: string
 }
 
 interface RuntimeVersionList {
@@ -52,16 +67,16 @@ export async function desiredRuntimeVersions(store: Store): Promise<RuntimeBinar
   }
 }
 
-export async function handleRuntimeVersionsList(request: Request, store: Store, fetcher: typeof fetch = globalThis.fetch): Promise<Response> {
+export async function handleRuntimeVersionsList(request: Request, store: Store, fetcher: typeof fetch = globalThis.fetch, overrides?: RuntimeRepositoryOverrides): Promise<Response> {
   void request
   const [meshllm, llamacpp] = await Promise.all([
-    runtimeList('meshllm', store, fetcher),
-    runtimeList('llamacpp', store, fetcher)
+    runtimeList('meshllm', store, fetcher, overrides),
+    runtimeList('llamacpp', store, fetcher, overrides)
   ])
   return json({ meshllm, llamacpp }, 200)
 }
 
-export async function handleRuntimeVersionsSelect(request: Request, store: Store, fetcher: typeof fetch = globalThis.fetch, actor = 'admin'): Promise<Response> {
+export async function handleRuntimeVersionsSelect(request: Request, store: Store, fetcher: typeof fetch = globalThis.fetch, actor = 'admin', overrides?: RuntimeRepositoryOverrides): Promise<Response> {
   let body: { meshllm?: unknown; llamacpp?: unknown } | null
   try {
     body = await request.json() as { meshllm?: unknown; llamacpp?: unknown } | null
@@ -77,7 +92,7 @@ export async function handleRuntimeVersionsSelect(request: Request, store: Store
   const now = Date.now()
   const updates: { meshllm?: string; llamacpp?: string } = {}
   if (typeof meshllm === 'string') {
-    const tags = await currentTags('meshllm', store, fetcher, now)
+    const tags = await currentTags('meshllm', store, fetcher, now, overrides)
     if (!tags.includes(meshllm)) return json({ error: 'unknown_meshllm_version', version: meshllm }, 400)
     await store.putConfig(SOURCES.meshllm.desiredKey, meshllm)
     updates.meshllm = meshllm
@@ -93,21 +108,38 @@ export async function handleRuntimeVersionsSelect(request: Request, store: Store
   return json({ ok: true, desired }, 200)
 }
 
-async function runtimeList(kind: RuntimeKind, store: Store, fetcher: typeof fetch): Promise<RuntimeVersionList> {
+function repositoryFor(kind: RuntimeKind, overrides?: RuntimeRepositoryOverrides): string {
+  if (kind === 'meshllm' && overrides?.meshllm) return overrides.meshllm
+  return SOURCES[kind].repository
+}
+
+// A cache row from a different repository never serves — not even as a stale
+// fallback — so switching release sources can only show the new repo's tags.
+function cacheMatchesRepository(cache: RuntimeVersionsCache | undefined, repository: string, defaultRepository: string): cache is RuntimeVersionsCache {
+  if (cache === undefined) return false
+  // Legacy rows carry no repository and can only have come from the default.
+  return (cache.repository ?? defaultRepository) === repository
+}
+
+async function runtimeList(kind: RuntimeKind, store: Store, fetcher: typeof fetch, overrides?: RuntimeRepositoryOverrides): Promise<RuntimeVersionList> {
   const now = Date.now()
   const source = SOURCES[kind]
+  const repository = repositoryFor(kind, overrides)
   const desired = (await desiredRuntimeVersions(store))[kind]
-  const cached = await store.getConfig<RuntimeVersionsCache>(source.cacheKey)
-  const fresh = isCacheFresh(cached, now) ? cached : await refreshCache(kind, store, fetcher, now)
+  const cachedRaw = await store.getConfig<RuntimeVersionsCache>(source.cacheKey)
+  const cached = cacheMatchesRepository(cachedRaw, repository, source.repository) ? cachedRaw : undefined
+  const fresh = isCacheFresh(cached, now) ? cached : await refreshCache(kind, store, fetcher, now, repository)
   const served = fresh ?? cached
   if (!served) return { tags: [source.defaultVersion], stale: true, desired, error: 'releases_fetch_failed' }
   return { tags: served.tags, fetchedAt: served.fetchedAt, stale: !fresh, desired }
 }
 
-async function currentTags(kind: RuntimeKind, store: Store, fetcher: typeof fetch, now: number): Promise<readonly string[]> {
+async function currentTags(kind: RuntimeKind, store: Store, fetcher: typeof fetch, now: number, overrides?: RuntimeRepositoryOverrides): Promise<readonly string[]> {
   const source = SOURCES[kind]
-  const cached = await store.getConfig<RuntimeVersionsCache>(source.cacheKey)
-  const current = isCacheFresh(cached, now) ? cached : (await refreshCache(kind, store, fetcher, now)) ?? cached
+  const repository = repositoryFor(kind, overrides)
+  const cachedRaw = await store.getConfig<RuntimeVersionsCache>(source.cacheKey)
+  const cached = cacheMatchesRepository(cachedRaw, repository, source.repository) ? cachedRaw : undefined
+  const current = isCacheFresh(cached, now) ? cached : (await refreshCache(kind, store, fetcher, now, repository)) ?? cached
   return current?.tags ?? [source.defaultVersion]
 }
 
@@ -115,10 +147,10 @@ function isCacheFresh(cache: RuntimeVersionsCache | undefined, now: number): cac
   return cache !== undefined && now - cache.fetchedAt < CACHE_TTL_MS
 }
 
-async function refreshCache(kind: RuntimeKind, store: Store, fetcher: typeof fetch, now: number): Promise<RuntimeVersionsCache | undefined> {
-  const tags = await fetchReleaseTags(SOURCES[kind].repository, fetcher)
+async function refreshCache(kind: RuntimeKind, store: Store, fetcher: typeof fetch, now: number, repository: string): Promise<RuntimeVersionsCache | undefined> {
+  const tags = await fetchReleaseTags(repository, fetcher)
   if (!tags) return undefined
-  const cache = { fetchedAt: now, tags }
+  const cache = { fetchedAt: now, tags, repository }
   await store.putConfig(SOURCES[kind].cacheKey, cache)
   return cache
 }

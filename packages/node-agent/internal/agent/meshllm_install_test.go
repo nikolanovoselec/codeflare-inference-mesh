@@ -130,6 +130,17 @@ var meshLLMShippedCombos = []struct {
 	{"darwin", "arm64", "metal", ".tar.gz"},
 }
 
+func TestREQNODE014ReleaseRepositoryOverride(t *testing.T) {
+	upstream := meshLLMReleaseBaseURLFor("v1.0.0", "")
+	if upstream != "https://github.com/Mesh-LLM/mesh-llm/releases/download/v1.0.0" {
+		t.Fatalf("empty repository must resolve upstream, got %s", upstream)
+	}
+	fork := meshLLMReleaseBaseURLFor("v0.73.1-codeflare.1", "nikolanovoselec/mesh-llm")
+	if fork != "https://github.com/nikolanovoselec/mesh-llm/releases/download/v0.73.1-codeflare.1" {
+		t.Fatalf("repository override must redirect downloads, got %s", fork)
+	}
+}
+
 func TestREQNODE006PinnedVersionAndChecksumMapEmbedded(t *testing.T) {
 	t.Run("REQ-NODE-006 resolves pinned MeshLLM release assets", func(t *testing.T) {
 		asset, err := MeshLLMAssetFor("linux", "amd64", "cpu")

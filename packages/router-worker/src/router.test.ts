@@ -2894,6 +2894,32 @@ describe('router worker behavioral contracts', () => {
     expect(node?.agentVersion).toBe('v0.1.0')
   })
 
+
+  it('REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository', async () => {
+    const urls: string[] = []
+    const fetcher: typeof fetch = async (input) => {
+      urls.push(String(input))
+      return Response.json([{ tag_name: 'v0.73.1-codeflare.1' }])
+    }
+    const { router, store } = routerFixture({ releasesFetcher: fetcher, env: { MESHLLM_RELEASE_REPOSITORY: 'nikolanovoselec/mesh-llm' } })
+    await store.putToken(await createTokenRecord('setup', 'setup-secret', 1_700_000_000_000))
+    const claim = await router(new Request('https://router.test/node/claim', { method: 'POST', headers: { ...bearer('setup-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: [], capacity: 1 }) }))
+    const claimed = await claim.json() as { desiredRuntimeVersions?: { meshllmRepository?: string } }
+    expect(claim.status).toBe(200)
+    expect(claimed.desiredRuntimeVersions?.meshllmRepository).toBe('nikolanovoselec/mesh-llm')
+
+    // The runtime list fetches the fork's releases, not upstream.
+    const list = await router(new Request('https://router.test/admin/runtime-versions', { headers: bearer('admin-secret') }))
+    expect(list.status).toBe(200)
+    expect(urls.some((url) => url.includes('/repos/nikolanovoselec/mesh-llm/releases'))).toBe(true)
+
+    // An invalid override never rides the wire: the field is simply absent.
+    const plain = routerFixture({ env: { MESHLLM_RELEASE_REPOSITORY: 'not a repo!' } })
+    await plain.store.putToken(await createTokenRecord('setup', 'setup-2', 1_700_000_000_000))
+    const claim2 = await plain.router(new Request('https://router.test/node/claim', { method: 'POST', headers: { ...bearer('setup-2'), 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: [], capacity: 1 }) }))
+    const claimed2 = await claim2.json() as { desiredRuntimeVersions?: { meshllmRepository?: string } }
+    expect(claimed2.desiredRuntimeVersions?.meshllmRepository).toBeUndefined()
+  })
   it('REQ-OBS-002 reports node mesh membership and readiness fields in admin status', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })

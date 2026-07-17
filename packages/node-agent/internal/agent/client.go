@@ -164,6 +164,10 @@ func mergeRuntimeVersions(current RuntimeBinaryVersions, desired RuntimeBinaryVe
 	if desired.LlamaCpp != "" {
 		next.LlamaCpp = desired.LlamaCpp
 	}
+	// The repository override follows the router's word exactly: a present value
+	// adopts it, an absent one resets to upstream, so a fleet can switch source
+	// repos in both directions without touching nodes.
+	next.MeshLLMRepository = desired.MeshLLMRepository
 	return next
 }
 

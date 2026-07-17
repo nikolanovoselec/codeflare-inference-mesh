@@ -411,6 +411,8 @@ export interface RouterEnv {
   readonly SESSION_AFFINITY_KEY?: string
   readonly WORKER_BASE_URL?: string
   readonly GITHUB_REPOSITORY?: string
+  /** GitHub owner/repo serving mesh-llm release binaries; unset = upstream Mesh-LLM/mesh-llm (REQ-NODE-014). */
+  readonly MESHLLM_RELEASE_REPOSITORY?: string
   readonly AGENT_RELEASE_TAG?: string
   readonly MAX_REQUEST_BYTES?: string
   readonly HEARTBEAT_TTL_SECONDS?: string

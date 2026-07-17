@@ -49,6 +49,7 @@
 | `WORKER_NAME` | `codeflare-inference-mesh-router` (`codeflare-inference-mesh-router-integration` in integration) | no | `packages/router-worker/src/router.ts::handleCustomDomain`, `packages/router-worker/src/router.ts::handleSetupAccess` | [REQ-ADM-005](../../sdd/spec/setup-admin.md), [REQ-ADM-012](../../sdd/spec/setup-admin.md) |
 | `AGENT_RELEASE_TAG` | `agent-release-tag-placeholder` | set by deploy for real installers | `packages/router-worker/src/router.ts::handleInstallScript` | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | `GITHUB_REPOSITORY` | `nikolanovoselec/codeflare-inference-mesh` | yes for installers and agent-version listing | `packages/router-worker/src/router.ts::handleInstaller`, `packages/router-worker/src/router.ts::handleInstallScript`, `packages/router-worker/src/agent-versions.ts::handleAgentVersionsList` | [REQ-ADM-004](../../sdd/spec/setup-admin.md), [REQ-REL-003](../../sdd/spec/release-ci.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md) |
+| `MESHLLM_RELEASE_REPOSITORY` | unset (upstream `Mesh-LLM/mesh-llm`) | no — a valid `owner/repo` redirects the whole runtime-binaries flow (listing, selection, node downloads) to that repository, e.g. the overlay-hardened Codeflare mesh-llm fork; invalid values fall back to upstream | `packages/router-worker/src/runtime-versions.ts::meshllmReleaseRepository`, `packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion` | [REQ-NODE-014](../../sdd/spec/node-agent.md#req-node-014-configurable-runtime-release-source) |
 
 ## Wrangler bindings
 
