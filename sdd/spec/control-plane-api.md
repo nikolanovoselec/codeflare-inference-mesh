@@ -91,8 +91,8 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 
 **Acceptance Criteria:**
 
-1. `GET /api/v1/nodes` returns the fleet as machine-facing node projections that never include token verifiers or internal ports and carry `displayStatus`, the router-derived operator status vocabulary the console shows. <!-- @impl: packages/router-worker/src/router.ts::toApiNode --> <!-- @impl: packages/router-worker/src/router.ts::nodeDisplayStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 lists nodes as projections without token verifiers) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-020 REQ-API-004 node projections carry the derived operator status vocabulary) -->
-2. `GET /api/v1/nodes` filters by a `status` query parameter and a case-insensitive `q` search over node id and display name, and paginates by an id cursor returning at most `limit` nodes with a `nextCursor` when more remain. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 filters the node list by status and search) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 paginates the node list by id cursor) -->
+1. `GET /api/v1/nodes` returns the fleet as machine-facing node projections that never include token verifiers or internal ports. <!-- @impl: packages/router-worker/src/router.ts::toApiNode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 lists nodes as projections without token verifiers) -->
+2. Node projections carry `displayStatus` — the router-derived operator status vocabulary — so automation reads the same status the console shows. <!-- @impl: packages/router-worker/src/router.ts::nodeDisplayStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-020 REQ-API-004 node projections carry the derived operator status vocabulary) -->
 3. `GET /api/v1/nodes/{id}` returns one node projection, or `404` when the node is unknown. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeGet --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 returns a single node and 404 for an unknown node) -->
 4. `DELETE /api/v1/nodes/{id}` decommissions a node — deleting its record, even a revoked tombstone row, and revoking its node and mesh tokens — records a `node_revoked` audit event, and returns `404` for an unknown node. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeDecommission --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 decommissions a node and revokes its credentials) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 decommission reaps a lingering revoked tombstone row) -->
 5. The node endpoints refuse a request that carries no valid automation key. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-004 refuses node access without an automation key) -->
@@ -104,6 +104,29 @@ This domain covers the enterprise `/api/v1` control plane: a scoped, revocable, 
 **Priority:** P1
 
 **Dependencies:** [REQ-API-002](#req-api-002-control-plane-access-and-status), [REQ-SEC-002](security.md#req-sec-002-secret-storage-and-rotation-readiness)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-API-012: Node list querying
+
+**Intent:** Automation must be able to narrow and page the node list server-side, so a large fleet is inspectable without client-side scans.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. `GET /api/v1/nodes` filters by a `status` query parameter and by a case-insensitive `q` search over node id and display name. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-012 filters the node list by status and search) -->
+2. `GET /api/v1/nodes` paginates by an id cursor, returning at most `limit` nodes ordered by id and a `nextCursor` when more remain. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-012 paginates the node list by id cursor) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-API-004](#req-api-004-programmatic-node-management)
 
 **Verification:** Automated test
 

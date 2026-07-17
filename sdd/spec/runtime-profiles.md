@@ -436,7 +436,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 4. Reassigning a model through the profile-config path swaps its leading alias to the new mesh's route name, keeps its own call name, switches it off (`active` false, rollout `0`), and bumps its version. <!-- @impl: packages/router-worker/src/router.ts::resolveMeshReassignment --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 reassigning a model swaps its mesh alias and deactivates it) -->
 
-5. A mesh reassignment records a `model_mesh_assigned` audit event, and an unknown mesh is rejected with status 400 changing nothing. <!-- @impl: packages/router-worker/src/router.ts::resolveMeshReassignment --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 reassigning a model swaps its mesh alias and deactivates it) -->
+5. A mesh reassignment records a `model_mesh_assigned` audit event, and an unknown mesh is rejected with status 400 changing nothing. <!-- @impl: packages/router-worker/src/router.ts::resolveMeshReassignment --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 mesh reassignment records the audit event and rejects an unknown mesh) -->
 
 6. Call-name edits preserve the profile's mesh alias as the leading alias and reject any reserved stable route name (`codeflare-mesh` or any `codeflare-mesh-` prefix) with status 409. <!-- @impl: packages/router-worker/src/router.ts::resolveCallNameAliases --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 call-name edits preserve the mesh alias and reject reserved names) -->
 

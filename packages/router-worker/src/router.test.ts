@@ -4417,7 +4417,7 @@ describe('control-plane API (/api/v1)', () => {
     expect(serialized).not.toContain('inferencePort')
   })
 
-  it('REQ-API-004 filters the node list by status and search', async () => {
+  it('REQ-API-012 filters the node list by status and search', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     await store.upsertNode(nodeFixture({ id: 'node-fresh', displayName: 'Alpha', status: 'online' }))
@@ -4430,7 +4430,7 @@ describe('control-plane API (/api/v1)', () => {
     expect(bySearch.nodes.map((node) => node.id)).toEqual(['node-fresh'])
   })
 
-  it('REQ-API-004 paginates the node list by id cursor', async () => {
+  it('REQ-API-012 paginates the node list by id cursor', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     for (const suffix of ['a', 'b', 'c']) await store.upsertNode(nodeFixture({ id: `node-${suffix}` }))
@@ -5205,8 +5205,6 @@ describe('multi-mesh machine groups', () => {
     const activated = (await store.listProfiles()).find((profile) => profile.id === profileId)!
     expect(activated.active).toBe(true)
 
-    expect((await configureProfile(router, { profileId, meshId: 'ghost' })).status).toBe(400)
-
     const moved = await configureProfile(router, { profileId, meshId: 'development' })
     expect(moved.status).toBe(200)
     expect((await moved.json() as { meshId: string }).meshId).toBe('development')
@@ -5217,6 +5215,19 @@ describe('multi-mesh machine groups', () => {
     expect(reassigned.active).toBe(false)
     expect(reassigned.rolloutPercent).toBe(0)
     expect(reassigned.version).toBeGreaterThan(activated.version)
+  })
+
+  it('REQ-RUN-016 mesh reassignment records the audit event and rejects an unknown mesh', async () => {
+    const { router, store } = routerFixture()
+    await createMeshReq(router, 'Development')
+    const add = await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single' })
+    const profileId = (await add.json() as { profileId: string }).profileId
+
+    expect((await configureProfile(router, { profileId, meshId: 'ghost' })).status).toBe(400)
+    expect(store.audit.find((event) => event.type === 'model_mesh_assigned')).toBeUndefined()
+    expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.meshId ?? 'default').toBe('default')
+
+    expect((await configureProfile(router, { profileId, meshId: 'development' })).status).toBe(200)
     const assignment = store.audit.find((event) => event.type === 'model_mesh_assigned' && event.target === profileId)
     expect(assignment?.detail).toMatchObject({ from: 'default', to: 'development' })
   })

@@ -587,7 +587,7 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 | `200` | A page of node projections. | `{ "nodes": NodeProjection[], "nextCursor": string \| null }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management), [REQ-SEC-002](../../sdd/spec/security.md)
+**Implements:** [REQ-API-004](../../sdd/spec/control-plane-api.md#req-api-004-programmatic-node-management), [REQ-API-012](../../sdd/spec/control-plane-api.md#req-api-012-node-list-querying), [REQ-SEC-002](../../sdd/spec/security.md)
 
 ### GET /api/v1/nodes/{id}
 
