@@ -13,6 +13,8 @@
 
 **Turn the idle machines you already own into a private, cache-aware inference fabric for open LLMs.**
 
+> Why did the LLM refuse to leave the mesh? It didn't want to lose its context.
+
 Codeflare Inference Mesh is the self-hosted inference layer of the **[Codeflare](https://codeflare.ch)** family ([GitHub](https://github.com/nikolanovoselec/codeflare)), the agentic engine. It pools the idle GPUs and CPUs already sitting in your fleet into one private fabric and serves open models on it through two runtimes: [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) for multi-machine split models, and direct [llama.cpp](https://github.com/ggml-org/llama.cpp) for cache-local single-node serving. It is the inference engine behind your agentic coding and operations agents, autonomous execution agents, internal chatbots, and anything else in the organization that needs low-latency private inference without shipping prompts to a hosted model by default.
 
 <p align="center">
