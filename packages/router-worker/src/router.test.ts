@@ -2913,6 +2913,12 @@ describe('router worker behavioral contracts', () => {
     expect(list.status).toBe(200)
     expect(urls.some((url) => url.includes('/repos/nikolanovoselec/mesh-llm/releases'))).toBe(true)
 
+    // The automation select twin validates against the fork's tags and never touches upstream.
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    const select = await router(new Request('https://router.test/api/v1/runtime-versions', { method: 'PUT', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ meshllm: 'v0.73.1-codeflare.1' }) }))
+    expect(select.status).toBe(200)
+    expect(urls.some((url) => url.includes('/repos/Mesh-LLM/mesh-llm/'))).toBe(false)
+
     // An invalid override never rides the wire: the field is simply absent.
     const plain = routerFixture({ env: { MESHLLM_RELEASE_REPOSITORY: 'not a repo!' } })
     await plain.store.putToken(await createTokenRecord('setup', 'setup-2', 1_700_000_000_000))

@@ -116,6 +116,7 @@ WORKER_NAME = "codeflare-inference-mesh-router-integration"
 WORKER_BASE_URL = "https://codeflare-inference-mesh-router-integration.<your-subdomain>.workers.dev"
 GITHUB_REPOSITORY = "nikolanovoselec/codeflare-inference-mesh"
 AGENT_RELEASE_TAG = "agent-release-tag-placeholder"
+MESHLLM_RELEASE_REPOSITORY = "nikolanovoselec/mesh-llm"
 
 [[env.integration.d1_databases]]
 binding = "DB"

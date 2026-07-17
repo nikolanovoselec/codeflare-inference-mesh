@@ -2579,7 +2579,7 @@ async function handleApiRuntimeVersions(request: Request, deps: RouterDeps, requ
 async function handleApiRuntimeVersionSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const automation = await requireAutomation(request, deps, now)
   if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, `automation:${automation.id}`)
+  return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, `automation:${automation.id}`, { meshllm: meshllmReleaseRepository(deps.env) })
 }
 
 /** Poll operational events oldest-first, filtered by since/type, paginated by an `at` cursor. */
