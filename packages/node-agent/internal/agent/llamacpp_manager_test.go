@@ -246,6 +246,18 @@ func TestREQOBS009LlamaCppLiveThroughputFromCounterDeltas(t *testing.T) {
 	}
 }
 
+func TestREQOBS009LlamaCppCountersParseWithLabelBlobs(t *testing.T) {
+	// llama-server currently emits label-free counters, but a labeled exposition
+	// (`name{...} value`) must not silently zero throughput. REQ-OBS-009.
+	prompt, predicted, ok := parseLlamaCounters(strings.NewReader(
+		"# TYPE llamacpp:prompt_tokens_total counter\n" +
+			"llamacpp:prompt_tokens_total{model=\"qwen\"} 1200\n" +
+			"llamacpp:tokens_predicted_total{model=\"qwen\"} 340\n"))
+	if !ok || prompt != 1200 || predicted != 340 {
+		t.Fatalf("labeled counters must parse, got prompt=%v predicted=%v ok=%v", prompt, predicted, ok)
+	}
+}
+
 func TestREQOBS009LlamaCppThroughputResetsOnRestartAndFailure(t *testing.T) {
 	fake := &fakeLlamaMetrics{}
 	fake.set(5000, 500)

@@ -63,6 +63,21 @@ func TestREQOBS011RuntimeLogIgnoresNonErrorLevelLines(t *testing.T) {
 	}
 }
 
+func TestREQOBS011RuntimeLogLevelTokensMatchWholeWordsOnly(t *testing.T) {
+	// "trace" inside "backtrace" and "info" inside "information" are not log levels;
+	// an error line carrying such a substring must still surface. REQ-OBS-011.
+	var log runtimeLog
+	_, _ = log.Write([]byte("stack backtrace: connection refused by peer\n"))
+	if !strings.Contains(log.Detail(), "refused") {
+		t.Fatalf("a backtrace line with a weak marker must be captured, got %q", log.Detail())
+	}
+	var infoLike runtimeLog
+	_, _ = infoLike.Write([]byte("gathering information: peer not ready\n"))
+	if !strings.Contains(infoLike.Detail(), "not ready") {
+		t.Fatalf("'information' is not the info level, got %q", infoLike.Detail())
+	}
+}
+
 func TestREQOBS011RuntimeErrorDetailReflectsRing(t *testing.T) {
 	// The manager surfaces its stderr ring's latest error line through RuntimeErrorDetail, which
 	// the heartbeat metrics carry to the console. REQ-OBS-011.

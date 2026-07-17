@@ -42,7 +42,7 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
     profileReadiness: [],
     audit: [],
     generatedAt: 1_700_000_200_000,
-    lastSpeedTests: { 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'codeflare-mesh', nodeId: 'node-big', requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100, cacheTokens: 0 } },
+    lastSpeedTests: { 'mesh-default-qwen36-35b': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'codeflare-mesh', nodeId: 'node-big', requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100, cacheTokens: 0 } },
     meshes: [{ id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 3, modelCount: 2 }],
     gateway: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' },
     customDomain: { hostname: 'router.test', status: 'provisioned' },
@@ -127,9 +127,10 @@ describe('dashboard overview contracts', () => {
     expect(html).toContain('<span data-scramble>Codeflare</span> <span class="hero-accent">Inference Mesh</span>')
     expect(html).toContain('id="overview-tiles"')
     expect(html).toContain('data-nav-item="overview"')
-    expect(html).toContain('data-nav-hint="Live mesh health"')
-    expect(html).toContain('data-nav-hint="Runtime roles"')
-    expect(html).toContain('data-nav-hint="Meshes and models"')
+    // Every section's nav item carries a hint; the copy itself is not contract.
+    for (const section of ['overview', 'nodes', 'models']) {
+      expect(html).toMatch(new RegExp('data-nav-item="' + section + '" data-nav-hint="[^"]+"'))
+    }
   })
 
   it('REQ-ADM-034 renders endpoint chips inside command rows for action-heavy controls', () => {
@@ -331,9 +332,10 @@ describe('dashboard overview contracts', () => {
     expect(stats).toContain('version')
     expect(stats).not.toContain('models')
     expect(stats).not.toContain('gateway')
-    const labels = descendants(harness.byId('overview-tiles')).filter((node) => node.tagName === 'strong').map((node) => node.textContent)
-    expect(labels).toContain('Available nodes')
-    expect(labels).toContain('VRAM')
+    // Tile identity is the data-stat key, not the label copy.
+    expect(stats).toContain('vram')
+    expect(stats).toContain('throughput')
+    expect(stats).toContain('meshes')
     expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).textContent).toContain('available')
   })
 
@@ -1148,8 +1150,8 @@ describe('dashboard throughput trace and playground contracts', () => {
     const harness = await dashboardHarness({
       respond: (path) => {
         if (path === ADMIN_UI_PLAYGROUND.speedPath) {
-          // The router stores the run keyed by the resolved profile's upstream model.
-          lastSpeedTests = { 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S': { at: 1_700_000_300_000, requestId: 'speed-b', model: result.model, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100 } }
+          // The router stores the run keyed by the resolved profile id.
+          lastSpeedTests = { 'mesh-default-qwen36-35b': { at: 1_700_000_300_000, requestId: 'speed-b', model: result.model, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100 } }
           return Response.json(result)
         }
         if (path === '/admin/status') return Response.json(statusFixture(lastSpeedTests ? { lastSpeedTests } : { lastSpeedTests: undefined }))
@@ -1438,7 +1440,7 @@ describe('dashboard throughput trace and playground contracts', () => {
       // Research model, but a deactivated machine must never count as serving.
       { id: 'node-research', status: 'online', deactivated: true, meshId: 'research', activeProfileIds: ['model-research'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['unsloth/Research-GGUF:Q4'] } }
     ]
-    const lastSpeedTests = { 'unsloth/Default-GGUF:Q4': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'main', promptTokensPerSecond: 726.7, generationTokensPerSecond: 60.4 } }
+    const lastSpeedTests = { 'model-default': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'main', promptTokensPerSecond: 726.7, generationTokensPerSecond: 60.4 } }
     const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes, lastSpeedTests }) })
     const row = (id: string) => descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === id)!
     // Default: its model is adopted and ready on one machine, and its model has a

@@ -437,10 +437,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const speedNumber = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
   const round1 = (value) => String(Math.round(value * 10) / 10);
   const profileModelRef = (profile) => (profile.llamacpp && profile.llamacpp.modelRef) || (profile.meshllm && profile.meshllm.modelRef) || profile.upstreamModel || '';
-  // Speed tests are stored per resolved model; each mesh card reads its own model's entry.
+  // Speed tests are stored per resolved profile id; each mesh card reads its own profile's entry.
   const speedTestFor = (status, model) => {
     const map = status && status.lastSpeedTests && typeof status.lastSpeedTests === 'object' ? status.lastSpeedTests : null;
-    const entry = map && model ? map[model.upstreamModel] : null;
+    const entry = map && model ? map[model.id] : null;
     return entry && typeof entry === 'object' ? entry : null;
   };
   function nodeVramInfo(node) {

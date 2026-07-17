@@ -458,7 +458,10 @@ func parseLlamaCounters(r io.Reader) (prompt float64, predicted float64, ok bool
 		if err != nil {
 			continue
 		}
-		switch fields[0] {
+		// The metric name may carry a label blob (`name{...}`); match on the bare name
+		// so a future labeled exposition does not silently zero the sample.
+		name, _, _ := strings.Cut(fields[0], "{")
+		switch name {
 		case "llamacpp:prompt_tokens_total":
 			prompt, havePrompt = value, true
 		case "llamacpp:tokens_predicted_total":

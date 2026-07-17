@@ -9,7 +9,7 @@ import { decideDirectSession, directSessionKey, type DirectSessionDecision, type
 import { InvalidJsonBodyError } from './errors'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
-import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName } from './meshes'
+import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName, type MeshRecord } from './meshes'
 import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, nodeMeshId, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
@@ -519,13 +519,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   // fields (never values), which the key-name redactor would otherwise blank out.
   // Machine groups are visible to both console roles (the nodes table and drawers
   // render group names); the shape carries no secret-like keys. REQ-ADM-037.
-  const meshes = (await listMeshes(deps.store)).map((mesh) => ({
-    id: mesh.id,
-    name: mesh.name,
-    alias: meshAliasFor(mesh.id),
-    machineCount: nodes.filter((node) => nodeMeshId(node) === mesh.id).length,
-    modelCount: profiles.filter((profile) => profileMeshId(profile) === mesh.id).length
-  }))
+  const meshes = (await listMeshes(deps.store)).map((mesh) => meshSummary(mesh, nodes, profiles))
   return json({
     ...redacted,
     viewerRole: viewer.role,
@@ -857,14 +851,20 @@ async function meshListCore(deps: RouterDeps, requestId: string, now: number): P
   const [meshes, nodes, profiles] = await Promise.all([listMeshes(deps.store), deps.store.listNodes(now), deps.store.listProfiles()])
   return json({
     meshes: meshes.map((mesh) => ({
-      id: mesh.id,
-      name: mesh.name,
-      alias: meshAliasFor(mesh.id),
-      machineCount: nodes.filter((node) => nodeMeshId(node) === mesh.id).length,
-      modelCount: profiles.filter((profile) => profileMeshId(profile) === mesh.id).length,
+      ...meshSummary(mesh, nodes, profiles),
       ...(mesh.createdAt !== undefined ? { createdAt: mesh.createdAt } : {})
     }))
   }, 200, requestId)
+}
+
+function meshSummary(mesh: MeshRecord, nodes: readonly NodeRecord[], profiles: readonly ModelProfile[]): { id: string; name: string; alias: string; machineCount: number; modelCount: number } {
+  return {
+    id: mesh.id,
+    name: mesh.name,
+    alias: meshAliasFor(mesh.id),
+    machineCount: nodes.filter((node) => nodeMeshId(node) === mesh.id).length,
+    modelCount: profiles.filter((profile) => profileMeshId(profile) === mesh.id).length
+  }
 }
 
 async function meshCreateCore(request: Request, deps: RouterDeps, actor: string, requestId: string, now: number): Promise<Response> {
@@ -1612,11 +1612,13 @@ async function runSpeedTest(deps: RouterDeps, body: SpeedTestBody | undefined, r
   const nodeId = upstream.headers.get('x-inference-mesh-node') ?? upstream.headers.get('x-inference-mesh-session-node') ?? undefined
   const cacheTokens = timingNumber(measured.upstreamTimings ?? undefined, 'cache_n')
   const result = { model, ...(nodeId ? { nodeId } : {}), promptChars: prompt.length, requestedPromptTokens: promptTokens, requestedMaxTokens: maxTokens, ...(cacheTokens !== undefined ? { cacheTokens } : {}), ...measured }
-  // Runs are stored per resolved model so each mesh card can show its own model's
-  // latest measurement (a gateway-route run credits the profile it resolved to).
+  // Runs are stored per resolved profile id so each mesh card can show its own
+  // profile's latest measurement — duplicated profiles share an upstreamModel, so
+  // the id is the only collision-free key (a gateway-route run credits the profile
+  // it resolved to).
   const speedProfile = await deps.store.getProfileByPublicModel(routablePublicModel(model))
   const priorSpeedTests = await deps.store.getConfig<Record<string, LastSpeedTestSummary>>(LAST_SPEED_TESTS_CONFIG_KEY) ?? {}
-  await deps.store.putConfig(LAST_SPEED_TESTS_CONFIG_KEY, { ...priorSpeedTests, [speedProfile?.upstreamModel ?? model]: speedTestSummary(result, now, requestId) })
+  await deps.store.putConfig(LAST_SPEED_TESTS_CONFIG_KEY, { ...priorSpeedTests, [speedProfile?.id ?? model]: speedTestSummary(result, now, requestId) })
   return json(result, 200, requestId)
 }
 

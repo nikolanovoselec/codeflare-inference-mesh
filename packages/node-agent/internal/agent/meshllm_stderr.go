@@ -31,6 +31,22 @@ func containsAny(value string, markers []string) bool {
 	return false
 }
 
+// containsLevelToken matches level markers as whole words only — "trace" inside
+// "backtrace" or "info" inside "information" is not a log level and must not make
+// an error line read as leveled chatter.
+func containsLevelToken(value string, markers []string) bool {
+	for _, token := range strings.FieldsFunc(value, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z')
+	}) {
+		for _, marker := range markers {
+			if token == marker {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 const runtimeLogLineCap = 500
 
 // runtimeLog is a bounded, line-oriented sink for the managed runtime's stderr. It retains
@@ -67,7 +83,7 @@ func (l *runtimeLog) consumeLine(raw string) {
 		return
 	}
 	lower := strings.ToLower(line)
-	if !containsAny(lower, runtimeStrongErrorMarkers) && containsAny(lower, runtimeNonErrorLevels) {
+	if !containsAny(lower, runtimeStrongErrorMarkers) && containsLevelToken(lower, runtimeNonErrorLevels) {
 		return
 	}
 	if containsAny(lower, runtimeErrorMarkers) {

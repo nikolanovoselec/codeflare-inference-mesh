@@ -3498,9 +3498,10 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.upstreamTimings).toMatchObject({ cache_n: 0, prompt_per_second: 2000, predicted_per_second: 100 })
     expect(measured.throughput.promptTokensPerSecond).toBe(2000)
     expect(measured.throughput.generationTokensPerSecond).toBe(100)
-    // The run is stored keyed by the resolved profile's upstream model, so each mesh
-    // card can look up its own model's latest measurement.
-    expect(stored?.[SMOKE_UPSTREAM]).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 256, completionTokens: 2, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, cacheTokens: 0 })
+    // The run is stored keyed by the resolved profile id — duplicated profiles share
+    // an upstreamModel, so the id is the only key that keeps each mesh card's
+    // measurement its own.
+    expect(stored?.['mesh-smoke-qwen25-1.5b']).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 256, completionTokens: 2, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, cacheTokens: 0 })
   })
 
   it('REQ-API-009 exposes the direct router speed test to automation callers', async () => {
@@ -3533,7 +3534,7 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.throughput.promptTokensPerSecond).toBeGreaterThan(0)
     expect(measured.throughput.generationTokensPerSecond).toBeGreaterThan(0)
     expect(statusBody.lastSpeedTest).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 64, completionTokens: 1 })
-    expect(statusBody.lastSpeedTests?.[SMOKE_UPSTREAM]).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh' })
+    expect(statusBody.lastSpeedTests?.['mesh-smoke-qwen25-1.5b']).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh' })
   })
 
   it('REQ-API-009 surfaces a pre-map stored speed test as the seed map entry', async () => {

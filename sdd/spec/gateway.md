@@ -91,7 +91,6 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 **Acceptance Criteria:**
 
 1. Gateway sync passes one extra route per non-default mesh — route name and forwarded model both the mesh's stable alias — alongside the pinned default route, built from the mesh registry rather than operator input. <!-- @impl: packages/router-worker/src/router.ts::syncGatewayForActor --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-009 gateway sync ensures one dynamic route per mesh) -->
-
 2. The Cloudflare client upserts each extra route with the same ensure-or-reuse semantics as the default route and reports the ensured routes in the sync result. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::syncCustomProvider --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-009 the gateway client upserts a route per extra mesh route) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)

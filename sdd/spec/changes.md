@@ -1,5 +1,11 @@
 # Changes
 
+## 2026-07-17
+
+- Speed Test runs are now stored keyed by the resolved profile id instead of its upstream model, so a duplicated model moved to another mesh keeps its own mesh-card measurement instead of sharing one entry with its source. ([REQ-ADM-034](setup-admin.md#req-adm-034-direct-router-speed-test), [REQ-API-009](control-plane-api.md#req-api-009-programmatic-speed-test))
+- Hardened two agent parsers: runtime stderr level gating matches level tokens as whole words (an error line containing `backtrace` or `information` still surfaces), and llama.cpp throughput counters parse a labeled Prometheus exposition instead of silently zeroing. ([REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface), [REQ-OBS-009](observability.md#req-obs-009-hardware-and-throughput-metrics))
+- Consolidated review-flagged AC overflow with no behavior change: the per-mesh gateway-card route listing folded into REQ-ADM-024's card AC, and the mesh-membership gate folded into REQ-SCH-003's base eligibility AC. ([REQ-ADM-024](setup-admin.md#req-adm-024-routing-operational-status), [REQ-SCH-003](state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses))
+
 ## 2026-07-16
 
 - Removed the Nodes table's Models column entirely (a ready-model count that could only ever read 0 or 1 on a one-runtime machine): the table now carries machine, status, mesh, VRAM, and version, and model detail stays in the node drawer and the Models section. ([REQ-ADM-015](setup-admin.md#req-adm-015-mesh-visualization))
