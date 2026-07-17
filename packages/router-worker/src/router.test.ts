@@ -2905,7 +2905,7 @@ describe('router worker behavioral contracts', () => {
     await store.putToken(await createTokenRecord('setup', 'setup-secret', 1_700_000_000_000))
     const claim = await router(new Request('https://router.test/node/claim', { method: 'POST', headers: { ...bearer('setup-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: [], capacity: 1 }) }))
     const claimed = await claim.json() as { desiredRuntimeVersions?: { meshllmRepository?: string } }
-    expect(claim.status).toBe(200)
+    expect(claim.status).toBe(201)
     expect(claimed.desiredRuntimeVersions?.meshllmRepository).toBe('nikolanovoselec/mesh-llm')
 
     // The runtime list fetches the fork's releases, not upstream.
