@@ -1513,27 +1513,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(del);
     }
     bodyEl.appendChild(output2('model-edit-output'));
-    const servingNodes = nodesServingProfile(profile);
-    bodyEl.appendChild(drawerField('serving', 'Machines serving it', String(servingNodes.length), String(servingNodes.length)));
-    servingNodes.forEach((node) => {
-      const item = document.createElement('div');
-      item.className = 'drawer-row';
-      item.setAttribute('data-drawer-serving-node', node.id);
-      item.textContent = nodeDisplayName(node);
-      bodyEl.appendChild(item);
-    });
-    // Mesh detail lives with the model it belongs to: both a single-machine model
-    // (every machine runs the whole model) and a split model (machines share the
-    // model's layers) form a mesh, so this shows whenever this model has one.
+    // Mesh detail lives with the model it belongs to, and the mesh card alone carries
+    // it: participants, stage owners, and the machine group all live in its summary
+    // and Technical details, so the drawer repeats none of them as separate fields.
     const meshEntries = lastStatus && Array.isArray(lastStatus.meshHealth) ? lastStatus.meshHealth : [];
     const meshEntry = meshEntries.find((entry) => entry.profileId === profile.id);
     if (meshEntry) {
-      const heading = document.createElement('h3');
-      heading.className = 'drawer-subhead';
-      heading.textContent = 'Mesh';
-      bodyEl.appendChild(heading);
-      const stageText = stageOwnersText(meshEntry, meshNodesForEntry(meshEntry));
-      if (stageText) bodyEl.appendChild(drawerField('stage-ownership', 'Stage ownership', stageText, stageText));
       bodyEl.appendChild(buildMeshCard(meshEntry));
       const reset = document.createElement('button');
       reset.type = 'button';
@@ -1865,6 +1850,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const ownerNodes = meshNodesForEntry(entry);
     const stageText = stageOwnersText(entry, ownerNodes);
     addField('coordinator', 'Coordinator', entry.coordinatorNodeId ? nodeLabelForId(entry.coordinatorNodeId, ownerNodes) : (stageText ? 'not elected yet' : 'waiting for stage map'), !entry.coordinatorNodeId && !stageText ? (line) => annotateStageUnavailable(line, entry) : undefined);
+    const meshList = lastStatus && Array.isArray(lastStatus.meshes) ? lastStatus.meshes : [];
+    const meshGroup = profile ? meshList.find((mesh) => mesh.id === (profile.meshId || 'default')) : null;
+    addField('mesh-group', 'Mesh', meshGroup ? (meshGroup.name || meshGroup.id) : (profile ? (profile.meshId || 'default') : ''));
     addField('peers', 'Machines', String(peers > 0 ? peers : 1));
     addField('stage-owners', 'Stage owners', stageText || stageUnavailableText(entry), stageText ? (stageMapPartial(entry) ? (line) => line.setAttribute('data-stage-map', 'partial') : undefined) : (line) => annotateStageUnavailable(line, entry));
     addField('ready-models', 'Ready model', (entry.readyModels || []).map(modelLabelForRef).join(', '));

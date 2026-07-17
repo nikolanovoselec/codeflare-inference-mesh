@@ -174,7 +174,7 @@ export const ADMIN_UI_TOKS_TRACE = {
 export const ADMIN_UI_MESH_HEALTH = {
   bannerId: 'mesh-key-banner',
   keyMissingError: 'mesh_state_key_missing',
-  fields: ['coordinator', 'peers', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error']
+  fields: ['coordinator', 'mesh-group', 'peers', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error']
 } as const
 
 export const ADMIN_UI_AGENT_VERSION = {

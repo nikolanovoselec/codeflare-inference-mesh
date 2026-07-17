@@ -658,7 +658,12 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
-    expect(fields.find((node) => node.dataset.drawerField === 'stage-ownership')!.dataset.value).toBe('L0-26 → Arch Linux · Ready')
+    // The mesh card alone carries the mesh detail: no duplicated stage/serving drawer
+    // fields, stage owners and the machine group live in Technical details.
+    expect(fields.some((node) => node.dataset.drawerField === 'stage-ownership')).toBe(false)
+    expect(fields.some((node) => node.dataset.drawerField === 'serving')).toBe(false)
+    expect(fields.find((node) => node.dataset.meshField === 'stage-owners')!.textContent).toBe('Stage owners: L0-26 → Arch Linux · Ready')
+    expect(fields.find((node) => node.dataset.meshField === 'mesh-group')!.textContent).toBe('Mesh: Default')
   })
 
   it('REQ-ADM-019 REQ-ADM-030 renders concise completion messages for routine mutating actions', async () => {

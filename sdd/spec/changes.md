@@ -2,6 +2,7 @@
 
 ## 2026-07-17
 
+- De-duplicated the model Manage drawer's mesh detail: the serving-machine list, standalone Mesh heading, and duplicated stage-ownership field are gone — the mesh card alone carries participants and stage owners, and its Technical details now name the model's machine group. ([REQ-ADM-038](setup-admin.md#req-adm-038-console-mesh-assignment-surface))
 - Added a per-model MeshLLM tool-calling tunable: Forced emulation routes tool calls through mesh-llm's text-convention protocol (`MESH_FORCE_TOOL_EMULATION=1`) for models whose template advertises a native tool grammar mesh-llm cannot parse, such as ERNIE Thinking. ([REQ-RUN-002](runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-010](runtime-profiles.md#req-run-010-meshllm-process-lifecycle))
 - Fixed ghost Serving: an api-client mesh-llm advertising the mesh catalog without a ready runtime or a stage assignment no longer reads as serving anywhere — node status, mesh cards, or serving counts. ([REQ-ADM-020](setup-admin.md#req-adm-020-node-status-clarity-and-filtering), [REQ-ADM-039](setup-admin.md#req-adm-039-overview-mesh-status-cards))
 - Mesh cards now expose the split state (`split` / single-node `fallback`) and surface the most actionable degradation detail — a runtime error, the fallback notice, or the split readiness verdict — instead of hiding collapse behind a green edge. ([REQ-ADM-039](setup-admin.md#req-adm-039-overview-mesh-status-cards))
