@@ -2949,7 +2949,9 @@ describe('router worker behavioral contracts', () => {
     const back = await router(new Request('https://router.test/api/v1/runtime-versions', { method: 'PUT', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ meshllmSource: 'fork' }) }))
     expect(back.status).toBe(200)
     expect(await activeRepo()).toBe('nikolanovoselec/mesh-llm')
-    expect(store.audit.find((event) => event.type === 'runtime_source_selected')?.actor).toMatch(/^automation:/)
+    // The automation twin's switch is audited under an automation actor (the admin
+    // switch above logged its own runtime_source_selected event, so match on actor).
+    expect(store.audit.some((event) => event.type === 'runtime_source_selected' && /^automation:/.test(String(event.actor ?? '')))).toBe(true)
   })
 
   it('REQ-OBS-002 reports node mesh membership and readiness fields in admin status', async () => {
