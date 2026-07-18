@@ -59,6 +59,34 @@ function bearer(token: string): HeadersInit {
   return { authorization: `Bearer ${token}` }
 }
 
+// The 35B profiles left the shipped catalog (it is now the single smoke starter).
+// Tests that exercise multi-profile behavior seed them as ordinary stored profiles.
+const LEGACY_MESH_DEFAULT: ModelProfile = {
+  id: 'mesh-default-qwen36-35b',
+  displayName: 'Qwen3.6 35B',
+  publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
+  upstreamModel: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S',
+  sourceMode: 'meshllm-ref',
+  contextWindow: 262144,
+  runtime: 'meshllm',
+  meshllm: { modelRef: 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', split: false, bindPort: 4300 },
+  version: 1,
+  rolloutPercent: 0,
+  active: false,
+  meshId: 'default'
+}
+const LEGACY_MESH_SPLIT: ModelProfile = {
+  ...LEGACY_MESH_DEFAULT,
+  id: 'mesh-split-qwen36-35b',
+  displayName: 'Qwen3.6 35B (multi-machine)',
+  upstreamModel: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd',
+  meshllm: { modelRef: 'hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@9b24bdc3dfb174ad6848f3f71c34f5302fa4dcfd', split: true, bindPort: 4310 }
+}
+async function seedLegacyDefaults(store: MemoryStore): Promise<void> {
+  await store.setProfile(LEGACY_MESH_DEFAULT)
+  await store.setProfile(LEGACY_MESH_SPLIT)
+}
+
 const QWEN_UPSTREAM = 'unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'
 const SMOKE_UPSTREAM = 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'
 const MESH_STATE_KEY_B64 = `${'A'.repeat(43)}=`
@@ -172,9 +200,12 @@ describe('router worker behavioral contracts', () => {
       'node-revoke',
       'node-deactivate',
       'node-activate',
+      'mesh-create',
+      'mesh-delete',
       'profile-rollout',
       'profile-activate',
       'profile-config',
+      'profile-duplicate',
       'agent-versions-refresh',
       'agent-version-set',
       'runtime-versions-refresh',
@@ -202,9 +233,12 @@ describe('router worker behavioral contracts', () => {
       '/admin/nodes/{nodeId}/revoke',
       '/admin/nodes/{nodeId}/deactivate',
       '/admin/nodes/{nodeId}/activate',
+      '/admin/meshes',
+      '/admin/meshes/{meshId}',
       '/admin/profiles/rollout',
       '/admin/profiles/activate',
       '/admin/profiles/config',
+      '/admin/profiles/duplicate',
       '/admin/agent-versions',
       '/admin/agent-version',
       '/admin/runtime-versions',
@@ -231,7 +265,9 @@ describe('router worker behavioral contracts', () => {
     serverControls.forEach((action) => expect(controls.has(action), `missing control ${action}`).toBe(true))
     const apiDocLinks = [...html.matchAll(/data-api-docs-link="([^"]+)"/g)].map((match) => match[1])
     expect(apiDocLinks).toEqual(config.actions.map((action) => action.id))
-    expect(html).toContain('documentation/lanes/api-reference-admin.md#post-adminsetup')
+    // The full href is the contract, branch included: a link into a deleted branch is a
+    // dead Docs button even though the path and anchor look right.
+    expect(html).toContain('https://github.com/nikolanovoselec/codeflare-inference-mesh/blob/develop/documentation/lanes/api-reference-admin.md#post-adminsetup')
     expect(html).toContain('data-login-form="true"')
     expect(html).toContain('data-installer-platform="true"')
     // Only the wizard keeps a zone picker; Routing matches the zone from the hostname server-side.
@@ -631,6 +667,7 @@ describe('router worker behavioral contracts', () => {
     const modelDrawer = descendants(harness.byId('drawer-body'))
     expect(modelDrawer.find((item) => item.dataset.drawerField === 'runtime')?.dataset.value).toBe('llamacpp')
     expect(modelDrawer.some((item) => item.id === 'model-edit-llama-parallel')).toBe(true)
+    expect(modelDrawer.some((item) => item.id === 'model-edit-llama-kv-unified')).toBe(true)
     expect(modelDrawer.some((item) => item.id === 'model-edit-parallel')).toBe(false)
     expect(modelDrawer.some((item) => item.id === 'model-edit-vram')).toBe(false)
 
@@ -655,7 +692,7 @@ describe('router worker behavioral contracts', () => {
       runtime: 'llamacpp',
       contextWindow: 131072,
       modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M',
-      llamacpp: { parallel: 2, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
+      llamacpp: { parallel: 2, kvUnified: true, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
     })
 
     await harness.clickAction('node-detail', { nodeId: 'node-direct' })
@@ -763,6 +800,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     // The default seed makes the smoke model the single active owner of the stable public model.
     await router(new Request('https://router.test/health'))
     const seeded = await store.getProfileByPublicModel('codeflare-mesh')
@@ -830,7 +868,7 @@ describe('router worker behavioral contracts', () => {
 
     expect(response.status).toBe(201)
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false, rolloutPercent: 0 })
-    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256, parallel: 4, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
+    expect(created?.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', contextWindow: 0, cachePrompt: true, cacheReuse: 256, parallel: -1, kvUnified: true, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
   })
 
   it('REQ-RUN-013 rejects direct llama.cpp for split models', async () => {
@@ -917,8 +955,8 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-001 a chat for codeflare-mesh with no active model returns model-not-found', async () => {
     const { router, store } = routerFixture()
-    // Deactivate the seeded model (version-bumped so the per-request default seed leaves it off): no model is active.
-    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[2]!, active: false, rolloutPercent: 0, version: 2 })
+    // Deactivate the seeded model (seed-once never refreshes an existing row back on): no model is active.
+    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[0]!, active: false, rolloutPercent: 0, version: 2 })
 
     const response = await router(new Request('https://router.test/v1/chat/completions', {
       method: 'POST',
@@ -932,10 +970,11 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-009 activation is single-active', async () => {
     const { router, store } = routerFixture()
-    // Seed two extra active profiles (version-bumped so the per-request default seed leaves them intact); the
-    // default seed also brings the smoke model up active, so three profiles are active before activation.
-    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[0]!, active: true, rolloutPercent: 100, version: 2 })
-    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[1]!, active: true, rolloutPercent: 100, version: 2 })
+    // Seed two extra active legacy profiles; the default seed then brings the smoke starter up
+    // switched off (an active non-default profile already owns the shared alias), so two
+    // profiles are active before activation.
+    await store.setProfile({ ...LEGACY_MESH_DEFAULT, active: true, rolloutPercent: 100 })
+    await store.setProfile({ ...LEGACY_MESH_SPLIT, active: true, rolloutPercent: 100 })
 
     const res = await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -951,34 +990,40 @@ describe('router worker behavioral contracts', () => {
     expect(profiles.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')?.active).toBe(false)
   })
 
-  it('REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active', async () => {
-    const store = new MemoryStore()
-    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-mm', publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'], version: 1 }))
-    await store.setProfile(legacyRuntimeProfile({ id: 'legacy-default-text', publicAliases: ['codeflare-mesh', 'legacy-text-alias'], version: 4 }))
+  it('REQ-RUN-009 seeds the starter exactly once and never resurrects or refreshes rows', async () => {
+    const { router, store } = routerFixture()
+    await router(new Request('https://router.test/health'))
+    const seeded = await store.listProfiles()
+    expect(seeded.map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
 
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    const profiles = await store.listProfiles()
-    const retired = profiles.find((profile) => profile.id === 'legacy-default-mm')!
-    const retainedVersioned = profiles.find((profile) => profile.id === 'legacy-default-text')!
-    const current = await store.getProfileByPublicModel('codeflare-mesh')
+    // Operator edits to the stored starter survive later requests: seeding never refreshes rows.
+    await store.setProfile({ ...seeded[0]!, displayName: 'Renamed', version: 5 })
+    await router(new Request('https://router.test/health'))
+    const after = await store.listProfiles()
+    expect(after.map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
+    expect(after[0]).toMatchObject({ displayName: 'Renamed', version: 5 })
 
-    expect(retired).toMatchObject({ active: false, rolloutPercent: 0, version: 2 })
-    expect(retainedVersioned).toMatchObject({ active: true, rolloutPercent: 100, version: 4, runtime: 'meshllm' })
-    expect(current).toMatchObject({ id: 'legacy-default-text', runtime: 'meshllm', sourceMode: 'meshllm-ref' })
+    // Deleting the starter sticks: the seeded marker keeps later requests from resurrecting it.
+    await store.deleteProfile('mesh-smoke-qwen25-1.5b')
+    await router(new Request('https://router.test/health'))
+    expect(await store.listProfiles()).toEqual([])
   })
 
-  it('REQ-RUN-009 preserves active llama.cpp custom profiles during default seeding', async () => {
+  it('REQ-RUN-009 preserves active llama.cpp custom profiles during first seeding', async () => {
     const store = new MemoryStore()
     const direct = { ...buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] }), active: true, rolloutPercent: 100, version: 7 }
     await store.setProfile(direct)
 
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
-    const preserved = (await store.listProfiles()).find((profile) => profile.id === direct.id)!
+    const profiles = await store.listProfiles()
+    const preserved = profiles.find((profile) => profile.id === direct.id)!
+    const starter = profiles.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
     const current = await store.getProfileByPublicModel('codeflare-mesh')
 
     expect(preserved).toMatchObject({ active: true, rolloutPercent: 100, version: 7, runtime: 'llamacpp', sourceMode: 'llamacpp-hf' })
     expect(preserved.llamacpp).toMatchObject({ hfRepo: 'unsloth/Code-Model-GGUF', quant: 'Q4_K_M', cachePrompt: true, cacheReuse: 256 })
+    // The starter must not steal the shared alias: it seeds switched off and the custom profile stays the owner.
+    expect(starter).toMatchObject({ active: false, rolloutPercent: 0 })
     expect(current).toMatchObject({ id: direct.id, runtime: 'llamacpp' })
   })
 
@@ -995,7 +1040,8 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-SCH-005 lists only active profile aliases in the public model listing', async () => {
     const { router, store } = routerFixture()
-    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[2]!, id: 'ghost-profile', publicAliases: ['ghost-alias'], rolloutPercent: 0, active: false })
+    await seedLegacyDefaults(store)
+    await store.setProfile({ ...DEFAULT_MODEL_PROFILES[0]!, id: 'ghost-profile', publicAliases: ['ghost-alias'], rolloutPercent: 0, active: false })
 
     const response = await router(new Request('https://router.test/v1/models', { headers: bearer('provider-secret') }))
     const body = await response.json() as { data: Array<{ id: string }> }
@@ -1009,16 +1055,17 @@ describe('router worker behavioral contracts', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('REQ-RUN-002 seeds the MeshLLM default profile set with contract values', () => {
-    const single = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'mesh-default-qwen36-35b')!
-    const split = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'mesh-split-qwen36-35b')!
-    const smoke = DEFAULT_MODEL_PROFILES.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
+  it('REQ-RUN-002 seeds the smoke starter with contract values and leaves stored legacy rows intact', async () => {
+    const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
+    await router(new Request('https://router.test/health'))
+    const profiles = await store.listProfiles()
+    const single = profiles.find((profile) => profile.id === 'mesh-default-qwen36-35b')!
+    const split = profiles.find((profile) => profile.id === 'mesh-split-qwen36-35b')!
+    const smoke = profiles.find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
 
-    expect(DEFAULT_MODEL_PROFILES.map((profile) => profile.id)).toEqual([
-      'mesh-default-qwen36-35b',
-      'mesh-split-qwen36-35b',
-      'mesh-smoke-qwen25-1.5b'
-    ])
+    // The shipped catalog is exactly the single smoke starter.
+    expect(DEFAULT_MODEL_PROFILES.map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
     expect(single).toMatchObject({
       displayName: 'Qwen3.6 35B',
       publicAliases: ['codeflare-mesh', 'qwen3.6:35b-a3b', 'qwen3.6-coder'],
@@ -1634,6 +1681,7 @@ describe('router worker behavioral contracts', () => {
         async provisionCustomDomain() { throw new Error('custom domain is not used in this test') }
       }
     })
+    await seedLegacyDefaults(store)
 
     const setupResponse = await router(new Request('https://router.test/admin/setup', { method: 'POST' }))
     const claimAdmin = (await setupResponse.json() as { adminToken: string }).adminToken
@@ -2443,6 +2491,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-004 updates profile rollout as versioned configuration', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
 
     const response = await router(new Request('https://router.test/admin/profiles/rollout', {
@@ -2459,6 +2508,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-RUN-009 activation deactivates alias-overlapping active profiles', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
 
     const activateSplit = await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -2559,21 +2609,43 @@ describe('router worker behavioral contracts', () => {
       body: JSON.stringify({ profileId, ...body })
     }))
 
-    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
+    const ok = await configure({ llamacpp: { contextWindow: 131072, parallel: 2, kvUnified: false, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } } })
     const configured = (await store.listProfiles()).find((profile) => profile.id === profileId)!
 
     expect(ok.status).toBe(200)
     expect(configured.runtime).toBe('llamacpp')
     expect(configured.contextWindow).toBe(131072)
-    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
+    expect(configured.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, kvUnified: false, cachePrompt: false, cacheReuse: 512, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } })
     expect((await configure({ llamacpp: { batch: null, flashAttn: null, maxOutputTokens: null, reasoning: null } })).status).toBe(200)
     const cleared = (await store.listProfiles()).find((profile) => profile.id === profileId)!
     expect(cleared.llamacpp?.batch).toBeUndefined()
     expect(cleared.llamacpp?.flashAttn).toBeUndefined()
     expect(cleared.llamacpp?.maxOutputTokens).toBeUndefined()
     expect(cleared.llamacpp?.reasoning).toBeUndefined()
+    // A null kvUnified clears the stored field; normalization then reads it back as
+    // on — the same coercion that upgrades pre-field profile blobs without a migration.
+    expect((await configure({ llamacpp: { kvUnified: null } })).status).toBe(200)
+    const kvReset = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(kvReset.llamacpp?.kvUnified).toBe(true)
+    expect((await configure({ llamacpp: { parallel: -1 } })).status).toBe(200)
+    const autoParallel = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(autoParallel.llamacpp?.parallel).toBe(-1)
+    // contextWindow 0 = Auto (llama-server loads the model's native context) on both the
+    // settings block and the top-level field the drawer saves; a fixed value below the
+    // 4096 floor is still rejected.
+    expect((await configure({ llamacpp: { contextWindow: 0 } })).status).toBe(200)
+    const autoContext = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(autoContext.llamacpp?.contextWindow).toBe(0)
+    expect((await configure({ contextWindow: 0 })).status).toBe(200)
+    const autoTopLevel = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(autoTopLevel.contextWindow).toBe(0)
+    expect((await configure({ llamacpp: { contextWindow: 2048 } })).status).toBe(400)
+    expect((await configure({ contextWindow: 2048 })).status).toBe(400)
     expect((await configure({ llamacpp: { contextWindow: 2048 } })).status).toBe(400)
     expect((await configure({ llamacpp: { parallel: 0 } })).status).toBe(400)
+    expect((await configure({ llamacpp: { parallel: -2 } })).status).toBe(400)
+    expect((await configure({ llamacpp: { kvUnified: 'yes' } })).status).toBe(400)
+    expect((await configure({ llamacpp: { parallel: -1, kvUnified: false } })).status).toBe(400)
     expect((await configure({ llamacpp: { cacheTypeK: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { gpuLayers: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { bindPort: 9337 } })).status).toBe(400)
@@ -2589,9 +2661,13 @@ describe('router worker behavioral contracts', () => {
     }))
     const meshllm = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!.meshllm!
 
-    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 }, prefixCache: { enabled: true, maxEntries: 16, payloadMode: 'kv-recurrent', sharedStrideTokens: 128, sharedRecordLimit: 4 } })
+    const set = await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 4, cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 4096, flashAttn: true, maxOutputTokens: 8192, toolEmulation: true, wireDtype: 'q8', prefillChunking: 'fixed', prefillChunkSize: 512, reasoning: { enabled: true, format: 'deepseek', budget: 4096 }, prefixCache: { enabled: true, maxEntries: 16, payloadMode: 'kv-recurrent', sharedStrideTokens: 128, sharedRecordLimit: 4 } })
     expect(set.status).toBe(200)
     let m = await meshllm()
+    expect(m.toolEmulation).toBe(true)
+    expect(m.wireDtype).toBe('q8')
+    expect(m.prefillChunking).toBe('fixed')
+    expect(m.prefillChunkSize).toBe(512)
     expect(m.parallel).toBe(4)
     expect(m.cacheTypeK).toBe('q4_0')
     expect(m.cacheTypeV).toBe('q4_0')
@@ -2619,11 +2695,15 @@ describe('router worker behavioral contracts', () => {
 
     // Clearing a field back to Auto removes the key entirely, so JSON.stringify never
     // leaves a stale undefined; untouched fields persist.
-    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, reasoning: null, prefixCache: null })).status).toBe(200)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: null, cacheTypeK: '', flashAttn: null, toolEmulation: null, wireDtype: null, prefillChunking: '', prefillChunkSize: null, reasoning: null, prefixCache: null })).status).toBe(200)
     m = await meshllm()
     expect('parallel' in m).toBe(false)
     expect('cacheTypeK' in m).toBe(false)
     expect('flashAttn' in m).toBe(false)
+    expect('toolEmulation' in m).toBe(false)
+    expect('wireDtype' in m).toBe(false)
+    expect('prefillChunking' in m).toBe(false)
+    expect('prefillChunkSize' in m).toBe(false)
     expect('reasoning' in m).toBe(false)
     expect('prefixCache' in m).toBe(false)
     expect(m.cacheTypeV).toBe('q4_0')
@@ -2632,6 +2712,10 @@ describe('router worker behavioral contracts', () => {
     // Invalid values are rejected at the boundary.
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', parallel: 0.5 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', cacheTypeK: 'bogus' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', toolEmulation: 'yes' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', wireDtype: 'q4' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', prefillChunking: 'schedule' })).status).toBe(400)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', prefillChunkSize: 0.5 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', batch: -1 })).status).toBe(400)
     expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', flashAttn: 'yes' })).status).toBe(400)
     // maxEntries is capped at 128 so an operator cannot re-introduce the KV-pool overrun.
@@ -2664,6 +2748,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-ADM-027 renames a model display name and call name with collision and reserved-alias guards', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify(body) }))
     const smoke = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
@@ -2716,6 +2801,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-ADM-009 activates profiles alias-exclusively and records the audit event', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
 
     const unauthorized = await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -2752,6 +2838,7 @@ describe('router worker behavioral contracts', () => {
 
   it('REQ-OBS-006 records profile activation audit events', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
 
     await router(new Request('https://router.test/admin/profiles/activate', {
       method: 'POST',
@@ -2805,6 +2892,66 @@ describe('router worker behavioral contracts', () => {
     expect(heartbeatResponse.desiredAgentVersion).toBe('v0.2.0')
     expect(heartbeatResponse.desiredRuntimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
     expect(node?.agentVersion).toBe('v0.1.0')
+  })
+
+
+  it('REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository', async () => {
+    const urls: string[] = []
+    const fetcher: typeof fetch = async (input) => {
+      urls.push(String(input))
+      return Response.json([{ tag_name: 'v0.73.1-codeflare.1' }])
+    }
+    const { router, store } = routerFixture({ releasesFetcher: fetcher, env: { MESHLLM_RELEASE_REPOSITORY: 'nikolanovoselec/mesh-llm' } })
+    await store.putToken(await createTokenRecord('setup', 'setup-secret', 1_700_000_000_000))
+    const claim = await router(new Request('https://router.test/node/claim', { method: 'POST', headers: { ...bearer('setup-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'Node A', meshIp: '100.64.1.10', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: [], capacity: 1 }) }))
+    const claimed = await claim.json() as { desiredRuntimeVersions?: { meshllmRepository?: string } }
+    expect(claim.status).toBe(201)
+    expect(claimed.desiredRuntimeVersions?.meshllmRepository).toBe('nikolanovoselec/mesh-llm')
+
+    // The runtime list fetches the fork's releases, not upstream.
+    const list = await router(new Request('https://router.test/admin/runtime-versions', { headers: bearer('admin-secret') }))
+    expect(list.status).toBe(200)
+    expect(urls.some((url) => url.includes('/repos/nikolanovoselec/mesh-llm/releases'))).toBe(true)
+
+    // The automation select twin validates against the fork's tags and never touches upstream.
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    const select = await router(new Request('https://router.test/api/v1/runtime-versions', { method: 'PUT', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ meshllm: 'v0.73.1-codeflare.1' }) }))
+    expect(select.status).toBe(200)
+    expect(urls.some((url) => url.includes('/repos/Mesh-LLM/mesh-llm/'))).toBe(false)
+
+    // An invalid override never rides the wire: the field is simply absent.
+    const plain = routerFixture({ env: { MESHLLM_RELEASE_REPOSITORY: 'not a repo!' } })
+    await plain.store.putToken(await createTokenRecord('setup', 'setup-2', 1_700_000_000_000))
+    const claim2 = await plain.router(new Request('https://router.test/node/claim', { method: 'POST', headers: { ...bearer('setup-2'), 'content-type': 'application/json' }, body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: [], capacity: 1 }) }))
+    const claimed2 = await claim2.json() as { desiredRuntimeVersions?: { meshllmRepository?: string } }
+    expect(claimed2.desiredRuntimeVersions?.meshllmRepository).toBeUndefined()
+  })
+
+  it('REQ-NODE-014 the operator switches the active binary source between official and fork', async () => {
+    const { router, store } = routerFixture({ releasesFetcher: async () => Response.json([{ tag_name: 'v0.73.1-codeflare.1' }]), env: { MESHLLM_RELEASE_REPOSITORY: 'nikolanovoselec/mesh-llm' } })
+    // The fleet-facing desired repository is read from admin status, which shares the
+    // claim/heartbeat payload path (desiredRuntimeVersionsPayload) without consuming a token.
+    const activeRepo = async () => {
+      const status = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+      return (await status.json() as { desiredRuntimeVersions?: { meshllmRepository?: string } }).desiredRuntimeVersions?.meshllmRepository
+    }
+
+    // Default (no stored choice) serves the fork.
+    expect(await activeRepo()).toBe('nikolanovoselec/mesh-llm')
+
+    // Switching to official drops the repository so agents reset to upstream.
+    const toOfficial = await router(new Request('https://router.test/admin/runtime-versions', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ meshllmSource: 'official' }) }))
+    expect(toOfficial.status).toBe(200)
+    expect(await activeRepo()).toBeUndefined()
+
+    // The automation twin switches it back to the fork and is audited as an automation actor.
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    const back = await router(new Request('https://router.test/api/v1/runtime-versions', { method: 'PUT', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ meshllmSource: 'fork' }) }))
+    expect(back.status).toBe(200)
+    expect(await activeRepo()).toBe('nikolanovoselec/mesh-llm')
+    // The automation twin's switch is audited under an automation actor (the admin
+    // switch above logged its own runtime_source_selected event, so match on actor).
+    expect(store.audit.some((event) => event.type === 'runtime_source_selected' && /^automation:/.test(String(event.actor ?? '')))).toBe(true)
   })
 
   it('REQ-OBS-002 reports node mesh membership and readiness fields in admin status', async () => {
@@ -2939,6 +3086,23 @@ describe('router worker behavioral contracts', () => {
     expect(await response.json()).toMatchObject({ error: 'invalid_heartbeat', fields: expect.arrayContaining(['meshTarget', 'metrics']) })
     expect(node?.meshIp).toBe('100.64.1.10')
     expect(node?.metrics?.activeRequests).toBe(0)
+  })
+
+  it('REQ-NODE-002 accepts the llama.cpp Auto parallel sentinel in heartbeat metrics', async () => {
+    const { router, store } = routerFixture()
+    await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
+
+    // parallel -1 is the documented Auto value the profile editor stores (REQ-RUN-013); the agent
+    // echoes it back, and the heartbeat must refresh the lease instead of 400ing the node offline.
+    const response = await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: heartbeatBody({ runtime: 'llamacpp', metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, parallel: -1 } })
+    }))
+    const node = await store.getNode('node-a')
+
+    expect(response.status).toBe(200)
+    expect(node?.metrics?.parallel).toBe(-1)
   })
 
   it('REQ-SEC-007 node revoke removes the node mesh tokens from distribution', async () => {
@@ -3200,7 +3364,7 @@ describe('Access-first setup and host gating contracts', () => {
     }))
 
     expect(response.status).toBe(401)
-    expect(await store.getConfig<LastSpeedTestSummary>('last_speed_test')).toBeUndefined()
+    expect(await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')).toBeUndefined()
   })
 
   function roleConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -3388,7 +3552,7 @@ describe('Access-first setup and host gating contracts', () => {
     }))
     const measured = await response.json() as { nodeId?: string; cacheTokens?: number; tokens: { prompt: number; completion: number; promptEstimated: boolean; completionEstimated: boolean }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number }; requestedPromptTokens: number; requestedMaxTokens: number; chunks: number; outputChars: number; upstreamTimings: { cache_n: number; prompt_per_second: number; predicted_per_second: number } }
     const forwarded = await capture.request!.json() as { model: string; user?: string; max_tokens?: number; messages: Array<{ role: string; content: string }> }
-    const stored = await store.getConfig<LastSpeedTestSummary>('last_speed_test')
+    const stored = await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')
 
     expect(response.status).toBe(200)
     expect(forwarded.model).toBe(SMOKE_UPSTREAM)
@@ -3406,7 +3570,10 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.upstreamTimings).toMatchObject({ cache_n: 0, prompt_per_second: 2000, predicted_per_second: 100 })
     expect(measured.throughput.promptTokensPerSecond).toBe(2000)
     expect(measured.throughput.generationTokensPerSecond).toBe(100)
-    expect(stored).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 256, completionTokens: 2, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, cacheTokens: 0 })
+    // The run is stored keyed by the resolved profile id — duplicated profiles share
+    // an upstreamModel, so the id is the only key that keeps each mesh card's
+    // measurement its own.
+    expect(stored?.['mesh-smoke-qwen25-1.5b']).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 256, completionTokens: 2, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, cacheTokens: 0 })
   })
 
   it('REQ-API-009 exposes the direct router speed test to automation callers', async () => {
@@ -3430,7 +3597,7 @@ describe('Access-first setup and host gating contracts', () => {
     const response = await router(new Request('https://router.test/api/v1/speed-test', { method: 'POST', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 64, maxTokens: 16 }) }))
     const measured = await response.json() as { tokens: { prompt: number; completion: number }; throughput: { promptTokensPerSecond: number | null; generationTokensPerSecond: number } }
     const status = await router(new Request('https://router.test/api/v1/status', { headers: bearer('auto-secret') }))
-    const statusBody = await status.json() as { lastSpeedTest?: LastSpeedTestSummary }
+    const statusBody = await status.json() as { lastSpeedTest?: LastSpeedTestSummary; lastSpeedTests?: Record<string, LastSpeedTestSummary> }
 
     expect(unauthorized.status).toBe(401)
     expect(response.status).toBe(200)
@@ -3439,6 +3606,41 @@ describe('Access-first setup and host gating contracts', () => {
     expect(measured.throughput.promptTokensPerSecond).toBeGreaterThan(0)
     expect(measured.throughput.generationTokensPerSecond).toBeGreaterThan(0)
     expect(statusBody.lastSpeedTest).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh', nodeId: 'node-a', promptTokens: 64, completionTokens: 1 })
+    expect(statusBody.lastSpeedTests?.['mesh-smoke-qwen25-1.5b']).toMatchObject({ requestId: 'request-a', model: 'codeflare-mesh' })
+  })
+
+  it('REQ-API-009 surfaces a pre-map stored speed test as the seed map entry', async () => {
+    const { router, store } = routerFixture({})
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    const legacy: LastSpeedTestSummary = { at: 5, requestId: 'request-legacy', model: 'codeflare-mesh', requestedPromptTokens: 64, requestedMaxTokens: 16, promptTokens: 64, completionTokens: 1, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, timeToFirstTokenMs: 10, generationMs: 10, totalMs: 20 }
+    await store.putConfig('last_speed_test', legacy)
+
+    const status = await router(new Request('https://router.test/api/v1/status', { headers: bearer('auto-secret') }))
+    const statusBody = await status.json() as { lastSpeedTest?: LastSpeedTestSummary; lastSpeedTests?: Record<string, LastSpeedTestSummary> }
+
+    expect(status.status).toBe(200)
+    // The pre-map record surfaces in the map (keyed by its resolved profile id, or the
+    // model string when no profile resolves) and as the newest lastSpeedTest.
+    expect(Object.values(statusBody.lastSpeedTests ?? {}).some((entry) => entry.requestId === 'request-legacy')).toBe(true)
+    expect(statusBody.lastSpeedTest).toMatchObject({ requestId: 'request-legacy' })
+  })
+
+  it('REQ-API-009 keys a pre-map speed test by the resolved profile id so the mesh card finds it', async () => {
+    const { router, store } = routerFixture({})
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    // With a profile resolvable for the record's model, the seed entry must key by the
+    // profile id the per-mesh card looks up — not the model string (regression lock).
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const profile = await store.getProfileByPublicModel(STABLE_PUBLIC_MODEL)
+    const legacy: LastSpeedTestSummary = { at: 5, requestId: 'request-legacy', model: STABLE_PUBLIC_MODEL, requestedPromptTokens: 64, requestedMaxTokens: 16, promptTokens: 64, completionTokens: 1, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, timeToFirstTokenMs: 10, generationMs: 10, totalMs: 20 }
+    await store.putConfig('last_speed_test', legacy)
+
+    const status = await router(new Request('https://router.test/api/v1/status', { headers: bearer('auto-secret') }))
+    const statusBody = await status.json() as { lastSpeedTests?: Record<string, LastSpeedTestSummary> }
+
+    expect(status.status).toBe(200)
+    expect(profile).toBeDefined()
+    expect(statusBody.lastSpeedTests?.[profile!.id]).toMatchObject({ requestId: 'request-legacy' })
   })
 
   it('REQ-ADM-029 direct playground forwards the session user required by llama.cpp profiles', async () => {
@@ -4308,7 +4510,7 @@ describe('control-plane API (/api/v1)', () => {
     expect(serialized).not.toContain('inferencePort')
   })
 
-  it('REQ-API-004 filters the node list by status and search', async () => {
+  it('REQ-API-012 filters the node list by status and search', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     await store.upsertNode(nodeFixture({ id: 'node-fresh', displayName: 'Alpha', status: 'online' }))
@@ -4321,7 +4523,7 @@ describe('control-plane API (/api/v1)', () => {
     expect(bySearch.nodes.map((node) => node.id)).toEqual(['node-fresh'])
   })
 
-  it('REQ-API-004 paginates the node list by id cursor', async () => {
+  it('REQ-API-012 paginates the node list by id cursor', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     for (const suffix of ['a', 'b', 'c']) await store.upsertNode(nodeFixture({ id: `node-${suffix}` }))
@@ -4472,7 +4674,8 @@ describe('control-plane API (/api/v1)', () => {
   })
 
   it('REQ-API-005 lists models as projections with callable names', async () => {
-    const { router } = routerFixture()
+    const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models', { headers: bearer(key.token) }))
     expect(res.status).toBe(200)
@@ -4515,7 +4718,7 @@ describe('control-plane API (/api/v1)', () => {
 
     expect(body.model.runtime).toBe('llamacpp')
     expect(body.model.tunables).toBeNull()
-    expect(body.model.llamacpp).toMatchObject({ cachePrompt: true, cacheReuse: 256, parallel: 4, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
+    expect(body.model.llamacpp).toMatchObject({ cachePrompt: true, cacheReuse: 256, parallel: -1, kvUnified: true, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
     expect(created).toMatchObject({ runtime: 'llamacpp', sourceMode: 'llamacpp-hf', active: false })
   })
 
@@ -4614,13 +4817,17 @@ describe('control-plane API (/api/v1)', () => {
     expect((await store.listProfiles()).some((profile) => profile.id === id)).toBe(true)
   })
 
-  it('REQ-API-008 REQ-RUN-012 refuses deleting a built-in model', async () => {
+  it('REQ-API-008 REQ-RUN-012 deletes the switched-off starter like any other model and it never re-seeds', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
-    const res = await apiDeleteModel(router, key.token, 'mesh-default-qwen36-35b')
-    expect(res.status).toBe(409)
-    expect((await res.json() as { error: string }).error).toBe('model_builtin')
-    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-default-qwen36-35b')).toBe(true)
+    // The seeded starter is active; switching it off makes it deletable (REQ-RUN-012).
+    await router(new Request('https://router.test/api/v1/models/mesh-smoke-qwen25-1.5b/disable', { method: 'POST', headers: bearer(key.token) }))
+    const res = await apiDeleteModel(router, key.token, 'mesh-smoke-qwen25-1.5b')
+    expect(res.status).toBe(200)
+    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')).toBe(false)
+    // Seed-once: another request cycle must not resurrect the deleted starter (REQ-RUN-002).
+    await router(new Request('https://router.test/health'))
+    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')).toBe(false)
   })
 
   it('REQ-API-008 REQ-RUN-012 returns 404 deleting an unknown model', async () => {
@@ -4648,12 +4855,12 @@ describe('control-plane API (/api/v1)', () => {
     expect((await store.listProfiles()).some((profile) => profile.id === added.profileId)).toBe(false)
   })
 
-  it('REQ-ADM-026 refuses console deletion of a built-in model', async () => {
+  it('REQ-ADM-026 refuses console deletion only while the model is active', async () => {
     const { router, store } = routerFixture()
-    const res = await adminDeleteModel(router, 'mesh-default-qwen36-35b')
+    const res = await adminDeleteModel(router, 'mesh-smoke-qwen25-1.5b')
     expect(res.status).toBe(409)
-    expect((await res.json() as { error: string }).error).toBe('model_builtin')
-    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-default-qwen36-35b')).toBe(true)
+    expect((await res.json() as { error: string }).error).toBe('model_active')
+    expect((await store.listProfiles()).some((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')).toBe(true)
   })
 
   it('REQ-ADM-026 refuses console model deletion without an admin credential', async () => {
@@ -4674,6 +4881,7 @@ describe('control-plane API (/api/v1)', () => {
 
   it('REQ-API-005 configures a model context window and rejects invalid input', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     const key = await mintKey(router)
     const headers = { ...bearer(key.token), 'content-type': 'application/json' }
     const ok = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b', { method: 'POST', headers, body: JSON.stringify({ contextWindow: 8192 }) }))
@@ -4714,6 +4922,7 @@ describe('control-plane API (/api/v1)', () => {
 
   it('REQ-API-005 enables a model and switches off another with the same callable name', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models/mesh-split-qwen36-35b/enable', { method: 'POST', headers: bearer(key.token) }))
     expect(res.status).toBe(200)
@@ -4728,6 +4937,7 @@ describe('control-plane API (/api/v1)', () => {
 
   it('REQ-API-005 disables a model by dropping its traffic to zero', async () => {
     const { router, store } = routerFixture()
+    await seedLegacyDefaults(store)
     const key = await mintKey(router)
     const res = await router(new Request('https://router.test/api/v1/models/mesh-default-qwen36-35b/disable', { method: 'POST', headers: bearer(key.token) }))
     expect(res.status).toBe(200)
@@ -4834,5 +5044,516 @@ describe('control-plane API (/api/v1)', () => {
   it('REQ-API-006 refuses events access without an automation key', async () => {
     const { router } = routerFixture()
     expect((await router(new Request('https://router.test/api/v1/events', { headers: bearer('nope') }))).status).toBe(401)
+  })
+})
+
+describe('multi-mesh machine groups', () => {
+  const DEV_GGUF = 'unsloth/Qwen3-14B-GGUF:Q4_K_M'
+
+  async function mintKey(router: (request: Request) => Promise<Response>): Promise<string> {
+    const res = await router(new Request('https://router.test/api/v1/keys', { method: 'POST', headers: bearer('admin-secret') }))
+    return ((await res.json()) as { token: string }).token
+  }
+
+  const createMeshReq = (router: (request: Request) => Promise<Response>, name: string, token = 'admin-secret') =>
+    router(new Request('https://router.test/admin/meshes', {
+      method: 'POST',
+      headers: { ...bearer(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ name })
+    }))
+
+  const addModelReq = (router: (request: Request) => Promise<Response>, body: Record<string, unknown>) =>
+    router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    }))
+
+  const configureProfile = (router: (request: Request) => Promise<Response>, body: Record<string, unknown>) =>
+    router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    }))
+
+  it('REQ-ADM-037 creates and lists meshes with machine and model counts', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+
+    const created = await createMeshReq(router, 'dEvElOpMeNt')
+    expect(created.status).toBe(201)
+    expect(await created.json()).toMatchObject({ mesh: { id: 'development', name: 'Development', alias: 'codeflare-mesh-development' } })
+    expect(store.audit.some((event) => event.type === 'mesh_created' && event.target === 'development')).toBe(true)
+
+    await store.upsertNode({ ...nodeFixture(), meshId: 'development' })
+    expect((await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single', meshId: 'development' })).status).toBe(201)
+
+    const list = await router(new Request('https://router.test/admin/meshes', { headers: bearer('admin-secret') }))
+    const body = await list.json() as { meshes: Array<{ id: string; name: string; alias: string; machineCount: number; modelCount: number }> }
+    expect(list.status).toBe(200)
+    expect(body.meshes[0]).toMatchObject({ id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 0, modelCount: 1 })
+    expect(body.meshes.find((mesh) => mesh.id === 'development')).toMatchObject({ name: 'Development', alias: 'codeflare-mesh-development', machineCount: 1, modelCount: 1 })
+  })
+
+  it('REQ-ADM-037 rejects invalid, duplicate, and alias-colliding mesh names', async () => {
+    const { router, store } = routerFixture()
+    for (const bad of ['', 'Dev Ops', 'noobs!', 'a'.repeat(33)]) {
+      const res = await createMeshReq(router, bad)
+      expect(res.status).toBe(400)
+      expect((await res.json() as { error: string }).error).toBe('invalid_mesh_name')
+    }
+    expect((await createMeshReq(router, 'Development')).status).toBe(201)
+    for (const dup of ['DEVELOPMENT', 'development', 'Default']) {
+      const res = await createMeshReq(router, dup)
+      expect(res.status).toBe(409)
+      expect((await res.json() as { error: string }).error).toBe('mesh_exists')
+    }
+    // A stored profile already answering the would-be mesh alias blocks creation:
+    // the alias would gain two owners the moment a model activates in the new mesh.
+    await store.setProfile({ ...LEGACY_MESH_DEFAULT, publicAliases: ['codeflare-mesh', 'codeflare-mesh-ops'] })
+    const collision = await createMeshReq(router, 'Ops')
+    expect(collision.status).toBe(409)
+    expect((await collision.json() as { error: string }).error).toBe('mesh_alias_conflict')
+  })
+
+  it('REQ-ADM-037 deletes only empty non-default meshes', async () => {
+    const { router, store } = routerFixture()
+    const del = (id: string) => router(new Request(`https://router.test/admin/meshes/${id}`, { method: 'DELETE', headers: bearer('admin-secret') }))
+
+    expect((await del('default')).status).toBe(400)
+    expect((await del('ghost')).status).toBe(404)
+
+    await createMeshReq(router, 'Development')
+    await store.upsertNode({ ...nodeFixture(), meshId: 'development' })
+    expect((await del('development')).status).toBe(409)
+    expect((await (await del('development')).json() as { error: string }).error).toBe('mesh_not_empty')
+
+    await createMeshReq(router, 'Ops')
+    expect((await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single', meshId: 'ops' })).status).toBe(201)
+    expect((await del('ops')).status).toBe(409)
+
+    await store.upsertNode({ ...nodeFixture(), meshId: 'default' })
+    const emptied = await del('development')
+    expect(emptied.status).toBe(200)
+    const deletion = store.audit.find((event) => event.type === 'mesh_deleted' && event.target === 'development')
+    expect(deletion?.detail).toMatchObject({ routeName: 'codeflare-mesh-development' })
+    expect((await (await router(new Request('https://router.test/admin/meshes', { headers: bearer('admin-secret') }))).json() as { meshes: Array<{ id: string }> }).meshes.map((mesh) => mesh.id)).toEqual(['default', 'ops'])
+  })
+
+  it('REQ-API-011 automation manages meshes through the /api/v1 twins', async () => {
+    const { router } = routerFixture()
+    const token = await mintKey(router)
+
+    expect((await router(new Request('https://router.test/api/v1/meshes', { headers: bearer('nope') }))).status).toBe(401)
+
+    const created = await router(new Request('https://router.test/api/v1/meshes', {
+      method: 'POST',
+      headers: { ...bearer(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Noobs' })
+    }))
+    expect(created.status).toBe(201)
+    expect(await created.json()).toMatchObject({ mesh: { id: 'noobs', name: 'Noobs', alias: 'codeflare-mesh-noobs' } })
+
+    const list = await router(new Request('https://router.test/api/v1/meshes', { headers: bearer(token) }))
+    expect(list.status).toBe(200)
+    expect((await list.json() as { meshes: Array<{ id: string }> }).meshes.map((mesh) => mesh.id)).toEqual(['default', 'noobs'])
+
+    expect((await router(new Request('https://router.test/api/v1/meshes/noobs', { method: 'DELETE', headers: bearer(token) }))).status).toBe(200)
+  })
+
+  it('REQ-SCH-006 heartbeat and claim send only the node mesh profiles', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await createMeshReq(router, 'Development')
+    expect((await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single', meshId: 'development' })).status).toBe(201)
+    const devProfileId = (await store.listProfiles()).find((profile) => profile.meshId === 'development')!.id
+    await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
+
+    const beat = (body: string) => router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body
+    }))
+    const first = await (await beat(heartbeatBody())).json() as { desiredProfiles: Array<{ id: string }> }
+    expect(first.desiredProfiles.map((profile) => profile.id)).toContain('mesh-smoke-qwen25-1.5b')
+    expect(first.desiredProfiles.map((profile) => profile.id)).not.toContain(devProfileId)
+
+    // After reassignment the node still self-reports its old profile ids for a tick;
+    // the router must answer with the new group's catalog anyway.
+    const reassign = await router(new Request('https://router.test/admin/nodes/node-a/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ meshId: 'development' })
+    }))
+    expect(reassign.status).toBe(200)
+    const second = await (await beat(heartbeatBody())).json() as { desiredProfiles: Array<{ id: string }> }
+    expect(second.desiredProfiles.map((profile) => profile.id)).toEqual([devProfileId])
+
+    // A brand-new claim lands in the default mesh and receives only its catalog.
+    const tokenResponse = await router(new Request('https://router.test/admin/setup-tokens', { method: 'POST', headers: bearer('admin-secret') }))
+    const { setupToken } = await tokenResponse.json() as { setupToken: string }
+    const claim = await router(new Request('https://router.test/node/claim', {
+      method: 'POST',
+      headers: { ...bearer(setupToken), 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Node B', meshIp: '100.64.1.11', inferencePort: 8080, publicModels: [], activeProfileIds: [], capacity: 1 })
+    }))
+    expect(claim.status).toBe(201)
+    const claimed = await claim.json() as { nodeId: string; profiles: Array<{ id: string }> }
+    expect(claimed.profiles.map((profile) => profile.id)).toContain('mesh-smoke-qwen25-1.5b')
+    expect(claimed.profiles.map((profile) => profile.id)).not.toContain(devProfileId)
+    expect((await store.getNode(claimed.nodeId))?.meshId ?? 'default').toBe('default')
+  })
+
+  it('REQ-ADM-023 reassigning a node drops its mesh tokens and heartbeats do not re-add them', async () => {
+    const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await createMeshReq(router, 'Development')
+    await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
+    const beat = () => router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: heartbeatBody({ meshId: 'mesh-1', meshToken: 'invite-token-value-a' })
+    }))
+    await beat()
+    expect(store.config.get('mesh_state:mesh-smoke-qwen25-1.5b')).toBeDefined()
+
+    const config = (body: Record<string, unknown>) => router(new Request('https://router.test/admin/nodes/node-a/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    }))
+    expect((await config({ meshId: 'ghost' })).status).toBe(400)
+    expect((await (await config({ meshId: 'ghost' })).json() as { error: string }).error).toBe('unknown_mesh')
+
+    const moved = await config({ meshId: 'development' })
+    expect(moved.status).toBe(200)
+    expect((await moved.json() as { meshId: string }).meshId).toBe('development')
+    const assignment = store.audit.find((event) => event.type === 'node_mesh_assigned' && event.target === 'node-a')
+    expect(assignment?.detail).toMatchObject({ from: 'default', to: 'development' })
+    expect(store.audit.some((event) => event.type === 'mesh_token_removed' && event.target === 'node-a')).toBe(true)
+
+    // The node's next heartbeat still carries the old mesh token and stale profile ids;
+    // the mesh gate must not hand back a bootstrap or re-add the token.
+    const after = await (await beat()).json() as { desiredProfiles: unknown[]; meshBootstrap?: unknown }
+    expect(after.desiredProfiles).toEqual([])
+    expect(after.meshBootstrap).toBeUndefined()
+    const status = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+    const statusBody = await status.json() as { meshHealth?: Array<{ profileId: string; tokenCount?: number }> }
+    expect((statusBody.meshHealth ?? []).find((entry) => entry.profileId === 'mesh-smoke-qwen25-1.5b')?.tokenCount ?? 0).toBe(0)
+  })
+
+  it('REQ-API-004 the reconfigure twin accepts meshId and api nodes carry it', async () => {
+    const { router, store } = routerFixture()
+    await createMeshReq(router, 'Development')
+    await store.upsertNode(nodeFixture())
+    const token = await mintKey(router)
+
+    const moved = await router(new Request('https://router.test/api/v1/nodes/node-a/reconfigure', {
+      method: 'POST',
+      headers: { ...bearer(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ meshId: 'development' })
+    }))
+    expect(moved.status).toBe(200)
+    expect((await moved.json() as { node: { meshId: string } }).node.meshId).toBe('development')
+
+    const list = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(token) }))
+    const nodes = (await list.json() as { nodes: Array<{ id: string; meshId: string }> }).nodes
+    expect(nodes.find((node) => node.id === 'node-a')?.meshId).toBe('development')
+  })
+
+  it('REQ-SCH-006 profile readiness counts only same-mesh nodes', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await createMeshReq(router, 'Development')
+    await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })
+    await router(new Request('https://router.test/node/heartbeat', {
+      method: 'POST',
+      headers: { ...bearer('node-secret'), 'content-type': 'application/json' },
+      body: heartbeatBody()
+    }))
+
+    const readiness = async () => {
+      const res = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+      const body = await res.json() as { profileReadiness?: Array<{ profileId: string; ready: number }> }
+      return (body.profileReadiness ?? []).find((entry) => entry.profileId === 'mesh-smoke-qwen25-1.5b')?.ready ?? 0
+    }
+    expect(await readiness()).toBe(1)
+
+    const node = (await store.getNode('node-a'))!
+    await store.upsertNode({ ...node, meshId: 'development' })
+    expect(await readiness()).toBe(0)
+  })
+
+  it('REQ-RUN-016 reassigning a model swaps its mesh alias and deactivates it', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await createMeshReq(router, 'Development')
+    const add = await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single' })
+    const profileId = (await add.json() as { profileId: string }).profileId
+    await router(new Request('https://router.test/admin/profiles/activate', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId })
+    }))
+    const activated = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(activated.active).toBe(true)
+
+    const moved = await configureProfile(router, { profileId, meshId: 'development' })
+    expect(moved.status).toBe(200)
+    expect((await moved.json() as { meshId: string }).meshId).toBe('development')
+    const reassigned = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(reassigned.meshId).toBe('development')
+    expect(reassigned.publicAliases[0]).toBe('codeflare-mesh-development')
+    expect(reassigned.publicAliases).not.toContain('codeflare-mesh')
+    expect(reassigned.active).toBe(false)
+    expect(reassigned.rolloutPercent).toBe(0)
+    expect(reassigned.version).toBeGreaterThan(activated.version)
+  })
+
+  it('REQ-RUN-016 mesh reassignment records the audit event and rejects an unknown mesh', async () => {
+    const { router, store } = routerFixture()
+    await createMeshReq(router, 'Development')
+    const add = await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single' })
+    const profileId = (await add.json() as { profileId: string }).profileId
+
+    expect((await configureProfile(router, { profileId, meshId: 'ghost' })).status).toBe(400)
+    expect(store.audit.find((event) => event.type === 'model_mesh_assigned')).toBeUndefined()
+    expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.meshId ?? 'default').toBe('default')
+
+    expect((await configureProfile(router, { profileId, meshId: 'development' })).status).toBe(200)
+    const assignment = store.audit.find((event) => event.type === 'model_mesh_assigned' && event.target === profileId)
+    expect(assignment?.detail).toMatchObject({ from: 'default', to: 'development' })
+  })
+
+  it('REQ-RUN-016 call-name edits preserve the mesh alias and reject reserved names', async () => {
+    const { router, store } = routerFixture()
+    await createMeshReq(router, 'Development')
+    const add = await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single', meshId: 'development' })
+    const profileId = (await add.json() as { profileId: string }).profileId
+
+    const renamed = await configureProfile(router, { profileId, callName: 'fast' })
+    expect(renamed.status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.publicAliases).toEqual(['codeflare-mesh-development', 'fast'])
+
+    for (const reserved of ['codeflare-mesh', 'codeflare-mesh-noobs']) {
+      const res = await configureProfile(router, { profileId, callName: reserved })
+      expect(res.status).toBe(409)
+      expect((await res.json() as { error: string }).error).toBe('call_name_conflict')
+    }
+  })
+
+  it('REQ-RUN-016 onboarding accepts a target mesh and stamps its alias', async () => {
+    const { router, store } = routerFixture()
+    await createMeshReq(router, 'Development')
+
+    expect((await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single', meshId: 'ghost' })).status).toBe(400)
+
+    const add = await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single', runtime: 'llamacpp', meshId: 'development' })
+    expect(add.status).toBe(201)
+    expect((await add.json() as { model: { meshId: string } }).model.meshId).toBe('development')
+    const created = (await store.listProfiles()).find((profile) => profile.upstreamModel === DEV_GGUF)!
+    expect(created.publicAliases[0]).toBe('codeflare-mesh-development')
+    expect(created.meshId).toBe('development')
+  })
+
+  it('REQ-API-005 the model configure twin accepts meshId and api models carry it', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await createMeshReq(router, 'Development')
+    const token = await mintKey(router)
+
+    const moved = await router(new Request('https://router.test/api/v1/models/mesh-smoke-qwen25-1.5b', {
+      method: 'POST',
+      headers: { ...bearer(token), 'content-type': 'application/json' },
+      body: JSON.stringify({ meshId: 'development' })
+    }))
+    expect(moved.status).toBe(200)
+
+    const list = await router(new Request('https://router.test/api/v1/models', { headers: bearer(token) }))
+    const models = (await list.json() as { models: Array<{ id: string; meshId: string }> }).models
+    expect(models.find((model) => model.id === 'mesh-smoke-qwen25-1.5b')?.meshId).toBe('development')
+  })
+
+  it('REQ-GWY-009 gateway sync ensures one dynamic route per mesh', async () => {
+    let received: { extraRoutes: readonly { routeName: string; publicModel: string }[] | undefined; routeName: string } | undefined
+    const { router, store } = routerFixture({
+      env: { CLOUDFLARE_ACCOUNT_ID: 'acct-1', AI_GATEWAY_ID: 'inference-mesh' },
+      cloudflareClient: {
+        async syncCustomProvider(input) {
+          received = { extraRoutes: input.extraRoutes, routeName: input.routeName }
+          return { providerId: 'p', providerSlug: 'slug', routeId: 'r', routeVersionId: 'v', deploymentId: 'd', gatewayId: input.gatewayId, routeName: input.routeName, publicModel: input.publicModel, workerUrl: input.workerUrl, manualProviderKeyRequired: true, providerTokenInstructions: 'x' }
+        },
+        async provisionCustomDomain() { throw new Error('custom domain is not used in this test') }
+      }
+    })
+    await store.putConfig('custom_domain', { hostname: 'mesh.example.com', status: 'provisioned' })
+    const sync = () => router(new Request('https://router.test/admin/cloudflare/gateway/sync', { method: 'POST', headers: bearer('admin-secret') }))
+
+    expect((await sync()).status).toBe(200)
+    expect(received?.routeName).toBe('codeflare-mesh')
+    expect(received?.extraRoutes).toBeUndefined()
+
+    await createMeshReq(router, 'Development')
+    await createMeshReq(router, 'Ops')
+    expect((await sync()).status).toBe(200)
+    expect(received?.extraRoutes).toEqual([
+      { routeName: 'codeflare-mesh-development', publicModel: 'codeflare-mesh-development' },
+      { routeName: 'codeflare-mesh-ops', publicModel: 'codeflare-mesh-ops' }
+    ])
+  })
+
+  it('REQ-GWY-009 the gateway client upserts a route per extra mesh route', async () => {
+    const calls: Array<{ method: string; path: string; body?: Record<string, unknown> }> = []
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input))
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined
+      calls.push({ method, path: url.pathname, ...(body ? { body } : {}) })
+      if (url.pathname.endsWith('/custom-providers') && method === 'GET') return Response.json({ success: true, result: [] })
+      if (url.pathname.endsWith('/custom-providers') && method === 'POST') return Response.json({ success: true, result: { id: 'provider-a', slug: 'codeflare-inference-mesh' } })
+      if (url.pathname.endsWith('/ai-gateway/gateways') && method === 'GET') return Response.json({ success: true, result: [{ id: 'gateway-a', authentication: true }] })
+      if (url.pathname.endsWith('/routes') && method === 'GET') return Response.json({ success: true, data: { routes: [] } })
+      return Response.json({ success: true, result: { id: `route-${calls.length}`, name: (body?.name as string) ?? 'unknown', version: { version_id: 'version-a' }, deployment: { deployment_id: 'deployment-a', version_id: 'version-a' } } })
+    }) as typeof fetch
+
+    const result = await new CloudflareGatewayClient('runtime-token', fetcher).syncCustomProvider({
+      accountId: 'account-a',
+      gatewayId: 'gateway-a',
+      workerUrl: 'https://router.example.workers.dev/v1/chat/completions',
+      providerName: 'Codeflare Inference Mesh',
+      routeName: 'codeflare-mesh',
+      publicModel: 'codeflare-mesh',
+      extraRoutes: [{ routeName: 'codeflare-mesh-development', publicModel: 'codeflare-mesh-development' }],
+      providerTokenInstructions: 'manual'
+    })
+
+    const routePosts = calls.filter((call) => call.method === 'POST' && call.path.endsWith('/routes')).map((call) => call.body?.name)
+    expect(routePosts).toEqual(['codeflare-mesh', 'codeflare-mesh-development'])
+    expect(result.routes?.map((route) => route.routeName)).toEqual(['codeflare-mesh', 'codeflare-mesh-development'])
+  })
+
+  it('REQ-ADM-037 admin status lists meshes with counts', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await createMeshReq(router, 'Development')
+    await store.upsertNode({ ...nodeFixture(), meshId: 'development' })
+
+    const status = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+    const body = await status.json() as { meshes?: Array<{ id: string; name: string; alias: string; machineCount: number; modelCount: number }> }
+    expect(status.status).toBe(200)
+    expect(body.meshes?.[0]).toMatchObject({ id: 'default', alias: 'codeflare-mesh', machineCount: 0, modelCount: 1 })
+    expect(body.meshes?.find((mesh) => mesh.id === 'development')).toMatchObject({ name: 'Development', machineCount: 1, modelCount: 0 })
+  })
+
+  it('REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await createMeshReq(router, 'Development')
+    const add = await addModelReq(router, { modelRef: DEV_GGUF, mode: 'single', name: 'Coder', meshId: 'development' })
+    const sourceId = (await add.json() as { profileId: string }).profileId
+    const duplicate = (profileId: string) => router(new Request('https://router.test/admin/profiles/duplicate', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId })
+    }))
+
+    expect((await duplicate('ghost')).status).toBe(404)
+
+    const first = await duplicate(sourceId)
+    expect(first.status).toBe(201)
+    const firstId = (await first.json() as { profileId: string }).profileId
+    expect(firstId).not.toBe(sourceId)
+    const source = (await store.listProfiles()).find((profile) => profile.id === sourceId)!
+    const copy = (await store.listProfiles()).find((profile) => profile.id === firstId)!
+    expect(copy.displayName).toBe('Coder (copy)')
+    expect(copy.meshId).toBe('development')
+    expect(copy.publicAliases[0]).toBe('codeflare-mesh-development')
+    expect(copy.publicAliases[1]).toBe(`${source.publicAliases[1]}-copy`)
+    expect(copy.upstreamModel).toBe(source.upstreamModel)
+    expect(copy.runtime).toBe(source.runtime)
+    expect(copy.contextWindow).toBe(source.contextWindow)
+    expect(copy.active).toBe(false)
+    expect(copy.rolloutPercent).toBe(0)
+    expect(copy.version).toBe(1)
+    expect(copy.meshllm?.modelRef).toBe(source.meshllm?.modelRef)
+    expect(copy.meshllm?.bindPort).not.toBe(source.meshllm?.bindPort)
+    expect(store.audit.some((event) => event.type === 'model_duplicated' && event.target === firstId)).toBe(true)
+
+    // A second duplicate of the same source coexists under the next derived name.
+    const second = await duplicate(sourceId)
+    expect(second.status).toBe(201)
+    const secondId = (await second.json() as { profileId: string }).profileId
+    expect(secondId).not.toBe(firstId)
+    const copy2 = (await store.listProfiles()).find((profile) => profile.id === secondId)!
+    expect(copy2.publicAliases[1]).toBe(`${source.publicAliases[1]}-copy-2`)
+
+    // The copy is an ordinary profile: its details are editable independently.
+    const edited = await configureProfile(router, { profileId: firstId, name: 'Coder Tuned', contextWindow: 8192 })
+    expect(edited.status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === sourceId)?.displayName).toBe('Coder')
+  })
+
+  it('REQ-ADM-020 REQ-API-004 node projections carry the derived operator status vocabulary', async () => {
+    const { router, store } = routerFixture()
+    const token = await mintKey(router)
+    const base = nodeFixture()
+    await store.upsertNode({ ...base, id: 'n-serving', metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['m'] } })
+    await store.upsertNode({ ...base, id: 'n-preparing', metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: [] } })
+    await store.upsertNode({ ...base, id: 'n-disconnected', metrics: { runtimeState: 'stopped', activeRequests: 0 } })
+    await store.upsertNode({ ...base, id: 'n-error', metrics: { runtimeState: 'dependency-missing', activeRequests: 0 } })
+    await store.upsertNode({ ...base, id: 'n-offline', status: 'offline', metrics: { runtimeState: 'starting', activeRequests: 0 } })
+    await store.upsertNode({ ...base, id: 'n-deactivated', deactivated: true, metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['m'] } })
+    // An api-client mesh-llm advertises the mesh catalog while holding no stage: ready
+    // models without a ready/running runtime or a stage assignment are not Serving.
+    await store.upsertNode({ ...base, id: 'n-ghost', metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: ['m'] } })
+    await store.upsertNode({ ...base, id: 'n-stage', metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: [], stageCount: 1, apiReady: true, consoleReady: true } })
+
+    const res = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(token) }))
+    const nodes = (await res.json() as { nodes: Array<{ id: string; displayStatus: string }> }).nodes
+    const statusOf = (id: string) => nodes.find((node) => node.id === id)?.displayStatus
+    expect(statusOf('n-serving')).toBe('Serving')
+    expect(statusOf('n-preparing')).toBe('Preparing')
+    expect(statusOf('n-ghost')).toBe('Preparing')
+    expect(statusOf('n-stage')).toBe('Serving')
+    expect(statusOf('n-disconnected')).toBe('Disconnected')
+    expect(statusOf('n-error')).toBe('Error')
+    expect(statusOf('n-offline')).toBe('Offline')
+    expect(statusOf('n-deactivated')).toBe('Deactivated')
+
+    // Admin status nodes carry the same field, so the console renders the identical contract.
+    const status = await router(new Request('https://router.test/admin/status', { headers: bearer('admin-secret') }))
+    const statusNodes = (await status.json() as { nodes: Array<{ id: string; displayStatus?: string }> }).nodes
+    expect(statusNodes.find((node) => node.id === 'n-serving')?.displayStatus).toBe('Serving')
+  })
+
+  it('REQ-ADM-033 a starting runtime with stderr chatter is never reported as an install failure', async () => {
+    const { router, store } = routerFixture()
+    const token = await mintKey(router)
+    // The runtime has not reported its version yet (still starting) and mesh-llm emitted a
+    // benign WARN on stderr; the install status must stay pending, not phantom-fail.
+    await store.upsertNode({
+      ...nodeFixture(),
+      metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', activeRequests: 0, runtimeDetail: 'WARN noq_proto::connection: failed closing path err=MultipathNotNegotiated' }
+    })
+
+    const res = await router(new Request('https://router.test/api/v1/nodes', { headers: bearer(token) }))
+    const node = (await res.json() as { nodes: Array<{ runtimeInstall?: Record<string, unknown> }> }).nodes[0]
+    expect(node?.runtimeInstall).toMatchObject({ runtime: 'meshllm', installedVersion: null, state: 'pending', error: null })
+  })
+
+  it('REQ-RUN-017 the automation duplicate twin mirrors the console behavior', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const token = await mintKey(router)
+
+    expect((await router(new Request('https://router.test/api/v1/models/mesh-smoke-qwen25-1.5b/duplicate', { method: 'POST', headers: bearer('nope') }))).status).toBe(401)
+
+    const res = await router(new Request('https://router.test/api/v1/models/mesh-smoke-qwen25-1.5b/duplicate', { method: 'POST', headers: bearer(token) }))
+    expect(res.status).toBe(201)
+    const body = await res.json() as { model: { id: string; meshId: string; active: boolean } }
+    expect(body.model.id).not.toBe('mesh-smoke-qwen25-1.5b')
+    expect(body.model.meshId).toBe('default')
+    expect(body.model.active).toBe(false)
+    expect((await store.listProfiles()).some((profile) => profile.id === body.model.id)).toBe(true)
   })
 })

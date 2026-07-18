@@ -613,4 +613,25 @@ describe('mesh state core', () => {
     expect(await decryptJson<MeshStateRecord>(key, reEncrypted)).toEqual(state)
     expect(JSON.stringify(reEncrypted)).not.toContain('invite-token-node-a')
   })
+
+  it('REQ-SCH-006 seed election and mesh health ignore foreign-mesh nodes', async () => {
+    // The foreign node still self-reports the profile id and model — only its machine
+    // group differs. Every mesh-state surface must treat it as a non-member.
+    const foreign = meshNode('node-foreign', { meshId: 'development' })
+    const local = meshNode('node-local')
+    const { store, env, profile } = await meshFixture(foreign, local)
+
+    expect(await meshBootstrapFor(store, env, foreign, profile, NOW)).toEqual({ action: 'wait', rotation: 0 })
+    expect(store.config.has(STATE_CONFIG_KEY)).toBe(false)
+
+    await reportToken(store, env, foreign, 'invite-token-value-x', 'mesh-1', NOW)
+    expect(store.config.has(STATE_CONFIG_KEY)).toBe(false)
+
+    expect(await meshBootstrapFor(store, env, local, profile, NOW)).toEqual({ action: 'create', rotation: 0 })
+    expect((await storedState(store)).seedNodeId).toBe('node-local')
+
+    await store.upsertNode({ ...foreign, deactivated: true })
+    const entries = await meshHealth(store, env, [profile], await store.listNodes(NOW), NOW)
+    expect(entries[0]!.deactivatedNodeIds).toEqual([])
+  })
 })

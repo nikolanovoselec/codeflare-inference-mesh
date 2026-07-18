@@ -4,6 +4,7 @@
 
 - [AI Gateway returns authentication errors](#ai-gateway-returns-authentication-errors)
 - [Worker cannot reach node](#worker-cannot-reach-node)
+- [Node shows offline while its agent is running](#node-shows-offline-while-its-agent-is-running)
 - [Node service crash-loops after install](#node-service-crash-loops-after-install)
 - [Node cannot determine its Mesh IP](#node-cannot-determine-its-mesh-ip)
 - [Requests return 503 no_healthy_node](#requests-return-503-no_healthy_node)
@@ -40,6 +41,14 @@
 **Cause:** Mesh IP, allowed CIDR, listener binding, WARP enrollment, or the Workers VPC binding is wrong; a default-deny host firewall is dropping inbound WARP traffic; or the WARP-to-WARP network policy is off.
 
 **Fix:** The agent auto-provisions the inbound mesh firewall rule at startup — if its log reports the rule was not provisioned, allow inbound TCP on the mesh port over the WARP interface by hand (`ufw allow in on <WARP-interface> to any port <inferencePort> proto tcp`). Confirm the *Allow all Cloudflare One traffic to reach enrolled devices* Zero Trust toggle is on, verify WARP/Mesh enrollment and the Mesh IP in admin status, confirm the listener port, and check `env.MESH.fetch` against the node health endpoint. ([REQ-NODE-010](../../sdd/spec/node-agent.md)) ([REQ-RTR-004](../../sdd/spec/router-worker.md)) ([REQ-NODE-002](../../sdd/spec/node-agent.md))
+
+## Node shows offline while its agent is running
+
+**Symptom:** The console reports the node offline and `lastSeenAt` stops advancing, but the agent process is alive on the host (possibly with an established connection to the router).
+
+**Cause:** The node's heartbeats are failing — an auth rejection (`router returned 401` after a token problem), an invalid heartbeat body (a corrupted local config), or a network path fault. Agents before v0.1.0-dev.112 swallowed these failures silently and could also block the first heartbeat behind a hanging runtime download.
+
+**Fix:** Run the agent in the foreground (or read its service log): every heartbeat state change is logged (`heartbeat failed: …` / `heartbeat recovered`), and the local dashboard status carries `lastHeartbeatError` until recovery. A `401` means the node credential is no longer valid — re-enroll the machine with a fresh setup token; an `invalid_heartbeat` 400 means the local `config.json` lost a required field — re-enroll or repair it. Update agents older than v0.1.0-dev.112 so failures are visible and startup heartbeats never wait on runtime provisioning. ([REQ-NODE-002](../../sdd/spec/node-agent.md#req-node-002-node-claim-and-heartbeat))
 
 ## Node service crash-loops after install
 
@@ -155,7 +164,7 @@
 
 ## Setup step fails after a Cloudflare permission or API error
 
-**Symptom:** A setup or Routing action (Enable Access, Provision domain) shows "The router hit a temporary error", and the `router_error` audit entry reads `Cloudflare Access API failed: 403` or `Cloudflare API failed: 400`.
+**Symptom:** A setup or console action (Enable Access, Connect domain in Settings) shows "The router hit a temporary error", and the `router_error` audit entry reads `Cloudflare Access API failed: 403` or `Cloudflare API failed: 400`.
 
 **Cause:** The Worker's `CLOUDFLARE_API_TOKEN_RUNTIME` reached Cloudflare but the call was rejected. A `403` means the token lacks a permission the step needs; the private operations README in https://github.com/nikolanovoselec/codeflare-inference-mesh-private maintains the current token-scope matrix. A `400` means Cloudflare rejected the request payload. ([REQ-GWY-006](../../sdd/spec/gateway.md#req-gwy-006-cloudflare-api-error-surfacing)) ([REQ-ADM-012](../../sdd/spec/setup-admin.md#req-adm-012-domain-and-access-provisioning))
 

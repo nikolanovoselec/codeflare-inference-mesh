@@ -171,7 +171,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The UI exposes initial setup, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain provisioning, node revocation, the mesh-secret-missing banner, a unified per-model on/off and settings list, and the agent-version control. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-ADM-035 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 exposes the mesh-key banner, the model list, and the agent-version control) -->
+1. The UI exposes initial setup, status refresh, setup-token creation, Linux/macOS/Windows install-command copy, Gateway configuration, custom-domain provisioning (its card lives in Settings), node revocation, the mesh-secret-missing banner, a unified per-model on/off and settings list, and the agent-version control. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @impl: packages/router-worker/src/admin-ui-views.ts::settingsSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-006 the custom domain card lives in Settings) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-006 REQ-ADM-035 serves a responsive browser admin UI for every admin-facing function) --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 exposes the mesh-key banner, the model list, and the agent-version control) -->
 2. A model's mesh health detail lives in that model's Manage drawer rather than a standalone section. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-OBS-007 renders the mesh health panel from admin status data) -->
 3. The UI provides a one-click "Reset sharing key" action in a model's Manage drawer that submits `POST /admin/mesh/rotate` for the model it belongs to. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 wires the one-click rotate action to the mesh rotate endpoint) -->
 4. The Models section shows each model as one card with on/off controls backed by profile activation and zero-percent rollout endpoints. <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> <!-- @test: packages/router-worker/src/admin-ui-mesh.test.ts (REQ-ADM-009 turns a model on from the unified model list) -->
@@ -181,7 +181,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Priority:** P0
 
-**Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle), [REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-retirement), [REQ-OBS-007](observability.md#req-obs-007-mesh-health-surface)
+**Dependencies:** [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-SEC-006](security.md#req-sec-006-mesh-token-lifecycle), [REQ-RUN-009](runtime-profiles.md#req-run-009-profile-seeding-and-activation-exclusivity), [REQ-OBS-007](observability.md#req-obs-007-mesh-health-surface)
 
 **Verification:** Automated test
 
@@ -227,6 +227,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 1. The dashboard shell uses the Codeflare product design tokens for typography, code/value text, coral hover states, ink colors, and the hero accent. <!-- @impl: packages/router-worker/src/admin-ui.ts::adminUiHtml --> <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-036 uses the official Codeflare shell tokens) -->
 2. The hero progressively enhances `Codeflare` to the word-scramble effect while `Inference Mesh` remains static. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::dashboardView --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-036 leaves the scramble phrase static under reduced motion) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-036 scrambles the hero phrase and converges back to the target) -->
 3. The word-scramble effect reserves width for temporary glyphs, preserves static text without JavaScript, and disables mutation under `prefers-reduced-motion`. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::dashboardView --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-036 leaves the scramble phrase static under reduced motion) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-036 scrambles the hero phrase and converges back to the target) -->
+4. Every console button shares one centrally tokenized height and padding with no per-context size overrides — disclosure summaries, section-header actions, form and wizard submits alike — the only sizing exceptions being the email-chip inline control and the mobile touch-target floor. <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-036 one token pair sizes every console button with only the email-chip and mobile exceptions) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
 
@@ -306,8 +307,9 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 1. `GET /admin/runtime-versions` returns MeshLLM and llama.cpp release tags fetched from their GitHub releases APIs, cached in `router_config`, and annotated with the current desired selection for each runtime. <!-- @impl: packages/router-worker/src/runtime-versions.ts::RUNTIME_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-ADM-033 lists MeshLLM and llama.cpp release tags with defaults selected) -->
 2. `POST /admin/runtime-versions` validates selected MeshLLM and llama.cpp versions against the release-tag caches, stores them as fleet-wide desired runtime versions, and records a `runtime_versions_selected` audit event. <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsSelect --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-ADM-033 stores selected runtime versions and audits the operator action) -->
 3. The Settings page renders MeshLLM and llama.cpp version dropdowns backed by the same Admin endpoints, and saving posts both selections through `POST /admin/runtime-versions`. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::settingsSection --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-033 renders and saves MeshLLM and llama.cpp runtime version controls from Settings) -->
-4. Admin status and the node detail drawer expose each node's runtime binary status: runtime kind, desired version, installed version when known, `pending`/`installing`/`installed`/`failed` state, and install error when present. <!-- @impl: packages/router-worker/src/router.ts::runtimeBinaryStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-012 renders runtime install status in the node table and drawer) -->
+4. Admin status and the node drawer expose each node's runtime binary status — kind, desired and installed versions, install state (catalogued on the status API reference), and install error — and the console chip always leads with the runtime's name, never a bare version. <!-- @impl: packages/router-worker/src/router.ts::runtimeBinaryStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-012 renders runtime install status in the node table and drawer) -->
 5. Claim and heartbeat responses carry desired runtime versions so nodes pick up changes automatically on the next check-in. <!-- @impl: packages/router-worker/src/router.ts::handleNodeClaim --> <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-NODE-013 includes selected runtime versions in heartbeat responses) -->
+6. The `failed` install state is derived only from the agent's dependency-missing report; a starting runtime that has not reported its version yet stays `pending` even when stderr chatter rides the heartbeat, so routine runtime warnings never read as install failures. <!-- @impl: packages/router-worker/src/router.ts::runtimeBinaryStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::runtimeInstallInfo --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-033 a starting runtime with stderr chatter is never reported as an install failure) -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
@@ -484,13 +486,13 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Overview section renders a topology visual with the router hub and one selectable element per node, styled by node status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
-2. The topology caption reports node and serving counts derived from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
-3. Selecting a node opens a detail drawer with status, hardware, models, agent version, trusted VRAM, stage ownership, and MeshLLM VRAM budget. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 REQ-ADM-032 the drawer offers Force Reload wired to the reload action) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-007 surfaces split capacity shortfall instead of marking raw standby green) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 renders a split stage owner as active work, not standby/API client) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 hides model_size_unknown during reload and update transitions) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status) -->
-4. Selecting a model opens a detail drawer showing its alias, availability, and serving nodes. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer listing the nodes serving each alias) -->
-5. The Nodes section renders nodes as a sortable table whose rows open the node drawer. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 sorts the nodes table by the clicked column and flips direction on repeat) -->
-6. Below the mobile breakpoint the topology falls back to a list presentation. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_TOPOLOGY --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
-7. When no nodes are enrolled, the topology shows an empty-state message directing the operator to add a node rather than a bare hub-and-spoke frame. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders an empty-state topology when no nodes are enrolled) -->
+1. The Overview section renders a topology visual with the router hub and one selectable element per node, styled by node status, whose caption reports node and serving counts derived from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
+2. Selecting a node opens a detail drawer with status, hardware, models, agent version, trusted VRAM, stage ownership, and MeshLLM VRAM budget. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 REQ-ADM-032 the drawer offers Force Reload wired to the reload action) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-007 surfaces split capacity shortfall instead of marking raw standby green) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 renders a split stage owner as active work, not standby/API client) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 hides model_size_unknown during reload and update transitions) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status) -->
+3. Selecting a model opens a detail drawer showing its alias and availability; machine participation appears once, in the drawer's mesh card. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer with editable identity and no duplicated serving list) -->
+4. The Nodes section renders nodes as a sortable table whose rows open the node drawer; the table carries machine, status, mesh, VRAM, and version columns only — no per-model cell (model detail lives in the drawer and the Models section). <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_NODES_TABLE --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 sorts the nodes table by the clicked column and flips direction on repeat) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 tags each node cell with its column label for the stacked mobile layout) -->
+5. Below the mobile breakpoint the topology falls back to a list presentation. <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_TOPOLOGY --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders a hub-and-spoke topology with one selectable element per node) -->
+6. When no nodes are enrolled, the topology shows an empty-state message directing the operator to add a node rather than a bare hub-and-spoke frame. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderTopology --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 renders an empty-state topology when no nodes are enrolled) -->
+7. A mesh selector on the topology filters the rendered machines (and the caption counts) to one machine group, defaults to all meshes, keeps the operator's selection across status polls, and falls back to all when the selected mesh is deleted. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::syncTopoMeshSelect --> <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_TOPOLOGY --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 overview topology filters machines to the selected mesh and survives the poll) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
@@ -569,8 +571,8 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 1. The Models section lists models that are on before models that are off, preserving source order within each group. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 orders profile rows active-first regardless of source order) -->
 2. Each model renders as one card labeled by its canonical display name (not its wiring id) with an on/off toggle whose state and label reflect whether the model is on. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 shows each model as one card with its canonical name and an on/off toggle) -->
-3. Each model card carries a serving-mode badge — single machine (the whole model on each machine) or split across machines (machines share the model's layers) — as a badge attribute rather than baked into the model name. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 badges each model with its serving mode instead of baking it into the name) -->
-4. Each model card carries a runtime badge (`meshllm` or `llamacpp`) and direct llama.cpp cards indicate the `body.user` affinity requirement without changing the model name. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-012 REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
+3. Each model card carries a serving-mode pill — `singular model` (blue) or `sharded model` (orange) — as badge attributes (`data-serving-mode`, `data-tone`) rather than baked into the model name. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::profilePills --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 badges each model with its serving mode instead of baking it into the name) -->
+4. Each model card carries a provider pill — `llama.cpp` (red) or `meshllm` (green) — beside the serving-mode and mesh pills, combinations reading side by side, and the card detail line carries only the alias and machines-serving count (no `body.user` affinity hint). <!-- @impl: packages/router-worker/src/admin-ui-client.ts::profilePills --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderProfiles --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 REQ-ADM-038 model rows and the drawer lead with the runtime, serving-mode, and mesh pills) -->
 
 **Constraints:** None.
 
@@ -617,10 +619,10 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. Each machine's status renders in plain words: `Ready` when serving a model, `Active` (with the current step, e.g. downloading) when online but not yet serving, `Failed` on a runtime error, and `Offline` (with a last-seen age when known) when it stops checking in. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline) -->
-2. An offline machine never shows the stale runtime substate frozen from its last heartbeat. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline) -->
+1. Each machine's status renders as one word from the fixed operator vocabulary — catalogued on the status API reference — derived once by the router and carried as `displayStatus` on every node projection so console and API never disagree. <!-- @impl: packages/router-worker/src/router.ts::nodeDisplayStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-020 REQ-API-004 node projections carry the derived operator status vocabulary) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline) -->
+2. Role and work detail (stage ownership, loading step) stay in data attributes and the drawer, never in the visible label, and an offline machine never shows the stale runtime substate frozen from its last heartbeat. <!-- @impl: packages/router-worker/src/router.ts::nodeDisplayStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline) -->
 3. A metric that is not yet real renders as a placeholder dash rather than a misleading `0`. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline) -->
-4. The Nodes section filters the table by a status chip (all, ready, active, offline) and by a search box that applies once at least three characters are typed, matching a machine's id or name. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 filters the nodes table by status chip and by search) -->
+4. The Nodes section filters by status chips (All, Serving, Not serving, Offline over the `all`/`ready`/`active`/`offline` keys) and by a search box applying from three typed characters against machine id or name; the section legend explains the status words. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/admin-ui-views.ts::nodesSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 filters the nodes table by status chip and by search) -->
 5. A machine that has been offline longer than a configurable window (`offline_prune_seconds`, default 30 days, `0` disables) is removed from the fleet and must re-enroll, and the removal is recorded as a `node_pruned` audit event. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-020 prunes nodes offline past the configured window and records the removal) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-020 keeps offline nodes when the prune window is zero) -->
 6. The Settings section persists the offline-prune window through `POST /admin/settings`, which accepts a non-negative integer number of seconds and rejects anything else. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-020 sets the offline prune window through the settings endpoint) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-020 saves the offline-machine prune window from Settings) -->
 7. `GET /api/v1/settings` and `PUT /api/v1/settings` are automation-key settings endpoints that share console validation and audit writes. <!-- @impl: packages/router-worker/src/router.ts::handleApiSettingsGet --> <!-- @impl: packages/router-worker/src/router.ts::handleApiSettingsSet --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-020 REQ-API-002 reads and writes fleet settings over the automation API) -->
@@ -688,7 +690,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ### REQ-ADM-023: Per-node settings
 
-**Intent:** Operators need stable human names for machines and may need to cap a specific node's inference VRAM below a model's global budget, so the console and API must persist both settings after the node has registered.
+**Intent:** Operators need stable human names for machines, may need to cap a specific node's inference VRAM below a model's global budget, and must be able to move a machine between meshes, so the console and API must persist these operator-owned settings after the node has registered.
 
 **Applies To:** Admin, Automation
 
@@ -698,12 +700,14 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 2. `POST /admin/nodes/{id}/config` persists a non-blank display name in the D1 node JSON, sets or clears a node's VRAM override, rejects a blank name or negative VRAM value, and returns `404` for an unknown or revoked node. <!-- @impl: packages/router-worker/src/router.ts::handleNodeConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 persists node name and VRAM override across heartbeat) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 refuses reconfigure and admin config for a revoked node) -->
 3. Stored display names survive future heartbeats, and node VRAM overrides replace each model budget in heartbeat desired profiles. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 persists node name and VRAM override across heartbeat) -->
 4. `POST /api/v1/nodes/{id}/reconfigure` persists the same display name and VRAM override for an automation caller, returns the node projection including them, and returns `404` for an unknown or revoked node. <!-- @impl: packages/router-worker/src/router.ts::handleApiNodeReconfigure --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reconfigures node name and VRAM override through the automation API) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 refuses reconfigure and admin config for a revoked node) -->
+5. The node drawer offers a mesh selection listing every machine group, pre-selected to the node's group and sent only when actually changed, so saving an unrelated setting never re-triggers a reassignment. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-023 node drawer saves the mesh selection only when changed) -->
+6. A mesh reassignment through the shared node-reconfigure core validates the target against the registry (status 400 `unknown_mesh`), drops the node's mesh invite tokens — which later heartbeats must not re-add — and records a `node_mesh_assigned` audit event. <!-- @impl: packages/router-worker/src/router.ts::reconfigureNode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reassigning a node drops its mesh tokens and heartbeats do not re-add them) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
 
 **Priority:** P2
 
-**Dependencies:** [REQ-ADM-021](#req-adm-021-model-serving-configuration), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-API-004](control-plane-api.md#req-api-004-programmatic-node-management)
+**Dependencies:** [REQ-ADM-021](#req-adm-021-model-serving-configuration), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-API-004](control-plane-api.md#req-api-004-programmatic-node-management), [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 **Verification:** Automated test
 
@@ -719,7 +723,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The Routing screen renders the selected gateway and its `codeflare-mesh` route in the AI Gateway status card, not as a separate dangling chip above the provision button. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::refreshProvisionChip --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 keeps route status inside the Gateway card and labels the action clearly) -->
+1. The Routing screen renders the selected gateway and its routes inside the AI Gateway status card, not as a separate dangling chip; the route line lists every ensured dynamic route, one per mesh (REQ-GWY-009), falling back to the single stored route name pre-mesh-sync. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::routingSection --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::refreshProvisionChip --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::gatewayRouteNames --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 keeps route status inside the Gateway card and labels the action clearly) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 REQ-GWY-009 the gateway card lists every ensured mesh route) -->
 2. The card reads connected only when a live check confirms the selected gateway's mesh route and canonical provider exist — provisioning state, not node or serving health. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::refreshProvisionChip --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 shows the selected gateway route inside the AI Gateway card) -->
 3. When the selected gateway is not provisioned, the card says it needs provisioning instead of showing stale connected state. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::refreshProvisionChip --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 marks the AI Gateway card as needing provisioning when the selected route is missing) -->
 4. After Connect, the minted provider API key is revealed with a one-click copy control. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-024 the Routing screen exposes a copy control for the minted provider key) -->
@@ -755,6 +759,10 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 4. The form does not submit an empty model reference. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 does not submit an empty model ref) -->
 
+5. A visible model-sources panel presents the reference format as a copyable code example and the sources as first-class rows; single-machine context surfaces the GGUF catalog, split the layer packages and preparation guide, switched by a dataset marker — never a script reveal. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/admin-ui-css.ts::adminUiCss --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 renders the model sources panel with CSS-keyed contextual switching) -->
+
+6. The entire add-model form sits behind a native details/summary disclosure whose summary is a "+ Model" button at the right end of the Models list header — the form is present in markup and revealed by a click, never by script state. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons) -->
+
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
 **Priority:** P2
@@ -769,19 +777,19 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 ### REQ-ADM-026: Delete-a-model console control
 
-**Intent:** An admin must be able to remove a custom model from the console once it is no longer needed, with a delete control that appears only where deletion is allowed and a confirm that cannot be lost to a background refresh before the operator commits.
+**Intent:** An admin must be able to remove any switched-off model from the console — including the seed-once starter — with a delete control that appears only where deletion is allowed and a confirm that cannot be lost to a background refresh before the operator commits.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. The model Manage drawer shows a Delete control only for a custom, switched-off model, and hides it for a built-in model or the active model. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 shows a Delete control only for a custom, switched-off model) -->
+1. The model Manage drawer shows a Delete control for any switched-off model and hides it only for the active model, which owns its mesh's stable route. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 shows a Delete control for any switched-off model) -->
 
 2. Deleting from the drawer posts to the profile-delete endpoint and closes the drawer, so the removed model leaves the list on the next refresh. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-026 deletes a model from the drawer through the profiles delete endpoint and closes the drawer) -->
 
-3. `POST /admin/profiles/delete` under admin authentication removes the named custom model. <!-- @impl: packages/router-worker/src/router.ts::handleProfileDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 deletes a custom model from the console) -->
+3. `POST /admin/profiles/delete` under admin authentication removes the named switched-off model. <!-- @impl: packages/router-worker/src/router.ts::handleProfileDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 deletes a custom model from the console) -->
 
-4. The console delete refuses a built-in model with status 409. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console deletion of a built-in model) -->
+4. The console delete refuses only the active model, with status 409. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console deletion only while the model is active) -->
 
 5. The console delete refuses a request that carries no admin credential. <!-- @impl: packages/router-worker/src/router.ts::handleProfileDelete --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console model deletion without an admin credential) -->
 
@@ -791,7 +799,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Priority:** P2
 
-**Dependencies:** [REQ-RUN-012](runtime-profiles.md#req-run-012-custom-model-removal), [REQ-ADM-025](#req-adm-025-add-a-model-console-control), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
+**Dependencies:** [REQ-RUN-012](runtime-profiles.md#req-run-012-model-removal), [REQ-ADM-025](#req-adm-025-add-a-model-console-control), [REQ-ADM-006](#req-adm-006-admin-configuration-ui)
 
 **Verification:** Automated test
 
@@ -809,7 +817,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 1. The add-model form carries a Name field; a supplied name becomes the model's display name, and a blank name defaults to the model-file segment. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-027 names a model on creation and defaults the name to the model file) -->
 
-2. The Manage drawer exposes editable Name and Alias fields prefilled with the current display name and the model's own callable name (its non-shared alias). <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer listing the nodes serving each alias) -->
+2. The Manage drawer exposes editable Name and Alias fields prefilled with the current display name and the model's own callable name (its non-shared alias). <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 opens a model drawer with editable identity and no duplicated serving list) -->
 
 3. Saving a changed name sets the display name, and a changed call name replaces that callable alias while keeping the shared `codeflare-mesh` alias. <!-- @impl: packages/router-worker/src/router.ts::handleProfileConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-027 renames a model display name and call name with collision and reserved-alias guards) -->
 
@@ -863,9 +871,10 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 1. `POST /admin/nodes/{nodeId}/deactivate` and `POST /admin/nodes/{nodeId}/activate` require an admin credential, set and clear the node's `deactivated` flag, and record a `node_deactivated` / `node_activated` audit event. <!-- @impl: packages/router-worker/src/router.ts::setNodeDeactivated --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-030 deactivates and reactivates a node from the admin console with audit) -->
 2. A deactivated node stays enrolled and heartbeating but is excluded from inference selection, and its heartbeat is answered with an empty desired-profile set and the deactivated signal. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/scheduler.test.ts (REQ-ADM-030 isEligible excludes a deactivated node even when it is otherwise ready) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-030 REQ-NODE-011 a deactivated node heartbeat gets no desired profiles and the flag survives) -->
-3. The Nodes table renders a right-aligned Manage button opening a node drawer that offers Revoke plus Deactivate when active or Activate when deactivated; a deactivated node reads with a warn (orange) status and never turns the intentional stopped runtime into an install failure. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-030 a deactivated node reads as tainted (warn tone) and its drawer offers Activate) -->
-4. The deactivated taint survives heartbeats that do not carry it, and clearing it re-admits the node to selection. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-030 REQ-NODE-011 a deactivated node heartbeat gets no desired profiles and the flag survives) -->
-5. The drawer's Deactivate/Activate control posts to the corresponding `POST /admin/nodes/{id}/deactivate` or `/activate` endpoint and refreshes the status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::runAction --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-019 REQ-ADM-030 renders concise completion messages for routine mutating actions) -->
+3. The node's name in the Nodes table opens its drawer (no separate Manage button) offering Revoke plus Deactivate when active or Activate when deactivated. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-030 a deactivated node reads as tainted (warn tone) and its drawer offers Activate) -->
+4. A deactivated node reads with a warn status and never turns the intentionally stopped runtime into an install failure. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-030 a deactivated node reads as tainted (warn tone) and its drawer offers Activate) -->
+5. The deactivated taint survives heartbeats that do not carry it, and clearing it re-admits the node to selection. <!-- @impl: packages/router-worker/src/router.ts::handleNodeHeartbeat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-030 REQ-NODE-011 a deactivated node heartbeat gets no desired profiles and the flag survives) -->
+6. The drawer's Deactivate/Activate control posts to the corresponding `POST /admin/nodes/{id}/deactivate` or `/activate` endpoint and refreshes the status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::runAction --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-019 REQ-ADM-030 renders concise completion messages for routine mutating actions) -->
 
 **Constraints:** [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -887,7 +896,7 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 
 **Acceptance Criteria:**
 
-1. The direct target offers one option per model that is on, valued by the model's own callable name and labeled with that callable name paired with the model name, from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 lists one playground option per model on, valued by callable name and labeled with the model name) -->
+1. The direct target offers one option per model that is on — every mesh's active model — valued by the model's own callable name (never a mesh's stable route name) and labeled with that callable name paired with the model name, from live status data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderPlaygroundSelect --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 lists one playground option per model on, valued by callable name and labeled with the model name) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 direct playground lists every mesh's active model by its own alias) -->
 2. A gateway target lists that gateway's dynamic routes in the dependent selector and sends the chosen route to the gateway playground endpoint. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::updatePlaygroundModels --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-031 a gateway target lists that gateway routes and sends the selected route to the gateway endpoint) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
@@ -935,8 +944,8 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Acceptance Criteria:**
 
 1. The Playground renders a Speed Test action that posts the currently selected callable model to the direct speed-test endpoint and renders the returned measurement fields. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::playgroundSection --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-034 runs a direct router speed test from the playground) -->
-2. `POST /admin/playground/speed-test` requires a console role, runs direct scheduling with a prompt nonce, returns prompt/generation timing, and stores the latest summary. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundSpeedTest --> <!-- @impl: packages/router-worker/src/router.ts::runSpeedTest --> <!-- @impl: packages/router-worker/src/router.ts::measureSpeedStream --> <!-- @impl: packages/router-worker/src/router.ts::speedTestSummary --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-034 playground speed test measures direct router token ingestion and generation) -->
-3. The dashboard status strip shows the latest Speed Test split throughput when a summary exists, and the Playground refreshes status after a Speed Test run. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-010 computes the stats strip aggregates from admin status) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-034 runs a direct router speed test from the playground) -->
+2. `POST /admin/playground/speed-test` requires a console role, runs direct scheduling with a prompt nonce, returns prompt/generation timing, and stores the run keyed by the resolved profile id so every model — including duplicates sharing an upstream model — keeps its own latest summary. <!-- @impl: packages/router-worker/src/router.ts::handlePlaygroundSpeedTest --> <!-- @impl: packages/router-worker/src/router.ts::runSpeedTest --> <!-- @impl: packages/router-worker/src/router.ts::measureSpeedStream --> <!-- @impl: packages/router-worker/src/router.ts::speedTestSummary --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-034 playground speed test measures direct router token ingestion and generation) -->
+3. Each Overview mesh card shows its own model's stored Speed Test split throughput when a run exists, and the Playground refreshes status after a Speed Test run. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderMeshStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-034 runs a direct router speed test from the playground) -->
 4. The Playground Speed Test control is rendered as an operator command row with endpoint and auth-scope chips, so the direct-router measurement is visually distinguishable from free-form chat. <!-- @impl: packages/router-worker/src/admin-ui-components.ts::commandRow --> <!-- @impl: packages/router-worker/src/admin-ui-views.ts::playgroundSection --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-034 renders endpoint chips inside command rows for action-heavy controls) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
@@ -944,6 +953,97 @@ This domain covers first-run setup, admin access, node setup tokens, Cloudflare 
 **Priority:** P2
 
 **Dependencies:** [REQ-ADM-016](#req-adm-016-operator-playground), [REQ-ADM-029](#req-adm-029-playground-inference-endpoints)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-037: Console mesh management
+
+**Intent:** Operators create and dissolve machine groups and see membership at a glance from the console: a Meshes card lists every group with its callable route and machine/model counts, the nodes table shows each machine's group, and the admin status feed carries the mesh list both console roles need to render names.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. `GET /admin/meshes` lists every mesh — the implicit undeletable Default first — with its id, display name, callable route alias, and machine and model counts. <!-- @impl: packages/router-worker/src/router.ts::meshListCore --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-037 creates and lists meshes with machine and model counts) -->
+
+2. `POST /admin/meshes` creates a mesh from a letters-only name normalized to first-letter-upper, rejecting invalid, duplicate (including Default, case-insensitively), and alias-colliding names with the documented 400/409 error codes; success records a `mesh_created` audit event. <!-- @impl: packages/router-worker/src/router.ts::meshCreateCore --> <!-- @impl: packages/router-worker/src/meshes.ts::validateMeshName --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-037 rejects invalid, duplicate, and alias-colliding mesh names) --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-SCH-006 validates and normalizes mesh names) -->
+
+3. `DELETE /admin/meshes/{id}` deletes only an empty non-default mesh — default refused (400 `mesh_undeletable`), unknown 404, still-populated 409 `mesh_not_empty`; a successful delete records a `mesh_deleted` audit event carrying the orphaned gateway route name. <!-- @impl: packages/router-worker/src/router.ts::meshDeleteCore --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-037 deletes only empty non-default meshes) -->
+
+4. Admin status carries the mesh list with route aliases and machine/model counts for console rendering. <!-- @impl: packages/router-worker/src/router.ts::handleAdminStatus --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-037 admin status lists meshes with counts) -->
+
+5. The Meshes card lists each group with its callable route chip and machine/model counts; a "+ Mesh" native disclosure in the card header reveals the name input (collapsed again on success), and a confirm-armed Delete control shows only on an empty non-default mesh. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::meshesCard --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderMeshList --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-037 meshes card lists groups, gates Delete to empty non-default meshes, and posts create/delete) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons) -->
+
+6. The nodes table renders a mesh column resolved to group display names with a data-driven sort key, and rows without a stored mesh read as Default members. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-contract.ts::ADMIN_UI_NODES_TABLE --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-037 nodes table renders a mesh column resolved to group names) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-ADM-006](#req-adm-006-admin-configuration-ui), [REQ-API-011](control-plane-api.md#req-api-011-programmatic-mesh-management)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-038: Console mesh-assignment surface
+
+**Intent:** A model's mesh membership must be visible and editable from the console — a pill on every list row, a selector in the drawer — so operators read and change assignments without the API.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The console model drawer offers a mesh selection listing every mesh, pre-selected to the model's group and sent only when actually changed. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-038 model drawer saves the mesh selection only when changed) -->
+
+2. Every row in the console models list carries a purple mesh pill resolving the model's group name, so the assignment is visible without opening the drawer; rows without a stored mesh read as Default members. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::profilePills --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-038 the models list shows each profile mesh without opening the drawer) -->
+
+3. The model Manage drawer leads with the same pill row — provider, serving mode, mesh — above its status, runtime, and alias fields, and repeats no mesh detail: participants, stage owners, machine group live only in the mesh card, whose Technical details name its mesh. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::buildMeshCard --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-018 REQ-ADM-038 model rows and the drawer lead with the runtime, serving-mode, and mesh pills) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-016](runtime-profiles.md#req-run-016-per-mesh-model-assignment), [REQ-ADM-018](#req-adm-018-models-section-ordering)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-ADM-039: Overview mesh-status cards
+
+**Intent:** The Overview's "Mesh status" panel is the at-a-glance answer to "is each machine group serving, with what, and how fast" — one card per mesh, state carried by tone and structured contract attributes rather than status words.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The Overview "Mesh status" panel renders a responsive grid of per-mesh cards edged in a status tone: green serving, amber when a deployed model has no serving machine, neutral with no model. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderMeshStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test) -->
+
+2. The tone edge alone carries card state — no status word or dot renders — and each card is headed by the mesh name paired with its callable route chip. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderMeshStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::routeChipEl --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test) -->
+
+3. Each card shows the active model's display name over its mono model-file reference and a row of provider and serving-mode pills, or a no-model note with no pills. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderMeshStatus --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::profilePills --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test) -->
+
+4. A machines/serving metric strip shows the model's last stored Speed Test as whole-number prompt / generation tok/s (dash before a run exists) beside a serving-capacity track filled to the served fraction, all carried as `data-state`/`data-state-tone`/`data-machines`/`data-serving`/`data-speed-prompt`/`data-speed-gen`/`data-fill` contract attributes. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderMeshStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 does not fabricate a mesh-card speed test before one is reported) -->
+
+5. A machine counts as serving only when it is online and not deactivated, has adopted the profile, and reports its model ready corroborated by a ready/running runtime or a split-stage assignment — a stale record or an api-client's bare catalog claim never counts. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::nodeServesProfile --> <!-- @impl: packages/router-worker/src/router.ts::nodeDisplayStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 mesh cards expose split state and surface degradation notes) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-020 REQ-API-004 node projections carry the derived operator status vocabulary) -->
+
+6. The Overview carries no activity feed; the activity log lives in Settings. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::dashboardView --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 the overview carries no activity feed while settings does) -->
+7. A split model's card carries `data-split-state` — `split` with a formed topology (two or more assigned stages), `fallback` when machines serve without one — and a `data-mesh-note` line surfacing the most actionable detail: a runtime error, the fallback notice, or the split readiness verdict. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderMeshStatus --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-039 mesh cards expose split state and surface degradation notes) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-RUN-016](runtime-profiles.md#req-run-016-per-mesh-model-assignment), [REQ-ADM-034](#req-adm-034-direct-router-speed-test)
 
 **Verification:** Automated test
 

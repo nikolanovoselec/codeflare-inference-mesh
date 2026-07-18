@@ -13,11 +13,12 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 **Acceptance Criteria:**
 
 1. D1 stores setup state, admin token verifier, provider token verifier, the default public model alias, setup token verifiers, claim state, expiration, and claimed node identity. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) -->
-2. D1 stores Cloudflare resource identifiers created or selected during setup, the agent release-tag cache (`agent_versions_cache`), the selected fleet agent version (`desired_agent_version`), runtime release-tag caches (`meshllm_versions_cache`, `llamacpp_versions_cache`), and selected runtime versions (`desired_meshllm_version`, `desired_llamacpp_version`) as router configuration records. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @impl: packages/router-worker/src/runtime-versions.ts::RUNTIME_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-SCH-001 persists the release-tag cache and desired agent version) --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-ADM-033 stores selected runtime versions and audits the operator action) -->
-3. D1 stores node records, model profiles, public aliases, and audit events. (The legacy `sessions` and `reservations` tables remain as dead schema after the move to stateless forwarding; a later migration drops them.) <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) -->
-4. D1 stores one mesh state record per MeshLLM profile under the `mesh_state:<profileId>` router configuration key as AES-GCM ciphertext, never as plaintext token material. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SCH-001 stores mesh state as AES-GCM ciphertext and round-trips it from D1) -->
-5. Profile seeding retires only legacy active rows at version `<= 1` that still own a shipped public alias but are no longer current defaults. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active) -->
-6. Router startup can rebuild scheduler hot state from D1 without requiring manual repair. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) -->
+2. D1 stores Cloudflare resource identifiers created or selected during setup, the agent and runtime release-tag caches, and the selected agent and runtime versions as router configuration records. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @impl: packages/router-worker/src/agent-versions.ts::AGENT_VERSIONS_ANCHORS --> <!-- @impl: packages/router-worker/src/runtime-versions.ts::RUNTIME_VERSIONS_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) --> <!-- @test: packages/router-worker/src/agent-versions.test.ts (REQ-SCH-001 persists the release-tag cache and desired agent version) --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-ADM-033 stores selected runtime versions and audits the operator action) -->
+3. D1 stores the mesh registry and the starter-seeding marker as router configuration records. <!-- @impl: packages/router-worker/src/meshes.ts::MESHES_ANCHORS --> <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-SCH-006 lists the implicit Default mesh first and persists created meshes) --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 ships only the starter profile and seeds it exactly once) -->
+4. D1 stores node records, model profiles, public aliases, and audit events; node and model records carry the mesh membership field, and records stored before machine groups existed read back as members of the default mesh. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @impl: packages/router-worker/src/profiles.ts::normalizeModelProfile --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-016 coerces stored profiles and nodes without meshId to the default mesh) -->
+5. D1 stores one mesh state record per MeshLLM profile under the `mesh_state:<profileId>` router configuration key as AES-GCM ciphertext, never as plaintext token material. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SCH-001 stores mesh state as AES-GCM ciphertext and round-trips it from D1) -->
+6. Profile seeding is seed-once: the starter catalog is written only while the `default_profiles_seeded` marker is absent, existing rows are never refreshed or retired, and a deleted starter profile never re-seeds. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 ships only the starter profile and seeds it exactly once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 seeds the starter exactly once and never resurrects or refreshes rows) -->
+7. Router startup can rebuild scheduler hot state from D1 without requiring manual repair. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -65,7 +66,7 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 
 **Acceptance Criteria:**
 
-1. A node is eligible only while its lease is unexpired and status is online. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from selection) -->
+1. A node is eligible only while its lease is unexpired, its status is online, and it belongs to the profile's mesh — the mesh gate applies to direct llama.cpp selection as well, whatever profile ids the node self-reports. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @impl: packages/router-worker/src/scheduler.ts::isDirectEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from selection) --> <!-- @test: packages/router-worker/src/scheduler.test.ts (REQ-SCH-003 rejects nodes outside the profile mesh even when they self-report the profile id) -->
 2. A node is eligible only when its reported runtime is `meshllm`. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 excludes nodes whose runtime is not meshllm from scheduling) -->
 3. A node is eligible only when its metrics report the MeshLLM inference API as ready. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 excludes nodes whose MeshLLM API is not ready from scheduling) -->
 4. A node is eligible for a profile only when the profile's upstream model appears in the node's reported ready-model list. <!-- @impl: packages/router-worker/src/scheduler.ts::isEligible --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 excludes nodes whose ready models omit the requested upstream model) -->
@@ -133,6 +134,38 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 **Priority:** P0
 
 **Dependencies:** [REQ-SCH-003](#req-sch-003-node-eligibility-and-scheduler-miss-responses)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-SCH-006: Mesh registry and membership
+
+**Intent:** Operators group machines into named meshes so different groups serve different models. The registry is durable router configuration, every node belongs to exactly one mesh, membership is router authority (a node's self-reported profile ids never cross meshes), and profile distribution is scoped so a node only ever receives its own mesh's models.
+
+**Applies To:** Admin, Node Agent
+
+**Acceptance Criteria:**
+
+1. A mesh name is letters-only up to 32 characters, normalized to a capitalized display name and a lowercase id; anything else is rejected. <!-- @impl: packages/router-worker/src/meshes.ts::validateMeshName --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-SCH-006 validates and normalizes mesh names) -->
+
+2. The default mesh always exists first in the registry, is never stored, and cannot be deleted; operator-created meshes persist in the `meshes` router configuration record and delete cleanly. <!-- @impl: packages/router-worker/src/meshes.ts::listMeshes --> <!-- @impl: packages/router-worker/src/meshes.ts::deleteMesh --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-SCH-006 lists the implicit Default mesh first and persists created meshes) -->
+
+3. Claim and heartbeat responses carry only the profiles of the node's own mesh, and a newly claimed node joins the default mesh. <!-- @impl: packages/router-worker/src/router.ts::meshProfilesFor --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-006 heartbeat and claim send only the node mesh profiles) -->
+
+4. A heartbeat from a node still self-reporting a foreign mesh's profile ids receives no mesh bootstrap for that mesh and cannot re-add its invite token to that mesh's state. <!-- @impl: packages/router-worker/src/router.ts::selectedMeshProfile --> <!-- @impl: packages/router-worker/src/mesh-state.ts::selectedMeshProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reassigning a node drops its mesh tokens and heartbeats do not re-add them) -->
+
+5. Seed election and mesh health consider only nodes in the profile's own mesh. <!-- @impl: packages/router-worker/src/mesh-state.ts::isSeedEligible --> <!-- @impl: packages/router-worker/src/mesh-state.ts::nodeParticipatesInProfile --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SCH-006 seed election and mesh health ignore foreign-mesh nodes) -->
+
+6. Profile readiness counts only nodes in the profile's own mesh. <!-- @impl: packages/router-worker/src/router.ts::profileReadiness --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-006 profile readiness counts only same-mesh nodes) -->
+
+**Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-SCH-001](#req-sch-001-durable-router-state), [REQ-SCH-003](#req-sch-003-node-eligibility-and-scheduler-miss-responses)
 
 **Verification:** Automated test
 

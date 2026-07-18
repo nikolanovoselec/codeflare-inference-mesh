@@ -1,13 +1,16 @@
 package agent
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -39,6 +42,16 @@ type LlamaCppManager struct {
 	pollInterval     time.Duration
 	readinessTimeout time.Duration
 	stopGrace        time.Duration
+
+	// Live throughput derives from llama-server's cumulative Prometheus counters
+	// sampled once per heartbeat tick; rates are the deltas over the tick window.
+	nowFn            func() time.Time
+	throughputSeeded bool
+	throughputAt     time.Time
+	promptTokTotal   float64
+	predictTokTotal  float64
+	promptRate       float64
+	generationRate   float64
 }
 
 var _ RuntimeController = (*LlamaCppManager)(nil)
@@ -57,6 +70,7 @@ func NewLlamaCppManager(in LlamaCppInput) *LlamaCppManager {
 		readinessTimeout: 30 * time.Minute,
 		stopGrace:        10 * time.Second,
 		stderrLog:        &runtimeLog{},
+		nowFn:            time.Now,
 	}
 }
 
@@ -148,6 +162,14 @@ func RenderLlamaCppArgs(in LlamaCppInput) []string {
 		"--slots",
 		"--metrics",
 		"--jinja",
+	}
+	// Unified KV shares one buffer across slots so a single request can use the whole
+	// --ctx-size; non-unified divides it per slot (ctx/slots), which 400s long
+	// requests. An absent toggle means on. REQ-RUN-015.
+	if settings.KVUnified != nil && !*settings.KVUnified {
+		args = append(args, "--no-kv-unified")
+	} else {
+		args = append(args, "--kv-unified")
 	}
 	if settings.HFFile != "" {
 		args = append(args, "--hf-file", settings.HFFile)
@@ -349,20 +371,104 @@ func (m *LlamaCppManager) Metrics() NodeMetrics {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return NodeMetrics{
-		RuntimeKind:          "llamacpp",
-		RuntimeState:         m.state,
-		LoadedModel:          m.input.UpstreamModel,
-		LoadedProfileID:      m.input.ProfileID,
-		LoadedProfileVersion: m.input.ProfileVersion,
-		ReadyModels:          append([]string(nil), m.models...),
-		APIReady:             m.apiReady,
-		CtxSize:              m.input.Settings.ContextWindow,
-		Parallel:             m.input.Settings.Parallel,
-		CachePrompt:          m.input.Settings.CachePrompt,
-		CacheReuse:           m.input.Settings.CacheReuse,
-		LastError:            m.lastError,
-		RuntimeDetail:        m.RuntimeErrorDetail(),
+		RuntimeKind:               "llamacpp",
+		RuntimeState:              m.state,
+		LoadedModel:               m.input.UpstreamModel,
+		LoadedProfileID:           m.input.ProfileID,
+		LoadedProfileVersion:      m.input.ProfileVersion,
+		ReadyModels:               append([]string(nil), m.models...),
+		APIReady:                  m.apiReady,
+		CtxSize:                   m.input.Settings.ContextWindow,
+		Parallel:                  m.input.Settings.Parallel,
+		CachePrompt:               m.input.Settings.CachePrompt,
+		CacheReuse:                m.input.Settings.CacheReuse,
+		TokensPerSecond:           m.generationRate,
+		PromptTokensPerSecond:     m.promptRate,
+		GenerationTokensPerSecond: m.generationRate,
+		LastError:                 m.lastError,
+		RuntimeDetail:             m.RuntimeErrorDetail(),
 	}
+}
+
+// PollThroughput samples llama-server's cumulative token counters and turns the
+// deltas since the previous heartbeat tick into live prompt/generation tok/s. A
+// failed poll zeroes the rates and drops the seed, and a counter that goes
+// backwards (llama-server restarted) reseeds instead of computing a negative
+// delta — a stale burst must never ride later heartbeats. REQ-OBS-009.
+func (m *LlamaCppManager) PollThroughput(ctx context.Context) {
+	prompt, predicted, ok := m.pollCounters(ctx)
+	now := m.nowFn()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !ok {
+		m.throughputSeeded = false
+		m.promptRate = 0
+		m.generationRate = 0
+		return
+	}
+	elapsed := now.Sub(m.throughputAt).Seconds()
+	if m.throughputSeeded && elapsed > 0 && prompt >= m.promptTokTotal && predicted >= m.predictTokTotal {
+		m.promptRate = (prompt - m.promptTokTotal) / elapsed
+		m.generationRate = (predicted - m.predictTokTotal) / elapsed
+	} else {
+		m.promptRate = 0
+		m.generationRate = 0
+	}
+	m.throughputSeeded = true
+	m.throughputAt = now
+	m.promptTokTotal = prompt
+	m.predictTokTotal = predicted
+}
+
+func (m *LlamaCppManager) pollCounters(ctx context.Context) (prompt float64, predicted float64, ok bool) {
+	target := m.TargetURL()
+	if target == "" {
+		return 0, 0, false
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(target, "/")+"/metrics", nil)
+	if err != nil {
+		return 0, 0, false
+	}
+	resp, err := m.httpClient.Do(req)
+	if err != nil {
+		return 0, 0, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, 0, false
+	}
+	return parseLlamaCounters(resp.Body)
+}
+
+// parseLlamaCounters scans llama-server's Prometheus text exposition for the two
+// cumulative token counters; both must be present for a valid sample.
+func parseLlamaCounters(r io.Reader) (prompt float64, predicted float64, ok bool) {
+	scanner := bufio.NewScanner(r)
+	var havePrompt, havePredicted bool
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		value, err := strconv.ParseFloat(fields[len(fields)-1], 64)
+		if err != nil {
+			continue
+		}
+		// The metric name may carry a label blob (`name{...}`); match on the bare name
+		// so a future labeled exposition does not silently zero the sample.
+		name, _, _ := strings.Cut(fields[0], "{")
+		switch name {
+		case "llamacpp:prompt_tokens_total":
+			prompt, havePrompt = value, true
+		case "llamacpp:tokens_predicted_total":
+			predicted, havePredicted = value, true
+		}
+	}
+	return prompt, predicted, havePrompt && havePredicted
 }
 
 func (m *LlamaCppManager) State() string {

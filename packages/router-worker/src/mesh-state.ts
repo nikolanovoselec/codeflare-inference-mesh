@@ -1,6 +1,7 @@
 import { bearerToken, verifyPlainOrHashed, verifyToken } from './auth'
 import { InvalidJsonBodyError } from './errors'
 import { decryptJson, encryptJson, importMeshStateKey, type EncryptedEnvelope } from './mesh-crypto'
+import { nodeMeshId, profileMeshId } from './profiles'
 import type { HeartbeatRequest, MeshBootstrap, ModelProfile, NodeRecord, RouterEnv, SplitReadinessReport, StageAssignment, Store } from './types'
 
 export type MeshStateEnv = Pick<Partial<RouterEnv>, 'REGISTRY' | 'MESH_STATE_KEY' | 'ADMIN_TOKEN'>
@@ -69,7 +70,7 @@ export async function handleMeshRotate(request: Request, store: Store, env: Mesh
 export async function applyHeartbeatMeshState(store: Store, env: MeshStateEnv, node: NodeRecord, heartbeat: HeartbeatRequest, now: number): Promise<void> {
   const key = await meshKeyFor(env)
   if (!key || node.status === 'revoked') return
-  const profile = selectedMeshProfile(await store.listProfiles(), heartbeat.activeProfileIds)
+  const profile = selectedMeshProfile(await store.listProfiles(), node, heartbeat.activeProfileIds)
   if (!profile) return
   const stored = (await loadMeshState(store, key, profile.id)) ?? emptyMeshState(0)
   const pruned = stored.tokens.length > 0
@@ -284,14 +285,18 @@ function isSeedEligible(node: NodeRecord, profile: ModelProfile, now: number): b
   return node.status === 'online'
     && now - node.lastSeenAt <= SEED_FRESHNESS_MS
     && node.runtime === 'meshllm'
+    && nodeMeshId(node) === profileMeshId(profile)
     && profile.active
     && node.activeProfileIds.includes(profile.id)
 }
 
-function selectedMeshProfile(profiles: readonly ModelProfile[], activeProfileIds: readonly string[]): ModelProfile | undefined {
+// Only profiles in the node's own machine group qualify (REQ-SCH-006): a node still
+// self-reporting a foreign profile id after reassignment must not write that mesh's
+// state — its stale token would be re-added right after removeNodeMeshTokens.
+function selectedMeshProfile(profiles: readonly ModelProfile[], node: NodeRecord, activeProfileIds: readonly string[]): ModelProfile | undefined {
   for (const profileId of activeProfileIds) {
     const profile = profiles.find((item) => item.id === profileId)
-    if (profile && profile.active && profile.runtime === 'meshllm') return profile
+    if (profile && profile.active && profile.runtime === 'meshllm' && profileMeshId(profile) === nodeMeshId(node)) return profile
   }
   return undefined
 }
@@ -333,6 +338,9 @@ function healthEntry(profile: ModelProfile, state: MeshStateRecord, nodes: reado
 }
 
 function nodeParticipatesInProfile(node: NodeRecord, profile: ModelProfile): boolean {
+  // A node reassigned to another machine group is no longer a member of this
+  // profile's runtime mesh, whatever it still self-reports (REQ-SCH-006).
+  if (nodeMeshId(node) !== profileMeshId(profile)) return false
   if (node.activeProfileIds.includes(profile.id)) return true
   if (node.metrics?.loadedProfileId === profile.id) return true
   if (node.runtimeModel === profile.upstreamModel) return true

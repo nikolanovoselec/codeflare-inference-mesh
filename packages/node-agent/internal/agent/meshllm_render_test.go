@@ -2,6 +2,7 @@ package agent
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -283,6 +284,29 @@ func TestREQSEC004NostrRelaysAppendWhenConfiguredOnly(t *testing.T) {
 }
 
 // REQ-RUN-014: MeshLLM config rendering and unset-value omission are covered here.
+func TestREQRUN014SplitProfilesRenderWarpTransportDefaults(t *testing.T) {
+	// The stage lane rides the WARP overlay, so split profiles always carry the
+	// WARP-optimized staged-transport defaults; single-node profiles never do.
+	split := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "meshllm/E-layers", Split: true}, 0)
+	if !strings.Contains(split, "[models.skippy]") || !strings.Contains(split, "activation_wire_dtype = \"q8\"") || !strings.Contains(split, "prefill_chunking = \"adaptive-ramp\"") {
+		t.Fatalf("split profile must render WARP transport defaults, got:\n%s", split)
+	}
+	single := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "meshllm/E"}, 0)
+	if strings.Contains(single, "skippy") {
+		t.Fatalf("single-node profile must not render the skippy table, got:\n%s", single)
+	}
+	// Explicit tunables beat the split defaults, and chunk size renders when set.
+	tuned := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "meshllm/E-layers", Split: true, Tunables: MeshLLMSettings{WireDtype: "f16", PrefillChunking: "fixed", PrefillChunkSize: 256}}, 0)
+	if !strings.Contains(tuned, "activation_wire_dtype = \"f16\"") || !strings.Contains(tuned, "prefill_chunking = \"fixed\"") || !strings.Contains(tuned, "prefill_chunk_size = 256") {
+		t.Fatalf("explicit staged-transport tunables must override the defaults, got:\n%s", tuned)
+	}
+	// A single-node profile renders the table only when explicitly tuned.
+	singleTuned := MeshLLMConfigTOML(MeshLLMRenderInput{ModelRef: "meshllm/E", Tunables: MeshLLMSettings{WireDtype: "q8"}}, 0)
+	if !strings.Contains(singleTuned, "activation_wire_dtype = \"q8\"") {
+		t.Fatalf("explicit wire dtype must render for single-node profiles, got:\n%s", singleTuned)
+	}
+}
+
 func TestREQRUN014ContextLimitConfigRendering(t *testing.T) {
 	on := true
 	off := false
@@ -383,7 +407,7 @@ func TestREQRUN014ContextLimitConfigRendering(t *testing.T) {
 
 func TestREQRUN010MeshLLMEnvAppendsNoSelfUpdate(t *testing.T) {
 	base := []string{"PATH=/usr/bin", "HF_TOKEN=secret"}
-	got := MeshLLMEnv(base)
+	got := MeshLLMEnv(base, false)
 	want := []string{"PATH=/usr/bin", "HF_TOKEN=secret", "MESH_LLM_NO_SELF_UPDATE=1"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("MeshLLMEnv = %v, want %v", got, want)
@@ -391,7 +415,11 @@ func TestREQRUN010MeshLLMEnvAppendsNoSelfUpdate(t *testing.T) {
 	if !slices.Equal(base, []string{"PATH=/usr/bin", "HF_TOKEN=secret"}) {
 		t.Fatalf("MeshLLMEnv mutated its input: %v", base)
 	}
-	if empty := MeshLLMEnv(nil); !slices.Equal(empty, []string{"MESH_LLM_NO_SELF_UPDATE=1"}) {
+	forced := MeshLLMEnv(base, true)
+	if !slices.Equal(forced, append(want, "MESH_FORCE_TOOL_EMULATION=1")) {
+		t.Fatalf("forced tool emulation must append the mesh-llm override, got %v", forced)
+	}
+	if empty := MeshLLMEnv(nil, false); !slices.Equal(empty, []string{"MESH_LLM_NO_SELF_UPDATE=1"}) {
 		t.Fatalf("MeshLLMEnv(nil) = %v, want the self-update guard alone", empty)
 	}
 }

@@ -7,7 +7,7 @@
 
 export interface AdminUiAction {
   readonly id: string
-  readonly method: 'GET' | 'POST'
+  readonly method: 'GET' | 'POST' | 'DELETE'
   readonly path: string
   readonly auth: 'open' | 'admin'
 }
@@ -31,9 +31,12 @@ export const ADMIN_UI_ACTIONS: readonly AdminUiAction[] = [
   { id: 'node-revoke', method: 'POST', path: '/admin/nodes/{nodeId}/revoke', auth: 'admin' },
   { id: 'node-deactivate', method: 'POST', path: '/admin/nodes/{nodeId}/deactivate', auth: 'admin' },
   { id: 'node-activate', method: 'POST', path: '/admin/nodes/{nodeId}/activate', auth: 'admin' },
+  { id: 'mesh-create', method: 'POST', path: '/admin/meshes', auth: 'admin' },
+  { id: 'mesh-delete', method: 'DELETE', path: '/admin/meshes/{meshId}', auth: 'admin' },
   { id: 'profile-rollout', method: 'POST', path: '/admin/profiles/rollout', auth: 'admin' },
   { id: 'profile-activate', method: 'POST', path: '/admin/profiles/activate', auth: 'admin' },
   { id: 'profile-config', method: 'POST', path: '/admin/profiles/config', auth: 'admin' },
+  { id: 'profile-duplicate', method: 'POST', path: '/admin/profiles/duplicate', auth: 'admin' },
   { id: 'agent-versions-refresh', method: 'GET', path: '/admin/agent-versions', auth: 'admin' },
   { id: 'agent-version-set', method: 'POST', path: '/admin/agent-version', auth: 'admin' },
   { id: 'runtime-versions-refresh', method: 'GET', path: '/admin/runtime-versions', auth: 'admin' },
@@ -100,12 +103,14 @@ export const ADMIN_UI_SETUP_LOCKED_FEEDBACK = {
   variant: 'setup-locked'
 } as const
 
-/** Overview topology: hub-and-spoke, every node selectable, list fallback on mobile. */
+/** Overview topology: hub-and-spoke, every node selectable, list fallback on mobile.
+ * The mesh select filters the rendered machines to one group ('all' shows every mesh). */
 export const ADMIN_UI_TOPOLOGY = {
   containerId: 'overview-topology',
   canvasId: 'topo-canvas',
   listId: 'topo-list',
-  captionId: 'topo-caption'
+  captionId: 'topo-caption',
+  meshSelectId: 'topo-mesh-select'
 } as const
 
 /** Slide-over detail drawer shared by node and model selections. */
@@ -125,7 +130,14 @@ export const ADMIN_UI_POLLING = {
 export const ADMIN_UI_NODES_TABLE = {
   bodyId: 'nodes-table-body',
   sortAttribute: 'data-sort',
-  columns: ['id', 'status', 'vram', 'models', 'version']
+  columns: ['id', 'status', 'mesh', 'vram', 'version']
+} as const
+
+/** Mesh (machine group) management card in the nodes section (REQ-ADM-037). */
+export const ADMIN_UI_MESHES = {
+  listId: 'mesh-list',
+  nameInputId: 'mesh-create-name',
+  outputId: 'mesh-output'
 } as const
 
 /**
@@ -162,7 +174,7 @@ export const ADMIN_UI_TOKS_TRACE = {
 export const ADMIN_UI_MESH_HEALTH = {
   bannerId: 'mesh-key-banner',
   keyMissingError: 'mesh_state_key_missing',
-  fields: ['coordinator', 'peers', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error']
+  fields: ['coordinator', 'mesh-group', 'peers', 'stage-owners', 'ready-models', 'failed-nodes', 'last-error']
 } as const
 
 export const ADMIN_UI_AGENT_VERSION = {
@@ -173,6 +185,7 @@ export const ADMIN_UI_AGENT_VERSION = {
 
 export const ADMIN_UI_RUNTIME_VERSION = {
   meshllmSelectId: 'runtime-meshllm-version-select',
+  meshllmSourceSelectId: 'runtime-meshllm-source-select',
   llamacppSelectId: 'runtime-llamacpp-version-select',
   slotId: 'runtime-version-slot',
   staleAttribute: 'data-stale'

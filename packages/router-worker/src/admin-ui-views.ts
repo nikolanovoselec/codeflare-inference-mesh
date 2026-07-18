@@ -2,6 +2,7 @@ import {
   ADMIN_UI_ACTIONS,
   ADMIN_UI_AGENT_VERSION,
   ADMIN_UI_DRAWER,
+  ADMIN_UI_MESHES,
   ADMIN_UI_MESH_HEALTH,
   ADMIN_UI_NAV,
   ADMIN_UI_NODES_TABLE,
@@ -160,17 +161,17 @@ function overviewSection(): string {
   return sectionPanel({
     id: 'overview',
     title: 'Overview',
-    description: 'Live state of the router, mesh, and recent activity.',
-    actions: button({ action: 'status-refresh', label: 'Refresh' }),
+    description: 'Live state of the router, meshes, and machines.',
+    actions: button({ action: 'status-refresh', label: 'Refresh', variant: 'primary' }),
     active: true,
     body: `<div class="topology" id="${ADMIN_UI_TOPOLOGY.containerId}">
+<div class="topo-controls"><label for="${ADMIN_UI_TOPOLOGY.meshSelectId}">Mesh</label><span class="slot"><select id="${ADMIN_UI_TOPOLOGY.meshSelectId}" name="topologyMesh" data-topo-mesh-select="true"><option value="all">All</option></select></span></div>
 <p class="topo-caption" id="${ADMIN_UI_TOPOLOGY.captionId}" data-output="topology-caption"></p>
 <div class="toks-trace" id="${ADMIN_UI_TOKS_TRACE.containerId}" data-output="toks-trace" role="img" aria-label="Tokens per second, rolling window"></div>
 <div class="topo-canvas" id="${ADMIN_UI_TOPOLOGY.canvasId}" data-output="topology" role="group" aria-label="Mesh topology"></div>
 <div class="topo-list" id="${ADMIN_UI_TOPOLOGY.listId}" data-output="topology-list"></div>
 </div>
-<div class="subpanel"><h3>Mesh status</h3><div class="form-actions" id="overview-mesh"></div></div>
-<div class="subpanel"><h3>Recent activity</h3><div class="feed" id="overview-audit" data-output="audit"></div></div>`
+<div class="subpanel"><h3>Mesh status</h3><div class="mesh-cards" id="overview-mesh"></div></div>`
   })
 }
 
@@ -178,12 +179,12 @@ function nodesSection(): string {
   return sectionPanel({
     id: 'nodes',
     title: 'Nodes',
-    description: 'The machines running your models. Ready = serving a model. Active = online, still loading. Offline = has not checked in.',
-    actions: button({ action: 'status-refresh', label: 'Refresh' }),
+    description: 'The machines running your models. Serving = answering requests. Preparing = downloading or loading. Disconnected = checked in, runtime not running. Offline = has not checked in. Error = needs attention.',
+    actions: button({ action: 'status-refresh', label: 'Refresh', variant: 'primary' }),
     body: `<div class="node-filters form-actions" role="group" aria-label="Filter machines">
 <button class="btn btn-ghost" type="button" id="node-filter-all" data-action="nodes-filter" data-filter="all" aria-current="page">All</button>
-<button class="btn btn-ghost" type="button" id="node-filter-ready" data-action="nodes-filter" data-filter="ready">Ready</button>
-<button class="btn btn-ghost" type="button" id="node-filter-active" data-action="nodes-filter" data-filter="active">Active</button>
+<button class="btn btn-ghost" type="button" id="node-filter-ready" data-action="nodes-filter" data-filter="ready">Serving</button>
+<button class="btn btn-ghost" type="button" id="node-filter-active" data-action="nodes-filter" data-filter="active">Not serving</button>
 <button class="btn btn-ghost" type="button" id="node-filter-offline" data-action="nodes-filter" data-filter="offline">Offline</button>
 <label for="node-search">Search</label>
 <input class="node-search" id="node-search" type="search" name="nodeSearch" placeholder="Search machines…" data-node-search="true">
@@ -197,31 +198,67 @@ ${output({ id: 'node-output', kind: 'node-revoke', pre: true })}
   })
 }
 
+/** Native details/summary disclosure: the summary is the styled action button, the body its revealed content. */
+function disclosure(input: { id: string; action: string; label: string; body: string }): string {
+  return `<details class="disclosure" id="${input.id}">
+<summary class="btn btn-primary" data-disclosure="${input.action}">${input.label}</summary>
+<div class="disclosure-body">
+${input.body}
+</div></details>`
+}
+
+function meshesCard(): string {
+  return `<div class="subpanel"><div class="card-head"><h3>Meshes</h3>
+${disclosure({
+    id: 'mesh-add-details',
+    action: 'mesh-add',
+    label: '+ Mesh',
+    body: `<label for="${ADMIN_UI_MESHES.nameInputId}">Mesh name</label>
+<div class="form-actions mesh-add-row"><input id="${ADMIN_UI_MESHES.nameInputId}" name="meshName" type="text" placeholder="e.g. Development" autocomplete="off">${button({ action: 'mesh-create', label: 'Add', variant: 'primary', out: ADMIN_UI_MESHES.outputId })}</div>
+<span class="field-hint">Letters only. The mesh answers at codeflare-mesh-&lt;name&gt;.</span>`
+  })}</div>
+<p class="field-hint">Group machines into meshes and give each group its own model. Every mesh answers at its own route.</p>
+<div class="row-list" id="${ADMIN_UI_MESHES.listId}" data-output="meshes"><p class="empty-note">Meshes appear here after you sign in.</p></div>
+${output({ id: ADMIN_UI_MESHES.outputId, kind: 'mesh', pre: true })}</div>`
+}
+
 function addModelCard(): string {
-  return `<div class="subpanel"><h3>Add a model</h3>
-<p class="field-hint">Add a model reference and choose its runtime. MeshLLM can run single-machine or split models; llama.cpp is direct and cache-local for single-machine coding sessions.</p>
+  return disclosure({
+    id: 'model-add-details',
+    action: 'model-add',
+    label: '+ Model',
+    body: `<p class="field-hint">Add a model reference and choose its runtime. MeshLLM can run single-machine or split models; llama.cpp is direct and cache-local for single-machine coding sessions.</p>
 <div class="form-grid">
 ${field({ id: 'model-add-name', label: 'Name', control: textInput({ id: 'model-add-name', name: 'name', placeholder: 'e.g. Fast Coder' }), hint: 'Shown in the console. Leave blank to name it after the model file.' })}
 ${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine (full model each)</option><option value="split">Split across machines</option></select></span>' })}
 ${field({ id: 'model-add-runtime', label: 'Runtime', control: '<span class="slot"><select id="model-add-runtime" name="runtime" data-model-add-runtime="true"><option value="meshllm">mesh-llm (mesh / split)</option><option value="llamacpp">llama.cpp (direct cache-local)</option></select></span>', hint: 'llama.cpp is for single-machine coding sessions and requires body.user. Split models always use mesh-llm.' })}
 </div>
 <div class="form-grid">
-${field({ id: 'model-add-ref', label: 'Model file', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'The Hugging Face model file to serve, as repo:quant. Paste one, or find one below.' })}
+${field({ id: 'model-add-ref', label: 'Model file', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'The Hugging Face model file to serve, as repo:quant.' })}
 </div>
-<p class="field-hint">Find a model: <a id="model-add-search-single" href="https://huggingface.co/unsloth?search_models=GGUF" target="_blank" rel="noopener">Unsloth GGUF (single machine)</a> · <a id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">mesh-llm layer packages (split)</a> · <a id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">prepare your own split model</a></p>
-<div class="form-actions">${button({ action: 'model-add', label: 'Add model', variant: 'primary', out: 'model-add-output' })}</div>
-${output({ id: 'model-add-output', kind: 'model-add', pre: true })}</div>`
+<div class="model-sources" id="model-add-sources" data-model-sources="single">
+<h4>Where to find models</h4>
+<p class="source-format">Reference format: <code>repo:quant</code> — for example <code>unsloth/Qwen3-14B-GGUF:Q4_K_M</code></p>
+${commandRow({ id: 'model-source-gguf', title: 'Unsloth GGUF', description: 'Ready-to-serve model files for single-machine serving. Pick a model, copy its repo:quant reference, paste it above.', actions: '<a class="btn" id="model-add-search-single" href="https://huggingface.co/unsloth?search_models=GGUF" target="_blank" rel="noopener">Browse Unsloth</a>' })}
+${commandRow({ id: 'model-source-layers', title: 'mesh-llm layer packages', description: 'Pre-split models for serving one model across several machines.', actions: '<a class="btn" id="model-add-search-split" href="https://huggingface.co/meshllm" target="_blank" rel="noopener">Browse packages</a>' })}
+${commandRow({ id: 'model-source-split-guide', title: 'Prepare your own split model', description: 'Turn any model into layer packages with the splitter tool.', actions: '<a class="btn" id="model-add-split-guide" href="https://github.com/Mesh-LLM/hf-mesh-skippy-splitter" target="_blank" rel="noopener">Open guide</a>' })}
+</div>
+<div class="form-actions">${button({ action: 'model-add', label: 'Add', variant: 'primary', out: 'model-add-output' })}</div>
+${output({ id: 'model-add-output', kind: 'model-add', pre: true })}`
+  })
 }
 
 function modelsSection(): string {
   return sectionPanel({
     id: 'models',
-    title: 'Models',
-    description: 'The AI models your machines can run. Deploy one to serve it across the mesh; open Manage to rename it, change what callers ask for, or see the machines running it.',
+    title: 'Mesh & Models',
+    description: 'The AI models your machines can run, grouped into meshes. Deploy a model to serve it in its mesh; open Manage to rename it, move it, or see the machines running it.',
     body: `<p class="banner" id="${ADMIN_UI_MESH_HEALTH.bannerId}" data-mesh-key-banner="true" hidden>A required Worker secret (<code>MESH_STATE_KEY</code>) is missing, so machines cannot form a mesh to share a model. Set it in the deployment and redeploy.</p>
+<div class="subpanel"><div class="card-head"><h3>Models</h3>
+${addModelCard()}</div>
 <div class="row-list" id="profile-list" data-output="profiles"><p class="empty-note">Your models appear here after you sign in. Deploy one to start serving it.</p></div>
-${output({ id: 'models-output', kind: 'models', pre: true })}
-${addModelCard()}`
+${output({ id: 'models-output', kind: 'models', pre: true })}</div>
+${meshesCard()}`
   })
 }
 
@@ -229,7 +266,7 @@ function routingSection(): string {
   return sectionPanel({
     id: 'routing',
     title: 'Routing',
-    description: 'The address people use to reach your models, and how requests find this router. Connected resources stay visible here; changes are synced through Cloudflare for you.',
+    description: 'How requests reach your models through the AI Gateway. Connected resources stay visible here; changes are synced through Cloudflare for you.',
     body: `<div class="subpanel"><h3>AI Gateway</h3>
 <div class="state-card is-empty" id="gateway-current"><span class="state-label">AI Gateway</span><span class="state-value">Not connected yet</span></div>
 <p class="field-hint">Choose the gateway that should expose <code>codeflare-mesh</code>. The route and provider stay managed by the router.</p>
@@ -240,14 +277,7 @@ ${field({ id: 'rt-gateway-provider-name', label: 'Provider name', control: textI
 </div>
 <div class="form-grid"><div id="rt-gateway-new-wrap" hidden>${field({ id: 'rt-gateway-new', label: 'New gateway name', control: textInput({ id: 'rt-gateway-new', name: 'newGatewayId', placeholder: 'e.g. inference-mesh' }) })}</div></div>
 <div class="form-actions">${button({ action: 'gateway-sync', label: 'Provision Gateway', variant: 'primary', out: 'gateway-output', prefix: 'rt-' })}</div>
-${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}</div>
-<div class="subpanel"><h3>Custom domain</h3>
-<div class="state-card is-empty" id="custom-domain-current"><span class="state-label">Custom domain</span><span class="state-value">Not set yet</span></div>
-<div class="form-grid">
-${field({ id: 'custom-domain', label: 'Public address', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }), hint: 'Enter only the hostname. The matching Cloudflare zone is resolved automatically.' })}
-</div>
-<div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Connect domain', out: 'domain-output' })}</div>
-${output({ id: 'domain-output', kind: 'custom-domain', pre: true })}</div>`
+${output({ id: 'gateway-output', kind: 'gateway-sync', pre: true })}</div>`
   })
 }
 
@@ -270,7 +300,9 @@ ${output({ id: ADMIN_UI_PLAYGROUND.speedOutputId, kind: 'playground-speed', pre:
   })
 }
 
-const API_REFERENCE_DOCS_URL = 'https://github.com/nikolanovoselec/codeflare-inference-mesh/blob/llama/documentation/lanes/api-reference-admin.md'
+// Pinned to develop: integration deploys build from develop, so the linked docs always
+// describe the console actually serving the link.
+const API_REFERENCE_DOCS_URL = 'https://github.com/nikolanovoselec/codeflare-inference-mesh/blob/develop/documentation/lanes/api-reference-admin.md'
 
 function apiReferenceDocsHref(method: string, path: string): string {
   const anchor = `${method} ${path}`
@@ -289,7 +321,7 @@ function settingsSection(): string {
   return sectionPanel({
     id: 'settings',
     title: 'Settings',
-    description: 'Machine software version, activity log, session, and recovery.',
+    description: 'Machine software version, custom domain, activity log, session, and recovery.',
     body: `<h3>Machine software version</h3>
 <div class="form-actions">${button({ action: 'agent-versions-refresh', label: 'Load available versions' })}</div>
 ${field({ id: ADMIN_UI_AGENT_VERSION.selectId, label: 'Version to run on every machine', control: emptySlotSelect(ADMIN_UI_AGENT_VERSION.slotId, ADMIN_UI_AGENT_VERSION.selectId, 'agentVersion', 'data-agent-version-select="true" data-stale="false"'), hint: 'Each machine updates to this version the next time it checks in.' })}
@@ -298,6 +330,7 @@ ${output({ id: 'agent-version-output', kind: 'agent-version', pre: true })}
 <div class="subpanel"><h3>Runtime binaries</h3>
 <p class="field-hint">Choose the MeshLLM and llama.cpp releases machines should bootstrap. The binaries are downloaded and managed by each node on its next check-in; they are not bundled into the agent.</p>
 <div class="form-actions">${button({ action: 'runtime-versions-refresh', label: 'Load runtime versions', out: 'runtime-version-output' })}</div>
+${field({ id: ADMIN_UI_RUNTIME_VERSION.meshllmSourceSelectId, label: 'MeshLLM binary source', control: `<select id="${ADMIN_UI_RUNTIME_VERSION.meshllmSourceSelectId}" name="meshllmSource" data-runtime-source-select="meshllm" data-source-available="false" hidden disabled></select>`, hint: 'Switch the MeshLLM releases the fleet pulls between the official upstream and your configured fork. Appears only when a fork is configured.' })}
 <span class="slot" id="${ADMIN_UI_RUNTIME_VERSION.slotId}"><div class="form-grid">
 ${field({ id: ADMIN_UI_RUNTIME_VERSION.meshllmSelectId, label: 'MeshLLM version', control: emptySlotSelect(`${ADMIN_UI_RUNTIME_VERSION.slotId}-meshllm`, ADMIN_UI_RUNTIME_VERSION.meshllmSelectId, 'meshllmVersion', 'data-runtime-version-select="meshllm" data-stale="false"'), hint: 'Used by split and mesh-served profiles.' })}
 ${field({ id: ADMIN_UI_RUNTIME_VERSION.llamacppSelectId, label: 'llama.cpp version', control: emptySlotSelect(`${ADMIN_UI_RUNTIME_VERSION.slotId}-llamacpp`, ADMIN_UI_RUNTIME_VERSION.llamacppSelectId, 'llamacppVersion', 'data-runtime-version-select="llamacpp" data-stale="false"'), hint: 'Used by direct single-node profiles with session cache affinity.' })}
@@ -313,6 +346,13 @@ ${output({ id: 'api-key-output', kind: 'api-key', pre: true, extraClass: 'copyab
 ${field({ id: 'prune-seconds', label: 'Remove a machine after it is offline for (seconds)', control: textInput({ id: 'prune-seconds', name: 'offlinePruneSeconds', type: 'number', min: 0 }), hint: 'A removed machine must re-enroll. 0 keeps offline machines forever. Example: 3600 = one hour, 2592000 = 30 days.' })}
 <div class="form-actions">${button({ action: 'settings-save', label: 'Save', out: 'settings-output' })}</div>
 ${output({ id: 'settings-output', kind: 'settings', pre: true })}</div>
+<div class="subpanel"><h3>Custom domain</h3>
+<div class="state-card is-empty" id="custom-domain-current"><span class="state-label">Custom domain</span><span class="state-value">Not set yet</span></div>
+<div class="form-grid">
+${field({ id: 'custom-domain', label: 'Public address', control: textInput({ id: 'custom-domain', name: 'hostname', inputmode: 'url', placeholder: 'e.g. mesh.example.com' }), hint: 'Enter only the hostname. The matching Cloudflare zone is resolved automatically.' })}
+</div>
+<div class="form-actions">${button({ action: 'custom-domain-validate', label: 'Connect domain', out: 'domain-output' })}</div>
+${output({ id: 'domain-output', kind: 'custom-domain', pre: true })}</div>
 <div class="subpanel"><h3>Activity log</h3><div class="feed" id="audit-log"><p class="empty-note">Activity appears here after you sign in.</p></div></div>
 <div class="subpanel"><h3>Session</h3><p class="empty-note">The admin token lives only in this browser's storage.</p><div class="form-actions">${button({ action: 'sign-out', label: 'Sign out and forget token', variant: 'ghost' })}</div></div>
 <div class="subpanel"><h3>Recovery</h3><p class="empty-note">Lost the admin token? <code>POST /admin/recovery/reset</code> with the <code>ADMIN_RECOVERY_TOKEN</code> Worker secret mints a replacement.</p></div>
@@ -324,7 +364,7 @@ export function dashboardView(active: boolean): string {
   const navItems = [
     navItem({ section: 'overview', label: 'Overview', hint: 'Live mesh health', current: true }),
     navItem({ section: 'nodes', label: 'Nodes', hint: 'Runtime roles' }),
-    navItem({ section: 'models', label: 'Models', hint: 'Profiles and splits' }),
+    navItem({ section: 'models', label: 'Mesh & Models', hint: 'Meshes and models' }),
     navItem({ section: 'routing', label: 'Routing', hint: 'Gateway and domain' }),
     navItem({ section: 'playground', label: 'Playground', hint: 'Probe a route' }),
     navItem({ section: 'settings', label: 'Settings', hint: 'Versions and keys' })

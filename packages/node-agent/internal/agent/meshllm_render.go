@@ -85,11 +85,18 @@ func RenderMeshLLMArgs(in MeshLLMRenderInput) []string {
 // MeshLLMEnv returns a new environment slice: the inherited base (so
 // passthrough values like HF_TOKEN survive) plus MESH_LLM_NO_SELF_UPDATE=1,
 // which keeps the upstream self-updater from racing the agent-managed
-// binary install. The input slice is never mutated.
-func MeshLLMEnv(base []string) []string {
-	env := make([]string, 0, len(base)+1)
+// binary install. When the profile forces tool emulation it also sets
+// MESH_FORCE_TOOL_EMULATION=1, routing tool calls through mesh-llm's
+// text-convention emulation instead of the template's native grammar parser.
+// The input slice is never mutated.
+func MeshLLMEnv(base []string, forceToolEmulation bool) []string {
+	env := make([]string, 0, len(base)+2)
 	env = append(env, base...)
-	return append(env, "MESH_LLM_NO_SELF_UPDATE=1")
+	env = append(env, "MESH_LLM_NO_SELF_UPDATE=1")
+	if forceToolEmulation {
+		env = append(env, "MESH_FORCE_TOOL_EMULATION=1")
+	}
+	return env
 }
 
 // MeshLLMConfigTOML renders the per-profile mesh-llm config file: one `[[models]]`
@@ -166,10 +173,36 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 		}
 	}
 
+	// Staged-transport table. The stage lane rides the WARP overlay (never LAN),
+	// where load-induced queueing inflates RTT past the stage tolerance mesh-llm
+	// enforces: q8 activation frames halve the wire volume and adaptive-ramp
+	// prefill paces bursts so the lane stays under it. Explicit tunables win;
+	// unset values fall back to those WARP-optimized defaults on split profiles.
+	wire := t.WireDtype
+	chunking := t.PrefillChunking
+	if in.Split {
+		if wire == "" {
+			wire = "q8"
+		}
+		if chunking == "" {
+			chunking = "adaptive-ramp"
+		}
+	}
+	var sk strings.Builder
+	if wire != "" {
+		fmt.Fprintf(&sk, "activation_wire_dtype = %q\n", wire)
+	}
+	if chunking != "" {
+		fmt.Fprintf(&sk, "prefill_chunking = %q\n", chunking)
+	}
+	if t.PrefillChunkSize > 0 {
+		fmt.Fprintf(&sk, "prefill_chunk_size = %d\n", t.PrefillChunkSize)
+	}
+
 	// Nothing overrides the mesh-llm defaults: render no config file so the
 	// runtime keeps its own auto-planning (backward-compatible with a bare
 	// profile that carried no context limit and no tunables).
-	if fit.Len() == 0 && pc.Len() == 0 && req.Len() == 0 && t.Parallel <= 0 {
+	if fit.Len() == 0 && pc.Len() == 0 && req.Len() == 0 && sk.Len() == 0 && t.Parallel <= 0 {
 		return ""
 	}
 
@@ -191,6 +224,10 @@ func MeshLLMConfigTOML(in MeshLLMRenderInput, contextWindow int) string {
 	if req.Len() > 0 {
 		b.WriteString("\n[models.request_defaults]\n")
 		b.WriteString(req.String())
+	}
+	if sk.Len() > 0 {
+		b.WriteString("\n[models.skippy]\n")
+		b.WriteString(sk.String())
 	}
 	return b.String()
 }

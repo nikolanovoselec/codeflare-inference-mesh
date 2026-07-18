@@ -6,17 +6,17 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ### REQ-RUN-001: Stable public model
 
-**Intent:** AI Gateway and clients target one stable public model id while the router changes which concrete local model actually serves behind it. The stable id is a shared public alias carried by every model profile, and the single-active invariant leaves exactly one owner, so switching the active model never changes the Gateway route or the public model name clients call.
+**Intent:** AI Gateway and clients target one stable public model id per mesh while the router changes which concrete local model actually serves behind it. Each mesh's stable id is the first public alias of every profile assigned to that mesh, and the per-mesh single-active invariant leaves exactly one owner, so switching a mesh's active model never changes the Gateway route or the public model name that mesh's clients call.
 
 **Applies To:** Client
 
 **Acceptance Criteria:**
 
-1. The router exposes one stable public model id `codeflare-mesh`, carried as a shared alias by every model profile and pinned as the AI Gateway route and forwarded model. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL = codeflare-mesh --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 exposes one stable public model constant carried as a shared alias by every profile) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 gateway sync pins route and model to codeflare-mesh regardless of request body) -->
+1. The router exposes one stable public model id per mesh: `codeflare-mesh` for the default mesh and `codeflare-mesh-<mesh>` for every other mesh, carried as the leading alias by that mesh's profiles and pinned as that mesh's AI Gateway route and forwarded model. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL = codeflare-mesh --> <!-- @impl: packages/router-worker/src/meshes.ts::meshAliasFor --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 exposes one stable public model constant carried as a shared alias by every profile) --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-RUN-016 meshAliasFor pins default and derives per-mesh aliases) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 gateway sync pins route and model to codeflare-mesh regardless of request body) -->
 2. The provider model-listing surface returns the stable public model id `codeflare-mesh`. <!-- @impl: packages/router-worker/src/router.ts::handleModels --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 REQ-RUN-002 exposes seeded public model aliases through the provider API) -->
-3. A chat request for `codeflare-mesh` resolves to the single active serving model, because every profile carries `codeflare-mesh` and the single-active invariant leaves exactly one owner. <!-- @impl: packages/router-worker/src/store.ts::getProfileByPublicModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active) -->
+3. A chat request for a mesh's stable id resolves to that mesh's single active serving model, because that mesh's profiles carry the alias and per-mesh single-active leaves exactly one owner. <!-- @impl: packages/router-worker/src/store.ts::getProfileByPublicModel --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active) -->
 4. The resolved request is rewritten to the active model's upstream model name before node forwarding. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-002 REQ-SCH-002 REQ-OBS-001 forwards the rewritten chat request to the selected node and streams the response) -->
-5. Switching which model is active never changes the Gateway dynamic route name or the stable public model id. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 gateway sync pins route and model to codeflare-mesh regardless of request body) -->
+5. Switching which model is active in a mesh never changes that mesh's Gateway dynamic route name or stable public model id. <!-- @impl: packages/router-worker/src/profiles.ts::STABLE_PUBLIC_MODEL --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 the stable public model codeflare-mesh resolves to whichever model is active) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-003 gateway sync pins route and model to codeflare-mesh regardless of request body) -->
 6. A request for `codeflare-mesh` while no model is active returns an OpenAI-style model-not-found error. <!-- @impl: packages/router-worker/src/router.ts::handleChat --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-001 a chat for codeflare-mesh with no active model returns model-not-found) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
@@ -33,18 +33,18 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ### REQ-RUN-002: Default model profiles
 
-**Intent:** The first implementation needs resolved model defaults so implementation does not stall on model selection. The defaults are MeshLLM private-mesh profiles: an inactive single-node Qwen3.6 35B A3B profile, an inactive split layer-package variant (UD-Q4_K_XL quantization, the published layer package), and a small active smoke-test profile that keeps install and Gateway validation practical. The single-active invariant means only the smoke default ships active, so a fresh mesh verifies functionality on a cheap model before an admin flips to the target model.
+**Intent:** A fresh deployment needs one resolved starter model so install and Gateway validation never stall on model selection: a small active smoke-test profile verifies inference end-to-end on a cheap model before an admin onboards the target model. The starter is seeded exactly once and is an ordinary deletable profile afterwards, so the catalog belongs to the operator, not the ship image.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. `mesh-default-qwen36-35b` ships inactive with display name `Qwen3.6 35B`, rollout percent `0`, aliases `codeflare-mesh`, `qwen3.6:35b-a3b`, and `qwen3.6-coder`, model ref `unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S`, split disabled, and mesh bind port `4300`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
-2. `mesh-split-qwen36-35b` ships inactive with display name `Qwen3.6 35B (multi-machine)`, aliases `codeflare-mesh`, `qwen3.6:35b-a3b`, and `qwen3.6-coder`, layer-package model ref `hf://meshllm/Qwen3.6-35B-A3B-UD-Q4_K_XL-layers@<pinned-rev>`, split enabled, and mesh bind port `4310`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
-3. `mesh-smoke-qwen25-1.5b` ships active with display name `Qwen2.5 Coder 1.5B`, rollout percent `100`, aliases `codeflare-mesh`, `mesh-smoke`, and `smoke-test`, model ref `unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M`, split disabled, and mesh bind port `4320`. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the MeshLLM default profile set with contract values) -->
+1. The shipped catalog is exactly one profile: `mesh-smoke-qwen25-1.5b`, active with display name `Qwen2.5 Coder 1.5B`, rollout percent `100`, aliases `codeflare-mesh`, `mesh-smoke`, and `smoke-test`, model ref `unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M`, split disabled, mesh bind port `4320`, and default-mesh membership. <!-- @impl: packages/router-worker/src/profiles.ts::DEFAULT_MODEL_PROFILES --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 ships only the starter profile and seeds it exactly once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 seeds the smoke starter with contract values and leaves stored legacy rows intact) -->
+2. The starter is seeded only while the seeding marker is absent; existing rows are never refreshed or retired, and a deleted starter never re-seeds. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 ships only the starter profile and seeds it exactly once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes the switched-off starter like any other model and it never re-seeds) -->
+3. When an active non-default profile already owns a starter alias at first seed, the starter arrives inactive so the alias keeps a single active owner. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultActivation --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 first seed yields an inactive starter when an active custom already owns its alias) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 preserves active llama.cpp custom profiles during first seeding) -->
 4. A profile definition enumerates a display name, public aliases, upstream model name, source mode `meshllm-ref`, context limit (`0` = Auto), runtime `meshllm` settings (model ref, split, mandatory bind port, optional max VRAM, and the runtime tunables), profile version, rollout percent, and active flag. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and meshllm contract values) -->
 5. Each default profile's upstream model name is the verbatim `/v1/models` id MeshLLM reports for its model ref. <!-- @impl: packages/router-worker/src/profiles.ts::PROFILE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 exposes profile source modes and meshllm contract values) -->
-6. The MeshLLM runtime tunables are parallel lanes, KV cache types, prefill batch, micro-batch, flash attention, max output tokens, reasoning, and the prefix cache (enable, payload mode, max entries, shared-prefix tuning); each is optional and an omitted value means Auto and is not rendered. <!-- @impl: packages/router-worker/src/profiles.ts::MESHLLM_TUNABLE_DEFAULTS --> <!-- @impl: packages/router-worker/src/profiles.ts::meshllmPayloadMode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 persists per-model runtime tunables and clears them back to Auto) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 a new model ships with input caching enabled and multi-lane by default) -->
+6. The MeshLLM runtime tunables: parallel lanes, KV cache types, prefill batch, micro-batch, flash attention, max output tokens, reasoning, forced tool-call emulation, staged transport (wire precision, prefill pacing, prefill chunk size), and prefix cache (enable, payload mode, max entries, shared-prefix tuning) — optional, Auto/native when omitted. <!-- @impl: packages/router-worker/src/profiles.ts::MESHLLM_TUNABLE_DEFAULTS --> <!-- @impl: packages/router-worker/src/profiles.ts::meshllmPayloadMode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 persists per-model runtime tunables and clears them back to Auto) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 a new model ships with input caching enabled and multi-lane by default) -->
 7. A config update can clear a previously set tunable back to Auto. <!-- @impl: packages/router-worker/src/router.ts::resolveMeshllmTunables --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-002 persists per-model runtime tunables and clears them back to Auto) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
@@ -59,18 +59,19 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ---
 
-### REQ-RUN-009: Profile seeding and retirement
+### REQ-RUN-009: Profile seeding and activation exclusivity
 
-**Intent:** Deployed profile rows must converge to the shipped default definitions on every deploy: changed defaults refresh in place, stale default-alias owners retire, custom/direct profiles are preserved, and activation is single-active so at most one model is active at a time.
+**Intent:** Seeding happens exactly once so the catalog belongs to the operator afterwards, and activation is single-active per mesh: each mesh serves at most one model at a time while other meshes' active models stay untouched, and no public alias ever has two active owners.
 
 **Applies To:** Admin
 
 **Acceptance Criteria:**
 
-1. Default seeding refreshes an existing managed default row when the shipped profile definition changes. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active) -->
-2. Default seeding retires stale active managed defaults that still own a public alias now owned by a shipped default profile. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active) -->
-3. Default seeding retires only legacy active rows at version `<= 1` that still own a shipped public alias but are no longer current defaults. <!-- @impl: packages/router-worker/src/store.ts::retiredDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 migrates changed default profile rows without keeping stale alias owners active) -->
-4. `POST /admin/profiles/activate` activates the target profile and atomically deactivates every other active profile, so at most one model is ever active (one mesh, one active model). <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 activation is single-active) -->
+1. Seeding writes the starter only while the seeding marker is absent and never resurrects or refreshes stored rows afterwards. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 seeds the starter exactly once and never resurrects or refreshes rows) -->
+2. A first seed against a store that already holds an active alias-owning profile leaves that profile the active owner. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultActivation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 preserves active llama.cpp custom profiles during first seeding) -->
+3. `POST /admin/profiles/activate` activates the target profile and atomically deactivates the other active profiles in its mesh, so each mesh serves at most one model. <!-- @impl: packages/router-worker/src/store.ts::singleActiveActivation --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 activation is single-active) -->
+4. Activation also deactivates any alias-overlapping active profile in another mesh, so a public alias never has two active owners. <!-- @impl: packages/router-worker/src/store.ts::singleActiveActivation --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-016 activation deactivates only same-mesh and alias-overlapping actives) -->
+5. Activating a model in one mesh leaves another mesh's alias-disjoint active model active. <!-- @impl: packages/router-worker/src/store.ts::singleActiveActivation --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-016 activation deactivates only same-mesh and alias-overlapping actives) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
 
@@ -119,9 +120,10 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 **Acceptance Criteria:**
 
 1. When a profile sets supported tunables, the agent writes a per-profile MeshLLM config file under the model-fit, throughput, and request-defaults tables. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN014ContextLimitConfigRendering) -->
-2. Unset configuration values are omitted so MeshLLM auto-plans them; when a profile sets nothing, no config file is written. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN014ContextLimitConfigRendering) -->
-3. The MeshLLM binary version is selected from router-delivered runtime settings and installed by the agent before launch. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQRUN014SelectedMeshLLMVersionDownloadsChecksumSidecar) -->
-4. Changes to selected-profile launch inputs request a runtime restart even when the profile ID and version are unchanged. <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::profileKey --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN014DesiredProfileContentChangeRestartsRuntime) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN014ProfileContentChangeRestartsWithUpdatedRenderInput) -->
+2. The staged-transport table renders explicit wire-precision, prefill-pacing, and chunk-size tunables; unset values resolve to the WARP-optimized defaults on split profiles (`activation_wire_dtype = "q8"`, `prefill_chunking = "adaptive-ramp"`) — the stage lane rides the WARP overlay, never LAN. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN014SplitProfilesRenderWarpTransportDefaults) -->
+3. Unset configuration values are omitted so MeshLLM auto-plans them; a single-node profile that sets nothing writes no config file, while a split profile always writes one carrying the staged-transport defaults, whose config-owned model entry replaces the `--model` argv flag. <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMConfigTOML --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN014ContextLimitConfigRendering) -->
+4. The MeshLLM binary version is selected from router-delivered runtime settings and installed by the agent before launch. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQRUN014SelectedMeshLLMVersionDownloadsChecksumSidecar) -->
+5. Changes to selected-profile launch inputs request a runtime restart even when the profile ID and version are unchanged. <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::handleResponse --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::profileKey --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN014DesiredProfileContentChangeRestartsRuntime) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN014ProfileContentChangeRestartsWithUpdatedRenderInput) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
@@ -144,11 +146,12 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 **Acceptance Criteria:**
 
 1. The agent can fetch desired model profile state from the heartbeat response. <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredProfiles --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQRUN003HeartbeatDesiredProfilesUpdateConfig) -->
-2. The runtime process inherits the agent service environment and always sets `MESH_LLM_NO_SELF_UPDATE=1`. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate) -->
+2. The runtime process inherits the agent service environment, always sets `MESH_LLM_NO_SELF_UPDATE=1`, and adds `MESH_FORCE_TOOL_EMULATION=1` when the profile forces tool-call emulation. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMEnv --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate) --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQRUN010MeshLLMEnvAppendsNoSelfUpdate) -->
 3. The agent stops the runtime with SIGTERM first and escalates to kill only after a grace period. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010StopSendsSIGTERMBeforeKill) -->
 4. The agent launches the `mesh-llm` binary provisioned per REQ-NODE-013; a missing or failed install surfaces as a dependency-missing error instead of a runtime start. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010MissingBinaryReportsDependencyMissing) -->
 5. When the selected profile changes, the agent preempts an in-flight download or start of a now-deselected profile and switches to the newly selected profile without requiring a manual restart. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010PreemptsDeselectedInflightDownload) -->
-6. The agent does not restart a runtime that is already loading or serving the currently selected profile, so a healthy ready runtime is left running instead of being torn down on each heartbeat tick. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted) -->
+
+6. Each heartbeat reconciles the running manager's runtime kind against the selected profile's: two disagreeing managed kinds relaunch through the cross-runtime switch path until actual matches desired, while a runtime already loading or serving the selected profile is never restarted. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeKindMismatch --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010RuntimeKindMismatchSelfHealsEachHeartbeat) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted) -->
 7. A runtime stop/restart attempt is timeout-bounded, releases the restart latch, marks failure on timeout, and allows later heartbeat retry. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::finishProfileRestart --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::restartCtx --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN010RestartLatchReleasedWhenRuntimeHangs) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
@@ -344,17 +347,17 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 1. `POST /admin/profiles/add` with runtime `llamacpp` and serving mode `single` creates an inactive direct profile with source mode `llamacpp-hf` and no MeshLLM split state. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 adds a direct llama.cpp single model as an inactive profile) -->
 
-2. New direct profiles use the proven direct defaults: context `262144`, parallel `4`, GPU layers `99`, q4_0 KV, batch `8192`, micro-batch `2048`, flash attention, prompt cache/reuse `256`, generation cap `16384`, and `deepseek` reasoning. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 adds a direct llama.cpp single model as an inactive profile) -->
+2. New direct profiles apply the proven direct default tunables — catalogued on the profile-config API reference — and profiles stored before the unified-KV field normalize to unified KV on. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @impl: packages/router-worker/src/profiles.ts::normalizeModelProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 adds a direct llama.cpp single model as an inactive profile) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-021 configures direct llama.cpp settings through the admin profile config path) -->
 
 3. Runtime `llamacpp` with serving mode `split` is rejected with status 400 and creates no direct profile. <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 rejects direct llama.cpp for split models) -->
 
 4. The Admin UI model-add runtime selector posts the authenticated `runtime` field accepted by the Admin API, and split mode forces the selector back to `meshllm`. <!-- @impl: packages/router-worker/src/admin-ui-views.ts::addModelCard --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
 
-5. A direct profile's Manage drawer exposes parallel slots, GPU layers, KV cache, batch, micro-batch, flash attention, generation cap, prompt cache/reuse, and reasoning settings. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer) -->
+5. A direct profile's Manage drawer exposes parallel slots (blank = Auto), a unified-KV toggle defaulting to on, GPU layers, KV cache, batch, micro-batch, flash attention, generation cap, prompt cache/reuse, and reasoning settings, and hides MeshLLM-only controls. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
 
-6. Saving direct profile settings posts through `POST /admin/profiles/config` with a `llamacpp` settings block. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer) -->
+6. Saving direct profile settings posts through `POST /admin/profiles/config` with a `llamacpp` settings block whose parallel and context-window fields accept their Auto sentinels or documented fixed ranges. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-021 configures direct llama.cpp settings through the admin profile config path) -->
 
-7. The direct profile drawer hides MeshLLM-only controls. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
+7. Disabling unified KV together with Auto parallel is rejected with status 400. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-021 configures direct llama.cpp settings through the admin profile config path) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
@@ -378,6 +381,8 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 1. The node agent renders saved direct llama.cpp settings into `llama-server` launch arguments. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::RenderLlamaCppArgs --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN015LlamaCppRenderArgsIncludesCacheAndAlias) -->
 
+2. Rendered launch arguments enable unified KV (`--kv-unified`) unless the profile explicitly disables it (`--no-kv-unified`); Auto parallel passes through as `--parallel -1` and Auto context as `--ctx-size 0`, so llama-server plans slots itself and loads the model's native training context. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::RenderLlamaCppArgs --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN015LlamaCppRenderArgsKVUnifiedAndAutoParallel) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN015LlamaCppRenderArgsAutoContext) -->
+
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P2
@@ -390,27 +395,89 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ---
 
-### REQ-RUN-012: Custom model removal
+### REQ-RUN-012: Model removal
 
-**Intent:** Operators must be able to remove a custom model they onboarded so the catalog does not accumulate abandoned entries, while the router protects the models that must not disappear: the shipped defaults that re-seed on boot and the one model currently answering the stable route.
+**Intent:** Operators must be able to remove any model they no longer serve — including the seed-once starter — so the catalog does not accumulate abandoned entries, while the one model currently answering a mesh's stable route stays protected.
 
 **Applies To:** Admin, Automation
 
 **Acceptance Criteria:**
 
-1. A custom (non-default), switched-off model is permanently removed from the catalog. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @impl: packages/router-worker/src/store.ts::deleteProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes a custom inactive model over the API) -->
+1. Any switched-off model, including the starter, is permanently removed from the catalog and never re-seeds. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @impl: packages/router-worker/src/store.ts::deleteProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes a custom inactive model over the API) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 deletes the switched-off starter like any other model and it never re-seeds) -->
 
-2. Removing the active model is refused with status 409 so the stable `codeflare-mesh` route is never left without a target. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 refuses deleting the active model) -->
+2. Removing the active model is refused with status 409 so its mesh's stable route is never left without a target. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 refuses deleting the active model) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-026 refuses console deletion only while the model is active) -->
 
-3. Removing a default (shipped) model is refused with status 409 because it re-seeds on the next boot. <!-- @impl: packages/router-worker/src/profiles.ts::isDefaultModelId --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 refuses deleting a built-in model) -->
-
-4. Removing an unknown model returns status 404 and changes nothing. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 returns 404 deleting an unknown model) -->
+3. Removing an unknown model returns status 404 and changes nothing. <!-- @impl: packages/router-worker/src/router.ts::classifyModelDeletion --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-008 REQ-RUN-012 returns 404 deleting an unknown model) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-RUN-001](#req-run-001-stable-public-model), [REQ-RUN-002](#req-run-002-default-model-profiles)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-016: Per-mesh model assignment
+
+**Intent:** Every model profile belongs to exactly one mesh (operator-named machine group), and that mesh's stable route name is the profile's leading public alias. Operators onboard a model directly into a mesh or move it later; a moved model arrives switched off in its new group so activation there is always an explicit decision. Serving the same model in two meshes is done by duplicating the profile and reassigning the copy ([REQ-RUN-017](#req-run-017-profile-duplication)).
+
+**Applies To:** Admin, Automation
+
+**Acceptance Criteria:**
+
+1. Every model profile carries exactly one mesh membership; stored rows without a mesh field read back as members of the default mesh. <!-- @impl: packages/router-worker/src/profiles.ts::normalizeModelProfile --> <!-- @impl: packages/router-worker/src/profiles.ts::profileMeshId --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-016 coerces stored profiles and nodes without meshId to the default mesh) -->
+
+2. A profile's leading public alias is its mesh's stable route name: `codeflare-mesh` for the default mesh and `codeflare-mesh-<mesh>` otherwise. <!-- @impl: packages/router-worker/src/meshes.ts::meshAliasFor --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-RUN-016 meshAliasFor pins default and derives per-mesh aliases) -->
+
+3. Model onboarding accepts an optional target mesh, defaulting to the default mesh; the created profile carries the target mesh's membership and alias, and an unknown mesh is rejected with status 400 creating nothing. <!-- @impl: packages/router-worker/src/router.ts::resolveOnboardingMesh --> <!-- @impl: packages/router-worker/src/router.ts::handleProfileAdd --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 onboarding accepts a target mesh and stamps its alias) -->
+
+4. Reassigning a model through the profile-config path swaps its leading alias to the new mesh's route name, keeps its own call name, switches it off (`active` false, rollout `0`), and bumps its version. <!-- @impl: packages/router-worker/src/router.ts::resolveMeshReassignment --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 reassigning a model swaps its mesh alias and deactivates it) -->
+
+5. A mesh reassignment records a `model_mesh_assigned` audit event, and an unknown mesh is rejected with status 400 changing nothing. <!-- @impl: packages/router-worker/src/router.ts::resolveMeshReassignment --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 mesh reassignment records the audit event and rejects an unknown mesh) -->
+
+6. Call-name edits preserve the profile's mesh alias as the leading alias and reject any reserved stable route name (`codeflare-mesh` or any `codeflare-mesh-` prefix) with status 409. <!-- @impl: packages/router-worker/src/router.ts::resolveCallNameAliases --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-016 call-name edits preserve the mesh alias and reject reserved names) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-SCH-006](state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](#req-run-001-stable-public-model), [REQ-RUN-011](#req-run-011-custom-model-onboarding)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-017: Profile duplication
+
+**Intent:** Operators must be able to clone an existing model profile into an independent copy — identical model reference, runtime, and tunables — so a variant can be tuned or moved to another mesh without touching the profile currently serving. The copy is an ordinary profile afterwards: editable, reassignable, activatable, and deletable like any other.
+
+**Applies To:** Admin, Automation
+
+**Acceptance Criteria:**
+
+1. `POST /admin/profiles/duplicate` creates a switched-off copy in the source's mesh with the same model reference, runtime, context, and tunables; a `(copy)` display name and derived unique call name; and its own id, bind port, version, and rollout. <!-- @impl: packages/router-worker/src/router.ts::duplicateProfileCore --> <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+
+2. Duplicating an unknown profile returns status 404; repeated duplicates of the same source coexist under successive derived names. <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+
+3. The copy is edited independently through the ordinary profile-config path and the source keeps its own settings. <!-- @impl: packages/router-worker/src/router.ts::handleProfileConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+
+4. `POST /api/v1/models/{id}/duplicate` is the automation twin: automation-key authenticated, same duplication core, returning the created model projection. <!-- @impl: packages/router-worker/src/router.ts::handleApiModelDuplicate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 the automation duplicate twin mirrors the console behavior) -->
+
+5. The console model drawer offers Duplicate for any model — including the active one — posting through the admin endpoint and closing the drawer so the refreshed catalog shows the copy. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-017 model drawer duplicates a model through the duplicate endpoint) -->
+
+6. A successful duplicate records a `model_duplicated` audit event targeting the copy and naming the source. <!-- @impl: packages/router-worker/src/router.ts::duplicateProfileCore --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-RUN-016](#req-run-016-per-mesh-model-assignment)
 
 **Verification:** Automated test
 

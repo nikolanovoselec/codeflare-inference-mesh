@@ -33,6 +33,10 @@ type LlamaCppSettings struct {
 	Parallel        int                `json:"parallel"`
 	CachePrompt     bool               `json:"cachePrompt"`
 	CacheReuse      int                `json:"cacheReuse"`
+	// KVUnified nil or true renders --kv-unified so one request can use the whole
+	// context window; false renders --no-kv-unified, which divides --ctx-size
+	// evenly across parallel slots (REQ-RUN-015).
+	KVUnified       *bool              `json:"kvUnified,omitempty"`
 	CacheTypeK      string             `json:"cacheTypeK,omitempty"`
 	CacheTypeV      string             `json:"cacheTypeV,omitempty"`
 	Batch           int                `json:"batch,omitempty"`
@@ -63,6 +67,15 @@ type MeshLLMSettings struct {
 	MaxOutputTokens int                  `json:"maxOutputTokens,omitempty"`
 	Reasoning       *ReasoningSettings   `json:"reasoning,omitempty"`
 	PrefixCache     *PrefixCacheSettings `json:"prefixCache,omitempty"`
+	// ToolEmulation forces mesh-llm's server-side tool-call emulation
+	// (MESH_FORCE_TOOL_EMULATION=1) for models whose template advertises a
+	// native tool grammar that mesh-llm cannot parse (e.g. ERNIE Thinking).
+	ToolEmulation bool `json:"toolEmulation,omitempty"`
+	// Staged-transport tunables. Empty values resolve to the WARP-optimized
+	// defaults on split profiles (q8 wire, adaptive-ramp prefill).
+	WireDtype        string `json:"wireDtype,omitempty"`
+	PrefillChunking  string `json:"prefillChunking,omitempty"`
+	PrefillChunkSize int    `json:"prefillChunkSize,omitempty"`
 }
 
 // ReasoningSettings carries the model's thinking-phase config. Enabled nil means

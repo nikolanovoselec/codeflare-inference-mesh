@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1200,4 +1202,186 @@ func TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted(t *testing.T) {
 			}
 		})
 	})
+}
+
+// After a runtime-mode switch replaces serviceLoop.manager, the dashboard status and
+// runtime controls must follow the CURRENT manager. The startup-captured manager
+// previously kept reporting runtimeState=stopped while the live runtime served
+// traffic (apiReady=true), an internally impossible status. REQ-OBS-008 / REQ-NODE-004.
+func TestREQOBS008DashboardStatusAndControlsTrackCurrentManager(t *testing.T) {
+	counter := &agent.ActiveCounter{}
+	stale := newFakeMeshRuntime(counter)
+	stale.SetState("stopped")
+	live := newFakeMeshRuntime(counter)
+	live.SetState("ready")
+	var stateMu sync.RWMutex
+	cfg := agent.Config{DisplayName: "node-a"}
+	loop := &serviceLoop{
+		stateMu:        &stateMu,
+		cfg:            &cfg,
+		manager:        stale,
+		loadState:      &runtimeLoadState{},
+		telemetry:      &runtimeTelemetry{},
+		activeRequests: counter,
+	}
+
+	if got := loop.dashboardStatus("v-test").Metrics.RuntimeState; got != "stopped" {
+		t.Fatalf("startup manager state = %q, want stopped", got)
+	}
+
+	loop.setManager(live, "")
+	if got := loop.dashboardStatus("v-test").Metrics.RuntimeState; got != "ready" {
+		t.Fatalf("dashboard must report the current manager after a runtime switch, got %q", got)
+	}
+
+	controller := &currentRuntimeController{loop: loop}
+	if err := controller.Restart(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if live.restartCount() != 1 || stale.restartCount() != 0 {
+		t.Fatalf("runtime controls must dispatch to the current manager (live=%d stale=%d)", live.restartCount(), stale.restartCount())
+	}
+	if err := controller.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	liveEvents := live.eventLog()
+	if len(liveEvents) == 0 || liveEvents[len(liveEvents)-1] != "stop" {
+		t.Fatalf("shutdown-path Stop must reach the current manager, events=%v", liveEvents)
+	}
+}
+
+func TestREQNODE002HeartbeatFailuresSurfaceAndClear(t *testing.T) {
+	// A rejected heartbeat is the node's lifeline going dark: the failure must reach the
+	// operator (stderr once per state change, local dashboard until recovery) instead of
+	// being silently swallowed forever. REQ-NODE-002.
+	var status atomic.Int64
+	status.Store(401)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		code := int(status.Load())
+		if code != 200 {
+			w.WriteHeader(code)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(agent.HeartbeatResponse{})
+	}))
+	t.Cleanup(server.Close)
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	cfg := agent.Config{RouterURL: server.URL, NodeToken: "node-secret", ActiveProfileIDs: []string{"p1"}}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	logBuffer := &bytes.Buffer{}
+	loop.errLog = logBuffer
+
+	loop.tick(context.Background())
+	loop.tick(context.Background())
+	if got := loop.dashboardStatus("v").LastHeartbeatError; !strings.Contains(got, "401") {
+		t.Fatalf("dashboard must carry the heartbeat rejection, got %q", got)
+	}
+	if count := strings.Count(logBuffer.String(), "heartbeat failed"); count != 1 {
+		t.Fatalf("an unchanged failure must be logged exactly once, got %d in %q", count, logBuffer.String())
+	}
+
+	status.Store(200)
+	loop.tick(context.Background())
+	if got := loop.dashboardStatus("v").LastHeartbeatError; got != "" {
+		t.Fatalf("a successful heartbeat must clear the error, got %q", got)
+	}
+	if !strings.Contains(logBuffer.String(), "heartbeat recovered") {
+		t.Fatalf("recovery must be logged once, got %q", logBuffer.String())
+	}
+}
+
+func TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart(t *testing.T) {
+	// The initial runtime start (binary download, mesh-llm launch) must never block the
+	// heartbeat loop: launchInitialRuntime returns immediately and the manager lands
+	// through setManager once the start completes. REQ-NODE-002 / REQ-OBS-008.
+	counter := &agent.ActiveCounter{}
+	loop := newLoopForTest(t, agent.Config{}, counter, nil, &fakeUpdater{}, nil)
+	release := make(chan struct{})
+	started := newFakeMeshRuntime(counter)
+	launchInitialRuntime(context.Background(), loop, agent.Config{}, agent.ModelProfile{ID: "p1"}, nil, func(context.Context, agent.Config, agent.ModelProfile, *agent.MeshBootstrap) (meshRuntime, string, error) {
+		<-release
+		return started, "install-detail", nil
+	})
+	if loop.currentManager() != nil {
+		t.Fatal("launchInitialRuntime must return before the runtime start completes")
+	}
+
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for loop.currentManager() == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the started manager must land through setManager")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	manager, installError := loop.managerSnapshot()
+	if manager != meshRuntime(started) {
+		t.Fatal("the CURRENT manager must be the started runtime")
+	}
+	if installError != "install-detail" {
+		t.Fatalf("the start's install detail must land with the manager, got %q", installError)
+	}
+}
+
+func TestREQNODE002HeartbeatTelemetryProbeIsBounded(t *testing.T) {
+	// A hanging host GPU probe (macOS system_profiler can stall for minutes under Metal
+	// churn during a model switch) must never freeze the heartbeat loop: the probe runs
+	// under its own deadline inside collect. REQ-NODE-002.
+	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1, MeshLLM: agent.MeshLLMSettings{ModelRef: "u1", BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	manager := newFakeMeshRuntime(counter)
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.goos = "darwin"
+	loop.gpuProbeTimeout = 50 * time.Millisecond
+	loop.cmdRunner = func(ctx context.Context, _ string, _ ...string) ([]byte, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	done := make(chan struct{})
+	go func() {
+		loop.collect(context.Background(), cfg)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("collect must return under the telemetry probe bound, not hang with the GPU probe")
+	}
+}
+
+func TestREQRUN010RuntimeKindMismatchSelfHealsEachHeartbeat(t *testing.T) {
+	// A transiently failed runtime switch must not wedge the node: ApplyDesiredProfiles
+	// reports no restart for an unchanged set, so the agent reconciles the running
+	// manager's kind against the selected profile on every heartbeat until they agree.
+	profile := agent.ModelProfile{ID: "p1", UpstreamModel: "u1", Version: 1, Runtime: "llamacpp", LlamaCpp: agent.LlamaCppSettings{ModelRef: "u1", BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "u1", ActiveProfileIDs: []string{"p1"}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	// A busy drain plus a tiny restart budget makes each reconcile attempt fail fast and
+	// observably (SetFailure) without reaching a real runtime launch.
+	counter.Inc()
+	manager := newFakeMeshRuntime(counter) // reports Runtime() == "meshllm": kind mismatch
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.loadState.Set(profile)
+	loop.restartTimeout = time.Millisecond
+
+	waitFailed := func(step string) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if manager.State() == "failed" {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("%s: runtime kind mismatch did not trigger a reconcile restart", step)
+	}
+	unchanged := agent.HeartbeatResponse{OK: true, DesiredProfiles: []agent.ModelProfile{profile}}
+	loop.handleResponse(context.Background(), unchanged)
+	waitFailed("first heartbeat")
+	// The reconcile retries on every later heartbeat, not only once.
+	manager.SetState("ready")
+	loop.handleResponse(context.Background(), unchanged)
+	waitFailed("second heartbeat")
 }

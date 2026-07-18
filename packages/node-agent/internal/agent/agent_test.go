@@ -18,6 +18,21 @@ import (
 	"time"
 )
 
+func TestREQNODE014RepositoryFollowsRouterExactly(t *testing.T) {
+	current := RuntimeBinaryVersions{MeshLLM: "v1", LlamaCpp: "b1", MeshLLMRepository: "nikolanovoselec/mesh-llm"}
+	adopted := mergeRuntimeVersions(current, RuntimeBinaryVersions{MeshLLMRepository: "other/fork"})
+	if adopted.MeshLLMRepository != "other/fork" {
+		t.Fatalf("a present repository must be adopted, got %q", adopted.MeshLLMRepository)
+	}
+	reset := mergeRuntimeVersions(current, RuntimeBinaryVersions{MeshLLM: "v2"})
+	if reset.MeshLLMRepository != "" {
+		t.Fatalf("an absent repository must reset to upstream, got %q", reset.MeshLLMRepository)
+	}
+	if reset.MeshLLM != "v2" || reset.LlamaCpp != "b1" {
+		t.Fatalf("version merge semantics must be unchanged, got %+v", reset)
+	}
+}
+
 func TestREQNODE001ServiceSkeletonAndListenerPolicy(t *testing.T) {
 	t.Run("REQ-NODE-001", func(t *testing.T) {
 		addr := &net.IPNet{IP: net.ParseIP("100.64.1.10"), Mask: net.CIDRMask(32, 32)}
@@ -839,8 +854,22 @@ func TestREQRUN007RestartWithInputRelaunchesWithNewProfileArgs(t *testing.T) {
 			t.Fatalf("restart with new input should relaunch, got %d launches", fixture.launch.count())
 		}
 		args := fixture.launch.record(1).args
-		if models := flagValues(args, "--model"); !equalStrings(models, []string{"hf://meshllm/layers@rev2"}) {
-			t.Fatalf("relaunch must render the new profile's model ref, got %v", models)
+		// A split profile always writes a config file (the WARP staged-transport
+		// table), and a written config owns the [[models]] entry: --model moves off
+		// argv so the config-owned entry drives the load (REQ-RUN-003).
+		if models := flagValues(args, "--model"); len(models) != 0 {
+			t.Fatalf("a config-owned split relaunch must not render --model, got %v", models)
+		}
+		configPaths := flagValues(args, "--config")
+		if len(configPaths) != 1 {
+			t.Fatalf("a split relaunch must render its config file, got %v", args)
+		}
+		written, err := os.ReadFile(configPaths[0])
+		if err != nil {
+			t.Fatalf("read relaunch config: %v", err)
+		}
+		if !strings.Contains(string(written), "model = \"hf://meshllm/layers@rev2\"") {
+			t.Fatalf("relaunch config must carry the new profile's model ref, got:\n%s", written)
 		}
 		if !argvContains(args, "--split") {
 			t.Fatalf("relaunch of a split profile must render --split, got %v", args)
@@ -906,14 +935,20 @@ func TestREQOBS009GPUFallbackPerOSAndMerge(t *testing.T) {
 		if got := GPUFallbackMetrics(ctx, "windows", windows); got.GPUMemoryTotalMiB != 16384 {
 			t.Fatalf("windows nvidia-smi.exe fallback: %#v", got)
 		}
-		// macOS parses system_profiler; VRAM (Total) in GB converts to MiB.
+		// macOS parses system_profiler (VRAM (Total) in GB converts to MiB) and reads
+		// live consumption from the IORegistry accelerator counter.
 		mac := func(_ context.Context, name string, _ ...string) ([]byte, error) {
-			if name != "system_profiler" {
-				t.Fatalf("darwin fallback must call system_profiler, got %q", name)
+			switch name {
+			case "system_profiler":
+				return []byte("Graphics/Displays:\n    Apple M3 Max:\n      Chipset Model: Apple M3 Max\n      VRAM (Total): 48 GB\n"), nil
+			case "ioreg":
+				return []byte("    \"PerformanceStatistics\" = {\"In use system memory\" = 1073741824}\n"), nil
+			default:
+				t.Fatalf("darwin fallback must call system_profiler or ioreg, got %q", name)
+				return nil, nil
 			}
-			return []byte("Graphics/Displays:\n    Apple M3 Max:\n      Chipset Model: Apple M3 Max\n      VRAM (Total): 48 GB\n"), nil
 		}
-		if got := GPUFallbackMetrics(ctx, "darwin", mac); got.GPUName != "Apple M3 Max" || got.GPUMemoryTotalMiB != 48*1024 {
+		if got := GPUFallbackMetrics(ctx, "darwin", mac); got.GPUName != "Apple M3 Max" || got.GPUMemoryTotalMiB != 48*1024 || got.GPUMemoryUsedMiB != 1024 {
 			t.Fatalf("darwin system_profiler fallback: %#v", got)
 		}
 		// A failed probe yields zero GPU fields (unknown), never an error.

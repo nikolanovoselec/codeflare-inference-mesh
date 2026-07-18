@@ -188,9 +188,11 @@ describe('admin UI mesh operations contracts', () => {
     expect(versionOf('node-peer-a').dataset.desiredMatch).toBe('false')
     expect(versionOf('node-peer-a').textContent).toContain('v1.3.0')
     expect(versionOf('node-peer-b').dataset.reported).toBe('unreported')
-    // Revoke moved into the node drawer (opened via Manage); each row now carries a right-aligned Manage button.
+    // The Manage button is gone (REQ-ADM-030): the node id button is the drawer entry point on every row.
     const manageButtons = rowNodes.filter((node) => node.dataset.action === 'node-detail' && node.textContent === 'Manage')
-    expect(manageButtons).toHaveLength(meshNodes.length)
+    expect(manageButtons).toHaveLength(0)
+    const drawerButtons = rowNodes.filter((node) => node.dataset.action === 'node-detail')
+    expect(drawerButtons).toHaveLength(meshNodes.length)
   })
 
   it('REQ-SEC-006 surfaces mesh_state_key_missing as an admin status banner', async () => {

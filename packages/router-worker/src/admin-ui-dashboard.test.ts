@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ADMIN_UI_DRAWER, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_DRAWER, ADMIN_UI_MESHES, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
 import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
@@ -10,14 +10,17 @@ const dashboardNodes = [
     id: 'node-big',
     status: 'online',
     agentVersion: 'v1.3.0',
-    // readyModels carries upstream model refs (what the runtime loaded), exactly as the scheduler
-    // and the serving-count match on, never the public aliases.
+    // Serving requires adoption + readiness: agents always report the profile ids they run
+    // (activeProfileIds) alongside readyModels, which carries upstream model refs (what the
+    // runtime loaded), exactly as the scheduler and the serving-count match on.
+    activeProfileIds: ['mesh-default-qwen36-35b'],
     metrics: { runtimeState: 'running', readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S', 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'], gpuMemoryTotalMiB: 24_576, gpuMemoryUsedMiB: 20_000, tokensPerSecond: 42.5, activeRequests: 1 }
   },
   {
     id: 'node-small',
     status: 'online',
     agentVersion: 'v1.2.0',
+    activeProfileIds: ['mesh-default-qwen36-35b'],
     metrics: { runtimeState: 'ready', readyModels: ['unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ3_S'], gpuMemoryTotalMiB: 8_192, gpuMemoryUsedMiB: 4_000, tokensPerSecond: 61.25, activeRequests: 0 }
   },
   {
@@ -39,7 +42,8 @@ function statusFixture(overrides: Record<string, unknown> = {}): Record<string, 
     profileReadiness: [],
     audit: [],
     generatedAt: 1_700_000_200_000,
-    lastSpeedTest: { at: 1_700_000_100_000, requestId: 'speed-a', model: 'codeflare-mesh', nodeId: 'node-big', requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100, cacheTokens: 0 },
+    lastSpeedTests: { 'mesh-default-qwen36-35b': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'codeflare-mesh', nodeId: 'node-big', requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100, cacheTokens: 0 } },
+    meshes: [{ id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 3, modelCount: 2 }],
     gateway: { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh' },
     customDomain: { hostname: 'router.test', status: 'provisioned' },
     desiredAgentVersion: 'v1.3.0',
@@ -123,9 +127,10 @@ describe('dashboard overview contracts', () => {
     expect(html).toContain('<span data-scramble>Codeflare</span> <span class="hero-accent">Inference Mesh</span>')
     expect(html).toContain('id="overview-tiles"')
     expect(html).toContain('data-nav-item="overview"')
-    expect(html).toContain('data-nav-hint="Live mesh health"')
-    expect(html).toContain('data-nav-hint="Runtime roles"')
-    expect(html).toContain('data-nav-hint="Profiles and splits"')
+    // Every section's nav item carries a hint; the copy itself is not contract.
+    for (const section of ['overview', 'nodes', 'models']) {
+      expect(html).toMatch(new RegExp('data-nav-item="' + section + '" data-nav-hint="[^"]+"'))
+    }
   })
 
   it('REQ-ADM-034 renders endpoint chips inside command rows for action-heavy controls', () => {
@@ -180,21 +185,23 @@ describe('dashboard overview contracts', () => {
       expect(tile, `no stat tile ${key}`).toBeDefined()
       return descendants(tile!).find((node) => node.dataset.value !== undefined)!.dataset.value
     }
+    // Six tiles, in order — the last speed test moved into the per-mesh cards.
+    expect(tiles.filter((candidate) => candidate.dataset.stat).map((candidate) => candidate.dataset.stat)).toEqual(['nodes', 'vram', 'throughput', 'meshes', 'domain', 'version'])
     expect(stat('nodes')).toBe('2/3')
-    expect(stat('vram')).toBe('32 GiB')
-    expect(stat('speed')).toBeTruthy()
-    const speedTile = tiles.find((candidate) => candidate.dataset.stat === 'speed')!
-    expect(speedTile.dataset.promptTps).toBe('1800.5')
-    expect(speedTile.dataset.generationTps).toBe('67.2')
-    expect(speedTile.dataset.nodeId).toBe('node-big')
+    // Consumed / total: online machines report 20000 + 4000 MiB used of 32768 known.
+    expect(stat('vram')).toBe('23.4 / 32 GB')
+    // Live fleet throughput sums per-machine tok/s from heartbeat metrics (42.5 + 61.25).
+    expect(stat('throughput')).toBe('104 tok/s')
+    // One mesh known, its active model served by adopted machines.
+    expect(stat('meshes')).toBe('1 · 1 serving')
   })
 
-  it('REQ-OBS-010 does not fabricate a last Speed Test before one is reported', async () => {
-    const harness = await dashboardHarness({ status: statusFixture({ lastSpeedTest: undefined }) })
-    const speedTile = descendants(harness.byId('overview-tiles')).find((node) => node.dataset.stat === 'speed')!
+  it('REQ-ADM-039 does not fabricate a mesh-card speed test before one is reported', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ lastSpeedTests: undefined }) })
+    const card = descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === 'default')!
 
-    expect(speedTile.dataset.promptTps).toBeUndefined()
-    expect(speedTile.dataset.generationTps).toBeUndefined()
+    expect(card.getAttribute('data-speed-prompt')).toBeNull()
+    expect(card.getAttribute('data-speed-gen')).toBeNull()
   })
 
   it('REQ-ADM-007 toggles mobile navigation from the top-bar menu and closes it after section changes', async () => {
@@ -230,11 +237,16 @@ describe('dashboard overview contracts', () => {
     expect(statusCell.dataset.meshRole).toBe('No stage assigned')
     expect(statusCell.dataset.statusDetail).toBe('standby')
     const chip = descendants(statusCell).find((node) => node.className === 'chip')!
-    expect(chip.dataset.tone).toBe('ok')
-    expect(statusCell.dataset.statusLabelKind).toBe('work-state')
+    // An api-client advertising ready models without a ready runtime or a stage is
+    // still preparing — catalog claims alone never read as Serving.
+    expect(chip.dataset.tone).toBe('warn')
+    expect(descendants(chip).map((node) => node.textContent).join('')).toBe('Preparing')
     await harness.clickAction('node-detail', { nodeId: 'battlestation' })
     const drawerFields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    expect(drawerFields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
+    // The captured error line rides the drawer as a warn-toned recent-error row even
+    // while the node participates (REQ-OBS-011 AC7).
+    const recentErr = drawerFields.find((node) => node.dataset.drawerField === 'runtime-detail')!
+    expect(recentErr.dataset.tone).toBe('warn')
     const drawerText = (name: string) => descendants(drawerFields.find((node) => node.dataset.drawerField === name)!).map((node) => node.textContent).join(' ')
     expect(drawerText('work-state')).toContain('Serving model')
   })
@@ -324,9 +336,10 @@ describe('dashboard overview contracts', () => {
     expect(stats).toContain('version')
     expect(stats).not.toContain('models')
     expect(stats).not.toContain('gateway')
-    const labels = descendants(harness.byId('overview-tiles')).filter((node) => node.tagName === 'strong').map((node) => node.textContent)
-    expect(labels).toContain('Available machines')
-    expect(labels).toContain('Known VRAM')
+    // Tile identity is the data-stat key, not the label copy.
+    expect(stats).toContain('vram')
+    expect(stats).toContain('throughput')
+    expect(stats).toContain('meshes')
     expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).textContent).toContain('available')
   })
 
@@ -345,7 +358,8 @@ describe('dashboard overview contracts', () => {
     const bigVram = cells.find((cell) => cell.dataset.cell === 'vram')!
     expect(bigVram.dataset.value).toBe('24576')
     expect(bigVram.textContent).toBe('19.5 GiB / 24 GiB')
-    expect(cells.find((cell) => cell.dataset.cell === 'models')!.dataset.value).toBe('2')
+    // The table carries no per-model cell: model detail lives in the drawer.
+    expect(cells.some((cell) => cell.dataset.cell === 'model' || cell.dataset.cell === 'models')).toBe(false)
   })
 
   it('REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline', async () => {
@@ -361,11 +375,14 @@ describe('dashboard overview contracts', () => {
       const cell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
       return { category: cell.dataset.value, detail: cell.dataset.statusDetail, text: descendants(cell).map((node) => node.textContent).filter(Boolean).join(' ') }
     }
+    // The visible label is the fixed operator vocabulary; detail stays in data attributes.
     expect(statusOf('ready-node').category).toBe('ready')
-    expect(statusOf('ready-node').text).toContain('Serving model')
+    expect(statusOf('ready-node').text).toContain('Serving')
     expect(statusOf('loading-node').category).toBe('active')
+    expect(statusOf('loading-node').text).toContain('Preparing')
     expect(statusOf('loading-node').detail).toBe('loading model next-upstream')
     expect(statusOf('failed-node').category).toBe('active')
+    expect(statusOf('failed-node').text).toContain('Error')
     expect(statusOf('failed-node').detail).toBe('loading model next-upstream')
     // Live per-node throughput is not a reliable MeshLLM table field; the Nodes table omits it entirely.
     expect(descendants(tableRows(harness).find((row) => row.dataset.nodeRow === 'loading-node')!).some((cell) => cell.dataset.cell === 'toks')).toBe(false)
@@ -402,7 +419,8 @@ describe('dashboard overview contracts', () => {
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
 
     expect(statusCell.dataset.statusDetail).toBe('split-mesh-peer-discovery')
-    expect(descendants(statusCell).find((node) => node.className === 'chip')!.dataset.tone).toBe('danger')
+    // A starting split runtime is Preparing (yellow) in the table; the drawer blocker below carries the alarm.
+    expect(descendants(statusCell).find((node) => node.className === 'chip')!.dataset.tone).toBe('warn')
 
     await harness.clickAction('node-detail', { nodeId: 'mac-worker' })
     const blocker = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.dataset.drawerField === 'mesh-discovery-blocker')!
@@ -429,6 +447,19 @@ describe('dashboard overview contracts', () => {
     search.value = 'small'
     await harness.change(search)
     expect(rowOrder(harness)).toEqual(['node-small'])
+  })
+
+  it('REQ-ADM-006 the custom domain card lives in Settings', () => {
+    // The harness never trees static HTML, so placement pins on served source order:
+    // the card renders exactly once, after the Settings section opens (Settings is the
+    // final section, so a greater index means containment) and past the Routing section.
+    const html = adminUiHtml('https://router.test', { view: 'dashboard', phase: 'complete', customDomain: 'router.test', recovery: false })
+    const settingsAt = html.indexOf('id="settings"')
+    const routingAt = html.indexOf('id="routing"')
+    const domainAt = html.indexOf('id="custom-domain-current"')
+    expect(html.match(/id="custom-domain-current"/g)!.length).toBe(1)
+    expect(routingAt).toBeLessThan(settingsAt)
+    expect(domainAt).toBeGreaterThan(settingsAt)
   })
 
   it('REQ-ADM-020 saves the offline-machine prune window from Settings', async () => {
@@ -522,15 +553,16 @@ describe('dashboard overview contracts', () => {
     const chip = descendants(row).find((node) => node.className === 'chip')!
     expect(chip.dataset.tone).toBe('warn')
     expect(descendants(row).some((node) => node.textContent === 'Deactivated')).toBe(true)
-    // Row action is Manage (opens the drawer), never an inline revoke.
-    expect(descendants(row).some((node) => node.dataset.action === 'node-detail' && node.textContent === 'Manage')).toBe(true)
+    // The node name itself opens the drawer; there is no separate Manage button and never an inline revoke.
+    expect(descendants(row).some((node) => node.dataset.action === 'node-detail')).toBe(true)
+    expect(descendants(row).some((node) => node.textContent === 'Manage')).toBe(false)
     expect(descendants(row).some((node) => node.dataset.action === 'node-revoke')).toBe(false)
 
     await harness.clickAction('node-detail', { nodeId: 'node-off' })
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     const textOf = (item: StubElement) => descendants(item).map((node) => node.textContent).join(' ')
     const runtimeInstall = fields.find((node) => node.dataset.drawerField === 'runtime-install')!
-    expect(textOf(runtimeInstall)).toContain('0.72.2 installed')
+    expect(textOf(runtimeInstall)).toContain('meshllm 0.72.2')
     expect(textOf(runtimeInstall)).not.toContain('deactivated')
     expect(textOf(runtimeInstall)).not.toContain('install failed')
     expect(runtimeInstall.dataset.runtimeInstallState).toBe('paused')
@@ -557,8 +589,10 @@ describe('dashboard overview contracts', () => {
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'mac-100-96-0-14')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
     expect(statusCell.dataset.meshRole).toBe('Stage owner')
+    // A stage owner reads as Serving (active work), never standby/API client; the role
+    // detail rides the data attribute and the drawer, not the visible label.
     const statusChip = descendants(statusCell).find((node) => node.className === 'chip')!
-    expect(descendants(statusChip).map((node) => node.textContent).join(' ')).toContain('Stage owner')
+    expect(descendants(statusChip).map((node) => node.textContent).join(' ')).toContain('Serving')
 
     await harness.clickAction('node-detail', { nodeId: 'mac-100-96-0-14' })
     let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
@@ -596,8 +630,10 @@ describe('dashboard overview contracts', () => {
 
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    const modelStage = fields.find((node) => node.dataset.drawerField === 'stage-ownership')!
-    expect(descendants(modelStage).map((node) => node.textContent).join(' ')).toContain('L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
+    // Stage ownership lives once, in the mesh card's Technical details.
+    expect(fields.some((node) => node.dataset.drawerField === 'stage-ownership')).toBe(false)
+    const modelStage = fields.find((node) => node.dataset.meshField === 'stage-owners')!
+    expect(modelStage.textContent).toBe('Stage owners: L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
   })
 
   it('REQ-OBS-011 hides model_size_unknown during reload and update transitions', async () => {
@@ -628,7 +664,9 @@ describe('dashboard overview contracts', () => {
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'linux-node')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
     expect(descendants(statusCell).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
-    expect(statusCell.dataset.statusLabelKind).toBe('mesh-role')
+    const servingChip = descendants(statusCell).find((node) => node.className === 'chip')!
+    expect(servingChip.dataset.tone).toBe('ok')
+    expect(descendants(servingChip).map((node) => node.textContent).join('')).toBe('Serving')
 
     await harness.clickAction('node-detail', { nodeId: 'linux-node' })
     let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
@@ -638,7 +676,12 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
-    expect(fields.find((node) => node.dataset.drawerField === 'stage-ownership')!.dataset.value).toBe('L0-26 → Arch Linux · Ready')
+    // The mesh card alone carries the mesh detail: no duplicated stage/serving drawer
+    // fields, stage owners and the machine group live in Technical details.
+    expect(fields.some((node) => node.dataset.drawerField === 'stage-ownership')).toBe(false)
+    expect(fields.some((node) => node.dataset.drawerField === 'serving')).toBe(false)
+    expect(fields.find((node) => node.dataset.meshField === 'stage-owners')!.textContent).toBe('Stage owners: L0-26 → Arch Linux · Ready')
+    expect(fields.find((node) => node.dataset.meshField === 'mesh-group')!.textContent).toBe('Mesh: Default')
   })
 
   it('REQ-ADM-019 REQ-ADM-030 renders concise completion messages for routine mutating actions', async () => {
@@ -654,6 +697,30 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('node-activate', { nodeId: 'node-small', out: 'node-output' })
     const activate = harness.fetchCalls.find((entry) => entry.path === '/admin/nodes/node-small/activate')
     expect(activate?.init?.method).toBe('POST')
+  })
+
+  it('REQ-OBS-011 a live runtime error rides the node row and drawer even while serving', async () => {
+    const nodes = [
+      { id: 'node-degraded', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'direct prediction return upstream-opened sink unavailable' } },
+      { id: 'node-clean', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0 } },
+      // Leveled chatter from a pre-gate agent is not a live degradation signal.
+      { id: 'node-chatter', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'WARN failed closing path' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    const statusCell = (id: string) => descendants(tableRows(harness).find((row) => row.dataset.nodeRow === id)!).find((node) => node.dataset.cell === 'status')!
+    const chipOf = (id: string) => descendants(statusCell(id)).find((node) => node.className === 'chip')!
+    expect(statusCell('node-degraded').dataset.runtimeError).toBe('direct prediction return upstream-opened sink unavailable')
+    expect(chipOf('node-degraded').dataset.tone).toBe('warn')
+    expect(statusCell('node-clean').dataset.runtimeError).toBeUndefined()
+    expect(chipOf('node-clean').dataset.tone).toBe('ok')
+    expect(statusCell('node-chatter').dataset.runtimeError).toBeUndefined()
+    expect(chipOf('node-chatter').dataset.tone).toBe('ok')
+
+    await harness.clickAction('node-detail', { nodeId: 'node-degraded' })
+    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const err = fields.find((node) => node.dataset.drawerField === 'runtime-detail')!
+    expect(err.dataset.tone).toBe('warn')
+    expect(descendants(err).map((node) => node.textContent).join(' ')).toContain('sink unavailable')
   })
 
   it('REQ-OBS-011 the node drawer surfaces runtime errors, work state, and mesh diagnostics', async () => {
@@ -683,7 +750,7 @@ describe('dashboard overview contracts', () => {
     expect(field('stages')!.dataset.value).toBe('2')
     expect(field('reachability')!.dataset.value).toBe('api:down;console:ready')
     expect(textOf(field('reachability')!)).toContain('down / ready')
-    expect(textOf(field('runtime-install')!)).toContain('0.72.2 installed')
+    expect(textOf(field('runtime-install')!)).toContain('meshllm 0.72.2')
     expect(fields.some((node) => node.dataset.drawerField === 'meshllm')).toBe(false)
 
     // A healthy node shows derived work state but stale stderr warnings are not rendered as current
@@ -725,15 +792,17 @@ describe('dashboard overview contracts', () => {
     expect(textOf(field('direct-cached-tokens')!)).toContain('not reported')
   })
 
-  it('REQ-ADM-015 opens a model drawer listing the nodes serving each alias', async () => {
+  it('REQ-ADM-015 opens a model drawer with editable identity and no duplicated serving list', async () => {
     const harness = await dashboardHarness()
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     const drawer = harness.byId(ADMIN_UI_DRAWER.containerId)
     expect(drawer.hidden).toBe(false)
     expect(harness.byId(ADMIN_UI_DRAWER.titleId).textContent).toBe('Qwen3.6 35B')
+    // Machine participation lives in the mesh card alone; the drawer repeats no
+    // serving-node list of its own.
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    const servingNodes = fields.filter((node) => node.dataset.drawerServingNode)
-    expect(servingNodes.map((node) => node.dataset.drawerServingNode).sort()).toEqual(['node-big', 'node-small'])
+    expect(fields.some((node) => node.dataset.drawerServingNode)).toBe(false)
+    expect(fields.some((node) => node.dataset.drawerField === 'serving')).toBe(false)
     // The drawer prefills the editable name and the model's own call name (its non-shared
     // alias) — not the shared codeflare-mesh alias, which apps use to reach the active model.
     expect(harness.byId('model-edit-name').value).toBe('Qwen3.6 35B')
@@ -757,7 +826,7 @@ describe('dashboard overview contracts', () => {
 
   it('REQ-RUN-002 loads and saves per-model runtime tunables from the model drawer', async () => {
     const profiles = [
-      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 0, meshllm: { split: false, modelRef: 'ref-a', parallel: 4, cacheTypeK: 'q8_0' } }
+      { id: 'mesh-default-qwen36-35b', displayName: 'Qwen3.6 35B', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 0, meshllm: { split: false, modelRef: 'ref-a', parallel: 4, cacheTypeK: 'q8_0', toolEmulation: true, wireDtype: 'f16', prefillChunking: 'fixed', prefillChunkSize: 256 } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
@@ -765,13 +834,21 @@ describe('dashboard overview contracts', () => {
     expect(harness.byId('model-edit-context').value).toBe('')
     expect(harness.byId('model-edit-parallel').value).toBe('4')
     expect(harness.byId('model-edit-cache-k').value).toBe('q8_0')
+    expect(harness.byId('model-edit-tool-emulation').value).toBe('emulated')
+    expect(harness.byId('model-edit-wire-dtype').value).toBe('f16')
+    expect(harness.byId('model-edit-prefill-chunking').value).toBe('fixed')
+    expect(harness.byId('model-edit-prefill-chunk-size').value).toBe('256')
     // Each field carries plain-language help; assert the hint affordance renders (structure, not copy).
     expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).some((node) => node.className === 'drawer-hint')).toBe(true)
     // Editing lanes / KV / max-output and saving posts the tunables to the validated endpoint;
-    // a blank context window is sent as 0 (Auto).
+    // a blank context window is sent as 0 (Auto), a Native tool-calling selection as null.
     harness.byId('model-edit-parallel').value = '2'
     harness.byId('model-edit-cache-v').value = 'q4_0'
     harness.byId('model-edit-maxout').value = '8192'
+    harness.byId('model-edit-tool-emulation').value = ''
+    harness.byId('model-edit-wire-dtype').value = 'q8'
+    harness.byId('model-edit-prefill-chunking').value = ''
+    harness.byId('model-edit-prefill-chunk-size').value = ''
     await harness.clickAction('model-save', { profileId: 'mesh-default-qwen36-35b', out: 'model-output' })
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
     const body = JSON.parse(String(call?.init?.body))
@@ -779,15 +856,21 @@ describe('dashboard overview contracts', () => {
     expect(body.cacheTypeV).toBe('q4_0')
     expect(body.maxOutputTokens).toBe(8192)
     expect(body.contextWindow).toBe(0)
+    expect(body.toolEmulation).toBe(null)
+    expect(body.wireDtype).toBe('q8')
+    expect(body.prefillChunking).toBe(null)
+    expect(body.prefillChunkSize).toBe(null)
   })
 
   it('REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer', async () => {
     const profiles = [
-      { id: 'custom-direct', displayName: 'Direct Qwen', publicAliases: ['codeflare-mesh', 'direct-qwen'], active: true, rolloutPercent: 100, contextWindow: 262144, runtime: 'llamacpp', llamacpp: { modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', bindPort: 4330, contextWindow: 262144, parallel: 4, cachePrompt: true, cacheReuse: 256, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, alias: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', reasoning: { enabled: true, format: 'deepseek', budget: 8192 } } }
+      { id: 'custom-direct', displayName: 'Direct Qwen', publicAliases: ['codeflare-mesh', 'direct-qwen'], active: true, rolloutPercent: 100, contextWindow: 262144, runtime: 'llamacpp', llamacpp: { modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M', bindPort: 4330, contextWindow: 262144, parallel: 4, kvUnified: false, cachePrompt: true, cacheReuse: 256, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, alias: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', reasoning: { enabled: true, format: 'deepseek', budget: 8192 } } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
     await harness.clickAction('model-detail', { profileId: 'custom-direct' })
 
+    expect(harness.byId('model-edit-llama-parallel').value).toBe('4')
+    expect(harness.byId('model-edit-llama-kv-unified').value).toBe('off')
     expect(harness.byId('model-edit-llama-gpu-layers').value).toBe('99')
     expect(harness.byId('model-edit-llama-cache-k').value).toBe('q4_0')
     expect(harness.byId('model-edit-llama-batch').value).toBe('8192')
@@ -796,6 +879,8 @@ describe('dashboard overview contracts', () => {
     expect(harness.byId('model-edit-llama-reasoning').value).toBe('on')
     expect(harness.byId('model-edit-llama-reasoning-budget').value).toBe('8192')
 
+    harness.byId('model-edit-llama-parallel').value = ''
+    harness.byId('model-edit-llama-kv-unified').value = 'on'
     harness.byId('model-edit-llama-gpu-layers').value = '99'
     harness.byId('model-edit-llama-cache-k').value = 'q4_0'
     harness.byId('model-edit-llama-cache-v').value = 'q4_0'
@@ -809,10 +894,10 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction('model-save', { profileId: 'custom-direct', runtime: 'llamacpp', out: 'model-output' })
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
     const body = JSON.parse(String(call?.init?.body))
-    expect(body.llamacpp).toMatchObject({ gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
+    expect(body.llamacpp).toMatchObject({ parallel: -1, kvUnified: true, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 16384, reasoning: { enabled: true, format: 'deepseek', budget: 8192 } })
   })
 
-  it('REQ-ADM-026 shows a Delete control only for a custom, switched-off model', async () => {
+  it('REQ-ADM-026 shows a Delete control for any switched-off model', async () => {
     const profiles = [
       { id: 'custom-qwen3-14b-gguf-q4-k-m', displayName: 'Qwen3-14B', publicAliases: ['codeflare-mesh', 'q'], active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } },
       { id: 'custom-live', displayName: 'Live custom', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, contextWindow: 32768, meshllm: { split: false, modelRef: 'y' } },
@@ -832,8 +917,11 @@ describe('dashboard overview contracts', () => {
     expect(deleteButton(), 'an active model hides Delete (turn it off first)').toBeUndefined()
     await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
 
+    // Seed-once: a switched-off default-named model no longer re-seeds, so it is deletable too.
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
-    expect(deleteButton(), 'a built-in model hides Delete (it re-seeds)').toBeUndefined()
+    const builtinDel = deleteButton()
+    expect(builtinDel, 'a switched-off default-named model exposes Delete').toBeDefined()
+    expect(builtinDel!.dataset.profileId).toBe('mesh-default-qwen36-35b')
   })
 
   it('REQ-ADM-026 deletes a model from the drawer through the profiles delete endpoint and closes the drawer', async () => {
@@ -944,6 +1032,47 @@ describe('dashboard overview contracts', () => {
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/runtime-versions' && entry.init?.method === 'POST')
     expect(call, 'saving runtime versions posts to the admin parity endpoint').toBeDefined()
     expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
+  })
+
+  it('REQ-NODE-014 renders the MeshLLM binary source selector and switches source on change', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/admin/runtime-versions' && method === 'GET') return Response.json({
+        meshllm: { tags: ['v0.73.1-codeflare.1'], desired: 'v0.73.1-codeflare.1', stale: false, source: 'fork', forkRepository: 'nikolanovoselec/mesh-llm', officialRepository: 'Mesh-LLM/mesh-llm' },
+        llamacpp: { tags: ['b9912'], desired: 'b9912', stale: false }
+      })
+      if (path === '/admin/runtime-versions' && method === 'POST') return Response.json({ ok: true, source: 'official' })
+      return undefined
+    } })
+
+    const select = harness.byId(ADMIN_UI_RUNTIME_VERSION.meshllmSourceSelectId)
+    expect(select.dataset.sourceAvailable).toBe('true')
+    expect(descendants(select).filter((el) => el.dataset.runtimeSourceOption).map((el) => el.dataset.runtimeSourceOption)).toEqual(['official', 'fork'])
+    expect(select.value).toBe('fork')
+
+    // Changing the source posts only the source and reloads the version list.
+    select.value = 'official'
+    await harness.change(select)
+    await harness.flush(3)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/runtime-versions' && entry.init?.method === 'POST')
+    expect(call, 'switching source posts to the runtime-versions endpoint').toBeDefined()
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllmSource: 'official' })
+  })
+
+  it('REQ-NODE-014 hides the binary source selector when no fork is configured', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/admin/runtime-versions' && method === 'GET') return Response.json({
+        meshllm: { tags: ['v0.72.2'], desired: 'v0.72.2', stale: false, source: 'official', officialRepository: 'Mesh-LLM/mesh-llm' },
+        llamacpp: { tags: ['b9912'], desired: 'b9912', stale: false }
+      })
+      return undefined
+    } })
+
+    const select = harness.byId(ADMIN_UI_RUNTIME_VERSION.meshllmSourceSelectId)
+    expect(select.dataset.sourceAvailable).toBe('false')
+    expect(select.hidden).toBe(true)
+    expect(descendants(select).filter((el) => el.dataset.runtimeSourceOption)).toHaveLength(0)
   })
 
   it('REQ-ADM-023 loads and saves node name and VRAM settings from the node drawer', async () => {
@@ -1120,14 +1249,15 @@ describe('dashboard throughput trace and playground contracts', () => {
       tokens: { prompt: 2048, completion: 80, promptEstimated: false, completionEstimated: false },
       throughput: { promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2 }
     }
-    let lastSpeedTest: Record<string, unknown> | undefined
+    let lastSpeedTests: Record<string, unknown> | undefined
     const harness = await dashboardHarness({
       respond: (path) => {
         if (path === ADMIN_UI_PLAYGROUND.speedPath) {
-          lastSpeedTest = { at: 1_700_000_300_000, requestId: 'speed-b', model: result.model, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100 }
+          // The router stores the run keyed by the resolved profile id.
+          lastSpeedTests = { 'mesh-default-qwen36-35b': { at: 1_700_000_300_000, requestId: 'speed-b', model: result.model, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100 } }
           return Response.json(result)
         }
-        if (path === '/admin/status') return Response.json(statusFixture(lastSpeedTest ? { lastSpeedTest } : { lastSpeedTest: undefined }))
+        if (path === '/admin/status') return Response.json(statusFixture(lastSpeedTests ? { lastSpeedTests } : { lastSpeedTests: undefined }))
         return undefined
       }
     })
@@ -1141,9 +1271,10 @@ describe('dashboard throughput trace and playground contracts', () => {
     expect(payload.model).toBe('qwen3.6:35b-a3b')
     expect(rendered.tokens).toEqual(result.tokens)
     expect(rendered.throughput).toEqual(result.throughput)
-    const speedTile = descendants(harness.byId('overview-tiles')).find((node) => node.dataset.stat === 'speed')!
-    expect(speedTile.dataset.promptTps).toBe('1800.5')
-    expect(speedTile.dataset.generationTps).toBe('67.2')
+    // The refreshed status lands the measurement on the model's mesh card.
+    const card = descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === 'default')!
+    expect(card.getAttribute('data-speed-prompt')).toBe('1801')
+    expect(card.getAttribute('data-speed-gen')).toBe('67')
   })
 
   it('REQ-ADM-029 forwards tools and a max-token cap and surfaces tool calls on the dynamic route', async () => {
@@ -1371,30 +1502,142 @@ describe('dashboard throughput trace and playground contracts', () => {
     const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
     const rows = harness.byId('profile-list').children.filter((row) => row.dataset.profileRow)
     const badge = (id: string) => descendants(rows.find((row) => row.dataset.profileRow === id)!).find((node) => node.dataset.servingMode)!
-    // Serving mode is carried by a badge attribute; a split model's badge stands out in accent.
+    // Serving mode is carried by a pill attribute with the fixed tone vocabulary: singular = blue, sharded = orange.
     expect(badge('single-a').dataset.servingMode).toBe('single')
     expect(badge('split-b').dataset.servingMode).toBe('split')
-    expect(badge('split-b').dataset.tone).toBe('accent')
-    expect(badge('single-a').dataset.tone).toBeUndefined()
+    expect(badge('split-b').dataset.tone).toBe('orange')
+    expect(badge('single-a').dataset.tone).toBe('blue')
   })
 
-  it('REQ-OBS-007 labels overview mesh chips by model name and stays neutral when a model is not shared', async () => {
-    const harness = await dashboardHarness({
-      status: statusFixture({
-        meshHealth: [{ profileId: 'mesh-default-qwen36-35b', rotation: 0, peerNodeIds: [], readyModels: [], failedNodeIds: [], tokenCount: 0 }]
-      })
-    })
-    const chip = harness.byId('overview-mesh').children[0]
-    expect(chip, 'overview should render a mesh chip').toBeDefined()
-    // The stub does not aggregate textContent from children; the label lives on a child span.
-    const label = descendants(chip!).map((node) => node.textContent).join('')
-    // Named by the model, not the wiring id or a raw rotation counter.
-    expect(label).toContain('Qwen3.6 35B')
-    expect(label).not.toContain('mesh-default-qwen36-35b')
-    // A single-node model reads "not shared yet" in a neutral tone, never an alarming amber "forming".
-    expect(label).not.toContain('forming')
-    expect(chip!.dataset.tone).not.toBe('warn')
-    expect(chip!.dataset.tone).not.toBe('danger')
+  it('REQ-ADM-018 REQ-RUN-016 serving counts bind to the adopted profile, not the shared model reference', async () => {
+    const shared = 'unsloth/Qwen2.5-Coder-1.5B-Instruct-GGUF:Q4_K_M'
+    const profiles = [
+      { id: 'twin-llamacpp', displayName: 'Research Qwen', upstreamModel: shared, publicAliases: ['codeflare-mesh-research', 'twin'], meshId: 'research', active: true, rolloutPercent: 100, runtime: 'llamacpp', llamacpp: { modelRef: shared, bindPort: 4520 } },
+      { id: 'twin-meshllm', displayName: 'Research Single Qwen', upstreamModel: shared, publicAliases: ['codeflare-mesh-research', 'twin-single'], meshId: 'research', active: false, rolloutPercent: 0, runtime: 'meshllm', meshllm: { split: false } }
+    ]
+    // One machine runs the llama.cpp twin; the switched-off meshllm twin references the
+    // same model file but nobody has adopted it.
+    const nodes = [{ id: 'mac', status: 'online', meshId: 'research', activeProfileIds: ['twin-llamacpp'], metrics: { runtimeKind: 'llamacpp', runtimeState: 'ready', activeRequests: 0, readyModels: [shared] } }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes }) })
+    const rowOf = (id: string) => harness.byId('profile-list').children.find((row) => row.dataset.profileRow === id)!
+    expect(rowOf('twin-llamacpp').dataset.serving).toBe('1')
+    expect(rowOf('twin-meshllm').dataset.serving).toBe('0')
+  })
+
+  it('REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test', async () => {
+    const meshes = [
+      { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 },
+      { id: 'ops', name: 'Ops', alias: 'codeflare-mesh-ops', machineCount: 1, modelCount: 1 },
+      { id: 'empty', name: 'Empty', alias: 'codeflare-mesh-empty', machineCount: 0, modelCount: 0 },
+      { id: 'research', name: 'Research', alias: 'codeflare-mesh-research', machineCount: 1, modelCount: 1 }
+    ]
+    const profiles = [
+      { id: 'model-default', displayName: 'Default Model', upstreamModel: 'unsloth/Default-GGUF:Q4', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-ops', displayName: 'Ops Model', upstreamModel: 'unsloth/Ops-GGUF:Q4', publicAliases: ['codeflare-mesh-ops', 'ops'], meshId: 'ops', active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-research', displayName: 'Research Model', upstreamModel: 'unsloth/Research-GGUF:Q4', publicAliases: ['codeflare-mesh-research', 'research'], meshId: 'research', active: true, rolloutPercent: 100, meshllm: { split: false } }
+    ]
+    const nodes = [
+      { id: 'node-serving', status: 'online', activeProfileIds: ['model-default'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['unsloth/Default-GGUF:Q4'], tokensPerSecond: 42 } },
+      { id: 'node-ops', status: 'online', meshId: 'ops', activeProfileIds: [], metrics: { runtimeState: 'starting', activeRequests: 0 } },
+      // Deactivated with stale adopted/ready state: the record still says it runs the
+      // Research model, but a deactivated machine must never count as serving.
+      { id: 'node-research', status: 'online', deactivated: true, meshId: 'research', activeProfileIds: ['model-research'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['unsloth/Research-GGUF:Q4'] } }
+    ]
+    const lastSpeedTests = { 'model-default': { at: 1_700_000_100_000, requestId: 'speed-a', model: 'main', promptTokensPerSecond: 726.7, generationTokensPerSecond: 60.4 } }
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes, lastSpeedTests }) })
+    const row = (id: string) => descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === id)!
+    // Default: its model is adopted and ready on one machine, and its model has a
+    // stored speed test.
+    expect(row('default').getAttribute('data-machines')).toBe('1')
+    expect(row('default').getAttribute('data-serving')).toBe('1')
+    // Speed figures render as whole numbers with a spaced slash (726.7 / 60.4 stored).
+    expect(row('default').getAttribute('data-speed-prompt')).toBe('727')
+    expect(row('default').getAttribute('data-speed-gen')).toBe('60')
+    const speedCell = descendants(row('default')).find((el) => el.className === 'mesh-stat mesh-stat-speed')!
+    expect(descendants(speedCell).find((el) => el.className === 'metric-value')!.textContent).toBe('727 / 60')
+    expect(row('default').getAttribute('data-state')).toBe('Serving')
+    expect(row('default').getAttribute('data-state-tone')).toBe('ok')
+    // The card merges the mesh identity (purple card title + route) with the model's own pills.
+    const title = descendants(row('default')).find((el) => el.getAttribute('data-profile-mesh') !== null)!
+    expect(title.className).toBe('mesh-card-name')
+    expect(descendants(row('default')).find((el) => el.getAttribute('data-runtime') !== null)!.getAttribute('data-runtime')).toBe('meshllm')
+    expect(descendants(row('default')).find((el) => el.getAttribute('data-serving-mode') !== null)!.getAttribute('data-serving-mode')).toBe('single')
+    // The model block reads name, then the mono model file reference, then the pill row.
+    const modelBlock = descendants(row('default')).find((el) => el.className === 'mesh-card-model')!
+    expect(modelBlock.children.map((child) => child.className)).toEqual(['', 'mesh-card-file', 'mesh-card-pills'])
+    expect(descendants(row('default')).find((el) => el.className === 'mesh-card-file')!.textContent).toBe('unsloth/Default-GGUF:Q4')
+    // The serving-capacity track fills to the served fraction of the mesh's machines.
+    expect(descendants(row('default')).find((el) => el.getAttribute('data-fill') !== null)!.getAttribute('data-fill')).toBe('100')
+    expect(descendants(row('ops')).find((el) => el.getAttribute('data-fill') !== null)!.getAttribute('data-fill')).toBe('0')
+    // Ops: model on but its machine has not adopted it yet — amber, zero serving, and no
+    // speed test on record for its model.
+    expect(row('ops').getAttribute('data-serving')).toBe('0')
+    expect(row('ops').getAttribute('data-speed-gen')).toBeNull()
+    expect(row('ops').getAttribute('data-state-tone')).toBe('warn')
+    // Research: its only machine is deactivated but its record still carries adopted +
+    // ready state — a deactivated (or offline) machine never counts as serving.
+    expect(row('research').getAttribute('data-serving')).toBe('0')
+    expect(row('research').getAttribute('data-state')).not.toBe('Serving')
+    expect(row('research').getAttribute('data-state-tone')).toBe('warn')
+    // An empty mesh with no model stays neutral — a group without a model is a choice, not an
+    // alarm — and carries no model pills.
+    expect(row('empty').getAttribute('data-state-tone')).toBe('idle')
+    expect(descendants(row('empty')).find((el) => el.getAttribute('data-runtime') !== null)).toBeUndefined()
+    // The card head pairs the mesh name with its callable route — the status word is gone;
+    // the tone edge carries state, so no dot chip renders inside the card.
+    const opsHead = descendants(row('ops')).find((el) => el.className === 'mesh-card-head')!
+    expect(descendants(opsHead).find((el) => el.getAttribute('data-mesh-alias') !== null)!.getAttribute('data-mesh-alias')).toBe('codeflare-mesh-ops')
+    expect(descendants(row('ops')).find((el) => el.className === 'dot')).toBeUndefined()
+    // The activity feed is gone from the Overview: logs live in Settings only.
+    expect(() => harness.byId('overview-audit')).toThrow()
+  })
+
+  it('REQ-ADM-039 mesh cards expose split state and surface degradation notes', async () => {
+    const meshes = [
+      { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 2, modelCount: 1 },
+      { id: 'solo', name: 'Solo', alias: 'codeflare-mesh-solo', machineCount: 2, modelCount: 1 },
+      { id: 'quiet', name: 'Quiet', alias: 'codeflare-mesh-quiet', machineCount: 1, modelCount: 1 }
+    ]
+    const profiles = [
+      { id: 'split-ok', displayName: 'Split OK', upstreamModel: 'meshllm/A-layers', publicAliases: ['codeflare-mesh'], active: true, rolloutPercent: 100, meshllm: { split: true } },
+      { id: 'split-fb', displayName: 'Split FB', upstreamModel: 'meshllm/B-layers', publicAliases: ['codeflare-mesh-solo'], meshId: 'solo', active: true, rolloutPercent: 100, meshllm: { split: true } },
+      { id: 'split-idle', displayName: 'Split idle', upstreamModel: 'meshllm/C-layers', publicAliases: ['codeflare-mesh-quiet'], meshId: 'quiet', active: true, rolloutPercent: 100, meshllm: { split: true } }
+    ]
+    const nodes = [
+      { id: 'n-a1', status: 'online', activeProfileIds: ['split-ok'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['meshllm/A-layers'] } },
+      // A worker holding a stage counts as serving even while its own console idles in
+      // standby (mesh-llm worker-side state): the stage corroborates the catalog claim.
+      { id: 'n-a2', status: 'online', activeProfileIds: ['split-ok'], metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: ['meshllm/A-layers'], stageCount: 2 } },
+      { id: 'n-b1', status: 'online', meshId: 'solo', activeProfileIds: ['split-fb'], metrics: { runtimeState: 'ready', activeRequests: 0, readyModels: ['meshllm/B-layers'], runtimeDetail: 'prediction return sink unavailable' } },
+      // Ghost: an api-client advertising the mesh catalog with no ready runtime and no
+      // stage never counts as serving.
+      { id: 'n-b2', status: 'online', meshId: 'solo', activeProfileIds: ['split-fb'], metrics: { runtimeState: 'starting', activeRequests: 0, readyModels: ['meshllm/B-layers'] } },
+      { id: 'n-c1', status: 'online', meshId: 'quiet', activeProfileIds: ['split-idle'], metrics: { runtimeState: 'starting', activeRequests: 0 } }
+    ]
+    const meshHealth = [
+      { profileId: 'split-ok', stageAssignments: [{ stageIndex: 0 }, { stageIndex: 1 }], splitReadiness: { verdict: 'ready' } },
+      { profileId: 'split-fb', stageAssignments: [], splitReadiness: { verdict: 'waiting_for_peers' } },
+      { profileId: 'split-idle', stageAssignments: [], splitReadiness: { verdict: 'waiting_for_peers' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes, meshHealth, lastSpeedTests: undefined }) })
+    const row = (id: string) => descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === id)!
+    // A formed topology reads as split serving: ok tone, no note.
+    expect(row('default').getAttribute('data-split-state')).toBe('split')
+    expect(row('default').getAttribute('data-state-tone')).toBe('ok')
+    expect(row('default').getAttribute('data-serving')).toBe('2')
+    expect(descendants(row('default')).some((el) => el.getAttribute('data-mesh-note') !== null)).toBe(false)
+    // Serving machines without a formed topology read as fallback, and the node's
+    // runtime error rides the card verbatim; the ghost api-client is not serving.
+    expect(row('solo').getAttribute('data-split-state')).toBe('fallback')
+    expect(row('solo').getAttribute('data-state-tone')).toBe('warn')
+    expect(row('solo').getAttribute('data-serving')).toBe('1')
+    const soloNote = descendants(row('solo')).find((el) => el.getAttribute('data-mesh-note') !== null)!
+    expect(soloNote.getAttribute('data-mesh-note')).toBe('error')
+    expect(soloNote.textContent).toBe('prediction return sink unavailable')
+    // Nothing serving on a split mesh surfaces the readiness verdict.
+    expect(row('quiet').getAttribute('data-serving')).toBe('0')
+    const quietNote = descendants(row('quiet')).find((el) => el.getAttribute('data-mesh-note') !== null)!
+    expect(quietNote.getAttribute('data-mesh-note')).toBe('verdict')
   })
 
   it('REQ-ADM-015 tags each node cell with its column label for the stacked mobile layout', async () => {
@@ -1402,7 +1645,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     const row = harness.byId(ADMIN_UI_NODES_TABLE.bodyId).children.find((child) => child.dataset.nodeRow)
     expect(row, 'a node row should render').toBeDefined()
     // Every cell carries a data-label so the mobile card layout prints "Label: value" without side-scroll.
-    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'VRAM', 'Models', 'Version'])
+    expect(row!.children.map((cell) => cell.dataset.label)).toEqual(['Machine', 'Status', 'Mesh', 'VRAM', 'Version'])
   })
 })
 
@@ -1430,6 +1673,21 @@ describe('dashboard routing contracts', () => {
     if (path.startsWith('/admin/cloudflare/gateway/provision-status')) return Response.json({ gatewayId: 'inference-mesh', provisioned, routeEnabled: provisioned, ...(provisioned ? { routeId: 'r', providerId: 'p' } : {}) })
     return undefined
   }
+
+  it('REQ-ADM-024 REQ-GWY-009 the gateway card lists every ensured mesh route', async () => {
+    const gateway = {
+      gatewayId: 'inference-mesh',
+      routeName: 'codeflare-mesh',
+      publicModel: 'codeflare-mesh',
+      routes: [
+        { routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', routeId: 'r1' },
+        { routeName: 'codeflare-mesh-research', publicModel: 'codeflare-mesh-research', routeId: 'r2' }
+      ]
+    }
+    const harness = await dashboardHarness({ status: statusFixture({ gateway }) })
+    const sub = descendants(harness.byId('gateway-current')).find((node) => node.className === 'state-sub')
+    expect(sub?.textContent).toBe('routes codeflare-mesh · codeflare-mesh-research')
+  })
 
   it('REQ-ADM-024 shows the selected gateway route inside the AI Gateway card', async () => {
     // Provisioned per the live check but zero nodes online: the card is driven by provisioning
@@ -1572,5 +1830,290 @@ describe('dashboard routing contracts', () => {
     await harness.clickAction('model-add')
     await harness.flush(10)
     expect(harness.fetchCalls.some((call) => call.path === '/admin/profiles/add')).toBe(false)
+  })
+})
+
+describe('mesh console contracts', () => {
+  const consoleMeshes = [
+    { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 },
+    { id: 'development', name: 'Development', alias: 'codeflare-mesh-development', machineCount: 0, modelCount: 0 },
+    { id: 'ops', name: 'Ops', alias: 'codeflare-mesh-ops', machineCount: 2, modelCount: 1 }
+  ]
+
+  it('REQ-ADM-037 nodes table renders a mesh column resolved to group names', async () => {
+    expect(ADMIN_UI_NODES_TABLE.columns).toContain('mesh')
+    const nodes = [
+      { id: 'node-big', status: 'online', meshId: 'development', metrics: { runtimeState: 'ready', activeRequests: 0 } },
+      { id: 'node-small', status: 'online', metrics: { runtimeState: 'ready', activeRequests: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshes: consoleMeshes }) })
+    const meshCell = (nodeId: string) => tableRows(harness).find((row) => row.dataset.nodeRow === nodeId)!.children.find((td) => td.getAttribute('data-cell') === 'mesh')!
+    expect(meshCell('node-big').getAttribute('data-value')).toBe('development')
+    expect(meshCell('node-big').textContent).toBe('Development')
+    // Legacy rows without a stored meshId render as members of the default group.
+    expect(meshCell('node-small').getAttribute('data-value')).toBe('default')
+    expect(meshCell('node-small').textContent).toBe('Default')
+  })
+
+  it('REQ-ADM-037 meshes card lists groups, gates Delete to empty non-default meshes, and posts create/delete', async () => {
+    const harness = await dashboardHarness({ status: statusFixture({ meshes: consoleMeshes }), respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/admin/meshes' && method === 'POST') return Response.json({ ok: true, mesh: { id: 'noobs', name: 'Noobs' } }, { status: 201 })
+      if (path === '/admin/meshes/development' && method === 'DELETE') return Response.json({ ok: true })
+      return undefined
+    } })
+    const rows = harness.byId(ADMIN_UI_MESHES.listId).children.filter((row) => row.dataset.meshRow)
+    expect(rows.map((row) => row.dataset.meshRow)).toEqual(['default', 'development', 'ops'])
+    const aliasOf = (row: StubElement) => descendants(row).find((el) => el.getAttribute('data-mesh-alias') !== null)?.getAttribute('data-mesh-alias')
+    expect(aliasOf(rows[1]!)).toBe('codeflare-mesh-development')
+    // Counts are structured per row (machines and models separately), not one prose blob.
+    const countsOf = (row: StubElement) => descendants(row).find((el) => el.getAttribute('data-mesh-machines') !== null)
+    expect(countsOf(rows[2]!)?.getAttribute('data-mesh-machines')).toBe('2')
+    expect(countsOf(rows[2]!)?.getAttribute('data-mesh-models')).toBe('1')
+    // Served hints render entities exactly once — a double-escaped &amp;lt; would show raw markup.
+    expect(harness.html).not.toContain('&amp;lt;')
+    const deleteOf = (row: StubElement) => descendants(row).find((el) => el.dataset.action === 'mesh-delete')
+    expect(deleteOf(rows[0]!), 'the default mesh never offers Delete').toBeUndefined()
+    expect(deleteOf(rows[2]!), 'an occupied mesh offers no Delete').toBeUndefined()
+    const del = deleteOf(rows[1]!)
+    expect(del).toBeDefined()
+    expect(del!.dataset.meshId).toBe('development')
+    expect(del!.dataset.confirm, 'mesh delete arms before submitting').toBeTruthy()
+
+    harness.byId(ADMIN_UI_MESHES.nameInputId).value = ' Noobs '
+    ;(harness.byId('mesh-add-details') as StubElement & { open?: boolean }).open = true
+    await harness.clickAction('mesh-create', { out: ADMIN_UI_MESHES.outputId })
+    await harness.flush(5)
+    const createCall = harness.fetchCalls.find((call) => call.path === '/admin/meshes' && call.init?.method === 'POST')
+    expect(JSON.parse(String(createCall?.init?.body))).toEqual({ name: 'Noobs' })
+    expect(harness.byId(ADMIN_UI_MESHES.nameInputId).value, 'a successful create clears the input').toBe('')
+    expect((harness.byId('mesh-add-details') as StubElement & { open?: boolean }).open, 'a successful create collapses the disclosure').toBe(false)
+
+    await harness.clickAction('mesh-delete', { meshId: 'development', out: ADMIN_UI_MESHES.outputId })
+    await harness.flush(5)
+    expect(harness.fetchCalls.some((call) => call.path === '/admin/meshes/development' && call.init?.method === 'DELETE')).toBe(true)
+  })
+
+  it('REQ-ADM-023 node drawer saves the mesh selection only when changed', async () => {
+    const nodes = [{ id: 'node-weak', displayName: 'Weak', status: 'online', metrics: { runtimeState: 'ready', activeRequests: 0 } }]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshes: consoleMeshes }) })
+    await harness.clickAction('node-detail', { nodeId: 'node-weak' })
+    const select = harness.byId('node-edit-mesh')
+    expect(select.children.map((option) => option.value)).toEqual(['default', 'development', 'ops'])
+    expect(select.value).toBe('default')
+    expect(select.dataset.original).toBe('default')
+
+    await harness.clickAction('node-config-save', { nodeId: 'node-weak', out: 'node-output' })
+    const unchanged = harness.fetchCalls.find((call) => call.path === '/admin/nodes/node-weak/config')
+    expect(JSON.parse(String(unchanged?.init?.body))).not.toHaveProperty('meshId')
+
+    select.value = 'development'
+    await harness.clickAction('node-config-save', { nodeId: 'node-weak', out: 'node-output' })
+    const calls = harness.fetchCalls.filter((call) => call.path === '/admin/nodes/node-weak/config')
+    expect(JSON.parse(String(calls[calls.length - 1]?.init?.body)).meshId).toBe('development')
+  })
+
+  it('REQ-ADM-038 model drawer saves the mesh selection only when changed', async () => {
+    const profiles = [{ id: 'custom-tune', displayName: 'Tune', publicAliases: ['codeflare-mesh-development', 'tune'], meshId: 'development', active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
+    await harness.clickAction('model-detail', { profileId: 'custom-tune' })
+    const select = harness.byId('model-edit-mesh')
+    expect(select.value).toBe('development')
+    expect(select.dataset.original).toBe('development')
+    // The alias field carries the model's OWN alias, never its mesh's stable route name.
+    expect(harness.byId('model-edit-callname').value).toBe('tune')
+
+    await harness.clickAction('model-save', { profileId: 'custom-tune', runtime: 'meshllm', out: 'model-edit-output' })
+    const unchanged = harness.fetchCalls.find((call) => call.path === '/admin/profiles/config')
+    expect(JSON.parse(String(unchanged?.init?.body))).not.toHaveProperty('meshId')
+
+    select.value = 'ops'
+    await harness.clickAction('model-save', { profileId: 'custom-tune', runtime: 'meshllm', out: 'model-edit-output' })
+    const calls = harness.fetchCalls.filter((call) => call.path === '/admin/profiles/config')
+    expect(JSON.parse(String(calls[calls.length - 1]?.init?.body)).meshId).toBe('ops')
+  })
+
+  it('REQ-RUN-017 model drawer duplicates a model through the duplicate endpoint', async () => {
+    const profiles = [{ id: 'custom-live', displayName: 'Live', publicAliases: ['codeflare-mesh', 'live'], active: true, rolloutPercent: 100, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }), respond: (path, init) => {
+      if (path === '/admin/profiles/duplicate' && (init?.method || 'GET') === 'POST') return Response.json({ ok: true, profileId: 'custom-live-copy' }, { status: 201 })
+      return undefined
+    } })
+    await harness.clickAction('model-detail', { profileId: 'custom-live' })
+    // Duplicate applies to any model — including the active one Delete hides for.
+    const dup = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((el) => el.dataset.action === 'model-duplicate')
+    expect(dup).toBeDefined()
+    expect(dup!.dataset.profileId).toBe('custom-live')
+    await harness.clickAction('model-duplicate', { profileId: 'custom-live', out: 'model-edit-output' })
+    await harness.flush(5)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/duplicate')
+    expect(call?.init?.method).toBe('POST')
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ profileId: 'custom-live' })
+    expect(harness.byId(ADMIN_UI_DRAWER.containerId).hidden, 'drawer closes so the refreshed list shows the copy').toBe(true)
+  })
+
+  it('REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    // Both affordances are <details>/<summary> — present in markup, revealed by a click,
+    // never gated on a script state. The mesh disclosure sits in the Meshes header row.
+    for (const id of ['model-add-details', 'mesh-add-details']) {
+      const at = html.indexOf(`<details class="disclosure" id="${id}">`)
+      expect(at, `${id} must be a native disclosure`).toBeGreaterThan(-1)
+      expect(html.indexOf('<summary', at)).toBeGreaterThan(at)
+    }
+    // Each disclosure sits at the right end of its card header: the first card head is
+    // Models (carrying + Model), the second is Meshes (carrying + Mesh).
+    const modelsHeadAt = html.indexOf('class="card-head"')
+    expect(modelsHeadAt).toBeGreaterThan(-1)
+    const meshHeadAt = html.indexOf('class="card-head"', modelsHeadAt + 1)
+    expect(meshHeadAt).toBeGreaterThan(modelsHeadAt)
+    const modelDetailsAt = html.indexOf('id="model-add-details"')
+    expect(modelDetailsAt).toBeGreaterThan(modelsHeadAt)
+    expect(modelDetailsAt).toBeLessThan(meshHeadAt)
+    expect(html.indexOf('id="mesh-add-details"', meshHeadAt)).toBeGreaterThan(meshHeadAt)
+    // The add-model form fields live inside the disclosure body.
+    expect(html.indexOf('id="model-add-ref"', modelDetailsAt)).toBeGreaterThan(modelDetailsAt)
+    // Mesh rows right-align the route chip.
+    const css = adminUiCss()
+    expect(css).toContain('.mesh-row-head .endpoint-chip{margin-left:auto}')
+  })
+
+  it('REQ-ADM-036 one token pair sizes every console button with only the email-chip and mobile exceptions', () => {
+    const css = adminUiCss()
+    // One reusable button size: the base .btn rule carries the size tokens, and no other
+    // rule resizes buttons — except the email-chip inline micro control and the mobile
+    // touch-target floor.
+    expect(css).toMatch(/\.btn\{[^}]*min-height:var\(--btn-h\)[^}]*padding:var\(--btn-pad\)[^}]*\}/)
+    const btnSizingSelectors = css
+      .split('\n')
+      .filter((line) => {
+        const brace = line.indexOf('{')
+        return brace > 0 && line.slice(0, brace).includes('.btn') && line.slice(brace).includes('min-height')
+      })
+      .map((line) => line.slice(0, line.indexOf('{')))
+    expect(btnSizingSelectors).toEqual(['.btn', '.email-chip .btn', '.btn,input,select'])
+  })
+
+  it('REQ-ADM-039 the overview carries no activity feed while settings does', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    const overviewAt = html.indexOf('<section class="panel section-panel" id="overview"')
+    const settingsAt = html.indexOf('<section class="panel section-panel" id="settings"')
+    expect(overviewAt).toBeGreaterThan(-1)
+    expect(settingsAt).toBeGreaterThan(overviewAt)
+    // The audit feed mounts exactly once, inside Settings — never on the Overview.
+    const auditAt = html.indexOf('id="audit-log"')
+    expect(auditAt).toBeGreaterThan(settingsAt)
+    expect(html.indexOf('id="audit-log"', auditAt + 1)).toBe(-1)
+  })
+
+  it('REQ-ADM-025 renders the model sources panel with CSS-keyed contextual switching', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    const panelAt = html.indexOf('id="model-add-sources"')
+    expect(panelAt).toBeGreaterThan(-1)
+    expect(html).toContain('data-model-sources="single"')
+    // A copyable reference-format example is structural: a code element inside the panel.
+    expect(html.slice(panelAt)).toMatch(/<code>[^<]+<\/code>/)
+    expect(html).toContain('data-command-row="model-source-gguf"')
+    expect(html).toContain('data-command-row="model-source-layers"')
+    expect(html).toContain('data-command-row="model-source-split-guide"')
+    // Context switching is CSS keyed off the dataset — content is never gated on a JS reveal.
+    const css = adminUiCss()
+    expect(css).toContain('.model-sources[data-model-sources="single"] .command-row[data-command-row="model-source-layers"]')
+    expect(css).toContain('.model-sources[data-model-sources="split"] .command-row[data-command-row="model-source-gguf"]')
+
+    const mode = harness.byId('model-add-mode')
+    const sources = harness.byId('model-add-sources')
+    mode.dataset.modelAddMode = 'true'
+    mode.value = 'split'
+    await harness.change(mode)
+    expect(sources.dataset.modelSources).toBe('split')
+    mode.value = 'single'
+    await harness.change(mode)
+    expect(sources.dataset.modelSources).toBe('single')
+  })
+
+  it('REQ-ADM-038 the models list shows each profile mesh without opening the drawer', async () => {
+    const profiles = [
+      { id: 'model-default', displayName: 'Default Model', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-dev', displayName: 'Dev Model', publicAliases: ['codeflare-mesh-development', 'dev-coder'], meshId: 'development', active: false, rolloutPercent: 0, meshllm: { split: false } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
+    const rowBadge = (id: string) => {
+      const row = harness.byId('profile-list').children.find((candidate) => candidate.dataset.profileRow === id)
+      return descendants(row!).find((el) => el.getAttribute('data-profile-mesh') !== null)
+    }
+    expect(rowBadge('model-dev')?.getAttribute('data-profile-mesh')).toBe('development')
+    expect(rowBadge('model-dev')?.textContent).toBe('Development')
+    // A legacy row without a stored mesh reads as a Default member.
+    expect(rowBadge('model-default')?.getAttribute('data-profile-mesh')).toBe('default')
+  })
+
+  it('REQ-ADM-018 REQ-ADM-038 model rows and the drawer lead with the runtime, serving-mode, and mesh pills', async () => {
+    const profiles = [
+      { id: 'direct-a', displayName: 'Direct A', publicAliases: ['codeflare-mesh', 'direct-a'], active: true, rolloutPercent: 100, runtime: 'llamacpp', llamacpp: { modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', bindPort: 4500 } },
+      { id: 'shard-b', displayName: 'Shard B', publicAliases: ['codeflare-mesh-development', 'shard-b'], meshId: 'development', active: false, rolloutPercent: 0, runtime: 'meshllm', meshllm: { split: true } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
+    const pill = (id: string, attr: string) => {
+      const row = harness.byId('profile-list').children.find((candidate) => candidate.dataset.profileRow === id)
+      return descendants(row!).find((el) => el.getAttribute(attr) !== null)!
+    }
+    // Provider pill: llama.cpp = red, meshllm = green.
+    expect(pill('direct-a', 'data-runtime').getAttribute('data-runtime')).toBe('llamacpp')
+    expect(pill('direct-a', 'data-runtime').dataset.tone).toBe('red')
+    expect(pill('shard-b', 'data-runtime').getAttribute('data-runtime')).toBe('meshllm')
+    expect(pill('shard-b', 'data-runtime').dataset.tone).toBe('green')
+    // Serving-mode pill combines with the provider pill: a sharded meshllm model reads green + orange.
+    expect(pill('shard-b', 'data-serving-mode').dataset.tone).toBe('orange')
+    expect(pill('direct-a', 'data-serving-mode').dataset.tone).toBe('blue')
+    // Mesh pill is always purple.
+    expect(pill('shard-b', 'data-profile-mesh').dataset.tone).toBe('purple')
+    expect(pill('direct-a', 'data-profile-mesh').getAttribute('data-profile-mesh')).toBe('default')
+
+    // The Manage overlay leads with the same pill row, so provider, mode, and mesh are visible there too.
+    await harness.clickAction('model-detail', { profileId: 'shard-b' })
+    const drawerPills = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((node) => node.getAttribute('data-drawer-pills') === 'shard-b')!
+    const drawerPill = (attr: string) => descendants(drawerPills).find((el) => el.getAttribute(attr) !== null)!
+    expect(drawerPill('data-runtime').getAttribute('data-runtime')).toBe('meshllm')
+    expect(drawerPill('data-serving-mode').getAttribute('data-serving-mode')).toBe('split')
+    expect(drawerPill('data-profile-mesh').getAttribute('data-profile-mesh')).toBe('development')
+  })
+
+  it('REQ-ADM-015 overview topology filters machines to the selected mesh and survives the poll', async () => {
+    const nodes = [
+      { id: 'node-default', status: 'online', metrics: { runtimeState: 'ready', activeRequests: 0 } },
+      { id: 'node-dev', status: 'online', meshId: 'development', metrics: { runtimeState: 'ready', activeRequests: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes, meshes: consoleMeshes }) })
+    const select = harness.byId(ADMIN_UI_TOPOLOGY.meshSelectId)
+    expect(select.children.map((option) => option.value)).toEqual(['all', 'default', 'development', 'ops'])
+    const topoIds = () => harness.byId(ADMIN_UI_TOPOLOGY.listId).children.map((el) => el.dataset.nodeId)
+    expect(topoIds()).toEqual(['node-default', 'node-dev'])
+
+    select.dataset.topoMeshSelect = 'true'
+    select.value = 'development'
+    await harness.change(select)
+    expect(topoIds()).toEqual(['node-dev'])
+    expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).dataset.nodes).toBe('1')
+
+    // The selection survives the periodic status rebuild instead of snapping back to all.
+    harness.runTimers()
+    await harness.flush(10)
+    expect(select.value).toBe('development')
+    expect(topoIds()).toEqual(['node-dev'])
+  })
+
+  it("REQ-ADM-031 direct playground lists every mesh's active model by its own alias", async () => {
+    const profiles = [
+      { id: 'model-default', displayName: 'Default Model', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-dev', displayName: 'Dev Model', publicAliases: ['codeflare-mesh-development', 'dev-coder'], meshId: 'development', active: true, rolloutPercent: 100, meshllm: { split: false } },
+      { id: 'model-off', displayName: 'Off Model', publicAliases: ['codeflare-mesh-ops', 'off-model'], meshId: 'ops', active: false, rolloutPercent: 0, meshllm: { split: false } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, meshes: consoleMeshes }) })
+    const select = harness.byId(ADMIN_UI_PLAYGROUND.selectId)
+    expect(select.children.map((option) => option.value)).toEqual(['main', 'dev-coder'])
   })
 })

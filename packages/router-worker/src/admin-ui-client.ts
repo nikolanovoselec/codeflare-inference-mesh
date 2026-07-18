@@ -16,6 +16,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   let nodeSort = { key: '', dir: 1 };
   let nodeFilter = 'all';
   let nodeSearch = '';
+  let topologyMeshFilter = 'all';
   let pollTimer;
   // Confirm-arm state lives at this scope (not only inside the confirm closure) so the
   // status poll can see it and skip the re-render that would otherwise destroy an armed
@@ -28,7 +29,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // model's own callable name is any public alias other than this shared one.
   const STABLE_PUBLIC_MODEL = 'codeflare-mesh';
   const chipEl = (tone, text) => { const c = document.createElement('span'); c.className = 'chip'; if (tone) c.setAttribute('data-tone', tone); c.textContent = text; return c; };
-  const callName = (profile) => { const aliases = (profile && profile.publicAliases) || []; return aliases.find((alias) => alias !== STABLE_PUBLIC_MODEL) || aliases[0] || ''; };
+  // A model's own alias is the first entry that is not a mesh's stable route name
+  // (codeflare-mesh or codeflare-mesh-<mesh>), mirroring the server's reserved-name rule.
+  const callName = (profile) => { const aliases = (profile && profile.publicAliases) || []; return aliases.find((alias) => alias !== STABLE_PUBLIC_MODEL && alias.indexOf(STABLE_PUBLIC_MODEL + '-') !== 0) || aliases[0] || ''; };
   const tokenKey = 'codeflareInferenceMeshAdminToken';
   const savedToken = () => sessionStorage.getItem(tokenKey) || localStorage.getItem(tokenKey) || '';
   const storeToken = (value, remember) => {
@@ -433,11 +436,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   const nodeToks = (node) => (node.metrics && typeof node.metrics.tokensPerSecond === 'number') ? node.metrics.tokensPerSecond : null;
   const speedNumber = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
   const round1 = (value) => String(Math.round(value * 10) / 10);
-  const lastSpeedTest = (status) => status && status.lastSpeedTest && typeof status.lastSpeedTest === 'object' ? status.lastSpeedTest : null;
-  const lastSpeedLabel = (summary) => {
-    const prompt = speedNumber(summary && summary.promptTokensPerSecond);
-    const generation = speedNumber(summary && summary.generationTokensPerSecond);
-    return prompt == null || generation == null ? 'not run' : 'prompt ' + round1(prompt) + ' / gen ' + round1(generation) + ' tok/s';
+  const profileModelRef = (profile) => (profile.llamacpp && profile.llamacpp.modelRef) || (profile.meshllm && profile.meshllm.modelRef) || profile.upstreamModel || '';
+  // Speed tests are stored per resolved profile id; each mesh card reads its own profile's entry.
+  const speedTestFor = (status, model) => {
+    const map = status && status.lastSpeedTests && typeof status.lastSpeedTests === 'object' ? status.lastSpeedTests : null;
+    const entry = map && model ? map[model.id] : null;
+    return entry && typeof entry === 'object' ? entry : null;
   };
   function nodeVramInfo(node) {
     const metrics = (node && node.metrics) || {};
@@ -450,12 +454,18 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     };
   }
   const nodeVramTotal = (node) => nodeVramInfo(node).totalMiB || 0;
-  const nodeModelCount = (node) => (node.metrics && Array.isArray(node.metrics.readyModels) ? node.metrics.readyModels.length : 0);
   const reportedText = (value) => value == null ? 'not reported' : String(value);
   const readinessText = (value) => value === true ? 'ready' : value === false ? 'down' : 'not reported';
   const fmtGb = (value) => value == null ? 'not reported' : (Math.round(Number(value) * 10) / 10) + ' GB';
   const fmtVramLimit = (value) => value == null || Number(value) === 0 ? 'no limit' : fmtGb(value);
   const fmtGibFromMiB = (value) => value == null || !Number.isFinite(Number(value)) || Number(value) <= 0 ? 'not reported' : (Math.round(Number(value) / 102.4) / 10) + ' GiB';
+  // Hero VRAM tile: consumed / total with a single trailing unit; consumption is omitted
+  // (never shown as 0) while no machine reports a live used figure.
+  const fmtVramPair = (usedMiB, totalMiB) => {
+    if (totalMiB == null || !Number.isFinite(Number(totalMiB)) || Number(totalMiB) <= 0) return 'not reported';
+    const gib = (value) => String(Math.round(Number(value) / 102.4) / 10);
+    return (usedMiB > 0 ? gib(usedMiB) + ' / ' : '') + gib(totalMiB) + ' GB';
+  };
   const fmtVramTelemetry = (node) => {
     const vram = nodeVramInfo(node);
     if (vram.totalMiB <= 0) return '—';
@@ -684,16 +694,27 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     wrap.append(dot, text);
     return wrap;
   };
-  const nodeTone = (node) => {
-    const runtime = node.metrics && node.metrics.runtimeState ? node.metrics.runtimeState : 'unknown';
-    if (node.status === 'offline') return 'danger';
-    if (node.deactivated) return 'warn';
-    if (splitReadinessBlocksRuntime(node.metrics && node.metrics.splitReadiness, node.metrics || {})) return 'warn';
-    if (runtime === 'failed') return 'danger';
-    if (nodeServingCapacity(node)) return 'ok';
-    if (node.status === 'online' && (runtime === 'running' || runtime === 'ready')) return 'ok';
-    return 'warn';
+  // The router derives the operator status vocabulary once (displayStatus) so the
+  // console and the automation API never disagree; the tone follows the word. The
+  // local derivation is a mirror-image fallback for status payloads predating the field.
+  const nodeDisplayStatus = (node) => {
+    if (node.displayStatus) return node.displayStatus;
+    if (node.status === 'offline') return 'Offline';
+    if (node.status === 'revoked') return 'Removed';
+    if (node.status === 'draining') return 'Draining';
+    if (node.deactivated) return 'Deactivated';
+    const m = node.metrics || {};
+    const rt = m.runtimeState || '';
+    if (rt === 'failed' || rt === 'dependency-missing') return 'Error';
+    // Mirrors the router derivation: catalog-advertised ready models need a
+    // ready/running runtime or a stage assignment to corroborate them.
+    const serving = (Array.isArray(m.readyModels) && m.readyModels.length > 0 && (rt === 'ready' || rt === 'running')) || ((m.stageCount || 0) > 0 && m.apiReady === true && m.consoleReady === true);
+    if (serving) return 'Serving';
+    if (rt === 'downloading' || rt === 'starting' || rt === 'loading' || m.apiReady === true || m.consoleReady === true) return 'Preparing';
+    return 'Disconnected';
   };
+  const DISPLAY_STATUS_TONES = { Serving: 'ok', Preparing: 'warn', Disconnected: 'warn', Draining: 'warn', Deactivated: 'warn', Offline: 'danger', Error: 'danger', Removed: 'danger' };
+  const nodeTone = (node) => DISPLAY_STATUS_TONES[nodeDisplayStatus(node)] || 'warn';
   const nodeReady = (node) => Boolean(node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.length > 0);
   function nodeRelAge(node) {
     if (!node.lastSeenAt) return '';
@@ -751,6 +772,20 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (state === 'ready' || state === 'running' || (metrics.apiReady === true && metrics.consoleReady === true && metrics.meshRole)) return '';
     return metrics.lastError || metrics.runtimeDetail || '';
   }
+  // A leveled chatter line (warn/info/debug/trace without a hard error token) is never a
+  // live degradation signal; old agents forwarded such lines before the stderr gate
+  // learned whole-word levels.
+  const chatterDetail = (detail) => /\\b(warn|info|debug|trace)\\b/i.test(detail) && !/\\b(error|fatal|panic)\\b/i.test(detail);
+  // A running runtime carrying a captured error line is degraded, not healthy: the split
+  // just collapsed around it or a lane failed mid-request. The row and drawer must show
+  // it even while the node still serves.
+  function degradedRuntimeError(node) {
+    if (node.status !== 'online' || node.deactivated) return '';
+    const metrics = node.metrics || {};
+    const detail = metrics.runtimeDetail || '';
+    if (!detail || chatterDetail(detail)) return '';
+    return detail;
+  }
   function runtimeInstallInfo(node) {
     if (node.runtimeInstall && !node.deactivated) return { ...node.runtimeInstall, error: node.runtimeInstall.state === 'failed' ? node.runtimeInstall.error : null };
     const metrics = node.metrics || {};
@@ -759,19 +794,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const installed = node.runtimeInstall && node.runtimeInstall.installedVersion ? node.runtimeInstall.installedVersion : (runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion);
     if (node.deactivated) return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: 'paused', error: null };
     const error = currentRuntimeError(metrics);
-    const state = metrics.runtimeState === 'downloading' ? 'installing' : ((metrics.runtimeState === 'dependency-missing' || (error && !installed)) ? 'failed' : (installed ? 'installed' : 'pending'));
+    // Install failure = the agent's dependency-missing state; startup stderr chatter on a
+    // not-yet-versioned runtime must not read as a failed install (mirrors the router derivation).
+    const state = metrics.runtimeState === 'downloading' ? 'installing' : (metrics.runtimeState === 'dependency-missing' ? 'failed' : (installed ? 'installed' : 'pending'));
     return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: state, error: state === 'failed' ? (error || null) : null };
   }
-  const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : 'MeshLLM';
+  const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : 'meshllm';
   const runtimeInstallTone = (info) => info.state === 'failed' ? 'danger' : (info.state === 'installed' ? 'ok' : 'warn');
+  // Chip text always leads with the runtime's name ("llama.cpp b9928", "meshllm 0.72.2"),
+  // never a bare version an operator has to guess the runtime for.
   const runtimeInstallText = (node) => {
     const info = runtimeInstallInfo(node);
+    const label = runtimeInstallLabel(info);
     const desired = info.desiredVersion || 'selected';
-    if (info.state === 'paused') return info.installedVersion ? (info.installedVersion + ' installed') : (runtimeInstallLabel(info) + ' paused');
-    if (info.state === 'installing') return 'Installing ' + runtimeInstallLabel(info) + ' ' + desired;
-    if (info.state === 'failed') return runtimeInstallLabel(info) + ' install failed';
-    if (info.installedVersion) return info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? ' installed' : ' → ' + desired);
-    return runtimeInstallLabel(info) + ' pending ' + desired;
+    if (info.state === 'paused') return info.installedVersion ? (label + ' ' + info.installedVersion + ' · paused') : (label + ' paused');
+    if (info.state === 'installing') return label + ' installing ' + desired;
+    if (info.state === 'failed') return label + ' install failed';
+    if (info.installedVersion) return label + ' ' + info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? '' : ' → ' + desired);
+    return label + ' pending ' + desired;
   };
   function nodeMeshRoleLabel(metrics) {
     if (!metrics) return '';
@@ -828,17 +868,6 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     revoke.dataset.out = 'node-output';
     return revoke;
   };
-  // Row action: a right-aligned Manage button that opens the node drawer (Revoke + Deactivate/Activate),
-  // mirroring the model rows. Replaces the inline Revoke button that used to sit mid-row.
-  const manageButton = (nodeId) => {
-    const manage = document.createElement('button');
-    manage.type = 'button';
-    manage.className = 'btn btn-ghost';
-    manage.textContent = 'Manage';
-    manage.dataset.action = 'node-detail';
-    manage.dataset.nodeId = nodeId;
-    return manage;
-  };
   const versionCode = (node, desiredVersion) => {
     const reported = node.agentVersion || 'unreported';
     const match = Boolean(desiredVersion) && node.agentVersion === desiredVersion;
@@ -851,12 +880,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   };
   const nodeSortValue = (node, key) => {
     if (key === 'status') { const tone = nodeTone(node); return tone === 'ok' ? 2 : tone === 'warn' ? 1 : 0; }
+    if (key === 'mesh') return nodeMeshId(node);
     if (key === 'vram') return nodeVramTotal(node);
-    if (key === 'models') return nodeModelCount(node);
     if (key === 'version') return node.agentVersion || '';
     return node.id;
   };
-  const nodeCellLabel = { id: 'Machine', status: 'Status', vram: 'VRAM', models: 'Models', version: 'Version' };
+  const nodeCellLabel = { id: 'Machine', status: 'Status', mesh: 'Mesh', vram: 'VRAM', version: 'Version' };
+  const nodeMeshId = (node) => node.meshId || 'default';
+  // Display name for a machine group, resolved from the status mesh list.
+  const meshDisplayName = (meshId) => {
+    const meshes = lastStatus && Array.isArray(lastStatus.meshes) ? lastStatus.meshes : [];
+    const found = meshes.find((mesh) => mesh.id === meshId);
+    return found ? found.name : meshId;
+  };
   function renderNodesTable(nodes, desiredVersion) {
     const bodyEl = byId(config.nodesTable.bodyId);
     if (!bodyEl) return;
@@ -923,22 +959,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       else if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
       if (node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-mesh-role', nodeMeshRoleLabel(node.metrics));
       if (node.metrics && node.metrics.splitReadiness) annotateSplitReadiness(statusCell, node.metrics.splitReadiness);
-      const statusLabel = nodeStatusText(node);
-      const roleLabel = node.metrics ? nodeMeshRoleLabel(node.metrics) : '';
-      if (nodeServingCapacity(node) && roleLabel && statusLabel === roleLabel) statusCell.setAttribute('data-status-label-kind', 'mesh-role');
-      else if (nodeServingCapacity(node)) statusCell.setAttribute('data-status-label-kind', 'work-state');
-      const statusTone = blocker && !blocker.splitReadiness ? 'danger' : nodeTone(node);
-      statusCell.appendChild(statusDot(statusTone, statusLabel));
+      // The visible label is the fixed status vocabulary; role/work detail lives in the
+      // drawer diagnostics and the cell's data attributes, never in the label.
+      const statusWord = nodeDisplayStatus(node);
+      const statusLabel = statusWord === 'Offline' ? statusWord + (nodeRelAge(node) ? ' · last seen ' + nodeRelAge(node) : '') : statusWord;
+      // A captured runtime error never hides behind a green chip: the cell carries the
+      // exact line and an ok tone escalates to warn while the error stands.
+      const degraded = degradedRuntimeError(node);
+      if (degraded) statusCell.setAttribute('data-runtime-error', degraded);
+      statusCell.appendChild(statusDot(degraded && nodeTone(node) === 'ok' ? 'warn' : nodeTone(node), statusLabel));
       const install = runtimeInstallInfo(node);
       const installChip = chipEl(runtimeInstallTone(install), runtimeInstallText(node));
       installChip.setAttribute('data-runtime-install-chip', node.id);
       installChip.setAttribute('data-runtime-install-state', install.state);
       statusCell.appendChild(installChip);
+      cell('mesh', nodeMeshId(node), meshDisplayName(nodeMeshId(node)));
       cell('vram', String(nodeVramTotal(node)), fmtVramTelemetry(node));
-      cell('models', String(nodeModelCount(node)), String(nodeModelCount(node)));
       const versionCell = cell('version', undefined, undefined);
       versionCell.appendChild(versionCode(node, desiredVersion));
-      versionCell.appendChild(manageButton(node.id));
       bodyEl.appendChild(row);
     });
   }
@@ -951,6 +989,27 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     button.textContent = nodeDisplayName(node);
     return button;
   };
+  // The overview topology can focus on one machine group; 'all' shows every mesh.
+  const topologyNodes = (nodes) => topologyMeshFilter === 'all' ? nodes : nodes.filter((node) => nodeMeshId(node) === topologyMeshFilter);
+  // Rebuilt on every status render, preserving the operator's selection; a filter
+  // whose mesh was deleted falls back to all so the canvas never sticks empty.
+  function syncTopoMeshSelect(meshes) {
+    const select = byId(config.topology.meshSelectId);
+    if (!select) return;
+    select.textContent = '';
+    const all = document.createElement('option');
+    all.value = 'all';
+    all.textContent = 'All';
+    select.appendChild(all);
+    meshes.forEach((mesh) => {
+      const option = document.createElement('option');
+      option.value = mesh.id;
+      option.textContent = mesh.name;
+      select.appendChild(option);
+    });
+    if (topologyMeshFilter !== 'all' && !meshes.some((mesh) => mesh.id === topologyMeshFilter)) topologyMeshFilter = 'all';
+    select.value = topologyMeshFilter;
+  }
   function renderTopology(nodes) {
     const canvas = byId(config.topology.canvasId);
     const list = byId(config.topology.listId);
@@ -1106,9 +1165,16 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const errRow = drawerField('runtime-detail', 'Runtime error', runtimeError);
       errRow.setAttribute('data-tone', 'danger');
       bodyEl.appendChild(errRow);
+    } else {
+      const degraded = degradedRuntimeError(node);
+      if (degraded) {
+        const errRow = drawerField('runtime-detail', 'Recent runtime error', degraded);
+        errRow.setAttribute('data-tone', 'warn');
+        bodyEl.appendChild(errRow);
+      }
     }
     const install = runtimeInstallInfo(node);
-    const installRow = drawerField('runtime-install', runtimeInstallLabel(install), runtimeInstallText(node));
+    const installRow = drawerField('runtime-install', 'Runtime', runtimeInstallText(node));
     installRow.setAttribute('data-runtime', install.runtime);
     installRow.setAttribute('data-runtime-install-state', install.state);
     if (install.desiredVersion) installRow.setAttribute('data-desired-version', install.desiredVersion);
@@ -1149,7 +1215,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (metrics.llamacppVersion && !(install.runtime === 'llamacpp' && install.installedVersion)) bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion));
     if (isDirectRuntime) {
       bodyEl.appendChild(drawerField('direct-context', 'Direct context tokens', reportedText(metrics.ctxSize), metrics.ctxSize != null ? String(metrics.ctxSize) : ''));
-      const slotsCapacity = metrics.slotCount != null ? metrics.slotCount : metrics.parallel;
+      // parallel -1 = Auto: the configured value is not a slot count, so only the
+      // live slotCount reported by llama-server is meaningful until it arrives.
+      const slotsCapacity = metrics.slotCount != null ? metrics.slotCount : (metrics.parallel !== -1 ? metrics.parallel : null);
       const slotsText = metrics.activeSlots != null && slotsCapacity != null ? (metrics.activeSlots + ' / ' + slotsCapacity) : (slotsCapacity != null ? 'parallel ' + slotsCapacity : 'not reported');
       const slotsRow = drawerField('direct-parallel', 'Direct slots', slotsText, slotsCapacity != null ? String(slotsCapacity) : '');
       if (metrics.activeSlots != null) slotsRow.setAttribute('data-active-slots', String(metrics.activeSlots));
@@ -1195,6 +1263,24 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     vramInput.value = node.maxVramGbOverride != null ? String(node.maxVramGbOverride) : '';
     vramOverrideRow.appendChild(vramInput);
     bodyEl.appendChild(vramOverrideRow);
+    // Mesh assignment: which machine group this node serves (REQ-ADM-023 / REQ-SCH-006).
+    const meshRow = document.createElement('label');
+    meshRow.className = 'drawer-row';
+    meshRow.textContent = 'Mesh';
+    const meshSelect = document.createElement('select');
+    meshSelect.id = 'node-edit-mesh';
+    const meshes = lastStatus && Array.isArray(lastStatus.meshes) ? lastStatus.meshes : [{ id: 'default', name: 'Default' }];
+    meshes.forEach((mesh) => {
+      const option = document.createElement('option');
+      option.value = mesh.id;
+      option.textContent = mesh.name;
+      meshSelect.appendChild(option);
+    });
+    meshSelect.value = nodeMeshId(node);
+    meshSelect.dataset.original = nodeMeshId(node);
+    meshRow.appendChild(meshSelect);
+    meshRow.appendChild(drawerHint('Moving a machine hands it the new mesh’s model on its next check-in; its old model stops once the new one deploys.'));
+    bodyEl.appendChild(meshRow);
     const saveVram = document.createElement('button');
     saveVram.type = 'button';
     saveVram.className = 'btn';
@@ -1285,8 +1371,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (!profile) return;
     const bodyEl = openDrawer(modelName(profile));
     if (!bodyEl) return;
+    // The drawer leads with the same identity pills as the list row, so every profile
+    // shows its provider, serving mode, and mesh assignment at a glance.
+    const pillRow = document.createElement('div');
+    pillRow.className = 'model-name-row';
+    pillRow.setAttribute('data-drawer-pills', profile.id);
+    pillRow.append(...profilePills(profile, profile.runtime === 'llamacpp', Boolean(profile.meshllm && profile.meshllm.split)));
+    bodyEl.appendChild(pillRow);
     bodyEl.appendChild(drawerField('active', 'Status', profile.active ? 'On' : 'Off'));
-    bodyEl.appendChild(drawerField('runtime', 'Runtime', profile.runtime === 'llamacpp' ? 'llama.cpp' : 'mesh-llm', profile.runtime || 'meshllm'));
+    bodyEl.appendChild(drawerField('runtime', 'Runtime', profile.runtime === 'llamacpp' ? 'llama.cpp' : 'meshllm', profile.runtime || 'meshllm'));
     // Editable settings, saved through the validated profile-config endpoint. Name is
     // the human label; call name is this model's own public alias. Apps can always
     // also reach whichever model is on through the shared codeflare-mesh name. Only a
@@ -1327,7 +1420,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     // 0 = Auto, shown as a blank field: mesh-llm sizes the context to the GPU.
     ctxInput.value = (isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) ? String(isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) : '';
     ctxRow.appendChild(ctxInput);
-    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Direct profiles require a pinned value (4096 or higher).' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
+    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Blank = Auto (llama.cpp loads the native model context). Pin a number (4096 or higher) to cap it; larger uses more GPU memory.' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
     bodyEl.appendChild(ctxRow);
     const modelRow = document.createElement('label');
     modelRow.className = 'drawer-row';
@@ -1350,6 +1443,25 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     vramInput.value = profile.meshllm && profile.meshllm.maxVramGb ? String(profile.meshllm.maxVramGb) : '';
     vramRow.appendChild(vramInput);
     if (!isDirect) bodyEl.appendChild(vramRow);
+    // Mesh assignment: which machine group serves this model (REQ-RUN-016). Moving it
+    // swaps its stable alias and deploys it switched off in the new mesh.
+    const modelMeshRow = document.createElement('label');
+    modelMeshRow.className = 'drawer-row';
+    modelMeshRow.textContent = 'Mesh';
+    const modelMeshSelect = document.createElement('select');
+    modelMeshSelect.id = 'model-edit-mesh';
+    const meshOptions = lastStatus && Array.isArray(lastStatus.meshes) ? lastStatus.meshes : [{ id: 'default', name: 'Default' }];
+    meshOptions.forEach((mesh) => {
+      const option = document.createElement('option');
+      option.value = mesh.id;
+      option.textContent = mesh.name;
+      modelMeshSelect.appendChild(option);
+    });
+    modelMeshSelect.value = profile.meshId || 'default';
+    modelMeshSelect.dataset.original = profile.meshId || 'default';
+    modelMeshRow.appendChild(modelMeshSelect);
+    modelMeshRow.appendChild(drawerHint('Moving a model re-routes it to the new mesh’s callable name and switches it off until you deploy it there.'));
+    bodyEl.appendChild(modelMeshRow);
     // Advanced runtime settings are runtime-specific: MeshLLM gets Auto-clearable
     // tunables, while direct llama.cpp gets cache-local server flags.
     const advancedHead = document.createElement('div');
@@ -1372,12 +1484,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-reasoning', label: 'Reasoning', value: reasoningValue, options: onOffOptions, hint: 'Enables the model thinking phase (reasoning-capable models only).' }));
       bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'Reasoning output format tag. Usually deepseek.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '4096', hint: 'Max tokens the model spends thinking before it answers. Part of the output budget, so keep it below Max output tokens (a 2:1 split, e.g. 8192 / 4096, leaves room to answer).' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-tool-emulation', label: 'Tool calling', value: meshllm.toolEmulation === true ? 'emulated' : '', options: [{ value: '', label: 'Native (template grammar)' }, { value: 'emulated', label: 'Forced emulation' }], hint: 'Native parses tool calls with the model template grammar. Forced emulation uses the text-convention protocol instead - pick it when agent tool calls fail to parse (e.g. ERNIE Thinking).' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-wire-dtype', label: 'Stage wire precision', value: meshllm.wireDtype || '', options: [{ value: '', label: 'Auto' }, { value: 'q8', label: 'q8 (least traffic)' }, { value: 'f16', label: 'f16 (full precision)' }, { value: 'f32', label: 'f32 (heaviest)' }], hint: 'Numeric precision of activation data streamed between split stages over WARP. q8 halves traffic vs f16 with minimal quality impact, keeping the stage link responsive under load. Single-machine models ignore this.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-prefill-chunking', label: 'Prefill pacing', value: meshllm.prefillChunking || '', options: [{ value: '', label: 'Auto' }, { value: 'adaptive-ramp', label: 'Adaptive ramp' }, { value: 'fixed', label: 'Fixed chunks' }], hint: 'How long-prompt ingestion is spread across the split. Adaptive ramp paces the bursts so the WARP stage link never queues up and drops a machine mid-request. Single-machine models ignore this.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-prefill-chunk-size', label: 'Prefill chunk size', value: meshllm.prefillChunkSize, placeholder: 'Auto', hint: 'Tokens per prefill chunk under Fixed pacing. Lower keeps WARP traffic smoother at slower ingestion. Blank = runtime default.' }));
     }
     if (isDirect) {
       const reasoning = llamacpp.reasoning || {};
       const flashValue = llamacpp.flashAttn === true ? 'on' : llamacpp.flashAttn === false ? 'off' : '';
       const reasoningValue = reasoning.enabled === true ? 'on' : reasoning.enabled === false ? 'off' : '';
-      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel, placeholder: '4', hint: 'Concurrent direct slots for this node-local llama-server. More slots can serve more overlapping requests but reserve more KV memory.' }));
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-parallel', label: 'llama.cpp parallel slots', value: llamacpp.parallel === -1 ? '' : llamacpp.parallel, placeholder: 'Auto', hint: 'Concurrent direct slots for this node-local llama-server. Blank = Auto (llama.cpp plans 4 slots with unified KV). With Unified KV on, more slots serve more overlapping requests without shrinking the per-request context.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-kv-unified', label: 'Unified KV cache', value: llamacpp.kvUnified === false ? 'off' : 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], hint: 'llama.cpp --kv-unified. On shares one KV buffer so a single request can use the whole context window; Off splits the context evenly across parallel slots (context ÷ slots per request).' }));
       bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-gpu-layers', label: 'GPU layers (-ngl / --gpu-layers)', value: llamacpp.gpuLayers || '', placeholder: '99', hint: 'Max model layers stored in VRAM. Higher values usually improve generation speed; 0 means CPU-only; blank uses llama.cpp default auto.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-k', label: 'KV cache type (keys)', value: llamacpp.cacheTypeK || '', options: kvOptions, hint: 'llama.cpp --cache-type-k. Lower precision uses less KV memory and can fit larger contexts; higher precision uses more memory.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-v', label: 'KV cache type (values)', value: llamacpp.cacheTypeV || '', options: kvOptions, hint: 'llama.cpp --cache-type-v. Match the key type unless you are testing a specific memory/quality tradeoff.' }));
@@ -1400,9 +1517,19 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     save.dataset.runtime = profile.runtime || 'meshllm';
     save.dataset.out = 'model-edit-output';
     bodyEl.appendChild(save);
-    // A custom, switched-off model can be permanently removed here; built-in models
-    // re-seed on boot and the active model owns the route, so neither shows Delete.
-    if (String(profile.id).indexOf('custom-') === 0 && !profile.active) {
+    // Duplicate clones this model as an inactive copy the operator edits
+    // independently (REQ-RUN-017); it applies to any model, active or not.
+    const duplicate = document.createElement('button');
+    duplicate.type = 'button';
+    duplicate.className = 'btn';
+    duplicate.textContent = 'Duplicate model';
+    duplicate.dataset.action = 'model-duplicate';
+    duplicate.dataset.profileId = profile.id;
+    duplicate.dataset.out = 'model-edit-output';
+    bodyEl.appendChild(duplicate);
+    // Any switched-off model can be permanently removed, including the seed-once
+    // starter (REQ-RUN-012); only the active model (it owns its mesh's route) hides Delete.
+    if (!profile.active) {
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'btn btn-danger';
@@ -1414,27 +1541,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(del);
     }
     bodyEl.appendChild(output2('model-edit-output'));
-    const servingNodes = nodesServingProfile(profile);
-    bodyEl.appendChild(drawerField('serving', 'Machines serving it', String(servingNodes.length), String(servingNodes.length)));
-    servingNodes.forEach((node) => {
-      const item = document.createElement('div');
-      item.className = 'drawer-row';
-      item.setAttribute('data-drawer-serving-node', node.id);
-      item.textContent = nodeDisplayName(node);
-      bodyEl.appendChild(item);
-    });
-    // Mesh detail lives with the model it belongs to: both a single-machine model
-    // (every machine runs the whole model) and a split model (machines share the
-    // model's layers) form a mesh, so this shows whenever this model has one.
+    // Mesh detail lives with the model it belongs to, and the mesh card alone carries
+    // it: participants, stage owners, and the machine group all live in its summary
+    // and Technical details, so the drawer repeats none of them as separate fields.
     const meshEntries = lastStatus && Array.isArray(lastStatus.meshHealth) ? lastStatus.meshHealth : [];
     const meshEntry = meshEntries.find((entry) => entry.profileId === profile.id);
     if (meshEntry) {
-      const heading = document.createElement('h3');
-      heading.className = 'drawer-subhead';
-      heading.textContent = 'Mesh';
-      bodyEl.appendChild(heading);
-      const stageText = stageOwnersText(meshEntry, meshNodesForEntry(meshEntry));
-      if (stageText) bodyEl.appendChild(drawerField('stage-ownership', 'Stage ownership', stageText, stageText));
       bodyEl.appendChild(buildMeshCard(meshEntry));
       const reset = document.createElement('button');
       reset.type = 'button';
@@ -1458,6 +1570,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   // Compact current-value display: neutral by default, ok only for confirmed
   // connected/provisioned state so it never looks like a warning banner.
+  // Gateway cards list every ensured dynamic route (one per mesh, REQ-GWY-009); a
+  // pre-mesh stored sync result without a routes array falls back to its single route.
+  function gatewayRouteNames(gateway) {
+    const routes = gateway && Array.isArray(gateway.routes) ? gateway.routes.map((route) => route.routeName).filter(Boolean) : [];
+    return routes.length ? routes : [(gateway && gateway.routeName) || STABLE_PUBLIC_MODEL];
+  }
+  function routeSubLabel(names) {
+    return (names.length === 1 ? 'route ' : 'routes ') + names.join(' · ');
+  }
   function renderStateCard(el, parts) {
     if (!el) return;
     el.textContent = '';
@@ -1560,15 +1681,52 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     setPlaygroundModelSelect(routes.map((name) => ({ value: name, label: name })));
   }
   function modelName(profile) { return (profile.displayName && String(profile.displayName)) || profile.id; }
-  // A node serves a model when its runtime reports the model's upstream ref ready. readyModels
-  // carries upstream refs (what mesh-llm loaded) exactly as the scheduler/router match on, never
-  // the public aliases, so serving is keyed on profile.upstreamModel.
+  // A machine serves a profile, not a model string: it must be online and activated
+  // (a deactivated or offline node keeps its last adopted/ready state in its record,
+  // exactly like the scheduler's eligibility gate excludes it), must have adopted the
+  // profile (activeProfileIds), AND report its upstream ref ready (readyModels carries
+  // upstream refs exactly as the scheduler matches on, never public aliases). Twin
+  // profiles sharing one modelRef must never inherit each other's serving count.
+  function nodeServesProfile(node, profile) {
+    // Ready models alone are not serving: an api-client mesh-llm still advertises the
+    // mesh's models while holding no stage, so a ready/running runtime or an actual
+    // split-stage assignment must corroborate the claim.
+    const metrics = node.metrics || {};
+    const corroborated = metrics.runtimeState === 'ready' || metrics.runtimeState === 'running' || (metrics.stageCount || 0) > 0;
+    return node.status === 'online' && !node.deactivated
+      && Array.isArray(node.activeProfileIds) && node.activeProfileIds.indexOf(profile.id) >= 0
+      && Array.isArray(metrics.readyModels) && metrics.readyModels.indexOf(profile.upstreamModel) >= 0
+      && corroborated;
+  }
   function nodesServingProfile(profile) {
     const nodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
-    return nodes.filter((node) => node.metrics && Array.isArray(node.metrics.readyModels) && node.metrics.readyModels.indexOf(profile.upstreamModel) >= 0);
+    return nodes.filter((node) => nodeServesProfile(node, profile));
   }
   function servingCount(profile) {
     return nodesServingProfile(profile).length;
+  }
+  // Pill vocabulary: tone + label per variant live in this one map (content), pillEl builds
+  // the DOM (structure), and the CSS tone tokens colour it (style). Both the models list and
+  // the Manage drawer compose the same pills, so a vocabulary change is a single edit here.
+  const PROFILE_PILLS = {
+    runtime: { llamacpp: { tone: 'red', label: 'llama.cpp' }, meshllm: { tone: 'green', label: 'meshllm' } },
+    mode: { split: { tone: 'orange', label: 'sharded model' }, single: { tone: 'blue', label: 'singular model' } },
+    mesh: { tone: 'purple' }
+  };
+  function pillEl(spec, attr, value, label) {
+    const pill = chipEl(spec.tone, label === undefined ? spec.label : label);
+    pill.setAttribute(attr, value);
+    return pill;
+  }
+  function profilePills(profile, direct, split) {
+    const runtime = direct ? 'llamacpp' : 'meshllm';
+    const mode = split ? 'split' : 'single';
+    const profileMesh = profile.meshId || 'default';
+    return [
+      pillEl(PROFILE_PILLS.runtime[runtime], 'data-runtime', runtime),
+      pillEl(PROFILE_PILLS.mode[mode], 'data-serving-mode', mode),
+      pillEl(PROFILE_PILLS.mesh, 'data-profile-mesh', profileMesh, meshDisplayName(profileMesh))
+    ];
   }
   function renderProfiles(profiles, readiness) {
     const list = byId('profile-list');
@@ -1588,19 +1746,17 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const name = document.createElement('strong');
       name.setAttribute('data-model-name', profile.id);
       name.textContent = modelName(profile);
-      // Serving mode and runtime are badges, not part of the name: split stands out in accent,
-      // and llama.cpp direct profiles surface their cache-local routing contract.
+      // Fixed pill vocabulary: provider (llama.cpp = red, meshllm = green), serving mode
+      // (singular = blue, sharded = orange), and mesh assignment (purple). Combinations
+      // read side by side — e.g. a singular model on meshllm is green + blue.
       const direct = profile.runtime === 'llamacpp';
       const split = Boolean(profile.meshllm && profile.meshllm.split);
-      const badge = chipEl(split ? 'accent' : null, split ? 'Split across machines' : 'Full model per machine');
-      badge.setAttribute('data-serving-mode', split ? 'split' : 'single');
-      const runtimeBadge = chipEl(direct ? 'accent' : null, direct ? 'llama.cpp direct' : 'mesh-llm');
-      runtimeBadge.setAttribute('data-runtime', direct ? 'llamacpp' : 'meshllm');
-      nameRow.append(name, badge, runtimeBadge);
+      nameRow.append(name, ...profilePills(profile, direct, split));
       const detail = document.createElement('small');
       const ready = readiness.find((item) => item.profileId === profile.id);
       const serving = servingCount(profile);
-      detail.textContent = 'Alias: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (direct ? ' · requires body.user' : '') + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
+      row.setAttribute('data-serving', String(serving));
+      detail.textContent = 'Alias: ' + (callName(profile) || '—') + ' · ' + serving + ' machine' + (serving === 1 ? '' : 's') + ' serving' + (ready && ready.failed ? ' · ' + ready.failed + ' failed' : '');
       body.append(nameRow, detail);
       row.appendChild(body);
       const toggle = document.createElement('button');
@@ -1722,6 +1878,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const ownerNodes = meshNodesForEntry(entry);
     const stageText = stageOwnersText(entry, ownerNodes);
     addField('coordinator', 'Coordinator', entry.coordinatorNodeId ? nodeLabelForId(entry.coordinatorNodeId, ownerNodes) : (stageText ? 'not elected yet' : 'waiting for stage map'), !entry.coordinatorNodeId && !stageText ? (line) => annotateStageUnavailable(line, entry) : undefined);
+    const meshList = lastStatus && Array.isArray(lastStatus.meshes) ? lastStatus.meshes : [];
+    const meshGroup = profile ? meshList.find((mesh) => mesh.id === (profile.meshId || 'default')) : null;
+    addField('mesh-group', 'Mesh', meshGroup ? (meshGroup.name || meshGroup.id) : (profile ? (profile.meshId || 'default') : ''));
     addField('peers', 'Machines', String(peers > 0 ? peers : 1));
     addField('stage-owners', 'Stage owners', stageText || stageUnavailableText(entry), stageText ? (stageMapPartial(entry) ? (line) => line.setAttribute('data-stage-map', 'partial') : undefined) : (line) => annotateStageUnavailable(line, entry));
     addField('ready-models', 'Ready model', (entry.readyModels || []).map(modelLabelForRef).join(', '));
@@ -1770,7 +1929,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       if (last && last.event.type === event.type && last.event.target === event.target) last.count += 1;
       else collapsed.push({ event: event, count: 1 });
     });
-    const feeds = [byId('overview-audit'), byId('audit-log')];
+    // The activity log lives in Settings only; the Overview stays a status surface.
+    const feeds = [byId('audit-log')];
     feeds.forEach((feed, index) => {
       if (!feed) return;
       feed.textContent = '';
@@ -1802,49 +1962,40 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     const readiness = Array.isArray(status.profileReadiness) ? status.profileReadiness : [];
     const audit = Array.isArray(status.audit) ? status.audit : [];
     const meshEntries = Array.isArray(status.meshHealth) ? status.meshHealth : [];
+    const meshList = Array.isArray(status.meshes) ? status.meshes : [];
+    const liveToks = nodes.reduce((total, node) => total + (nodeToks(node) || 0), 0);
     const tiles = byId('overview-tiles');
     if (tiles) {
       tiles.textContent = '';
       const domain = status.customDomain || {};
       const serving = nodes.filter(nodeServingCapacity).length;
       const vramMiB = nodes.reduce((total, node) => total + nodeVramTotal(node), 0);
-      const speed = lastSpeedTest(status);
-      tiles.appendChild(tile('Available machines', serving + '/' + nodes.length, 'nodes'));
-      tiles.appendChild(tile('Known VRAM', fmtGibFromMiB(vramMiB), 'vram'));
-      const speedTile = tile('Last speed test', speed ? lastSpeedLabel(speed) : 'not run', 'speed');
-      if (speed) {
-        if (speed.promptTokensPerSecond != null) speedTile.dataset.promptTps = String(speed.promptTokensPerSecond);
-        if (speed.generationTokensPerSecond != null) speedTile.dataset.generationTps = String(speed.generationTokensPerSecond);
-        if (speed.cacheTokens != null) speedTile.dataset.cacheTokens = String(speed.cacheTokens);
-        if (speed.nodeId) speedTile.dataset.nodeId = speed.nodeId;
-        if (speed.at != null) speedTile.dataset.at = String(speed.at);
-      }
-      tiles.appendChild(speedTile);
+      // Consumption sums only live reports: an offline machine's stored record carries
+      // stale used figures; its hardware still counts toward the known total.
+      const vramUsedMiB = nodes.reduce((total, node) => {
+        const used = node.status === 'online' ? nodeVramInfo(node).usedMiB : null;
+        return total + (used == null ? 0 : used);
+      }, 0);
+      // How many machine groups exist, and how many have their model actually served.
+      const servingMeshes = meshList.filter((mesh) => {
+        const model = profiles.find((profile) => profile.active && (profile.meshId || 'default') === mesh.id);
+        return Boolean(model) && nodes.some((node) => (node.meshId || 'default') === mesh.id && nodeServesProfile(node, model));
+      }).length;
+      tiles.appendChild(tile('Available nodes', serving + '/' + nodes.length, 'nodes'));
+      tiles.appendChild(tile('VRAM', fmtVramPair(vramUsedMiB, vramMiB), 'vram'));
+      // Speed tests live on the per-mesh cards; the hero carries the live fleet number.
+      tiles.appendChild(tile('Live throughput', Math.round(liveToks) + ' tok/s', 'throughput'));
+      tiles.appendChild(tile('Meshes', meshList.length + ' · ' + servingMeshes + ' serving', 'meshes'));
       tiles.appendChild(tile('Custom domain', domain.hostname ? domain.hostname + ' · ' + (domain.status || 'unprovisioned') : 'not configured', 'domain'));
       tiles.appendChild(tile('Agent version', status.desiredAgentVersion || 'not set', 'version'));
     }
     const pruneInput = byId('prune-seconds');
     if (pruneInput && status.offlinePruneSeconds != null && pruneInput.value === '') pruneInput.value = String(status.offlinePruneSeconds);
-    renderTopology(nodes);
-    pushToksSample(nodes.reduce((total, node) => total + (nodeToks(node) || 0), 0));
+    syncTopoMeshSelect(meshList);
+    renderTopology(topologyNodes(nodes));
+    pushToksSample(liveToks);
     renderToksTrace();
-    const rollup = byId('overview-mesh');
-    if (rollup) {
-      rollup.textContent = '';
-      meshEntries.forEach((entry) => {
-        const profile = profiles.find((candidate) => candidate.id === entry.profileId);
-        const name = profile ? modelName(profile) : entry.profileId;
-        const peers = (entry.peerNodeIds || []).length;
-        const shared = peers > 0;
-        // Plain summary, same vocabulary as the Model-sharing section; a single-node
-        // model reads "not shared yet" in neutral grey, never an alarming "forming".
-        const label = shared
-          ? name + ' · ' + peers + ' machine' + (peers === 1 ? '' : 's') + ' sharing' + meshStatusSuffix(entry)
-          : name + ' · not shared yet';
-        const tone = shared ? meshStatusTone(entry) : 'idle';
-        rollup.appendChild(statusDot(tone, label));
-      });
-    }
+    renderMeshStatus(status);
     const gatewayCurrent = byId('gateway-current');
     if (gatewayCurrent) {
       const selectedGateway = selectedGatewayValue('routing');
@@ -1856,7 +2007,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
           label: 'AI Gateway',
           value: gateway.gatewayId || '',
           placeholder: 'Not connected yet',
-          sub: gateway.gatewayId ? ('route ' + (gateway.routeName || STABLE_PUBLIC_MODEL)) : '',
+          sub: gateway.gatewayId ? routeSubLabel(gatewayRouteNames(gateway)) : '',
           chip: gateway.gatewayId ? 'connected' : '',
           chipTone: 'ok',
           state: gateway.gatewayId ? 'ok' : ''
@@ -1878,6 +2029,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     lastStatus = status;
     renderNodesTable(nodes, status.desiredAgentVersion);
     renderProfiles(profiles, readiness);
+    renderMeshList(Array.isArray(status.meshes) ? status.meshes : []);
     renderPlaygroundSelect();
     // Mesh detail now lives per-model in the Manage drawer; here we only keep the
     // global mesh-secret-missing banner (shown on the Models section) in sync.
@@ -1885,6 +2037,185 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (meshBanner) meshBanner.hidden = !meshEntries.some((entry) => entry.lastError === config.meshHealth.keyMissingError);
     renderAudit(audit);
     setHealth('ok', 'live');
+  }
+  // Meshes card: one row per machine group with its callable route and counts;
+  // only an empty non-default mesh offers Delete (REQ-ADM-037).
+  // routeChipEl renders a mesh's callable route as the right-aligned endpoint chip —
+  // shared by the Meshes management card and the Overview mesh status cards.
+  function routeChipEl(alias) {
+    const route = document.createElement('span');
+    route.className = 'endpoint-chip';
+    route.setAttribute('data-mesh-alias', alias || '');
+    route.textContent = alias || '';
+    return route;
+  }
+  // meshRowHead is the mesh identity header for the management card: bold group name
+  // with its callable route right-aligned.
+  function meshRowHead(name, alias) {
+    const head = document.createElement('div');
+    head.className = 'mesh-row-head';
+    const title = document.createElement('strong');
+    title.textContent = name || '';
+    head.appendChild(title);
+    head.appendChild(routeChipEl(alias));
+    return head;
+  }
+  // Overview "Mesh status": a grid of tone-edged cards, one per machine group. Each
+  // card is a mini dashboard — mesh name (purple, the mesh vocabulary color) paired
+  // with its callable route (the tone edge alone carries state), the deployed model
+  // over its mono file reference and provider/mode pills, a machines/serving/speed-test
+  // metric strip, and a serving-capacity track. What is running, structured, at a glance.
+  function renderMeshStatus(status) {
+    const rollup = byId('overview-mesh');
+    if (!rollup) return;
+    rollup.textContent = '';
+    const nodes = Array.isArray(status.nodes) ? status.nodes : [];
+    const profiles = Array.isArray(status.profiles) ? status.profiles : [];
+    const stat = (value, label, cls) => {
+      const cell = document.createElement('div');
+      cell.className = cls ? 'mesh-stat ' + cls : 'mesh-stat';
+      const number = document.createElement('span');
+      number.className = 'metric-value';
+      number.textContent = value;
+      const caption = document.createElement('span');
+      caption.className = 'mesh-stat-label';
+      caption.textContent = label;
+      cell.append(number, caption);
+      return cell;
+    };
+    (Array.isArray(status.meshes) ? status.meshes : []).forEach((mesh) => {
+      const meshNodes = nodes.filter((node) => (node.meshId || 'default') === mesh.id);
+      const model = profiles.find((profile) => profile.active && (profile.meshId || 'default') === mesh.id);
+      const serving = model ? meshNodes.filter((node) => nodeServesProfile(node, model)) : [];
+      const speed = speedTestFor(status, model);
+      const speedPrompt = speed ? speedNumber(speed.promptTokensPerSecond) : null;
+      const speedGen = speed ? speedNumber(speed.generationTokensPerSecond) : null;
+      // Split-intended models get their split state read from mesh health: a formed
+      // topology (2+ stages) is split serving; serving machines without one means
+      // mesh-llm recovered the model on one node — degraded, surfaced, never silent.
+      const health = model && Array.isArray(status.meshHealth) ? status.meshHealth.find((entry) => entry.profileId === model.id) : null;
+      const stageCount = health && Array.isArray(health.stageAssignments) ? health.stageAssignments.length : 0;
+      const splitIntended = Boolean(model && model.runtime !== 'llamacpp' && model.meshllm && model.meshllm.split);
+      const splitState = splitIntended && serving.length > 0 ? (stageCount >= 2 ? 'split' : 'fallback') : '';
+      // A mesh with no model stays neutral grey — an empty group is a choice, not an alarm.
+      const word = model ? (serving.length > 0 ? 'Serving' : (meshNodes.length > 0 ? 'Preparing' : 'No machines')) : 'No model';
+      const tone = model ? (serving.length > 0 ? (splitState === 'fallback' ? 'warn' : 'ok') : 'warn') : 'idle';
+      // The most actionable line wins: a runtime/planner error, else the fallback
+      // notice, else the split verdict while nothing serves.
+      const nodeError = meshNodes.map((node) => (node.metrics && node.metrics.runtimeDetail) || '').find((detail) => detail !== '') || '';
+      const verdict = health && health.splitReadiness && typeof health.splitReadiness.verdict === 'string' ? health.splitReadiness.verdict : '';
+      let note = null;
+      if (tone !== 'ok' && (nodeError || (health && health.lastError))) note = { kind: 'error', text: nodeError || health.lastError };
+      else if (splitState === 'fallback') note = { kind: 'fallback', text: 'single-node fallback: split not formed' };
+      else if (splitIntended && serving.length === 0 && verdict && verdict !== 'ready') note = { kind: 'verdict', text: verdict.replace(/_/g, ' ') };
+      const card = document.createElement('article');
+      card.className = 'mesh-card';
+      card.setAttribute('data-mesh-status', mesh.id);
+      card.setAttribute('data-machines', String(meshNodes.length));
+      card.setAttribute('data-serving', String(serving.length));
+      card.setAttribute('data-state', word);
+      card.setAttribute('data-state-tone', tone);
+      if (splitState) card.setAttribute('data-split-state', splitState);
+      if (speedPrompt != null && speedGen != null) {
+        card.setAttribute('data-speed-prompt', String(Math.round(speedPrompt)));
+        card.setAttribute('data-speed-gen', String(Math.round(speedGen)));
+      }
+      const head = document.createElement('header');
+      head.className = 'mesh-card-head';
+      const title = document.createElement('strong');
+      title.className = 'mesh-card-name';
+      title.setAttribute('data-profile-mesh', mesh.id);
+      title.textContent = mesh.name || mesh.id;
+      head.append(title, routeChipEl(mesh.alias));
+      card.appendChild(head);
+      const modelRow = document.createElement('div');
+      modelRow.className = 'mesh-card-model';
+      if (model) {
+        const name = document.createElement('strong');
+        name.textContent = modelName(model);
+        modelRow.appendChild(name);
+        // The mesh identity is the card itself, so the model block reads name, then the
+        // mono model file reference, then provider + mode as its own pill row.
+        const file = document.createElement('code');
+        file.className = 'mesh-card-file';
+        file.textContent = profileModelRef(model);
+        modelRow.appendChild(file);
+        const pillRow = document.createElement('div');
+        pillRow.className = 'mesh-card-pills';
+        const pills = profilePills(model, model.runtime === 'llamacpp', Boolean(model.meshllm && model.meshllm.split));
+        pillRow.append(pills[0], pills[1]);
+        modelRow.appendChild(pillRow);
+      } else {
+        const none = document.createElement('small');
+        none.textContent = 'no model deployed';
+        modelRow.appendChild(none);
+      }
+      card.appendChild(modelRow);
+      const stats = document.createElement('div');
+      stats.className = 'mesh-card-stats';
+      stats.append(
+        stat(String(meshNodes.length), meshNodes.length === 1 ? 'machine' : 'machines'),
+        stat(model ? String(serving.length) : '—', 'serving'),
+        stat(speedPrompt != null && speedGen != null ? Math.round(speedPrompt) + ' / ' + Math.round(speedGen) : '—', 'p/g tok/s', 'mesh-stat-speed')
+      );
+      card.appendChild(stats);
+      if (note) {
+        const noteEl = document.createElement('div');
+        noteEl.className = 'mesh-card-note';
+        noteEl.setAttribute('data-mesh-note', note.kind);
+        noteEl.textContent = note.text;
+        card.appendChild(noteEl);
+      }
+      const track = document.createElement('div');
+      track.className = 'mesh-track';
+      const fill = document.createElement('div');
+      fill.className = 'mesh-track-fill';
+      const pct = meshNodes.length > 0 ? Math.round((serving.length / meshNodes.length) * 100) : 0;
+      // Width rides the style attribute (data-fill is the tested contract): the render
+      // must stay attribute-only so it cannot depend on a live CSSOM.
+      fill.setAttribute('style', 'width:' + pct + '%');
+      track.setAttribute('data-fill', String(pct));
+      track.appendChild(fill);
+      card.appendChild(track);
+      rollup.appendChild(card);
+    });
+  }
+  function renderMeshList(meshes) {
+    const listEl = byId('mesh-list');
+    if (!listEl) return;
+    listEl.textContent = '';
+    meshes.forEach((mesh) => {
+      const row = document.createElement('div');
+      row.className = 'command-row';
+      row.setAttribute('data-mesh-row', mesh.id);
+      const copy = document.createElement('div');
+      copy.className = 'command-copy';
+      copy.appendChild(meshRowHead(mesh.name, mesh.alias));
+      const machines = mesh.machineCount || 0;
+      const models = mesh.modelCount || 0;
+      const counts = document.createElement('span');
+      counts.className = 'mesh-counts';
+      counts.setAttribute('data-mesh-machines', String(machines));
+      counts.setAttribute('data-mesh-models', String(models));
+      counts.textContent = machines + (machines === 1 ? ' machine' : ' machines') + ' · ' + models + (models === 1 ? ' model' : ' models');
+      copy.appendChild(counts);
+      row.appendChild(copy);
+      const actions = document.createElement('div');
+      actions.className = 'command-actions';
+      if (mesh.id !== 'default' && !mesh.machineCount && !mesh.modelCount) {
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.className = 'btn btn-danger';
+        del.textContent = 'Delete';
+        del.dataset.action = 'mesh-delete';
+        del.dataset.meshId = mesh.id;
+        del.dataset.confirm = 'Delete this mesh?';
+        del.dataset.out = 'mesh-output';
+        actions.appendChild(del);
+      }
+      row.appendChild(actions);
+      listEl.appendChild(row);
+    });
   }
   async function refreshStatus() {
     try {
@@ -1944,8 +2275,34 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       select.value = info.desired || (tags[0] || '');
       return true;
     };
+    // The mesh-llm source selector: two options (official upstream, configured fork)
+    // when a fork is available, hidden entirely when none is configured.
+    const populateSource = () => {
+      const select = byId(config.runtimeVersion.meshllmSourceSelectId);
+      if (!select) return;
+      const info = view && view.meshllm ? view.meshllm : {};
+      const fork = info.forkRepository || '';
+      select.textContent = '';
+      select.setAttribute('data-runtime-source-select', 'meshllm');
+      select.setAttribute('data-source-available', fork ? 'true' : 'false');
+      select.hidden = !fork;
+      if (!fork) { select.disabled = true; return; }
+      const addOption = (value, label) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.setAttribute('data-runtime-source-option', value);
+        option.textContent = label;
+        if (info.source === value) option.selected = true;
+        select.appendChild(option);
+      };
+      addOption('official', 'Official — ' + (info.officialRepository || 'Mesh-LLM/mesh-llm'));
+      addOption('fork', 'Fork — ' + fork);
+      select.disabled = false;
+      select.value = info.source === 'fork' ? 'fork' : 'official';
+    };
     const meshReady = populate('meshllm', config.runtimeVersion.meshllmSelectId);
     const llamaReady = populate('llamacpp', config.runtimeVersion.llamacppSelectId);
+    populateSource();
     if (meshReady && llamaReady) return;
     const slot = byId(config.runtimeVersion.slotId);
     if (!slot) return;
@@ -2027,6 +2384,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     renderVersions(view);
     setOutput('agent-version-output', 'Loaded ' + ((view.tags || []).length) + ' versions' + (view.stale ? ' (list may be out of date)' : ''));
     return view;
+  }
+  // Switching the binary source changes which version tags are valid, so persist the
+  // source on its own and reload the version list from the newly active repository.
+  async function applyRuntimeSource(source) {
+    await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllmSource: source }) });
+    await loadRuntimeVersions();
+    setOutput('runtime-version-output', 'MeshLLM binary source set to ' + source + '.');
   }
   async function loadRuntimeVersions() {
     const view = await request('/admin/runtime-versions', { headers: headers(false) });
@@ -2178,7 +2542,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         label: 'AI Gateway',
         value: target,
         placeholder: 'Not connected yet',
-        sub: status.provisioned ? 'route ' + (status.routeName || STABLE_PUBLIC_MODEL) : 'route not provisioned',
+        sub: status.provisioned ? routeSubLabel(gatewayRouteNames({ routes: lastStatus && lastStatus.gateway && lastStatus.gateway.routes, routeName: status.routeName })) : 'route not provisioned',
         chip: status.provisioned ? 'connected' : 'needs provisioning',
         chipTone: status.provisioned ? 'ok' : 'warn',
         state: status.provisioned ? 'ok' : 'empty'
@@ -2262,8 +2626,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     'node-activate': 'node-output',
     'model-toggle': 'models-output',
     'model-save': 'model-edit-output',
+    'model-duplicate': 'model-edit-output',
     'model-delete': 'model-edit-output',
     'model-add': 'model-add-output',
+    'mesh-create': 'mesh-output',
+    'mesh-delete': 'mesh-output',
     'agent-versions-refresh': 'agent-version-output',
     'agent-version-set': 'agent-version-output',
     'runtime-versions-refresh': 'runtime-version-output',
@@ -2389,6 +2756,10 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const raw = readInput('node-edit-vram');
       // Blank clears the override (revert to the model default); a number caps just this node.
       const payload = { displayName: readInput('node-edit-name'), maxVramGbOverride: raw === '' ? null : Number(raw) };
+      // Send the mesh only when the operator actually changed it, so saving an
+      // unrelated setting never re-triggers a mesh reassignment.
+      const meshEl = byId('node-edit-mesh');
+      if (meshEl && meshEl.value && meshEl.value !== meshEl.dataset.original) payload.meshId = meshEl.value;
       await request('/admin/nodes/' + nodeId + '/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
       setOutput(out, 'Machine settings saved.');
       toast('Machine settings saved');
@@ -2413,7 +2784,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       const callEl = byId('model-edit-callname');
       const runtime = button.dataset.runtime || 'meshllm';
       const payload = { profileId: id, runtime: runtime };
-      payload.contextWindow = ctxRaw === '' ? (runtime === 'llamacpp' ? 262144 : 0) : Number(ctxRaw);
+      // Mesh reassignment rides the same save, sent only when actually changed.
+      const modelMeshEl = byId('model-edit-mesh');
+      if (modelMeshEl && modelMeshEl.value && modelMeshEl.value !== modelMeshEl.dataset.original) payload.meshId = modelMeshEl.value;
+      // Blank = Auto for both runtimes: 0 lets mesh-llm auto-plan and renders
+      // --ctx-size 0 for llama.cpp (the model's native context).
+      payload.contextWindow = ctxRaw === '' ? 0 : Number(ctxRaw);
       if (modelRaw !== '') payload.modelRef = modelRaw;
       // Empty means "leave as-is"; 0 explicitly clears the mesh-llm cap. Direct llama.cpp
       // does not use this mesh-only VRAM budget.
@@ -2433,7 +2809,8 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         const llamaFlashRaw = readInput('model-edit-llama-flash');
         const llamaReasoningRaw = readInput('model-edit-llama-reasoning');
         payload.llamacpp = {
-          parallel: llamaParallelRaw === '' ? 1 : Number(llamaParallelRaw),
+          parallel: llamaParallelRaw === '' ? -1 : Number(llamaParallelRaw),
+          kvUnified: readInput('model-edit-llama-kv-unified') !== 'off',
           cacheReuse: llamaCacheReuseRaw === '' ? 256 : Number(llamaCacheReuseRaw),
           cachePrompt: llamaCachePromptRaw !== 'off',
           cacheTypeK: readInput('model-edit-llama-cache-k'),
@@ -2477,11 +2854,25 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
           // the other tunables use; a set value is sent verbatim.
           payload.reasoning = { enabled: reasoningRaw === 'on', format: fmtRaw === '' ? null : fmtRaw, budget: budgetRaw === '' ? null : Number(budgetRaw) };
         }
+        payload.toolEmulation = readInput('model-edit-tool-emulation') === 'emulated' ? true : null;
+        const wireRaw = readInput('model-edit-wire-dtype');
+        payload.wireDtype = wireRaw === '' ? null : wireRaw;
+        const chunkingRaw = readInput('model-edit-prefill-chunking');
+        payload.prefillChunking = chunkingRaw === '' ? null : chunkingRaw;
+        const chunkSizeRaw = readInput('model-edit-prefill-chunk-size');
+        payload.prefillChunkSize = chunkSizeRaw === '' ? null : Number(chunkSizeRaw);
       }
       await request('/admin/profiles/config', { method: 'POST', headers: headers(true), body: JSON.stringify(payload) });
       setOutput(out, 'Model settings saved.');
       toast('Model settings saved');
       await refreshStatus().catch(() => undefined);
+    } else if (action === 'model-duplicate') {
+      const id = button.dataset.profileId || '';
+      await request('/admin/profiles/duplicate', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id }) });
+      setOutput(out, 'Model duplicated.');
+      closeDrawer();
+      await refreshStatus().catch(() => undefined);
+      toast('Model duplicated');
     } else if (action === 'model-delete') {
       const id = button.dataset.profileId || '';
       await request('/admin/profiles/delete', { method: 'POST', headers: headers(true), body: JSON.stringify({ profileId: id }) });
@@ -2489,6 +2880,22 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       closeDrawer();
       await refreshStatus().catch(() => undefined);
       toast('Model deleted');
+    } else if (action === 'mesh-create') {
+      const nameEl = byId('mesh-create-name');
+      const name = nameEl ? nameEl.value.trim() : '';
+      await request('/admin/meshes', { method: 'POST', headers: headers(true), body: JSON.stringify({ name: name }) });
+      if (nameEl) nameEl.value = '';
+      const meshDisclosure = byId('mesh-add-details');
+      if (meshDisclosure) meshDisclosure.open = false;
+      setOutput(out, 'Mesh created.');
+      toast('Mesh created');
+      await refreshStatus().catch(() => undefined);
+    } else if (action === 'mesh-delete') {
+      const meshId = encodeURIComponent(button.dataset.meshId || '');
+      await request('/admin/meshes/' + meshId, { method: 'DELETE', headers: headers(false) });
+      setOutput(out, 'Mesh deleted.');
+      toast('Mesh deleted');
+      await refreshStatus().catch(() => undefined);
     } else if (action === 'api-key-create') {
       revealApiKey(await request('/api/v1/keys', { method: 'POST', headers: headers(true), body: JSON.stringify({}) }));
       await loadApiKeys().catch(() => undefined);
@@ -2722,14 +3129,30 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       if (liveToken || onCustomDomain) loadInstaller(prefix).catch((error) => setOutput(prefix + 'installer-output', friendlyError('installer-generate', error), true));
       return;
     }
+    const runtimeSource = event.target.closest('[data-runtime-source-select]');
+    if (runtimeSource) {
+      applyRuntimeSource(runtimeSource.value).catch((error) => setOutput('runtime-version-output', friendlyError('runtime-source-set', error), true));
+      return;
+    }
     const runtimeSelect = event.target.closest('[data-model-add-mode]');
     if (runtimeSelect) {
       const addRuntime = byId('model-add-runtime');
+      const split = runtimeSelect.value === 'split';
       if (addRuntime) {
-        const split = runtimeSelect.value === 'split';
         addRuntime.disabled = split;
         if (split) addRuntime.value = 'meshllm';
       }
+      // Contextual model sources: single serving shows GGUF files, split shows
+      // layer packages + the prepare guide (CSS keys off this dataset). REQ-ADM-025.
+      const sources = byId('model-add-sources');
+      if (sources) sources.dataset.modelSources = split ? 'split' : 'single';
+      return;
+    }
+    const topoSelect = event.target.closest('[data-topo-mesh-select]');
+    if (topoSelect) {
+      topologyMeshFilter = topoSelect.value || 'all';
+      const statusNodes = lastStatus && Array.isArray(lastStatus.nodes) ? lastStatus.nodes : [];
+      renderTopology(topologyNodes(statusNodes));
       return;
     }
     const targetSelect = event.target.closest('[data-playground-target-select]');

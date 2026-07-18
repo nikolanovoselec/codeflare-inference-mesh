@@ -42,7 +42,10 @@ This domain covers the local cross-platform service that registers nodes, proxie
 1. The agent claims a setup token once and receives permanent node, upstream, and profile configuration. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 2. A claimed node stores credentials in the platform-specific service data directory. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
 3. Heartbeats include node identity, detected Mesh IP, listener port, runtime status, ready profiles, metrics, and agent version. <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
-4. The Worker validates heartbeat shape and Mesh target policy before persisting heartbeat state to D1 and refreshing the scheduler's live lease. <!-- @impl: packages/router-worker/src/router.ts::validateHeartbeat --> <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 rejects malformed heartbeat payloads before persisting node telemetry) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
+4. The Worker validates heartbeat shape and Mesh target policy before persisting heartbeat state to D1 and refreshing the scheduler's live lease; the metrics validator accepts the documented llama.cpp Auto parallel sentinel (`-1`), so a node echoing an Auto-parallel profile is never rejected as malformed. <!-- @impl: packages/router-worker/src/router.ts::validateHeartbeat --> <!-- @impl: packages/node-agent/internal/agent/client.go::ClientAnchors --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 rejects malformed heartbeat payloads before persisting node telemetry) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 accepts the llama.cpp Auto parallel sentinel in heartbeat metrics) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE002ClaimStoresCredentialsAndHeartbeatPayload) -->
+5. A failing heartbeat is never silent: the failure is logged to the agent's stderr on every state change (failure, different failure, recovery) and carried in the local dashboard status until a heartbeat succeeds. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::recordHeartbeatError --> <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardStatus --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002HeartbeatFailuresSurfaceAndClear) -->
+6. The heartbeat loop starts before initial runtime provisioning, which runs in the background and lands its manager through the current-manager accessor — a hanging binary download or runtime launch can never block the node's first check-in. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::launchInitialRuntime --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart) -->
+7. The host GPU telemetry probe inside a heartbeat tick runs under its own deadline — a stalled `system_profiler` (minutes-long under macOS Metal churn during a model switch) can never freeze the heartbeat loop and read as a phantom Offline. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::defaultGpuProbeTimeout --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002HeartbeatTelemetryProbeIsBounded) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
@@ -331,6 +334,35 @@ This domain covers the local cross-platform service that registers nodes, proxie
 **Priority:** P1
 
 **Dependencies:** [REQ-NODE-002](#req-node-002-node-claim-and-heartbeat), [REQ-RUN-003](runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-011](runtime-profiles.md#req-run-011-custom-model-onboarding)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+
+### REQ-NODE-014: Configurable runtime release source
+
+**Intent:** The fleet must be able to consume mesh-llm binaries from an alternative GitHub repository — e.g. the overlay-hardened Codeflare fork — through one worker setting, switchable in both directions without touching nodes, so runtime patches ship through the existing runtime-binaries flow.
+
+**Applies To:** Router Worker, Node Agent
+
+**Acceptance Criteria:**
+
+1. A valid `owner/repo` in the `MESHLLM_RELEASE_REPOSITORY` Worker variable makes an overlay-hardened fork available as a mesh-llm binary source alongside upstream `Mesh-LLM/mesh-llm`; an unset or invalid value leaves upstream as the only source. <!-- @impl: packages/router-worker/src/runtime-versions.ts::meshllmReleaseRepository --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) -->
+2. Claim and heartbeat responses carry `meshllmRepository` inside `desiredRuntimeVersions` when the fork is the active source, and the agent follows the router's word exactly — adopting a present value and resetting to upstream when absent. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredRuntimeVersions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE014RepositoryFollowsRouterExactly) -->
+3. The agent downloads mesh-llm archives and their checksum sidecars from the configured repository's releases, with unchanged SHA-256 verification. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE014ReleaseRepositoryOverride) -->
+4. A release-tag cache row recorded from a different repository is never served; switching the source refetches from the new repository. <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) -->
+5. The active mesh-llm binary source defaults to the configured fork and switches to upstream only when the operator chooses `official`; the choice persists in `router_config` `meshllm_release_source`, drives release listing, selection, and the fleet's `meshllmRepository`, and never requires a redeploy. <!-- @impl: packages/router-worker/src/runtime-versions.ts::activeMeshllmRepository --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 the operator switches the active binary source between official and fork) --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-NODE-014 persists the operator binary-source choice, audits it, and flips the active repository) -->
+6. `POST /admin/runtime-versions` and its automation twin accept `{ meshllmSource: 'official' | 'fork' }`, reject an unknown source with `400 invalid_meshllm_source` and a fork choice with no fork configured with `400 meshllm_fork_unavailable`, and audit an accepted change as `runtime_source_selected`. <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsSelect --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-NODE-014 rejects a fork choice with no fork configured and rejects unknown sources) -->
+7. The Settings runtime panel renders a MeshLLM binary source selector — official upstream and the configured fork — only when a fork is available; switching it posts the source on its own and reloads the version list from `GET /admin/runtime-versions`. <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsList --> <!-- @impl: packages/router-worker/src/admin-ui-views.ts::settingsSection --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-NODE-014 renders the MeshLLM binary source selector and switches source on change) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-NODE-014 hides the binary source selector when no fork is configured) -->
+
+**Constraints:** —
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-006](#req-node-006-meshllm-binary-install-and-update), [REQ-ADM-033](setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
 
 **Verification:** Automated test
 

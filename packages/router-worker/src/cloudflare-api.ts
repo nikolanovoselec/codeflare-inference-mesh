@@ -5,6 +5,12 @@ export interface GatewaySyncRequest {
   readonly providerName: string
   readonly routeName: string
   readonly publicModel: string
+  /**
+   * Additional dynamic routes to ensure beyond the default one — one per machine
+   * group, named by the mesh alias (REQ-GWY-009). Each reuses the same
+   * ensure-or-update semantics as the default route.
+   */
+  readonly extraRoutes?: readonly { readonly routeName: string; readonly publicModel: string }[]
   readonly providerTokenInstructions: string
 }
 
@@ -17,6 +23,8 @@ export interface GatewaySyncResult {
   readonly gatewayId: string
   readonly routeName: string
   readonly publicModel: string
+  /** Per-mesh routes ensured alongside the default route (REQ-GWY-009). */
+  readonly routes?: readonly { readonly routeName: string; readonly publicModel: string; readonly routeId: string }[]
   readonly workerUrl: string
   readonly manualProviderKeyRequired: true
   readonly providerTokenInstructions: string
@@ -156,11 +164,17 @@ export class CloudflareGatewayClient {
     }
     const provider = await this.upsertCustomProvider(input.accountId, providerSlug, providerBody)
 
-    const elements = routeGraph(`custom-${provider.slug ?? providerSlug}`, input.publicModel)
+    const slug = `custom-${provider.slug ?? providerSlug}`
     // The AI Gateway dynamic-routing API sets a route's elements inline on create/update and
     // produces the route's version and deployment in that same call, so there is no separate
     // version-create or deployment-create step; the route response carries both identifiers.
-    const route = await this.upsertGatewayRoute(input.accountId, input.gatewayId, input.routeName, elements)
+    const route = await this.upsertGatewayRoute(input.accountId, input.gatewayId, input.routeName, routeGraph(slug, input.publicModel))
+    // One dynamic route per machine group, same ensure semantics per name (REQ-GWY-009).
+    const routes: { routeName: string; publicModel: string; routeId: string }[] = [{ routeName: input.routeName, publicModel: input.publicModel, routeId: route.id }]
+    for (const extra of input.extraRoutes ?? []) {
+      const extraRoute = await this.upsertGatewayRoute(input.accountId, input.gatewayId, extra.routeName, routeGraph(slug, extra.publicModel))
+      routes.push({ routeName: extra.routeName, publicModel: extra.publicModel, routeId: extraRoute.id })
+    }
     return {
       providerId: provider.id,
       providerSlug: provider.slug ?? providerSlug,
@@ -170,6 +184,7 @@ export class CloudflareGatewayClient {
       gatewayId: input.gatewayId,
       routeName: input.routeName,
       publicModel: input.publicModel,
+      routes,
       workerUrl: originOnly(input.workerUrl),
       manualProviderKeyRequired: true,
       providerTokenInstructions: input.providerTokenInstructions

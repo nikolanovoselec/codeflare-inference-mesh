@@ -16,6 +16,37 @@ var runtimeErrorMarkers = []string{
 	"cuda", "unable", "refused", "not ready", "timed out", "no such",
 }
 
+// A warn/info/debug/trace-leveled tracing line is runtime chatter (mesh-llm warns freely
+// during QUIC path churn), never the reason the runtime failed — unless the line also
+// carries one of these hard tokens, which override the level gate.
+var runtimeNonErrorLevels = []string{"warn", "info", "debug", "trace"}
+var runtimeStrongErrorMarkers = []string{"error", "fatal", "panic"}
+
+func containsAny(value string, markers []string) bool {
+	for _, marker := range markers {
+		if strings.Contains(value, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsLevelToken matches level markers as whole words only — "trace" inside
+// "backtrace" or "info" inside "information" is not a log level and must not make
+// an error line read as leveled chatter.
+func containsLevelToken(value string, markers []string) bool {
+	for _, token := range strings.FieldsFunc(value, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z')
+	}) {
+		for _, marker := range markers {
+			if token == marker {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 const runtimeLogLineCap = 500
 
 // runtimeLog is a bounded, line-oriented sink for the managed runtime's stderr. It retains
@@ -52,14 +83,14 @@ func (l *runtimeLog) consumeLine(raw string) {
 		return
 	}
 	lower := strings.ToLower(line)
-	for _, marker := range runtimeErrorMarkers {
-		if strings.Contains(lower, marker) {
-			if len(line) > runtimeLogLineCap {
-				line = line[:runtimeLogLineCap]
-			}
-			l.lastErr = line
-			return
+	if !containsAny(lower, runtimeStrongErrorMarkers) && containsLevelToken(lower, runtimeNonErrorLevels) {
+		return
+	}
+	if containsAny(lower, runtimeErrorMarkers) {
+		if len(line) > runtimeLogLineCap {
+			line = line[:runtimeLogLineCap]
 		}
+		l.lastErr = line
 	}
 }
 

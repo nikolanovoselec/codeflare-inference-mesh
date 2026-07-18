@@ -1,5 +1,5 @@
 import { normalizeModelProfile } from './profiles'
-import { OPERATIONAL_EVENT_CHURN_TYPES } from './store'
+import { DEFAULT_PROFILES_SEEDED_KEY, OPERATIONAL_EVENT_CHURN_TYPES, seedDefaultActivation } from './store'
 import type { AuditEvent, CredentialKind, DirectSessionRecord, ModelProfile, NodeRecord, Store, TokenRecord } from './types'
 
 export class MemoryStore implements Store {
@@ -11,13 +11,14 @@ export class MemoryStore implements Store {
   readonly directSessions = new Map<string, DirectSessionRecord>()
 
   async seedDefaultProfiles(profiles: readonly ModelProfile[]): Promise<void> {
+    if (this.config.get(DEFAULT_PROFILES_SEEDED_KEY)) return
     const existingProfiles = [...this.profiles.values()]
-    for (const profile of retiredDefaultProfiles(existingProfiles, profiles)) this.profiles.set(profile.id, normalizeModelProfile(profile))
-    const seededDefaults = profiles.map((profile) => seedDefaultActivation(profile, existingProfiles, profiles))
-    for (const profile of seededDefaults) {
-      const existing = this.profiles.get(profile.id)
-      if (!existing || shouldRefreshDefaultProfile(existing, profile)) this.profiles.set(profile.id, normalizeModelProfile(profile))
+    for (const profile of profiles) {
+      if (this.profiles.has(profile.id)) continue
+      const seeded = seedDefaultActivation(profile, existingProfiles, profiles)
+      this.profiles.set(seeded.id, normalizeModelProfile(seeded))
     }
+    this.config.set(DEFAULT_PROFILES_SEEDED_KEY, true)
   }
 
   async getProfileByPublicModel(publicModel: string): Promise<ModelProfile | undefined> {
@@ -126,25 +127,6 @@ export class MemoryStore implements Store {
       .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .slice(0, limit)
   }
-}
-
-function shouldRefreshDefaultProfile(existing: ModelProfile, next: ModelProfile): boolean {
-  return existing.version <= next.version && JSON.stringify(existing) !== JSON.stringify(next)
-}
-
-function seedDefaultActivation(profile: ModelProfile, existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): ModelProfile {
-  if (!profile.active) return profile
-  const defaultIds = new Set(defaults.map((item) => item.id))
-  const claimed = existing.some((item) => item.active && !defaultIds.has(item.id) && item.publicAliases.some((alias) => profile.publicAliases.includes(alias)))
-  return claimed ? { ...profile, active: false, rolloutPercent: 0 } : profile
-}
-
-function retiredDefaultProfiles(existing: readonly ModelProfile[], defaults: readonly ModelProfile[]): readonly ModelProfile[] {
-  const defaultIds = new Set(defaults.map((profile) => profile.id))
-  const defaultAliases = new Set(defaults.flatMap((profile) => [...profile.publicAliases]))
-  return existing
-    .filter((profile) => profile.active && profile.version <= 1 && !defaultIds.has(profile.id) && profile.publicAliases.some((alias) => defaultAliases.has(alias)))
-    .map((profile) => ({ ...profile, active: false, rolloutPercent: 0, version: profile.version + 1 }))
 }
 
 export interface AccessTestKey {
