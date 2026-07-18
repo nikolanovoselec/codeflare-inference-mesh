@@ -3625,6 +3625,24 @@ describe('Access-first setup and host gating contracts', () => {
     expect(statusBody.lastSpeedTest).toMatchObject({ requestId: 'request-legacy' })
   })
 
+  it('REQ-API-009 keys a pre-map speed test by the resolved profile id so the mesh card finds it', async () => {
+    const { router, store } = routerFixture({})
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    // With a profile resolvable for the record's model, the seed entry must key by the
+    // profile id the per-mesh card looks up — not the model string (regression lock).
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const profile = await store.getProfileByPublicModel(STABLE_PUBLIC_MODEL)
+    const legacy: LastSpeedTestSummary = { at: 5, requestId: 'request-legacy', model: STABLE_PUBLIC_MODEL, requestedPromptTokens: 64, requestedMaxTokens: 16, promptTokens: 64, completionTokens: 1, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 2000, generationTokensPerSecond: 100, timeToFirstTokenMs: 10, generationMs: 10, totalMs: 20 }
+    await store.putConfig('last_speed_test', legacy)
+
+    const status = await router(new Request('https://router.test/api/v1/status', { headers: bearer('auto-secret') }))
+    const statusBody = await status.json() as { lastSpeedTests?: Record<string, LastSpeedTestSummary> }
+
+    expect(status.status).toBe(200)
+    expect(profile).toBeDefined()
+    expect(statusBody.lastSpeedTests?.[profile!.id]).toMatchObject({ requestId: 'request-legacy' })
+  })
+
   it('REQ-ADM-029 direct playground forwards the session user required by llama.cpp profiles', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
