@@ -362,6 +362,27 @@ func TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate(t *testing.T
 	})
 }
 
+// REQ-NODE-014: when a fork binary source is active the manager must launch
+// mesh-llm with MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL pointed at that fork, so
+// the subprocess resolves native runtimes from the same source as its binary.
+func TestREQNODE014ManagerLaunchesWithForkNativeRuntimeManifest(t *testing.T) {
+	fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+		MeshLLMVersion:    "v0.73.1-codeflare.1",
+		MeshLLMRepository: "nikolanovoselec/mesh-llm",
+	}, 0)
+	if err := fixture.manager.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.launch.count() != 1 {
+		t.Fatalf("expected one launch, got %d", fixture.launch.count())
+	}
+	env := fixture.launch.record(0).env
+	want := "MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL=https://github.com/nikolanovoselec/mesh-llm/releases/download/v0.73.1-codeflare.1/native-runtimes.json"
+	if !envContains(env, want) {
+		t.Fatalf("fork source must launch mesh-llm with the native-runtime manifest override, got env %v", env)
+	}
+}
+
 func TestREQRUN010StopSendsSIGTERMBeforeKill(t *testing.T) {
 	t.Run("REQ-RUN-010", func(t *testing.T) {
 		t.Run("escalates to kill only after the grace period", func(t *testing.T) {

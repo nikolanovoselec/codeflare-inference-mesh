@@ -283,17 +283,19 @@ func provisionMeshPeerFirewall(ctx context.Context, run agent.CommandRunner, goo
 // bootstrap when rendering.
 func meshRenderInput(profile agent.ModelProfile, cfg agent.Config) agent.MeshLLMRenderInput {
 	return agent.MeshLLMRenderInput{
-		ProfileID:   profile.ID,
-		ModelRef:    profile.MeshLLM.ModelRef,
-		Split:       profile.MeshLLM.Split,
-		BindPort:    profile.MeshLLM.BindPort,
-		MaxVramGb:   profile.MeshLLM.MaxVramGb,
-		MeshIP:      cfg.MeshIP,
-		APIPort:     cfg.MeshLLMAPIPort,
-		ConsolePort: cfg.MeshLLMConsolePort,
-		Flavor:      meshFlavorFlag(cfg),
-		NostrRelays: cfg.NostrRelays,
-		Tunables:    profile.MeshLLM,
+		ProfileID:         profile.ID,
+		ModelRef:          profile.MeshLLM.ModelRef,
+		Split:             profile.MeshLLM.Split,
+		BindPort:          profile.MeshLLM.BindPort,
+		MaxVramGb:         profile.MeshLLM.MaxVramGb,
+		MeshIP:            cfg.MeshIP,
+		APIPort:           cfg.MeshLLMAPIPort,
+		ConsolePort:       cfg.MeshLLMConsolePort,
+		Flavor:            meshFlavorFlag(cfg),
+		MeshLLMVersion:    cfg.RuntimeVersions.MeshLLM,
+		MeshLLMRepository: cfg.RuntimeVersions.MeshLLMRepository,
+		NostrRelays:       cfg.NostrRelays,
+		Tunables:          profile.MeshLLM,
 	}
 }
 

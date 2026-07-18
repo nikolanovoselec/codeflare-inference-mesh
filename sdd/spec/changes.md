@@ -2,6 +2,7 @@
 
 ## 2026-07-18
 
+- Fixed a fork-source blind spot that stranded freshly-installing nodes (surfaced by an Apple-Silicon Mac stuck on a permanent runtime error): the active repository governed the mesh-llm *binary* download but not the *native-runtime* manifest, which mesh-llm hardcodes to upstream `Mesh-LLM/mesh-llm` even in fork builds — so a fork-only tag 404'd its platform runtime and the node never provisioned. The agent now launches mesh-llm with `MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL` aimed at the active source, so a node resolves its native runtime from the same repository as its binary. ([REQ-NODE-014](node-agent.md#req-node-014-configurable-runtime-release-source))
 - The mesh-llm binary source is now switchable from Settings: `MESHLLM_RELEASE_REPOSITORY` makes the fork *available* rather than forcing it, and a console selector (plus `{ meshllmSource: 'official' | 'fork' }` on the runtime-versions endpoints) flips the active source without a redeploy — the choice persists in `router_config` and drives listing, selection, and the fleet's `meshllmRepository`. ([REQ-NODE-014](node-agent.md#req-node-014-configurable-runtime-release-source))
 
 ## 2026-07-17

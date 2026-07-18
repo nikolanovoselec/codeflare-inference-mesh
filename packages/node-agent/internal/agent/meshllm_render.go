@@ -19,10 +19,17 @@ type MeshLLMRenderInput struct {
 	APIPort     int
 	ConsolePort int
 	Flavor      string
-	Rotation    int
-	JoinTokens  []string
-	NostrRelays []string
-	ConfigPath  string
+	// MeshLLMVersion and MeshLLMRepository pin where the launched mesh-llm
+	// process resolves its native-runtime manifest. When a fork repository is
+	// active they aim MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL at that fork's
+	// release, so a freshly-installing node fetches platform runtimes from the
+	// same source as its binary instead of upstream. REQ-NODE-014.
+	MeshLLMVersion    string
+	MeshLLMRepository string
+	Rotation          int
+	JoinTokens        []string
+	NostrRelays       []string
+	ConfigPath        string
 	// Per-model runtime tunables rendered into the mesh-llm config file (not argv).
 	// A zero/empty/nil value is unset and omitted so mesh-llm auto-plans it.
 	Tunables MeshLLMSettings
@@ -88,15 +95,37 @@ func RenderMeshLLMArgs(in MeshLLMRenderInput) []string {
 // binary install. When the profile forces tool emulation it also sets
 // MESH_FORCE_TOOL_EMULATION=1, routing tool calls through mesh-llm's
 // text-convention emulation instead of the template's native grammar parser.
-// The input slice is never mutated.
-func MeshLLMEnv(base []string, forceToolEmulation bool) []string {
-	env := make([]string, 0, len(base)+2)
+// A non-empty nativeRuntimeManifestURL sets MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL
+// so the subprocess resolves its native runtimes from the active source rather
+// than mesh-llm's hardcoded upstream default. The input slice is never mutated.
+func MeshLLMEnv(base []string, forceToolEmulation bool, nativeRuntimeManifestURL string) []string {
+	env := make([]string, 0, len(base)+3)
 	env = append(env, base...)
 	env = append(env, "MESH_LLM_NO_SELF_UPDATE=1")
 	if forceToolEmulation {
 		env = append(env, "MESH_FORCE_TOOL_EMULATION=1")
 	}
+	if nativeRuntimeManifestURL != "" {
+		env = append(env, "MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL="+nativeRuntimeManifestURL)
+	}
 	return env
+}
+
+// meshLLMNativeRuntimesManifestFile is the release asset mesh-llm fetches to
+// discover installable native runtimes for the host platform.
+const meshLLMNativeRuntimesManifestFile = "native-runtimes.json"
+
+// meshLLMNativeRuntimeManifestURL returns the native-runtime manifest URL the
+// mesh-llm subprocess must fetch via MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL, or ""
+// when no fork repository is active — mesh-llm then keeps its built-in upstream
+// default. mesh-llm hardcodes github.com/Mesh-LLM/mesh-llm for the manifest even
+// in fork builds, so without this override a fork-only tag 404s there and a
+// freshly-installing node can never provision its runtime (REQ-NODE-014).
+func meshLLMNativeRuntimeManifestURL(version, repository string) string {
+	if repository == "" {
+		return ""
+	}
+	return meshLLMReleaseBaseURLFor(version, repository) + "/" + meshLLMNativeRuntimesManifestFile
 }
 
 // MeshLLMConfigTOML renders the per-profile mesh-llm config file: one `[[models]]`

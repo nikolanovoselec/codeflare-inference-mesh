@@ -150,7 +150,7 @@ func (m *MeshLLMManager) Start(ctx context.Context) error {
 		return fmt.Errorf("write mesh-llm config: %w", err)
 	}
 	args := RenderMeshLLMArgs(input)
-	env := MeshLLMEnv(os.Environ(), input.Tunables.ToolEmulation)
+	env := MeshLLMEnv(os.Environ(), input.Tunables.ToolEmulation, meshLLMNativeRuntimeManifestURL(input.MeshLLMVersion, input.MeshLLMRepository))
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.state = "starting"
 	m.lastError = ""
