@@ -1662,7 +1662,11 @@ async function storedSpeedTests(store: Store): Promise<Record<string, LastSpeedT
   const map = await store.getConfig<Record<string, LastSpeedTestSummary>>(LAST_SPEED_TESTS_CONFIG_KEY)
   if (map && Object.keys(map).length > 0) return map
   const legacy = await store.getConfig<LastSpeedTestSummary>(LAST_SPEED_TEST_CONFIG_KEY)
-  return legacy ? { [legacy.model]: legacy } : {}
+  if (!legacy) return {}
+  // Re-key the pre-map record by its resolved profile id — the per-mesh card reads by
+  // profile id — so an old single record still surfaces; fall back to the model string.
+  const legacyProfile = await store.getProfileByPublicModel(routablePublicModel(legacy.model))
+  return { [legacyProfile?.id ?? legacy.model]: legacy }
 }
 
 function newestSpeedTest(map: Record<string, LastSpeedTestSummary>): LastSpeedTestSummary | undefined {

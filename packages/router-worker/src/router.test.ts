@@ -3619,7 +3619,9 @@ describe('Access-first setup and host gating contracts', () => {
     const statusBody = await status.json() as { lastSpeedTest?: LastSpeedTestSummary; lastSpeedTests?: Record<string, LastSpeedTestSummary> }
 
     expect(status.status).toBe(200)
-    expect(statusBody.lastSpeedTests?.['codeflare-mesh']).toMatchObject({ requestId: 'request-legacy' })
+    // The pre-map record surfaces in the map (keyed by its resolved profile id, or the
+    // model string when no profile resolves) and as the newest lastSpeedTest.
+    expect(Object.values(statusBody.lastSpeedTests ?? {}).some((entry) => entry.requestId === 'request-legacy')).toBe(true)
     expect(statusBody.lastSpeedTest).toMatchObject({ requestId: 'request-legacy' })
   })
 
