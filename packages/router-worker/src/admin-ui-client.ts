@@ -2275,8 +2275,34 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       select.value = info.desired || (tags[0] || '');
       return true;
     };
+    // The mesh-llm source selector: two options (official upstream, configured fork)
+    // when a fork is available, hidden entirely when none is configured.
+    const populateSource = () => {
+      const select = byId(config.runtimeVersion.meshllmSourceSelectId);
+      if (!select) return;
+      const info = view && view.meshllm ? view.meshllm : {};
+      const fork = info.forkRepository || '';
+      select.textContent = '';
+      select.setAttribute('data-runtime-source-select', 'meshllm');
+      select.setAttribute('data-source-available', fork ? 'true' : 'false');
+      select.hidden = !fork;
+      if (!fork) { select.disabled = true; return; }
+      const addOption = (value, label) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.setAttribute('data-runtime-source-option', value);
+        option.textContent = label;
+        if (info.source === value) option.selected = true;
+        select.appendChild(option);
+      };
+      addOption('official', 'Official — ' + (info.officialRepository || 'Mesh-LLM/mesh-llm'));
+      addOption('fork', 'Fork — ' + fork);
+      select.disabled = false;
+      select.value = info.source === 'fork' ? 'fork' : 'official';
+    };
     const meshReady = populate('meshllm', config.runtimeVersion.meshllmSelectId);
     const llamaReady = populate('llamacpp', config.runtimeVersion.llamacppSelectId);
+    populateSource();
     if (meshReady && llamaReady) return;
     const slot = byId(config.runtimeVersion.slotId);
     if (!slot) return;
@@ -2358,6 +2384,13 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     renderVersions(view);
     setOutput('agent-version-output', 'Loaded ' + ((view.tags || []).length) + ' versions' + (view.stale ? ' (list may be out of date)' : ''));
     return view;
+  }
+  // Switching the binary source changes which version tags are valid, so persist the
+  // source on its own and reload the version list from the newly active repository.
+  async function applyRuntimeSource(source) {
+    await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllmSource: source }) });
+    await loadRuntimeVersions();
+    setOutput('runtime-version-output', 'MeshLLM binary source set to ' + source + '.');
   }
   async function loadRuntimeVersions() {
     const view = await request('/admin/runtime-versions', { headers: headers(false) });
@@ -3094,6 +3127,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (installer) {
       const prefix = installer.dataset.prefix || '';
       if (liveToken || onCustomDomain) loadInstaller(prefix).catch((error) => setOutput(prefix + 'installer-output', friendlyError('installer-generate', error), true));
+      return;
+    }
+    const runtimeSource = event.target.closest('[data-runtime-source-select]');
+    if (runtimeSource) {
+      applyRuntimeSource(runtimeSource.value).catch((error) => setOutput('runtime-version-output', friendlyError('runtime-source-set', error), true));
       return;
     }
     const runtimeSelect = event.target.closest('[data-model-add-mode]');

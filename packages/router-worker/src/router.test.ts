@@ -2926,6 +2926,31 @@ describe('router worker behavioral contracts', () => {
     const claimed2 = await claim2.json() as { desiredRuntimeVersions?: { meshllmRepository?: string } }
     expect(claimed2.desiredRuntimeVersions?.meshllmRepository).toBeUndefined()
   })
+
+  it('REQ-NODE-014 the operator switches the active binary source between official and fork', async () => {
+    const { router, store } = routerFixture({ releasesFetcher: async () => Response.json([{ tag_name: 'v0.73.1-codeflare.1' }]), env: { MESHLLM_RELEASE_REPOSITORY: 'nikolanovoselec/mesh-llm' } })
+    await store.putToken(await createTokenRecord('setup', 'setup-secret', 1_700_000_000_000))
+    const claimRepo = async (name: string, ip: string) => {
+      const claim = await router(new Request('https://router.test/node/claim', { method: 'POST', headers: { ...bearer('setup-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ displayName: name, meshIp: ip, inferencePort: 8080, publicModels: ['codeflare-mesh'], activeProfileIds: [], capacity: 1 }) }))
+      return (await claim.json() as { desiredRuntimeVersions?: { meshllmRepository?: string } }).desiredRuntimeVersions?.meshllmRepository
+    }
+
+    // Default (no stored choice) serves the fork.
+    expect(await claimRepo('Node A', '100.64.1.10')).toBe('nikolanovoselec/mesh-llm')
+
+    // Switching to official drops the repository field so agents reset to upstream.
+    const toOfficial = await router(new Request('https://router.test/admin/runtime-versions', { method: 'POST', headers: { ...bearer('admin-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ meshllmSource: 'official' }) }))
+    expect(toOfficial.status).toBe(200)
+    expect(await claimRepo('Node B', '100.64.1.11')).toBeUndefined()
+
+    // The automation twin switches it back to the fork and is audited as an automation actor.
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+    const back = await router(new Request('https://router.test/api/v1/runtime-versions', { method: 'PUT', headers: { ...bearer('auto-secret'), 'content-type': 'application/json' }, body: JSON.stringify({ meshllmSource: 'fork' }) }))
+    expect(back.status).toBe(200)
+    expect(await claimRepo('Node C', '100.64.1.12')).toBe('nikolanovoselec/mesh-llm')
+    expect(store.audit.find((event) => event.type === 'runtime_source_selected')?.actor).toMatch(/^automation:/)
+  })
+
   it('REQ-OBS-002 reports node mesh membership and readiness fields in admin status', async () => {
     const { router, store } = routerFixture({ env: { MESH_STATE_KEY: MESH_STATE_KEY_B64 } })
     await store.upsertNode({ ...nodeFixture(), nodeTokenVerifier: await hashToken('node-secret') })

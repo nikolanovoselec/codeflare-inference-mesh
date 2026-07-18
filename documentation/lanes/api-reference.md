@@ -1097,17 +1097,18 @@ PUT /api/v1/runtime-versions
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** `{ "meshllm"?: string, "llamacpp"?: string }` — each provided value must be in the corresponding release-tag list.
+**Request body:** `{ "meshllm"?: string, "llamacpp"?: string }` — each provided value must be in the corresponding release-tag list; or `{ "meshllmSource": "official" | "fork" }` to switch the mesh-llm binary source (posted on its own).
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Desired runtime versions were stored and audited. | `{ "ok": true, "desired": { "meshllm": string, "llamacpp": string } }`. |
-| `400` | No version was provided, a version string was invalid, or a tag is absent from the release-tag list. | `invalid_runtime_versions`, `invalid_meshllm_version`, `invalid_llamacpp_version`, `unknown_meshllm_version`, or `unknown_llamacpp_version` error body. |
+| `200` | A `meshllmSource` change was stored and audited as `runtime_source_selected`. | `{ "ok": true, "source": "official" \| "fork" }`. |
+| `400` | No version was provided, a version string was invalid, a tag is absent from the release-tag list, the source is unknown, or a `fork` source was requested with no fork configured. | `invalid_runtime_versions`, `invalid_meshllm_version`, `invalid_llamacpp_version`, `unknown_meshllm_version`, `unknown_llamacpp_version`, `invalid_meshllm_source`, or `meshllm_fork_unavailable` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management)
+**Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management), [REQ-NODE-014](../../sdd/spec/node-agent.md#req-node-014-configurable-runtime-release-source)
 
 ### GET /api/v1/events
 

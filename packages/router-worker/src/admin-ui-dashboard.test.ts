@@ -1034,6 +1034,47 @@ describe('dashboard overview contracts', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
   })
 
+  it('REQ-NODE-014 renders the MeshLLM binary source selector and switches source on change', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/admin/runtime-versions' && method === 'GET') return Response.json({
+        meshllm: { tags: ['v0.73.1-codeflare.1'], desired: 'v0.73.1-codeflare.1', stale: false, source: 'fork', forkRepository: 'nikolanovoselec/mesh-llm', officialRepository: 'Mesh-LLM/mesh-llm' },
+        llamacpp: { tags: ['b9912'], desired: 'b9912', stale: false }
+      })
+      if (path === '/admin/runtime-versions' && method === 'POST') return Response.json({ ok: true, source: 'official' })
+      return undefined
+    } })
+
+    const select = harness.byId(ADMIN_UI_RUNTIME_VERSION.meshllmSourceSelectId)
+    expect(select.dataset.sourceAvailable).toBe('true')
+    expect(descendants(select).filter((el) => el.dataset.runtimeSourceOption).map((el) => el.dataset.runtimeSourceOption)).toEqual(['official', 'fork'])
+    expect(select.value).toBe('fork')
+
+    // Changing the source posts only the source and reloads the version list.
+    select.value = 'official'
+    await harness.change(select)
+    await harness.flush(3)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/runtime-versions' && entry.init?.method === 'POST')
+    expect(call, 'switching source posts to the runtime-versions endpoint').toBeDefined()
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllmSource: 'official' })
+  })
+
+  it('REQ-NODE-014 hides the binary source selector when no fork is configured', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/admin/runtime-versions' && method === 'GET') return Response.json({
+        meshllm: { tags: ['v0.72.2'], desired: 'v0.72.2', stale: false, source: 'official', officialRepository: 'Mesh-LLM/mesh-llm' },
+        llamacpp: { tags: ['b9912'], desired: 'b9912', stale: false }
+      })
+      return undefined
+    } })
+
+    const select = harness.byId(ADMIN_UI_RUNTIME_VERSION.meshllmSourceSelectId)
+    expect(select.dataset.sourceAvailable).toBe('false')
+    expect(select.hidden).toBe(true)
+    expect(descendants(select).filter((el) => el.dataset.runtimeSourceOption)).toHaveLength(0)
+  })
+
   it('REQ-ADM-023 loads and saves node name and VRAM settings from the node drawer', async () => {
     const nodes = [{ id: 'node-weak', displayName: 'Old weak node', status: 'online', agentVersion: 'v1.3.0', maxVramGbOverride: 4, metrics: { runtimeState: 'ready', readyModels: ['codeflare-mesh'], gpuMemoryTotalMiB: 8192, gpuMemoryUsedMiB: 4000, tokensPerSecond: 20, activeRequests: 0 } }]
     const harness = await dashboardHarness({ status: statusFixture({ nodes }) })

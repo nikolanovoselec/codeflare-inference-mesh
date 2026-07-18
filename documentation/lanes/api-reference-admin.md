@@ -991,10 +991,10 @@ GET /admin/runtime-versions
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Runtime release tags are served from cached GitHub release lists; stale caches are marked when a refresh fails. | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
+| `200` | Runtime release tags are served from cached GitHub release lists; stale caches are marked when a refresh fails. The `meshllm` entry also carries the binary source picture: `source` (`"official"`/`"fork"`), `officialRepository`, and — only when a fork is configured — `forkRepository`. | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string, "source": "official" \| "fork", "officialRepository": string, "forkRepository"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 
-**Implements:** [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+**Implements:** [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility), [REQ-NODE-014](../../sdd/spec/node-agent.md#req-node-014-configurable-runtime-release-source)
 
 ### POST /admin/runtime-versions
 
@@ -1008,17 +1008,18 @@ POST /admin/runtime-versions
 
 **Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
-**Request body:** JSON body with either or both of `meshllm` and `llamacpp`.
+**Request body:** JSON body with either or both of `meshllm` and `llamacpp`; or `{ "meshllmSource": "official" | "fork" }` to switch the mesh-llm binary source (posted on its own — source and version selection are separate operations).
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | Runtime versions are validated against the release-tag lists, stored as desired versions, and recorded as a `runtime_versions_selected` audit event. | `{ "ok": true, "desired": { "meshllm": string, "llamacpp": string } }` |
-| `400` | No version was supplied, a value is invalid, or a tag is absent from the corresponding release list. | `{ "error": "invalid_runtime_versions" }`, `{ "error": "invalid_meshllm_version" }`, `{ "error": "invalid_llamacpp_version" }`, `{ "error": "unknown_meshllm_version", "version": string }`, or `{ "error": "unknown_llamacpp_version", "version": string }` |
+| `200` | A `meshllmSource` change is stored and recorded as a `runtime_source_selected` audit event. | `{ "ok": true, "source": "official" \| "fork" }` |
+| `400` | No version was supplied, a value is invalid, a tag is absent from the corresponding release list, the source is unknown, or a `fork` source was requested with no fork configured. | `{ "error": "invalid_runtime_versions" }`, `{ "error": "invalid_meshllm_version" }`, `{ "error": "invalid_llamacpp_version" }`, `{ "error": "unknown_meshllm_version", "version": string }`, `{ "error": "unknown_llamacpp_version", "version": string }`, `{ "error": "invalid_meshllm_source" }`, or `{ "error": "meshllm_fork_unavailable" }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 
-**Implements:** [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+**Implements:** [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility), [REQ-NODE-014](../../sdd/spec/node-agent.md#req-node-014-configurable-runtime-release-source)
 
 ### POST /admin/settings
 

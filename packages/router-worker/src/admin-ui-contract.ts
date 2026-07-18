@@ -185,6 +185,7 @@ export const ADMIN_UI_AGENT_VERSION = {
 
 export const ADMIN_UI_RUNTIME_VERSION = {
   meshllmSelectId: 'runtime-meshllm-version-select',
+  meshllmSourceSelectId: 'runtime-meshllm-source-select',
   llamacppSelectId: 'runtime-llamacpp-version-select',
   slotId: 'runtime-version-slot',
   staleAttribute: 'data-stale'

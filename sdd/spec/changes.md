@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-07-18
+
+- The mesh-llm binary source is now switchable from Settings: `MESHLLM_RELEASE_REPOSITORY` makes the fork *available* rather than forcing it, and a console selector (plus `{ meshllmSource: 'official' | 'fork' }` on the runtime-versions endpoints) flips the active source without a redeploy — the choice persists in `router_config` and drives listing, selection, and the fleet's `meshllmRepository`. ([REQ-NODE-014](node-agent.md#req-node-014-configurable-runtime-release-source))
+
 ## 2026-07-17
 
 - The mesh-llm release source is configurable: `MESHLLM_RELEASE_REPOSITORY` redirects the runtime-binaries flow (listing, selection, agent downloads) to an alternative GitHub repository — introduced for the Codeflare mesh-llm fork carrying overlay-hardened stage transport (TCP keepalive, handshake retries, WAN budgets) until that patch lands upstream. ([REQ-NODE-014](node-agent.md#req-node-014-configurable-runtime-release-source))
