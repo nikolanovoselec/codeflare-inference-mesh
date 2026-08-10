@@ -20,15 +20,63 @@ var runtimeErrorMarkers = []string{
 // during QUIC path churn), never the reason the runtime failed — unless the line also
 // carries one of these hard tokens, which override the level gate.
 var runtimeNonErrorLevels = []string{"warn", "info", "debug", "trace"}
+
+// llama.cpp shares this ring but prints its severity as a bare uppercase letter
+// ("355.41.434.230 W srv alloc: ...") rather than spelling it out the way mesh-llm's JSON
+// does, so the spelled-out gate above never saw it and every llama.cpp warning carrying a
+// weak marker read as a live runtime error.
+var runtimeLetterNonErrorLevels = []string{"W", "I", "D"}
+
 var runtimeStrongErrorMarkers = []string{"error", "fatal", "panic"}
 
-func containsAny(value string, markers []string) bool {
+// containsMarker reports whether any marker stands at the start of a word. Anchoring the
+// start keeps a short marker from hiding inside a longer one: "oom" inside "making room
+// for prompt cache entry" is a cache eviction, not an out-of-memory report. The end stays
+// free so an inflected marker ("panicked at") still matches.
+func containsMarker(value string, markers []string) bool {
 	for _, marker := range markers {
-		if strings.Contains(value, marker) {
-			return true
+		for offset := 0; offset < len(value); {
+			i := strings.Index(value[offset:], marker)
+			if i < 0 {
+				break
+			}
+			at := offset + i
+			if !isWordByte(value, at-1) {
+				return true
+			}
+			offset = at + 1
 		}
 	}
 	return false
+}
+
+// letterLevelChatter reports whether the line leads with llama.cpp's bare severity letter.
+// That level is its own field near the start of the line, so only the leading fields are
+// considered. A capital standing deeper in a message, the "I/O" of "I/O failed on stage
+// lane", is part of the text rather than a severity and must keep surfacing.
+func letterLevelChatter(line string) bool {
+	fields := strings.Fields(line)
+	if len(fields) > 2 {
+		fields = fields[:2]
+	}
+	for _, field := range fields {
+		for _, level := range runtimeLetterNonErrorLevels {
+			if field == level {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isWordByte treats letters and digits as word interior; an underscore separates words in
+// runtime log identifiers ("srv_oom_kill"), so it stays a boundary.
+func isWordByte(value string, i int) bool {
+	if i < 0 || i >= len(value) {
+		return false
+	}
+	c := value[i]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
 // containsLevelToken matches level markers as whole words only — "trace" inside
@@ -83,10 +131,11 @@ func (l *runtimeLog) consumeLine(raw string) {
 		return
 	}
 	lower := strings.ToLower(line)
-	if !containsAny(lower, runtimeStrongErrorMarkers) && containsLevelToken(lower, runtimeNonErrorLevels) {
+	chatter := containsLevelToken(lower, runtimeNonErrorLevels) || letterLevelChatter(line)
+	if !containsMarker(lower, runtimeStrongErrorMarkers) && chatter {
 		return
 	}
-	if containsAny(lower, runtimeErrorMarkers) {
+	if containsMarker(lower, runtimeErrorMarkers) {
 		if len(line) > runtimeLogLineCap {
 			line = line[:runtimeLogLineCap]
 		}

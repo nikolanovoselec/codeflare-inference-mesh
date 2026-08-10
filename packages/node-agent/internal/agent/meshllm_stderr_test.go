@@ -78,6 +78,49 @@ func TestREQOBS011RuntimeLogLevelTokensMatchWholeWordsOnly(t *testing.T) {
 	}
 }
 
+func TestREQOBS011RuntimeLogErrorMarkersAnchorAtWordStart(t *testing.T) {
+	// "oom" inside "making room" is a prompt-cache eviction, not an out-of-memory report:
+	// a marker hiding inside a longer word must never become the surfaced error detail.
+	// REQ-OBS-011.
+	var log runtimeLog
+	_, _ = log.Write([]byte("355.41.434.230 E srv alloc: - making room for prompt cache entry, removing oldest entry (size = 583.167 MiB)\n"))
+	if log.Detail() != "" {
+		t.Fatalf("'room' must not match the oom marker, got %q", log.Detail())
+	}
+	// A marker standing at a word start still surfaces.
+	_, _ = log.Write([]byte("llama_model_load: oom while allocating the kv cache\n"))
+	if !strings.Contains(log.Detail(), "oom while allocating") {
+		t.Fatalf("a word-start oom must be captured, got %q", log.Detail())
+	}
+	// The anchor binds the start only, so an inflected marker keeps matching.
+	var panicked runtimeLog
+	_, _ = panicked.Write([]byte("thread 'stage-0' panicked at src/lane.rs:118\n"))
+	if !strings.Contains(panicked.Detail(), "panicked at") {
+		t.Fatalf("'panicked' must still match the panic marker, got %q", panicked.Detail())
+	}
+}
+
+func TestREQOBS011RuntimeLogIgnoresLlamaCppLetterLevelLines(t *testing.T) {
+	// llama.cpp shares this ring with mesh-llm but prints its severity as a bare uppercase
+	// letter instead of a spelled-out JSON level, so a llama.cpp warning carrying a weak
+	// marker word must still read as chatter while its error severity surfaces. REQ-OBS-011.
+	var log runtimeLog
+	_, _ = log.Write([]byte("355.41.434.230 W srv params_from_: unable to reuse slot, reprocessing prompt\n"))
+	if log.Detail() != "" {
+		t.Fatalf("a llama.cpp W-level line must not be captured, got %q", log.Detail())
+	}
+	_, _ = log.Write([]byte("355.41.434.231 E srv load_model: unable to load model\n"))
+	if !strings.Contains(log.Detail(), "unable to load model") {
+		t.Fatalf("a llama.cpp E-level line must be captured, got %q", log.Detail())
+	}
+	// A capital inside the message text is not a severity: only the leading level field is.
+	var prose runtimeLog
+	_, _ = prose.Write([]byte("stage lane I/O failed while opening the socket\n"))
+	if !strings.Contains(prose.Detail(), "I/O failed") {
+		t.Fatalf("a capital in message text is not a level, got %q", prose.Detail())
+	}
+}
+
 func TestREQOBS011RuntimeErrorDetailReflectsRing(t *testing.T) {
 	// The manager surfaces its stderr ring's latest error line through RuntimeErrorDetail, which
 	// the heartbeat metrics carry to the console. REQ-OBS-011.
