@@ -779,8 +779,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // where mesh-llm spells it out, and nodes keep forwarding those lines until their agent
   // updates. Only the leading fields carry the level, so a capital inside message text
   // ("I/O failed") stays a real error.
+  // This gate filters by level alone. Whether a line is an error at all is the agent's
+  // decision: it owns the marker list, and duplicating that list here would only let the
+  // two copies drift. The strong-marker override is unanchored at its end to match the
+  // agent, which treats an inflected marker ("panicked at") as the hard token it carries.
   const letterLevelChatter = (detail) => detail.trim().split(/\\s+/).slice(0, 2).some((field) => field === 'W' || field === 'I' || field === 'D');
-  const chatterDetail = (detail) => (/\\b(warn|info|debug|trace)\\b/i.test(detail) || letterLevelChatter(detail)) && !/\\b(error|fatal|panic)\\b/i.test(detail);
+  const chatterDetail = (detail) => (/\\b(warn|info|debug|trace)\\b/i.test(detail) || letterLevelChatter(detail)) && !/\\b(error|fatal|panic)/i.test(detail);
   // A running runtime carrying a captured error line is degraded, not healthy: the split
   // just collapsed around it or a lane failed mid-request. The row and drawer must show
   // it even while the node still serves.

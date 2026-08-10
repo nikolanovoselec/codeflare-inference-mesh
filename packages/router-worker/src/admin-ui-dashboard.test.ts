@@ -708,7 +708,9 @@ describe('dashboard overview contracts', () => {
       // llama.cpp spells its level as a bare leading letter, so a cache-eviction warning
       // from it is chatter too; a capital inside message text stays a real error.
       { id: 'node-llama-chatter', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: '355.41.434.230 W srv alloc: - making room for prompt cache entry, removing oldest entry (size = 583.167 MiB)' } },
-      { id: 'node-llama-error', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'stage lane I/O failed while opening the socket' } }
+      { id: 'node-llama-error', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'stage lane I/O failed while opening the socket' } },
+      // A hard token overrides the level gate even when inflected, matching the agent.
+      { id: 'node-panicked', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: "W srv thread 'stage-0' panicked at src/lane.rs:118" } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
     const statusCell = (id: string) => descendants(tableRows(harness).find((row) => row.dataset.nodeRow === id)!).find((node) => node.dataset.cell === 'status')!
@@ -723,6 +725,8 @@ describe('dashboard overview contracts', () => {
     expect(chipOf('node-llama-chatter').dataset.tone).toBe('ok')
     expect(statusCell('node-llama-error').dataset.runtimeError).toBe('stage lane I/O failed while opening the socket')
     expect(chipOf('node-llama-error').dataset.tone).toBe('warn')
+    expect(statusCell('node-panicked').dataset.runtimeError).toBe("W srv thread 'stage-0' panicked at src/lane.rs:118")
+    expect(chipOf('node-panicked').dataset.tone).toBe('warn')
 
     await harness.clickAction('node-detail', { nodeId: 'node-degraded' })
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
