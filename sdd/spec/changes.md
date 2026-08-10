@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-08-11
+
+- Fixed the console hiding a warn-leveled runtime line that carries an inflected hard error token. A line reading `WARN ... panicked at ...` was classified as routine chatter because the console required the token to stand as a whole word, so a panic the agent had captured never reached the operator. The console now matches such a token the way the agent does, by its start rather than its whole length, so the panic overrides the level gate. ([REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface))
+
 ## 2026-08-10
 
 - Fixed a serving llama.cpp node reading yellow in the console while healthy. Two faults in the shared runtime stderr ring compounded: error markers were matched as bare substrings, so the `oom` marker fired on the `room` of a routine `making room for prompt cache entry` cache eviction, and the chatter gate recognised only mesh-llm's spelled-out JSON level, so llama.cpp's bare leading severity letter (`W`) never registered as a warning. Markers now anchor at a word start, leaving the end free so `panicked at` still matches, and both the agent and the console read llama.cpp's leading level letter. The console gate matters on its own here, because nodes keep forwarding captured lines until their agent updates. ([REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface))
