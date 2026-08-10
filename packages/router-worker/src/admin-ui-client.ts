@@ -775,7 +775,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // A leveled chatter line (warn/info/debug/trace without a hard error token) is never a
   // live degradation signal; old agents forwarded such lines before the stderr gate
   // learned whole-word levels.
-  const chatterDetail = (detail) => /\\b(warn|info|debug|trace)\\b/i.test(detail) && !/\\b(error|fatal|panic)\\b/i.test(detail);
+  // llama.cpp spells its level as a bare leading letter ("355.41.434.230 W srv alloc: ...")
+  // where mesh-llm spells it out, and nodes keep forwarding those lines until their agent
+  // updates. Only the leading fields carry the level, so a capital inside message text
+  // ("I/O failed") stays a real error.
+  const letterLevelChatter = (detail) => detail.trim().split(/\\s+/).slice(0, 2).some((field) => field === 'W' || field === 'I' || field === 'D');
+  const chatterDetail = (detail) => (/\\b(warn|info|debug|trace)\\b/i.test(detail) || letterLevelChatter(detail)) && !/\\b(error|fatal|panic)\\b/i.test(detail);
   // A running runtime carrying a captured error line is degraded, not healthy: the split
   // just collapsed around it or a lane failed mid-request. The row and drawer must show
   // it even while the node still serves.

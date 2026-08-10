@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-08-10
+
+- Fixed a serving llama.cpp node reading yellow in the console while healthy. Two faults in the shared runtime stderr ring compounded: error markers were matched as bare substrings, so the `oom` marker fired on the `room` of a routine `making room for prompt cache entry` cache eviction, and the chatter gate recognised only mesh-llm's spelled-out JSON level, so llama.cpp's bare leading severity letter (`W`) never registered as a warning. Markers now anchor at a word start, leaving the end free so `panicked at` still matches, and both the agent and the console read llama.cpp's leading level letter. The console gate matters on its own here, because nodes keep forwarding captured lines until their agent updates. ([REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface))
+
 ## 2026-07-18
 
 - Fixed a fork-source blind spot that stranded freshly-installing nodes (surfaced by an Apple-Silicon Mac stuck on a permanent runtime error): the active repository governed the mesh-llm *binary* download but not the *native-runtime* manifest, which mesh-llm hardcodes to upstream `Mesh-LLM/mesh-llm` even in fork builds — so a fork-only tag 404'd its platform runtime and the node never provisioned. The agent now launches mesh-llm with `MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL` aimed at the active source, so a node resolves its native runtime from the same repository as its binary. ([REQ-NODE-014](node-agent.md#req-node-014-configurable-runtime-release-source))
