@@ -791,6 +791,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   function degradedRuntimeError(node) {
     if (node.status !== 'online' || node.deactivated) return '';
     const metrics = node.metrics || {};
+    // A ready/running runtime has outgrown the captured line: the agent resets the
+    // stderr ring and lastError on the ready transition, and nodes on older agents
+    // keep forwarding their stale line until they update. The warning must not
+    // outlive the failure — a serving node reads green (REQ-OBS-011).
+    if (metrics.runtimeState === 'ready' || metrics.runtimeState === 'running') return '';
     const detail = metrics.runtimeDetail || '';
     if (!detail || chatterDetail(detail)) return '';
     return detail;
@@ -1221,7 +1226,12 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(drawerField('reachability', 'API / console', apiState + ' / ' + consoleState, 'api:' + apiState + ';console:' + consoleState));
     }
     if (metrics.meshllmVersion && !(install.runtime === 'meshllm' && install.installedVersion)) bodyEl.appendChild(drawerField('meshllm', 'mesh-llm', metrics.meshllmVersion));
-    if (metrics.llamacppVersion && !(install.runtime === 'llamacpp' && install.installedVersion)) bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion));
+    // The backend family (vulkan on a Linux NVIDIA box, not the requested
+    // nvidia) is what the node actually runs, so it reads next to the version.
+    if (metrics.llamacppVersion && !(install.runtime === 'llamacpp' && install.installedVersion)) {
+      const backend = metrics.llamacppBackend ? ' · ' + metrics.llamacppBackend : '';
+      bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion + backend, metrics.llamacppVersion + backend));
+    }
     if (isDirectRuntime) {
       bodyEl.appendChild(drawerField('direct-context', 'Direct context tokens', reportedText(metrics.ctxSize), metrics.ctxSize != null ? String(metrics.ctxSize) : ''));
       // parallel -1 = Auto: the configured value is not a slot count, so only the
@@ -1234,9 +1244,15 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       if (metrics.parallel != null) slotsRow.setAttribute('data-parallel', String(metrics.parallel));
       bodyEl.appendChild(slotsRow);
       const cacheState = metrics.cachePrompt === true ? 'on' : metrics.cachePrompt === false ? 'off' : 'not reported';
-      bodyEl.appendChild(drawerField('direct-cache', 'Prompt cache', cacheState + (metrics.cacheReuse != null ? ' · reuse ' + metrics.cacheReuse : '')));
+      // llama.cpp silently ignores --cache-reuse for multimodal models, so a
+      // ready multimodal runtime must not advertise a reuse it does not honour.
+      const reuseNote = metrics.cacheReuse != null ? ' · reuse ' + metrics.cacheReuse : '';
+      const multimodalNote = metrics.multimodal === true ? ' · reuse disabled by multimodal' : '';
+      bodyEl.appendChild(drawerField('direct-cache', 'Prompt cache', cacheState + reuseNote + multimodalNote));
       bodyEl.appendChild(drawerField('direct-cached-tokens', 'Last cached tokens', reportedText(metrics.cachedTokensLast), metrics.cachedTokensLast != null ? String(metrics.cachedTokensLast) : ''));
-      if (metrics.lastError) {
+      // A captured startup error (e.g. "llama.cpp readiness timed out") belongs to a
+      // previous lifecycle; a ready/running runtime reads as healthy, not as an error.
+      if (metrics.lastError && metrics.runtimeState !== 'ready' && metrics.runtimeState !== 'running') {
         const llamaErr = drawerField('llamacpp-last-error', 'llama.cpp error', metrics.lastError);
         llamaErr.setAttribute('data-tone', 'danger');
         bodyEl.appendChild(llamaErr);
@@ -1440,6 +1456,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     modelInput.value = (profile.llamacpp && profile.llamacpp.modelRef) || (profile.meshllm && profile.meshllm.modelRef) || '';
     modelRow.appendChild(modelInput);
     bodyEl.appendChild(modelRow);
+    // What the node actually launches, derived from the reference above: the agent
+    // reads hfRepo/quant, never the reference itself, so this read-only row shows
+    // the effective source before a save (REQ-RUN-013).
+    if (isDirect) {
+      const quantPart = llamacpp.quant ? ':' + llamacpp.quant : '';
+      const source = (llamacpp.hfRepo || '') + quantPart + (llamacpp.hfFile ? ' · ' + llamacpp.hfFile : '');
+      bodyEl.appendChild(drawerField('model-source', 'Launch source', source, source));
+    }
     const vramRow = document.createElement('label');
     vramRow.className = 'drawer-row';
     vramRow.textContent = 'Max VRAM for this model (GB, 0 = no limit)';
@@ -1510,6 +1534,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-batch', label: 'Prefill batch', value: llamacpp.batch, placeholder: '8192', hint: 'llama.cpp --batch-size. Higher values can speed prompt ingestion but use more memory during prefill.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-ubatch', label: 'Micro-batch', value: llamacpp.ubatch, placeholder: '2048', hint: 'llama.cpp --ubatch-size. Higher values can improve prompt-loading speed but increase peak memory; lower it if requests fail under load.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-flash', label: 'Flash attention', value: flashValue, options: onOffOptions, hint: 'llama.cpp --flash-attn. Usually On for fast large-context serving.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-mmproj', label: 'Multimodal projector', value: llamacpp.mmproj === false ? 'off' : 'on', options: [{ value: 'on', label: 'On (auto)' }, { value: 'off', label: 'Off (--no-mmproj)' }], hint: 'llama.cpp --no-mmproj. On lets llama.cpp auto-load the multimodal projector when the model is one (a coding workload pays its VRAM for nothing); Off opts the model out of the projector.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-maxout', label: 'Generation cap (-n / --predict)', value: llamacpp.maxOutputTokens, placeholder: '16384', hint: 'llama.cpp server-side default/max tokens to predict. Requests may still pass max_tokens; keep this above the reasoning budget so answers are not cut off.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-llama-cache-prompt', label: 'Prompt cache', value: llamacpp.cachePrompt === false ? 'off' : 'on', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }], hint: 'Keep on for coding-session KV reuse.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-cache-reuse', label: 'Cache reuse', value: llamacpp.cacheReuse, placeholder: '256', min: 0, hint: 'llama.cpp --cache-reuse value for prompt/KV reuse.' }));
@@ -2816,6 +2841,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
         const llamaMaxOutRaw = readInput('model-edit-llama-maxout');
         const llamaGpuLayersRaw = readInput('model-edit-llama-gpu-layers');
         const llamaFlashRaw = readInput('model-edit-llama-flash');
+        const llamaMmprojRaw = readInput('model-edit-llama-mmproj');
         const llamaReasoningRaw = readInput('model-edit-llama-reasoning');
         payload.llamacpp = {
           parallel: llamaParallelRaw === '' ? -1 : Number(llamaParallelRaw),
@@ -2827,6 +2853,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
           batch: llamaBatchRaw === '' ? null : Number(llamaBatchRaw),
           ubatch: llamaUbatchRaw === '' ? null : Number(llamaUbatchRaw),
           flashAttn: llamaFlashRaw === '' ? null : llamaFlashRaw === 'on',
+          mmproj: llamaMmprojRaw === '' ? null : llamaMmprojRaw === 'on',
           maxOutputTokens: llamaMaxOutRaw === '' ? null : Number(llamaMaxOutRaw),
           gpuLayers: llamaGpuLayersRaw === '' ? null : llamaGpuLayersRaw
         };

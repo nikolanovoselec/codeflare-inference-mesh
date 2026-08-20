@@ -82,6 +82,9 @@ export interface LlamaCppProfileSettings {
   readonly batch?: number
   readonly ubatch?: number
   readonly flashAttn?: boolean
+  // false opts a text workload out of the multimodal projector's VRAM; absent
+  // keeps llama.cpp's default auto-load. Mirrors the agent's --no-mmproj.
+  readonly mmproj?: boolean
   readonly maxOutputTokens?: number
   readonly gpuLayers?: string
   readonly alias: string
