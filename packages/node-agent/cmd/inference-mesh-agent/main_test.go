@@ -699,7 +699,7 @@ func TestREQRUN005RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
 func TestREQNODE016LlamaCppMetricsCarryResolvedBackend(t *testing.T) {
 	// An NVIDIA Linux box runs the Vulkan build, not CUDA: the heartbeat must
 	// carry the backend the release archive actually installs so the console
-	// can show it next to the version. REQ-NODE-013.
+	// can show it next to the version. REQ-NODE-016.
 	profile := agent.ModelProfile{ID: "p", UpstreamModel: "m", Version: 2}
 	cfg := agent.Config{RuntimeModel: "m", ActiveProfileIDs: []string{"p"}, Profiles: []agent.ModelProfile{profile}}
 	manager := agent.NewLlamaCppManager(agent.LlamaCppInput{ProfileID: "p", UpstreamModel: "m", BinaryPath: "llama-server", Backend: "vulkan"})
