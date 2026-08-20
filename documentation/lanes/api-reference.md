@@ -140,7 +140,7 @@ POST /node/heartbeat
 | `403` | Node is revoked and cannot restore eligibility. | `{ "error": "node_revoked" }` |
 | `404` | Node record does not exist. | `{ "error": "unknown_node" }` |
 
-**Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-NODE-007](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-NODE-007](../../sdd/spec/node-agent.md), [REQ-NODE-016](../../sdd/spec/node-agent.md#req-node-016-direct-runtime-backend-identity), [REQ-OBS-003](../../sdd/spec/observability.md), [REQ-OBS-013](../../sdd/spec/observability.md#req-obs-013-direct-runtime-capability-reporting), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
 **Notes:** Invite-token values (`meshToken`, `joinTokens`) are stored encrypted, never logged, and never surfaced through any admin or status response. ([REQ-SEC-006](../../sdd/spec/security.md)) The `metrics` and `meshBootstrap` shapes are detailed below.
 
@@ -153,6 +153,8 @@ POST /node/heartbeat
 - `readyModels` — the model ids from the node's own `/v1/models` (the mesh-wide union).
 - `gpuName`, `gpuMemoryUsedMiB`, and `gpuMemoryTotalMiB` from trusted GPU telemetry. MeshLLM may report rated capacity without used memory; the node agent fills missing used memory from the host GPU tool when available so node projections can render used/total VRAM without using split planner capacity.
 - `peerCount`, `splitEnabled`, `stageCount`, `stageAssignments[]` (`stageId`, `stageIndex`, `nodeId`, `layerStart`, `layerEnd`, `state`, optional backend/device fields), `apiReady`, `consoleReady`, `meshllmVersion`, and `meshMaxVramGb` (the launched MeshLLM `--max-vram` budget).
+- `llamacppBackend` — verified managed backend family; `unknown` for a custom or host binary whose build is not verified by the installer.
+- `multimodal` — true when the current direct model cannot use llama.cpp's cross-divergence reuse optimization; ordinary text prefix caching remains separate.
 - `splitReadiness` for split profiles when MeshLLM reports diagnostics: `verdict`, `capacityAdvice` (`requiredBytes`, `aggregateCapacityBytes`, `shortfallBytes`, `eligibleNodeCount`), `participants[]`, `blockers[]`, and `recommendations[]`. Aggregated status adds `routerNodeId`/`displayName` to participants when `meshNodeId` can be matched, so operators see machine names instead of MeshLLM hashes. This distinguishes peer/download problems from planner capacity shortfalls.
 
 #### `meshBootstrap` envelope
@@ -870,7 +872,9 @@ POST /api/v1/models/{id}
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "meshId"?: string, "runtime"?: "meshllm" | "llamacpp", "llamacpp"?: { "parallel"?: number, "kvUnified"?: boolean | null, "gpuLayers"?: number | string | null, "cachePrompt"?: boolean, "cacheReuse"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean | null, "maxOutputTokens"?: number | null, "reasoning"?: object | null, "bindPort"?: number }, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "toolEmulation"?: boolean | null, "wireDtype"?: string | null, "prefillChunking"?: string | null, "prefillChunkSize"?: number | null, "reasoning"?: object }`. Every field is optional; an omitted field is left unchanged.
+**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "meshId"?: string, "runtime"?: "meshllm" | "llamacpp", "llamacpp"?: { "parallel"?: number, "kvUnified"?: boolean | null, "gpuLayers"?: number | string | null, "cachePrompt"?: boolean, "cacheReuse"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number | null, "ubatch"?: number | null, "flashAttn"?: boolean | null, "mmproj"?: boolean | null, "maxOutputTokens"?: number | null, "reasoning"?: object | null, "bindPort"?: number, "hfRepo"?: string | null, "hfFile"?: string | null, "quant"?: string | null }, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "toolEmulation"?: boolean | null, "wireDtype"?: string | null, "prefillChunking"?: string | null, "prefillChunkSize"?: number | null, "reasoning"?: object }`.
+
+Every field is optional; an omitted field is left unchanged.
 
 MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama.cpp context window must be at least `4096`; model reference must be non-empty; VRAM budget is MeshLLM-only and must be a number `≥ 0` (`0` = no cap); `name` sets the display name (non-blank); `callName` sets the model's own callable alias (slugified, non-empty, not a reserved mesh stable alias — neither `codeflare-mesh` nor any name starting with `codeflare-mesh-` — and not a collision) while keeping the model's mesh stable alias.
 
@@ -878,19 +882,25 @@ MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama
 
 For MeshLLM profiles, the tunables mirror `POST /admin/profiles/config`: `parallel`/`batch`/`ubatch`/`maxOutputTokens` are positive integers, `cacheTypeK`/`cacheTypeV` one of `f16`/`q8_0`/`q4_0`, `flashAttn` a boolean, `toolEmulation` a boolean forcing mesh-llm's server-side tool-call emulation (for templates whose native tool grammar mesh-llm cannot parse), `wireDtype`/`prefillChunking`/`prefillChunkSize` the staged-transport tunables (unset resolves to the WARP-optimized `q8` + `adaptive-ramp` defaults on split models), and `reasoning` a `{ enabled?, format?, budget? }` object (layered onto the existing block). A `null` / `0` / `""` value clears a tunable back to Auto.
 
-For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block; `parallel` is `-1` (Auto: llama-server plans the slot count with unified KV) or `>= 1`, `kvUnified` is a boolean (`null` clears back to on; `false` together with Auto parallel is rejected because llama-server force-enables unified KV under Auto), `gpuLayers` accepts `0` or a positive integer plus `"auto"` / `"all"` (`null`/`""` clears), `cacheReuse` must be `>= 0`, `cachePrompt` is boolean, `cacheTypeK`/`cacheTypeV` accept llama.cpp KV cache types, `batch`/`ubatch`/`maxOutputTokens` are positive integers (`null`/`0` clears optional values), `flashAttn` is boolean (`null` clears), `reasoning` layers or clears the direct reasoning block, and reserved bind ports are rejected.
+For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block. `parallel` is `-1` (Auto) or `>= 1`. `kvUnified` is boolean; `null` restores on, while `false` with Auto parallel is rejected. `gpuLayers` accepts `0`, a positive integer, `"auto"`, or `"all"`; `null` or `""` clears it. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings -->
+
+`cachePrompt` is boolean and `cacheReuse` is an integer `>= 0`. `cacheTypeK` and `cacheTypeV` accept `f32`, `f16`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, or `q5_1`. `batch`, `ubatch`, and `maxOutputTokens` are positive integers; `null` or `0` clears these optional values. `flashAttn` is boolean and `null` clears it. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings -->
+
+`mmproj` is boolean; `false` renders `--no-mmproj` and `null` restores projector auto-load. `reasoning` accepts `{ enabled?, format?, budget? }`, while `null` clears the block. `bindPort` is optional and reserved ports are rejected. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings -->
+
+The launch source is carried by the `llamacpp` block's `hfRepo`, `quant`, and optional `hfFile` (a per-file override inside the repo). The node agent reads **only** `hfRepo`/`quant`/`hfFile` — never `modelRef` — to build its `--hf-repo` argument, so the model reference is the single source of truth: posting a `modelRef` different from the stored one re-derives `hfRepo`/`quant` from it (dropping any stale `hfFile`), and a save whose `hfRepo`/`quant` no longer reconstruct from the reference is refused with `model_source_mismatch`. A `quant` tag ending in `.` or containing whitespace resolves no Hugging Face file and is refused with `invalid_quant_tag`, at creation and on every save.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The updated model projection (`callableNames` reflects a changed call name). | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | The context window, model reference, VRAM budget, display name, call name, mesh id, runtime, or runtime tunable was invalid. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `unknown_mesh` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_kv_unified` / `kv_unified_auto_conflict` / `invalid_reasoning` / `invalid_llamacpp` / `invalid_cachePrompt` / `bind_port_conflict` / `invalid_model_config` error body. |
+| `400` | The context window, model reference, VRAM budget, display name, call name, mesh id, runtime, or runtime tunable was invalid — including a launch source that no longer reconstructs from the reference or a quant tag that resolves no file. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `unknown_mesh` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_mmproj` / `invalid_kv_unified` / `kv_unified_auto_conflict` / `invalid_reasoning` / `invalid_llamacpp` / `invalid_hfRepo` / `invalid_cachePrompt` / `bind_port_conflict` / `invalid_quant_tag` / `model_source_mismatch` / `invalid_model_config` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is a reserved mesh stable alias (`codeflare-mesh` or a `codeflare-mesh-` prefix) or collides with another model. | `call_name_conflict` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity), [REQ-RUN-020](../../sdd/spec/runtime-profiles.md#req-run-020-automation-projector-control), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 ### POST /api/v1/models/{id}/enable
 

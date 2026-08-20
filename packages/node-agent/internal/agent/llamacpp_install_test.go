@@ -126,7 +126,9 @@ func TestREQNODE013EnsureLlamaCppDoesNotReuseGenericBinaryForGpuBackend(t *testi
 	if err != nil {
 		t.Fatalf("EnsureLlamaCpp returned error: %v", err)
 	}
-	want := filepath.Join(dataDir, "bin", "llamacpp-nvidia", "llama-server")
+	// The nvidia request on Linux resolves to the Vulkan build, and the
+	// install directory says so.
+	want := filepath.Join(dataDir, "bin", "llamacpp-vulkan", "llama-server")
 	if path != want {
 		t.Fatalf("path = %q, want %q", path, want)
 	}
@@ -307,5 +309,75 @@ func TestREQRUN014SelectedMeshLLMVersionDownloadsChecksumSidecar(t *testing.T) {
 	}
 	if string(installed) != string(payload) {
 		t.Fatalf("installed payload = %q", installed)
+	}
+}
+
+func TestREQNODE016LlamaCppResolvedBackendNamesTheArchiveItInstalls(t *testing.T) {
+	// Upstream publishes no Linux CUDA archive, so an nvidia request on Linux
+	// installs the Vulkan build; the directory must describe what runs.
+	cases := []struct {
+		goos, goarch, requested, want string
+	}{
+		{"linux", "amd64", "nvidia", "vulkan"},
+		{"linux", "amd64", "vulkan", "vulkan"},
+		{"linux", "amd64", "rocm", "rocm"},
+		{"linux", "amd64", "sycl", "sycl"},
+		{"linux", "amd64", "", "cpu"},
+		{"linux", "arm64", "nvidia", "vulkan"},
+		{"linux", "arm64", "", "cpu"},
+		{"darwin", "arm64", "metal", "metal"},
+		{"windows", "amd64", "nvidia", "cuda"},
+		{"windows", "amd64", "vulkan", "vulkan"},
+	}
+	for _, c := range cases {
+		if got := ResolvedLlamaCppBackend(c.goos, c.goarch, c.requested); got != c.want {
+			t.Fatalf("ResolvedLlamaCppBackend(%s/%s, %q) = %q, want %q", c.goos, c.goarch, c.requested, got, c.want)
+		}
+	}
+}
+
+func TestREQNODE016LlamaCppMigratesRequestedBackendInstallToResolvedName(t *testing.T) {
+	// A node that installed under the old requested-backend name (llamacpp-nvidia)
+	// must not re-download after the rename: a verified legacy install migrates.
+	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b9912/bin/llama-server", body: []byte("vulkan llama-server"), mode: 0o755}})
+	dataDir := t.TempDir()
+	legacyDir := filepath.Join(dataDir, "bin", "llamacpp-nvidia")
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatalf("create legacy dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "llama-server"), []byte("vulkan llama-server"), 0o700); err != nil {
+		t.Fatalf("write legacy binary: %v", err)
+	}
+	downloaded := false
+	path, err := EnsureLlamaCpp(dataDir, "b9912",
+		WithLlamaCppPlatform("linux", "amd64"),
+		WithLlamaCppBackend("nvidia"),
+		WithLlamaCppLookPath(lookPathWith(map[string]string{})),
+		WithLlamaCppHostCandidates(),
+		WithLlamaCppVersionQuery(func(binaryPath string) (string, error) {
+			if _, err := os.Stat(binaryPath); err == nil {
+				return "llama.cpp build 9912", nil
+			}
+			return "", errors.New("not installed")
+		}),
+		WithLlamaCppReleaseFetcher(func(version string) ([]LlamaCppReleaseAsset, error) {
+			return []LlamaCppReleaseAsset{{Name: "llama-b9912-bin-ubuntu-vulkan-x64.tar.gz", Digest: "sha256:" + meshLLMSHA256Hex(archive), BrowserDownloadURL: "https://example.invalid/llama-vulkan.tar.gz"}}, nil
+		}),
+		WithLlamaCppDownload(func(assetURL string) ([]byte, error) { downloaded = true; return archive, nil }))
+	if err != nil {
+		t.Fatalf("EnsureLlamaCpp returned error: %v", err)
+	}
+	want := filepath.Join(dataDir, "bin", "llamacpp-vulkan", "llama-server")
+	if path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+	if downloaded {
+		t.Fatalf("a verified legacy install should migrate, not re-download")
+	}
+	if _, err := os.Stat(want); err != nil {
+		t.Fatalf("migrated binary missing at %q: %v", want, err)
+	}
+	if _, err := os.Stat(legacyDir); !os.IsNotExist(err) {
+		t.Fatalf("legacy dir should be gone after migration, stat err = %v", err)
 	}
 }

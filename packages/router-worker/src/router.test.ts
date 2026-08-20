@@ -666,6 +666,9 @@ describe('router worker behavioral contracts', () => {
     await harness.clickAction('model-detail', { profileId: 'direct-qwen' })
     const modelDrawer = descendants(harness.byId('drawer-body'))
     expect(modelDrawer.find((item) => item.dataset.drawerField === 'runtime')?.dataset.value).toBe('llamacpp')
+    // The effective launch source reads back from the stored settings: what the
+    // node will actually run, visible before a save (REQ-RUN-013).
+    expect(modelDrawer.find((item) => item.dataset.drawerField === 'model-source')?.dataset.value).toBe('unsloth/Qwen3-14B-GGUF:Q4_K_M · qwen.gguf')
     expect(modelDrawer.some((item) => item.id === 'model-edit-llama-parallel')).toBe(true)
     expect(modelDrawer.some((item) => item.id === 'model-edit-llama-kv-unified')).toBe(true)
     expect(modelDrawer.some((item) => item.id === 'model-edit-parallel')).toBe(false)
@@ -692,7 +695,7 @@ describe('router worker behavioral contracts', () => {
       runtime: 'llamacpp',
       contextWindow: 131072,
       modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M',
-      llamacpp: { parallel: 2, kvUnified: true, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
+      llamacpp: { parallel: 2, kvUnified: true, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, mmproj: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
     })
 
     await harness.clickAction('node-detail', { nodeId: 'node-direct' })
@@ -2649,6 +2652,112 @@ describe('router worker behavioral contracts', () => {
     expect((await configure({ llamacpp: { cacheTypeK: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { gpuLayers: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { bindPort: 9337 } })).status).toBe(400)
+  })
+
+  it('REQ-RUN-013 sets and clears the multimodal projector opt-out', async () => {
+    const { router, store } = routerFixture()
+    const add = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'single', runtime: 'llamacpp' })
+    }))
+    const profileId = (await add.json() as { profileId: string }).profileId
+    const configure = (body: Record<string, unknown>) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId, ...body })
+    }))
+    const profile = async () => (await store.listProfiles()).find((candidate) => candidate.id === profileId)!
+
+    // Off opts the text workload out of the projector's VRAM (agent renders --no-mmproj).
+    expect((await configure({ llamacpp: { mmproj: false } })).status).toBe(200)
+    expect((await profile()).llamacpp?.mmproj).toBe(false)
+    // null clears the opt-out back to llama.cpp's default.
+    expect((await configure({ llamacpp: { mmproj: null } })).status).toBe(200)
+    expect((await profile()).llamacpp?.mmproj).toBeUndefined()
+    // A non-boolean is refused.
+    expect((await configure({ llamacpp: { mmproj: 'yes' } })).status).toBe(400)
+  })
+
+  it('REQ-RUN-013 re-derives the launch source when the model reference is edited', async () => {
+    const { router, store } = routerFixture()
+    const add = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'single', runtime: 'llamacpp' })
+    }))
+    const profileId = (await add.json() as { profileId: string }).profileId
+    const configure = (body: Record<string, unknown>) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId, ...body })
+    }))
+    const profile = async () => (await store.listProfiles()).find((candidate) => candidate.id === profileId)!
+
+    // A file override pointing into the current repo, as a repaired profile would carry.
+    const seeded = await profile()
+    await store.setProfile({ ...seeded, llamacpp: { ...seeded.llamacpp!, hfFile: 'qwen-14b-q4.gguf' } })
+
+    // Pointing the model at a new quantization re-derives the launch source from the
+    // reference: repo and quant follow, the stale file override drops with the old repo,
+    // and the operator's tunables carry over.
+    const edited = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q5_K_M' })
+    expect(edited.status).toBe(200)
+    const afterEdit = await profile()
+    expect(afterEdit.upstreamModel).toBe('unsloth/Qwen3-14B-GGUF:Q5_K_M')
+    expect(afterEdit.llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q5_K_M', modelRef: 'unsloth/Qwen3-14B-GGUF:Q5_K_M', alias: 'unsloth/Qwen3-14B-GGUF:Q5_K_M' })
+    expect(afterEdit.llamacpp?.hfFile).toBeUndefined()
+    expect(afterEdit.llamacpp?.parallel).toBe(-1)
+
+    // Moving to a whole other repo re-derives the repo as well.
+    const moved = await configure({ modelRef: 'bartowski/Llama-3.1-8B-Instruct-GGUF:Q6_K' })
+    expect(moved.status).toBe(200)
+    const afterMove = await profile()
+    expect(afterMove.llamacpp).toMatchObject({ hfRepo: 'bartowski/Llama-3.1-8B-Instruct-GGUF', quant: 'Q6_K' })
+    expect(afterMove.llamacpp?.hfFile).toBeUndefined()
+  })
+
+  it('REQ-RUN-013 refuses launch sources that cannot reconstruct the model reference', async () => {
+    const { router, store } = routerFixture()
+    const add = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', mode: 'single', runtime: 'llamacpp' })
+    }))
+    const profileId = (await add.json() as { profileId: string }).profileId
+    const configure = (body: Record<string, unknown>) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId, ...body })
+    }))
+    const profile = async () => (await store.listProfiles()).find((candidate) => candidate.id === profileId)!
+
+    // The P1 typo class: a trailing dot in the quant tag resolves no file on
+    // Hugging Face. It is refused from the reference and from an explicit tag.
+    const trailingDot = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M.' })
+    expect(trailingDot.status).toBe(400)
+    expect(await trailingDot.json()).toMatchObject({ error: 'invalid_quant_tag' })
+    const explicitDot = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', llamacpp: { quant: 'Q4_K_M.' } })
+    expect(explicitDot.status).toBe(400)
+    expect(await explicitDot.json()).toMatchObject({ error: 'invalid_quant_tag' })
+    // Whitespace in the tag is the same class.
+    const spaced = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K M' })
+    expect(spaced.status).toBe(400)
+    expect(await spaced.json()).toMatchObject({ error: 'invalid_quant_tag' })
+    // An explicit source that no longer reconstructs from the reference is refused,
+    // so the console can never show one model while the node launches another.
+    const divergentRepo = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', llamacpp: { hfRepo: 'someone/else', quant: 'Q4_K_M' } })
+    expect(divergentRepo.status).toBe(400)
+    expect(await divergentRepo.json()).toMatchObject({ error: 'model_source_mismatch' })
+    const driftedQuant = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', llamacpp: { hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q5_K_M' } })
+    expect(driftedQuant.status).toBe(400)
+    expect(await driftedQuant.json()).toMatchObject({ error: 'model_source_mismatch' })
+    const quantOnUntaggedRef = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF', llamacpp: { hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M' } })
+    expect(quantOnUntaggedRef.status).toBe(400)
+    expect(await quantOnUntaggedRef.json()).toMatchObject({ error: 'model_source_mismatch' })
+    // Refused saves leave the stored profile untouched.
+    expect(await profile()).toMatchObject({ upstreamModel: 'unsloth/Qwen3-14B-GGUF:Q4_K_M' })
+    expect((await profile()).llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M' })
   })
 
   it('REQ-RUN-002 persists per-model runtime tunables and clears them back to Auto', async () => {
@@ -4732,6 +4841,26 @@ describe('control-plane API (/api/v1)', () => {
     expect((await store.listProfiles()).some((profile) => profile.runtime === 'llamacpp')).toBe(false)
   })
 
+  it('REQ-RUN-013 refuses a quant tag that resolves no file at creation', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    // The trailing-dot tag that once took codeflare-mesh down fleet-wide is refused
+    // at the door, from the automation API and the console add path alike.
+    const res = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:UD-Q3_K_XL.', 'single', 'llamacpp')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'invalid_quant_tag' })
+    expect((await store.listProfiles()).some((profile) => profile.runtime === 'llamacpp')).toBe(false)
+
+    const consoleAdd = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'unsloth/Qwen3-14B-GGUF:UD-Q3_K_XL.', mode: 'single', runtime: 'llamacpp' })
+    }))
+    expect(consoleAdd.status).toBe(400)
+    expect(await consoleAdd.json()).toMatchObject({ error: 'invalid_quant_tag' })
+    expect((await store.listProfiles()).some((profile) => profile.runtime === 'llamacpp')).toBe(false)
+  })
+
   it('REQ-API-007 adds a split model with split serving enabled', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
@@ -4902,21 +5031,24 @@ describe('control-plane API (/api/v1)', () => {
     expect(missing.status).toBe(404)
   })
 
-  it('REQ-API-005 configures direct llama.cpp settings over the automation API', async () => {
+  it('REQ-API-005 REQ-RUN-020 configures direct llama.cpp settings over the automation API', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     const headers = { ...bearer(key.token), 'content-type': 'application/json' }
     const add = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single', 'llamacpp')
     const profileId = (await add.json() as { model: { id: string } }).model.id
 
-    const ok = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { contextWindow: 131072, parallel: 2, cacheReuse: 512 } }) }))
-    const body = await ok.json() as { model: { runtime: string; llamacpp?: { contextWindow: number; parallel: number; cacheReuse: number } } }
+    const ok = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { contextWindow: 131072, parallel: 2, cacheReuse: 512, mmproj: false } }) }))
+    const body = await ok.json() as { model: { runtime: string; llamacpp?: { contextWindow: number; parallel: number; cacheReuse: number; mmproj?: boolean } } }
     const stored = (await store.listProfiles()).find((profile) => profile.id === profileId)!
 
     expect(ok.status).toBe(200)
     expect(body.model.runtime).toBe('llamacpp')
-    expect(body.model.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512 })
-    expect(stored.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512 })
+    expect(body.model.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512, mmproj: false })
+    expect(stored.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512, mmproj: false })
+    const cleared = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { mmproj: null } }) }))
+    expect(cleared.status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.llamacpp?.mmproj).toBeUndefined()
     expect((await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { cacheReuse: -1 } }) }))).status).toBe(400)
   })
 

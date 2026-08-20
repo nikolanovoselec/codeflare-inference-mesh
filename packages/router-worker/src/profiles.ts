@@ -240,7 +240,10 @@ export function buildDuplicateProfile(source: ModelProfile, existing: readonly M
   }
 }
 
-function parseLlamaCppModelRef(ref: string): { readonly hfRepo: string; readonly hfFile?: string; readonly quant?: string } {
+// The model reference is the single source of truth for the launch source: the
+// node agent reads hfRepo/quant (never modelRef) to build its --hf-repo argument,
+// so the parsed repo/quant must always be able to reconstruct the reference.
+export function parseLlamaCppModelRef(ref: string): { readonly hfRepo: string; readonly hfFile?: string; readonly quant?: string } {
   const withoutScheme = ref.replace(/^hf:\/\//, '')
   const quantSeparator = withoutScheme.lastIndexOf(':')
   if (quantSeparator <= 0) return { hfRepo: withoutScheme }
@@ -248,6 +251,16 @@ function parseLlamaCppModelRef(ref: string): { readonly hfRepo: string; readonly
     hfRepo: withoutScheme.slice(0, quantSeparator),
     quant: withoutScheme.slice(quantSeparator + 1)
   }
+}
+
+// A quant tag is the exact file tag on Hugging Face. A tag ending in '.' (a
+// `.gguf` copy-paste that overshot by one character) or containing whitespace
+// resolves no file and fails only at model load on the node — the typo class that
+// once took codeflare-mesh down fleet-wide. Reject it at the door instead.
+export function llamaCppQuantError(quant: string | undefined): 'invalid_quant_tag' | null {
+  if (quant === undefined) return null
+  if (quant.length === 0 || quant.endsWith('.') || /\s/.test(quant)) return 'invalid_quant_tag'
+  return null
 }
 
 export function normalizeModelProfile(profile: ModelProfile): ModelProfile {

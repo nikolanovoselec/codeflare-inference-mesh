@@ -150,7 +150,7 @@ func (m *MeshLLMManager) Start(ctx context.Context) error {
 		return fmt.Errorf("write mesh-llm config: %w", err)
 	}
 	args := RenderMeshLLMArgs(input)
-	env := MeshLLMEnv(os.Environ(), input.Tunables.ToolEmulation)
+	env := MeshLLMEnv(os.Environ(), input.Tunables.ToolEmulation, meshLLMNativeRuntimeManifestURL(input.MeshLLMVersion, input.MeshLLMRepository))
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.state = "starting"
 	m.lastError = ""
@@ -582,6 +582,9 @@ func (m *MeshLLMManager) awaitReadiness(proc meshProcess, exited <-chan struct{}
 		if mapped == "ready" {
 			m.state = "ready"
 			m.lastError = ""
+			// A fresh ready state outlives the previous lifecycle: clear the stderr
+			// ring so a healthy node reports no captured error (REQ-OBS-011).
+			m.stderrLog.Reset()
 			m.mu.Unlock()
 			return
 		}

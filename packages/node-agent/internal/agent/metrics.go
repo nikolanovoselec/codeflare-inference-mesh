@@ -32,6 +32,14 @@ type NodeMetrics struct {
 	ConsoleReady              bool                    `json:"consoleReady,omitempty"`
 	MeshLLMVersion            string   `json:"meshllmVersion,omitempty"`
 	LlamaCppVersion           string   `json:"llamacppVersion,omitempty"`
+	// LlamaCppBackend is the backend family the release archive actually
+	// installs (vulkan on a Linux NVIDIA box, not the requested nvidia), so
+	// the console can show what the node really runs (REQ-NODE-013).
+	LlamaCppBackend string `json:"llamacppBackend,omitempty"`
+	// Multimodal is set when llama-server announces that the loaded model does
+	// not support its cross-divergence reuse optimization. Ordinary text prefix
+	// caching remains available through cache-prompt (REQ-OBS-013).
+	Multimodal bool `json:"multimodal,omitempty"`
 	CtxSize                   int      `json:"ctxSize,omitempty"`
 	Parallel                  int      `json:"parallel,omitempty"`
 	CachePrompt               bool     `json:"cachePrompt,omitempty"`
@@ -106,6 +114,12 @@ func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	merged := base
 	if extra.RuntimeKind != "" {
 		merged.RuntimeKind = extra.RuntimeKind
+		if extra.RuntimeKind == "llamacpp" {
+			// Direct-runtime capability state is lifecycle-scoped. Unlike sparse
+			// counters, false is meaningful after a model restart and must clear a
+			// previous multimodal report.
+			merged.Multimodal = extra.Multimodal
+		}
 	}
 	if extra.GPUName != "" {
 		merged.GPUName = extra.GPUName
@@ -167,6 +181,12 @@ func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	}
 	if extra.LlamaCppVersion != "" {
 		merged.LlamaCppVersion = extra.LlamaCppVersion
+	}
+	if extra.LlamaCppBackend != "" {
+		merged.LlamaCppBackend = extra.LlamaCppBackend
+	}
+	if extra.Multimodal {
+		merged.Multimodal = true
 	}
 	if extra.CtxSize != 0 {
 		merged.CtxSize = extra.CtxSize

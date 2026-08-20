@@ -699,28 +699,52 @@ describe('dashboard overview contracts', () => {
     expect(activate?.init?.method).toBe('POST')
   })
 
-  it('REQ-OBS-011 a live runtime error rides the node row and drawer even while serving', async () => {
+  it('REQ-OBS-014 surfaces current runtime errors after readiness and filters chatter', async () => {
     const nodes = [
-      { id: 'node-degraded', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'direct prediction return upstream-opened sink unavailable' } },
+      // A not-yet-ready runtime with a captured error is degraded, not healthy.
+      { id: 'node-degraded', status: 'online', metrics: { runtimeState: 'starting', nodeState: 'loading model', readyModels: [], activeRequests: 0, runtimeDetail: 'direct prediction return upstream-opened sink unavailable' } },
+      { id: 'node-llama-error', status: 'online', metrics: { runtimeState: 'starting', nodeState: 'loading model', readyModels: [], activeRequests: 0, runtimeDetail: 'stage lane I/O failed while opening the socket' } },
+      // A hard token overrides the level gate even when inflected, matching the agent.
+      { id: 'node-panicked', status: 'online', metrics: { runtimeState: 'starting', nodeState: 'loading model', readyModels: [], activeRequests: 0, runtimeDetail: "W srv thread 'stage-0' panicked at src/lane.rs:118" } },
+      // Current agents clear startup errors at readiness, so an error reported while
+      // ready occurred after that transition and remains a live degradation.
+      { id: 'node-ready-error', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: '8.13.986.469 E ggml_gallocr_reserve_n_impl: failed to allocate' } },
       { id: 'node-clean', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0 } },
       // Leveled chatter from a pre-gate agent is not a live degradation signal.
-      { id: 'node-chatter', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'WARN failed closing path' } }
+      { id: 'node-chatter', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: 'WARN failed closing path' } },
+      // llama.cpp spells its level as a bare leading letter, so a cache-eviction warning
+      // from it is chatter too; a capital inside message text stays a real error.
+      { id: 'node-llama-chatter', status: 'online', metrics: { runtimeState: 'ready', nodeState: 'serving', readyModels: ['m'], activeRequests: 0, runtimeDetail: '355.41.434.230 W srv alloc: - making room for prompt cache entry, removing oldest entry (size = 583.167 MiB)' } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
     const statusCell = (id: string) => descendants(tableRows(harness).find((row) => row.dataset.nodeRow === id)!).find((node) => node.dataset.cell === 'status')!
     const chipOf = (id: string) => descendants(statusCell(id)).find((node) => node.className === 'chip')!
     expect(statusCell('node-degraded').dataset.runtimeError).toBe('direct prediction return upstream-opened sink unavailable')
     expect(chipOf('node-degraded').dataset.tone).toBe('warn')
+    expect(statusCell('node-llama-error').dataset.runtimeError).toBe('stage lane I/O failed while opening the socket')
+    expect(chipOf('node-llama-error').dataset.tone).toBe('warn')
+    expect(statusCell('node-panicked').dataset.runtimeError).toBe("W srv thread 'stage-0' panicked at src/lane.rs:118")
+    expect(chipOf('node-panicked').dataset.tone).toBe('warn')
+    expect(statusCell('node-ready-error').dataset.runtimeError).toContain('failed to allocate')
+    expect(chipOf('node-ready-error').dataset.tone).toBe('warn')
     expect(statusCell('node-clean').dataset.runtimeError).toBeUndefined()
     expect(chipOf('node-clean').dataset.tone).toBe('ok')
     expect(statusCell('node-chatter').dataset.runtimeError).toBeUndefined()
     expect(chipOf('node-chatter').dataset.tone).toBe('ok')
+    expect(statusCell('node-llama-chatter').dataset.runtimeError).toBeUndefined()
+    expect(chipOf('node-llama-chatter').dataset.tone).toBe('ok')
 
+    // The drawer carries the exact line for a not-yet-ready runtime…
     await harness.clickAction('node-detail', { nodeId: 'node-degraded' })
-    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    const err = fields.find((node) => node.dataset.drawerField === 'runtime-detail')!
-    expect(err.dataset.tone).toBe('warn')
+    let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    let err = fields.find((node) => node.dataset.drawerField === 'runtime-detail')!
+    expect(err.dataset.tone).toBe('danger')
     expect(descendants(err).map((node) => node.textContent).join(' ')).toContain('sink unavailable')
+    // A post-readiness error remains visible in the drawer.
+    await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
+    await harness.clickAction('node-detail', { nodeId: 'node-ready-error' })
+    fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    expect(fields.find((node) => node.dataset.drawerField === 'runtime-detail')?.dataset.tone).toBe('warn')
   })
 
   it('REQ-OBS-011 the node drawer surfaces runtime errors, work state, and mesh diagnostics', async () => {
@@ -765,11 +789,12 @@ describe('dashboard overview contracts', () => {
     expect(fields.some((node) => node.dataset.drawerField === 'stages')).toBe(false)
   })
 
-  it('REQ-OBS-011 direct node drawer does not turn unreported heartbeat fields into failures', async () => {
+  it('REQ-OBS-014 direct node drawer reports only observed fields and effective cache behavior', async () => {
     const nodes = [
       { id: 'direct-node', status: 'online', runtime: 'llamacpp', metrics: {
         runtimeKind: 'llamacpp', runtimeState: 'ready', apiReady: true, consoleReady: null,
-        parallel: 4, ctxSize: 262144, cacheReuse: 256, gpuMemoryUsedMiB: 3907, gpuMemoryTotalMiB: 24576,
+        parallel: 4, ctxSize: 262144, cacheReuse: 256, multimodal: true, gpuMemoryUsedMiB: 3907, gpuMemoryTotalMiB: 24576,
+        llamacppVersion: 'b10452', llamacppBackend: 'vulkan',
         readyModels: ['unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-IQ3_S'] } }
     ]
     const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
@@ -790,6 +815,13 @@ describe('dashboard overview contracts', () => {
     expect(textOf(field('vram')!)).toContain('3.8 GiB / 24 GiB')
     expect(textOf(field('direct-parallel')!)).toContain('parallel 4')
     expect(textOf(field('direct-cached-tokens')!)).toContain('not reported')
+    // The resolved backend reads next to the version: an NVIDIA Linux box runs the
+    // Vulkan build, and the drawer says so instead of implying CUDA (REQ-NODE-013).
+    expect(field('llamacpp')!.dataset.value).toBe('b10452 · vulkan')
+    // The unavailable cross-divergence optimization must not be confused with
+    // ordinary text prefix caching, which remains independently configurable (REQ-OBS-014).
+    expect(textOf(field('direct-cache')!)).not.toContain('reuse 256')
+    expect(textOf(field('direct-cache')!)).toContain('cross-divergence reuse unavailable for multimodal')
   })
 
   it('REQ-ADM-015 opens a model drawer with editable identity and no duplicated serving list', async () => {

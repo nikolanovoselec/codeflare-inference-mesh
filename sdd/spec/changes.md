@@ -1,7 +1,26 @@
 # Changes
 
+## 2026-08-20
+
+- Direct llama.cpp profiles can disable the multimodal projector per model, avoiding its VRAM cost for text workloads while keeping auto-load as the default. The model drawer and both configuration APIs expose the control. ([REQ-RUN-015](runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering), [REQ-RUN-019](runtime-profiles.md#req-run-019-direct-projector-control), [REQ-RUN-020](runtime-profiles.md#req-run-020-automation-projector-control))
+- Direct llama.cpp model downloads now stay beneath the agent data directory, where disk accounting and cleanup can cover them. Existing blobs outside that directory require a one-time operator migration. ([REQ-NODE-013](node-agent.md#req-node-013-runtime-binary-bootstrap))
+- Runtime replacement now starts fresh in-flight accounting without allowing late completions from the old runtime to corrupt the new count. A recovered single-slot node therefore cannot remain occupied by stale traffic. ([REQ-NODE-015](node-agent.md#req-node-015-runtime-scoped-request-accounting))
+- Multimodal direct models now report when cross-divergence reuse is unavailable, while the node drawer distinguishes that optimization from ordinary text prefix caching. Capability state resets when a different model starts. ([REQ-OBS-013](observability.md#req-obs-013-direct-runtime-capability-reporting), [REQ-OBS-014](observability.md#req-obs-014-admin-runtime-diagnostics))
+- Managed llama.cpp installs and node telemetry now identify the backend family actually selected from the release, while unverified custom binaries report an unknown backend. Verified legacy installs migrate to the corrected directory without downloading again. ([REQ-NODE-016](node-agent.md#req-node-016-direct-runtime-backend-identity))
+- Runtime startup errors now clear when the runtime becomes ready, so recovered nodes no longer remain yellow. Errors captured after readiness remain visible while routine warning and information chatter stays hidden. ([REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface), [REQ-OBS-014](observability.md#req-obs-014-admin-runtime-diagnostics))
+- Editing a direct model reference now re-derives its launch source and drops stale file overrides; mismatched or malformed sources are refused. The model drawer shows the effective source before saving. ([REQ-RUN-018](runtime-profiles.md#req-run-018-direct-launch-source-integrity))
+
+## 2026-08-11
+
+- Fixed the console hiding a warn-leveled runtime line that carries an inflected hard error token. A line reading `WARN ... panicked at ...` was classified as routine chatter because the console required the token to stand as a whole word, so a panic the agent had captured never reached the operator. The console now matches such a token the way the agent does, by its start rather than its whole length, so the panic overrides the level gate. ([REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface))
+
+## 2026-08-10
+
+- Fixed a serving llama.cpp node reading yellow in the console while healthy. Two faults in the shared runtime stderr ring compounded: error markers were matched as bare substrings, so the `oom` marker fired on the `room` of a routine `making room for prompt cache entry` cache eviction, and the chatter gate recognised only mesh-llm's spelled-out JSON level, so llama.cpp's bare leading severity letter (`W`) never registered as a warning. Markers now anchor at a word start, leaving the end free so `panicked at` still matches, and both the agent and the console read llama.cpp's leading level letter. The console gate matters on its own here, because nodes keep forwarding captured lines until their agent updates. ([REQ-OBS-011](observability.md#req-obs-011-runtime-error-surface))
+
 ## 2026-07-18
 
+- Fixed a fork-source blind spot that stranded freshly-installing nodes (surfaced by an Apple-Silicon Mac stuck on a permanent runtime error): the active repository governed the mesh-llm *binary* download but not the *native-runtime* manifest, which mesh-llm hardcodes to upstream `Mesh-LLM/mesh-llm` even in fork builds — so a fork-only tag 404'd its platform runtime and the node never provisioned. The agent now launches mesh-llm with `MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL` aimed at the active source, so a node resolves its native runtime from the same repository as its binary. ([REQ-NODE-014](node-agent.md#req-node-014-configurable-runtime-release-source))
 - The mesh-llm binary source is now switchable from Settings: `MESHLLM_RELEASE_REPOSITORY` makes the fork *available* rather than forcing it, and a console selector (plus `{ meshllmSource: 'official' | 'fork' }` on the runtime-versions endpoints) flips the active source without a redeploy — the choice persists in `router_config` and drives listing, selection, and the fleet's `meshllmRepository`. ([REQ-NODE-014](node-agent.md#req-node-014-configurable-runtime-release-source))
 
 ## 2026-07-17

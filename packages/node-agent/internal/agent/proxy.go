@@ -6,23 +6,57 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
-type ActiveCounter struct {
+type activeRequestGeneration struct {
 	value int64
 }
 
+type ActiveCounter struct {
+	current atomic.Pointer[activeRequestGeneration]
+}
+
+func (c *ActiveCounter) generation() *activeRequestGeneration {
+	if current := c.current.Load(); current != nil {
+		return current
+	}
+	created := &activeRequestGeneration{}
+	if c.current.CompareAndSwap(nil, created) {
+		return created
+	}
+	return c.current.Load()
+}
+
 func (c *ActiveCounter) Inc() {
-	atomic.AddInt64(&c.value, 1)
+	atomic.AddInt64(&c.generation().value, 1)
 }
 
 func (c *ActiveCounter) Dec() {
-	atomic.AddInt64(&c.value, -1)
+	atomic.AddInt64(&c.generation().value, -1)
+}
+
+// Begin counts one request against the current runtime generation and returns
+// an idempotent completion function bound to that generation. A late completion
+// from an old runtime therefore cannot decrement the replacement runtime's count.
+func (c *ActiveCounter) Begin() func() {
+	generation := c.generation()
+	atomic.AddInt64(&generation.value, 1)
+	var once sync.Once
+	return func() {
+		once.Do(func() { atomic.AddInt64(&generation.value, -1) })
+	}
+}
+
+// Reset starts request accounting for a replacement runtime. Existing handlers
+// retain their old generation, so their deferred completions remain isolated.
+func (c *ActiveCounter) Reset() {
+	c.current.Store(&activeRequestGeneration{})
 }
 
 func (c *ActiveCounter) Value() int {
-	return int(atomic.LoadInt64(&c.value))
+	return int(atomic.LoadInt64(&c.generation().value))
 }
 
 type RuntimeTargetProvider interface {
@@ -69,8 +103,8 @@ func ProxyHandler(targetInput any, upstreamToken string, counters ...*ActiveCoun
 			filterRuntimeHeaders(req.Header)
 		}
 		if len(counters) > 0 && counters[0] != nil {
-			counters[0].Inc()
-			defer counters[0].Dec()
+			finish := counters[0].Begin()
+			defer finish()
 		}
 		proxy.ServeHTTP(w, req)
 	}), nil

@@ -362,6 +362,27 @@ func TestREQRUN010RuntimeEnvInheritsServiceEnvAndDisablesSelfUpdate(t *testing.T
 	})
 }
 
+// REQ-NODE-014: when a fork binary source is active the manager must launch
+// mesh-llm with MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL pointed at that fork, so
+// the subprocess resolves native runtimes from the same source as its binary.
+func TestREQNODE014ManagerLaunchesWithForkNativeRuntimeManifest(t *testing.T) {
+	fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+		MeshLLMVersion:    "v0.73.1-codeflare.1",
+		MeshLLMRepository: "nikolanovoselec/mesh-llm",
+	}, 0)
+	if err := fixture.manager.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.launch.count() != 1 {
+		t.Fatalf("expected one launch, got %d", fixture.launch.count())
+	}
+	env := fixture.launch.record(0).env
+	want := "MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL=https://github.com/nikolanovoselec/mesh-llm/releases/download/v0.73.1-codeflare.1/native-runtimes.json"
+	if !envContains(env, want) {
+		t.Fatalf("fork source must launch mesh-llm with the native-runtime manifest override, got env %v", env)
+	}
+}
+
 func TestREQRUN010StopSendsSIGTERMBeforeKill(t *testing.T) {
 	t.Run("REQ-RUN-010", func(t *testing.T) {
 		t.Run("escalates to kill only after the grace period", func(t *testing.T) {
@@ -900,4 +921,36 @@ func TestREQRUN007SplitReadinessGatedOnFullModelId(t *testing.T) {
 		models.setIDs([]string{layerPackage})
 		waitForManagerState(t, fixture.manager, "ready")
 	})
+}
+
+func TestREQOBS011MeshLLMReadyClearsStaleRuntimeError(t *testing.T) {
+	// A captured startup error from a previous lifecycle must not survive the
+	// fresh ready state: the console reads a ready node as healthy. REQ-OBS-011.
+	console := &consoleFixture{status: statusPayload("serving", "mesh-1", "tok-1")}
+	consoleServer := httptest.NewServer(console)
+	defer consoleServer.Close()
+	models := &modelsFixture{ids: []string{"target-model"}}
+	modelsServer := httptest.NewServer(models)
+	defer modelsServer.Close()
+
+	fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+		ModelRef:    "target-model",
+		APIPort:     serverPort(t, modelsServer),
+		ConsolePort: serverPort(t, consoleServer),
+	}, 0)
+	fixture.manager.stderrLog.Write([]byte(`{"level":"error","msg":"failed to allocate Vulkan0 buffer"}` + "\n"))
+	fixture.manager.lastError = "mesh-llm readiness deadline exceeded"
+	if fixture.manager.RuntimeErrorDetail() == "" {
+		t.Fatal("setup: the stale line must be present before start")
+	}
+	if err := fixture.manager.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForManagerState(t, fixture.manager, "ready")
+	if got := fixture.manager.RuntimeErrorDetail(); got != "" {
+		t.Fatalf("ready must clear the stale captured line, got %q", got)
+	}
+	if got := fixture.manager.LastError(); got != "" {
+		t.Fatalf("ready must clear the stale lastError, got %q", got)
+	}
 }

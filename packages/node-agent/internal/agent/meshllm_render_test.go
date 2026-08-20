@@ -407,7 +407,7 @@ func TestREQRUN014ContextLimitConfigRendering(t *testing.T) {
 
 func TestREQRUN010MeshLLMEnvAppendsNoSelfUpdate(t *testing.T) {
 	base := []string{"PATH=/usr/bin", "HF_TOKEN=secret"}
-	got := MeshLLMEnv(base, false)
+	got := MeshLLMEnv(base, false, "")
 	want := []string{"PATH=/usr/bin", "HF_TOKEN=secret", "MESH_LLM_NO_SELF_UPDATE=1"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("MeshLLMEnv = %v, want %v", got, want)
@@ -415,11 +415,36 @@ func TestREQRUN010MeshLLMEnvAppendsNoSelfUpdate(t *testing.T) {
 	if !slices.Equal(base, []string{"PATH=/usr/bin", "HF_TOKEN=secret"}) {
 		t.Fatalf("MeshLLMEnv mutated its input: %v", base)
 	}
-	forced := MeshLLMEnv(base, true)
+	forced := MeshLLMEnv(base, true, "")
 	if !slices.Equal(forced, append(want, "MESH_FORCE_TOOL_EMULATION=1")) {
 		t.Fatalf("forced tool emulation must append the mesh-llm override, got %v", forced)
 	}
-	if empty := MeshLLMEnv(nil, false); !slices.Equal(empty, []string{"MESH_LLM_NO_SELF_UPDATE=1"}) {
+	if empty := MeshLLMEnv(nil, false, ""); !slices.Equal(empty, []string{"MESH_LLM_NO_SELF_UPDATE=1"}) {
 		t.Fatalf("MeshLLMEnv(nil) = %v, want the self-update guard alone", empty)
+	}
+}
+
+// REQ-NODE-014: a fork binary source must also govern where the mesh-llm
+// subprocess resolves its native runtimes, otherwise mesh-llm's hardcoded
+// upstream default 404s a fork-only tag and a fresh node never provisions.
+func TestREQNODE014NativeRuntimeManifestFollowsSource(t *testing.T) {
+	const version = "v0.73.1-codeflare.1"
+	fork := meshLLMNativeRuntimeManifestURL(version, "nikolanovoselec/mesh-llm")
+	want := "https://github.com/nikolanovoselec/mesh-llm/releases/download/" + version + "/native-runtimes.json"
+	if fork != want {
+		t.Fatalf("fork manifest URL = %q, want %q", fork, want)
+	}
+	if upstream := meshLLMNativeRuntimeManifestURL(version, ""); upstream != "" {
+		t.Fatalf("no fork repository must leave mesh-llm on its default, got %q", upstream)
+	}
+
+	env := MeshLLMEnv([]string{"PATH=/usr/bin"}, false, fork)
+	if !slices.Contains(env, "MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL="+want) {
+		t.Fatalf("a fork source must export the manifest override: %v", env)
+	}
+	for _, entry := range MeshLLMEnv([]string{"PATH=/usr/bin"}, false, "") {
+		if strings.HasPrefix(entry, "MESH_LLM_NATIVE_RUNTIME_MANIFEST_URL=") {
+			t.Fatalf("upstream source must not set the manifest override: %q", entry)
+		}
 	}
 }

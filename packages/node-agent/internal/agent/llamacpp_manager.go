@@ -23,6 +23,13 @@ type LlamaCppInput struct {
 	UpstreamModel  string
 	Settings       LlamaCppSettings
 	BinaryPath     string
+	// Backend is the verified managed backend family, or unknown for a custom or
+	// host-selected binary whose build cannot be inferred reliably.
+	Backend string
+	// DataDir is the agent's data directory; the runtime's Hugging Face cache is
+	// pinned under it so direct llama.cpp models never accumulate outside dataDir
+	// (in root's home) where disk accounting and cleanup cannot see them.
+	DataDir string
 }
 
 type LlamaCppManager struct {
@@ -86,6 +93,35 @@ func llamaCppRuntimeEnv(env []string, binaryPath string) []string {
 	return upsertPathEnv(next, "PATH", dir)
 }
 
+// llamaCppRuntimeEnvFor pins the runtime's environment to the managed install: the
+// library search paths plus the Hugging Face cache under the agent's data directory.
+// Without the HF pin, direct llama.cpp models download into the agent user's home
+// (~/.cache/huggingface) — outside dataDir, invisible to disk accounting, and missed
+// by any cleanup scoped to dataDir.
+func llamaCppRuntimeEnvFor(env []string, binaryPath string, dataDir string) []string {
+	next := llamaCppRuntimeEnv(env, binaryPath)
+	if dataDir == "" {
+		return next
+	}
+	hfHome := filepath.Join(dataDir, ".cache", "huggingface")
+	return upsertSingleEnv(next, "HF_HOME", hfHome)
+}
+
+// upsertSingleEnv sets a single-value environment variable, replacing any existing
+// entry (unlike upsertPathEnv, which prepends a path-list entry). This is for
+// variables like HF_HOME that name one directory, not a search path.
+func upsertSingleEnv(env []string, key string, value string) []string {
+	prefix := key + "="
+	for i, item := range env {
+		if strings.HasPrefix(item, prefix) {
+			copyEnv := append([]string(nil), env...)
+			copyEnv[i] = prefix + value
+			return copyEnv
+		}
+	}
+	return append(append([]string(nil), env...), prefix+value)
+}
+
 func upsertPathEnv(env []string, key string, dir string) []string {
 	prefix := key + "="
 	for i, item := range env {
@@ -121,6 +157,7 @@ func (m *LlamaCppManager) Start(ctx context.Context) error {
 		m.mu.Unlock()
 		return nil
 	}
+	m.stderrLog.ResetLifecycle()
 	if _, err := exec.LookPath(m.input.BinaryPath); err != nil {
 		m.state = "dependency-missing"
 		m.lastError = fmt.Sprintf("llama-server binary missing: %s", m.input.BinaryPath)
@@ -131,7 +168,7 @@ func (m *LlamaCppManager) Start(ctx context.Context) error {
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.state = "starting"
 	m.lastError = ""
-	proc, err := m.launch(processCtx, m.input.BinaryPath, args, llamaCppRuntimeEnv(os.Environ(), m.input.BinaryPath), m.stderrLog)
+	proc, err := m.launch(processCtx, m.input.BinaryPath, args, llamaCppRuntimeEnvFor(os.Environ(), m.input.BinaryPath, m.input.DataDir), m.stderrLog)
 	if err != nil {
 		cancel()
 		m.state = "failed"
@@ -192,6 +229,12 @@ func RenderLlamaCppArgs(in LlamaCppInput) []string {
 		} else {
 			args = append(args, "--flash-attn", "off")
 		}
+	}
+	// An absent toggle keeps llama.cpp's default (auto-load the multimodal
+	// projector); an explicit off opts a text workload out of the projector's
+	// VRAM cost. REQ-RUN-015.
+	if settings.MMProj != nil && !*settings.MMProj {
+		args = append(args, "--no-mmproj")
 	}
 	if settings.MaxOutputTokens > 0 {
 		args = append(args, "--predict", fmt.Sprintf("%d", settings.MaxOutputTokens))
@@ -330,6 +373,11 @@ func (m *LlamaCppManager) awaitReadiness(proc meshProcess) {
 					m.state = "ready"
 					m.apiReady = true
 					m.models = models
+					// A fresh ready state outlives the previous lifecycle: clear the
+					// captured startup error and the stderr ring so a healthy node
+					// reports no error (REQ-OBS-011).
+					m.lastError = ""
+					m.stderrLog.Reset()
 				}
 				m.mu.Unlock()
 				return
@@ -385,8 +433,10 @@ func (m *LlamaCppManager) Metrics() NodeMetrics {
 		TokensPerSecond:           m.generationRate,
 		PromptTokensPerSecond:     m.promptRate,
 		GenerationTokensPerSecond: m.generationRate,
+		LlamaCppBackend:           m.input.Backend,
 		LastError:                 m.lastError,
 		RuntimeDetail:             m.RuntimeErrorDetail(),
+		Multimodal:                m.multimodal(),
 	}
 }
 
@@ -503,6 +553,13 @@ func (m *LlamaCppManager) RuntimeErrorDetail() string {
 		return ""
 	}
 	return m.stderrLog.Detail()
+}
+
+func (m *LlamaCppManager) multimodal() bool {
+	if m.stderrLog == nil {
+		return false
+	}
+	return m.stderrLog.Multimodal()
 }
 
 func (m *LlamaCppManager) ReadyModels() []string {

@@ -94,7 +94,7 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 3. The heartbeat payload carries the detected Mesh IP alongside runtime metrics. <!-- @impl: packages/node-agent/internal/agent/client.go::HeartbeatFromConfig --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-002 REQ-OBS-003 accepts authenticated heartbeats and stores node metrics) -->
 4. Direct llama.cpp heartbeat metrics include runtime kind, llama.cpp version, configured context size, parallel slots, prompt-cache settings, slot usage, and latest cached-token count when the runtime exposes them. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::RuntimeMetricsWithError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-012 REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
 5. Runtime bootstrap errors ride heartbeat metrics as `lastError` with `dependency-missing`, so the router can report install failure without making the node schedulable. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppRejectsChecksumMismatch) -->
-6. For split MeshLLM profiles, heartbeat metrics include the console split-readiness diagnostic report, including capacity advice, participants, blockers, and recommendations when MeshLLM reports them, and the full stage topology from `/api/runtime/stages` when available instead of relying only on the local `/api/status` stage list. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager.PollSplitReadiness --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager.PollStatus --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMSplitReadiness --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMRuntimeStages --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::collect --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS007ParsesSplitReadinessCapacityShortfall) --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS011ParsesRuntimeStagesTopology) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQOBS007CollectCarriesSplitReadinessAndLaunchedBudget) -->
+6. For split MeshLLM profiles, heartbeat metrics include the console split-readiness diagnostic report, including capacity advice, participants, blockers, and recommendations when MeshLLM reports them, and the full stage topology from `/api/runtime/stages` when available instead of relying only on the local `/api/status` stage list. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::PollSplitReadiness --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::PollStatus --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMSplitReadiness --> <!-- @impl: packages/node-agent/internal/agent/meshllm_status.go::ParseMeshLLMRuntimeStages --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::collect --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS007ParsesSplitReadinessCapacityShortfall) --> <!-- @test: packages/node-agent/internal/agent/meshllm_status_test.go (TestREQOBS011ParsesRuntimeStagesTopology) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQOBS007CollectCarriesSplitReadinessAndLaunchedBudget) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
@@ -292,25 +292,75 @@ This domain covers response metadata, admin status, node metrics, mesh health, a
 
 ### REQ-OBS-011: Runtime error surface
 
-**Intent:** When mesh-llm fails to become ready, the one line that explains why (an OOM, a CUDA error, a lane that never came up) is written to the runtime's stderr and today only reaches the host journal, so an operator has to SSH in to see it. The node agent must capture that line and ride it — plus the console's raw node_state — on the heartbeat so the reason a runtime is wedged is legible from the control plane.
+**Intent:** When the managed runtime fails to become ready, the one line that explains why (an OOM, a CUDA error, a lane that never came up) is written to the runtime's stderr and today only reaches the host journal, so an operator has to SSH in to see it. The node agent must capture that line, whichever runtime is active, and ride it on the heartbeat together with the console's raw node_state, so the reason a runtime is wedged is legible from the control plane. mesh-llm and llama.cpp share one capture path but spell their log levels differently, so the classification must hold for both.
 
-**Applies To:** Node, Admin
+**Applies To:** Node Agent
 
 **Acceptance Criteria:**
 
-1. The node agent tees mesh-llm's stderr through a bounded ring that keeps the most recent error-looking line and reassembles lines split across writes; a warn/info/debug/trace-leveled line (matched as a whole word, so `backtrace` is not a level) is never captured without a hard error token. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::runtimeLog --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::launchMeshProcess --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogCapturesLastErrorLine) --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogHandlesSplitWrites) --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogIgnoresNonErrorLevelLines) --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogLevelTokensMatchWholeWordsOnly) -->
+1. The node agent tees the managed runtime's stderr through a bounded ring, shared by mesh-llm and llama.cpp, keeping the most recent error-looking line and reassembling lines split across writes. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::runtimeLog --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::launchMeshProcess --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::Start --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogCapturesLastErrorLine) --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogHandlesSplitWrites) -->
 2. Heartbeat metrics carry captured runtime error detail plus raw `nodeState`, preserving existing values when a later merge omits them. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::RuntimeErrorDetail --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::collect --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::applyMeshStatusMetrics --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::MergeRuntimeMetrics --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeErrorDetailReflectsRing) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQOBS011RuntimeDetailAndNodeStateRideHeartbeat) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQRUN005RuntimeRestartMarksPendingProfileNotReady) -->
-3. The console derives visible node work labels from stage ownership and live readiness, while raw `nodeState` remains a status-detail contract value. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 the node drawer surfaces runtime errors, work state, and mesh diagnostics) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 renders a split stage owner as active work, not standby/API client) -->
-4. Stale `model_size_unknown` diagnostics are hidden during reload/update transitions and cannot override serving split status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 hides model_size_unknown during reload and update transitions) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status) -->
-5. Absent heartbeat fields and omitted direct llama.cpp console fields render as absent/not reported, never fabricated `down`, `0`, or `on` values. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 direct node drawer does not turn unreported heartbeat fields into failures) -->
-6. Split profiles stuck with no peers or stages surface peer-discovery blockers without requiring SSH. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 surfaces split mesh peer discovery blockers without SSH) -->
-7. A non-chatter runtime error line rides the node row — `data-runtime-error` on the status cell, an ok chip tone escalating to warn — and the drawer as a warn-toned recent-error row, so a degraded-but-serving machine never reads plain green. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 a live runtime error rides the node row and drawer even while serving) -->
+3. A ready transition clears captured startup errors from both managed runtimes before later heartbeat metrics are assembled. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::Reset --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::awaitReadiness --> <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::awaitReadiness --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogResetClearsCapturedLine) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQOBS011LlamaCppReadyClearsStaleRuntimeError) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQOBS011MeshLLMReadyClearsStaleRuntimeError) -->
+4. Error markers match only at a word start, preventing substrings inside longer words from becoming a failure cause. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::containsMarker --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogErrorMarkersAnchorAtWordStart) -->
+5. A bare leading llama.cpp severity letter is classified by the same chatter rules as a spelled-out level. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::letterLevelChatter --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogIgnoresLlamaCppLetterLevelLines) -->
+6. Warning, information, debug, and trace lines are ignored without a hard error token, with levels matched as whole words. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::containsLevelToken --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogIgnoresNonErrorLevelLines) --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS011RuntimeLogLevelTokensMatchWholeWordsOnly) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-OBS-003](#req-obs-003-node-metrics), [REQ-OBS-004](#req-obs-004-failure-reporting)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-OBS-013: Direct runtime capability reporting
+
+**Intent:** Direct-runtime telemetry must describe capabilities of the model and binary that are actually running, without retaining state from a replaced model.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. When the current direct model cannot use cross-divergence reuse, the next heartbeat reports that limitation without implying ordinary prefix caching is disabled. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::runtimeLog --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::Metrics --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::MergeRuntimeMetrics --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS013RuntimeLogFlagsMultimodalCacheReusePerLifecycle) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQOBS013LlamaCppMetricsCarryMultimodalFlag) -->
+2. Starting a replacement direct model clears model-specific capability state before launch, while readiness clearing preserves state discovered for the current model. <!-- @impl: packages/node-agent/internal/agent/meshllm_stderr.go::ResetLifecycle --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::Start --> <!-- @test: packages/node-agent/internal/agent/meshllm_stderr_test.go (TestREQOBS013RuntimeLogFlagsMultimodalCacheReusePerLifecycle) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQOBS013LlamaCppStartClearsPreviousModelCapabilities) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-OBS-003](#req-obs-003-node-metrics), [REQ-RUN-015](runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-OBS-014: Admin runtime diagnostics
+
+**Intent:** Operators must see current runtime degradation and effective direct-runtime behavior without fabricated or stale status.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Visible work labels derive from stage ownership and live readiness, while raw node state remains diagnostic data. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 the node drawer surfaces runtime errors, work state, and mesh diagnostics) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 renders a split stage owner as active work, not standby/API client) -->
+2. Stale model-size diagnostics stay hidden during transitions and cannot override serving split status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 hides model_size_unknown during reload and update transitions) --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status) -->
+3. Absent heartbeat and direct-console fields render as absent or not reported rather than fabricated failure or capacity values. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-014 direct node drawer reports only observed fields and effective cache behavior) -->
+4. Split profiles with no peers or stages surface their peer-discovery blocker without requiring host access. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-011 surfaces split mesh peer discovery blockers without SSH) -->
+5. A current non-chatter runtime error appears on the node row and drawer even when the runtime still serves. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::renderNodesTable --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-014 surfaces current runtime errors after readiness and filters chatter) -->
+6. The console applies equivalent level gating to forwarded details, preventing warning and information chatter from escalating node status. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::chatterDetail --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::degradedRuntimeError --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-014 surfaces current runtime errors after readiness and filters chatter) -->
+7. For multimodal direct models, the drawer distinguishes unavailable cross-divergence reuse from ordinary prefix caching. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-OBS-014 direct node drawer reports only observed fields and effective cache behavior) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-OBS-011](#req-obs-011-runtime-error-surface), [REQ-OBS-013](#req-obs-013-direct-runtime-capability-reporting)
 
 **Verification:** Automated test
 

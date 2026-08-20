@@ -434,6 +434,12 @@ func TestREQRUN010ProfileRestartContinuesAfterStaleDrainCounter(t *testing.T) {
 	if manager.State() == "failed" || manager.LastError() != "" {
 		t.Fatalf("stale drain counter should not mark runtime failed, state=%q error=%q", manager.State(), manager.LastError())
 	}
+	manager.mu.Lock()
+	drained := append([]int(nil), manager.restartDrained...)
+	manager.mu.Unlock()
+	if len(drained) != 1 || drained[0] != 0 {
+		t.Fatalf("replacement runtime must start with fresh request accounting, got %v", drained)
+	}
 }
 
 func TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall(t *testing.T) {
@@ -690,6 +696,23 @@ func TestREQRUN005RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
 	}
 }
 
+func TestREQNODE016LlamaCppMetricsCarryResolvedBackend(t *testing.T) {
+	// An NVIDIA Linux box runs the Vulkan build, not CUDA: the heartbeat must
+	// carry the backend the release archive actually installs so the console
+	// can show it next to the version. REQ-NODE-016.
+	profile := agent.ModelProfile{ID: "p", UpstreamModel: "m", Version: 2}
+	cfg := agent.Config{RuntimeModel: "m", ActiveProfileIDs: []string{"p"}, Profiles: []agent.ModelProfile{profile}}
+	manager := agent.NewLlamaCppManager(agent.LlamaCppInput{ProfileID: "p", UpstreamModel: "m", BinaryPath: "llama-server", Backend: "vulkan"})
+	manager.SetState("ready")
+	loadState := &runtimeLoadState{}
+	loadState.Set(profile)
+
+	metrics := runtimeMetrics(manager, loadState, cfg, 0, "")
+	if metrics.LlamaCppBackend != "vulkan" {
+		t.Fatalf("llamacpp metrics backend = %q, want selected backend", metrics.LlamaCppBackend)
+	}
+}
+
 // --- REQ-NODE-002 / REQ-OBS-003 mesh status metrics --------------------------
 
 func TestREQNODE007HeartbeatMetricsCarryMeshState(t *testing.T) {
@@ -927,12 +950,26 @@ func TestREQRUN007VersionBumpRestartsEverySplitServingNode(t *testing.T) {
 
 func TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride(t *testing.T) {
 	cfg := agent.Config{DataDir: t.TempDir(), LlamaCppBinaryPath: " /opt/llama-cuda/bin/llama-server ", RuntimeVersions: agent.RuntimeBinaryVersions{LlamaCpp: "b9928"}}
-	binaryPath, installError := llamaCppBinaryPath(cfg)
+	binaryPath, backend, installError := llamaCppBinaryPath(cfg)
 	if binaryPath != "/opt/llama-cuda/bin/llama-server" {
 		t.Fatalf("expected host-installed llama.cpp binary override, got %q", binaryPath)
 	}
+	if backend != "unknown" {
+		t.Fatalf("unverified custom binary backend = %q, want unknown", backend)
+	}
 	if installError != "" {
 		t.Fatalf("expected override to skip managed install, got %q", installError)
+	}
+}
+
+func TestREQNODE016ManagedLlamaCppBackendFollowsSelectedBinary(t *testing.T) {
+	dataDir := t.TempDir()
+	managed := filepath.Join(dataDir, "bin", "llamacpp-vulkan", "llama-server")
+	if got := managedLlamaCppBackend(dataDir, managed); got != "vulkan" {
+		t.Fatalf("managed backend = %q, want vulkan", got)
+	}
+	if got := managedLlamaCppBackend(dataDir, "/opt/llama.cpp/bin/llama-server"); got != "unknown" {
+		t.Fatalf("host binary backend = %q, want unknown", got)
 	}
 }
 
@@ -1384,4 +1421,21 @@ func TestREQRUN010RuntimeKindMismatchSelfHealsEachHeartbeat(t *testing.T) {
 	manager.SetState("ready")
 	loop.handleResponse(context.Background(), unchanged)
 	waitFailed("second heartbeat")
+}
+
+func TestREQNODE015RuntimeSwapIsolatesInFlightGenerations(t *testing.T) {
+	counter := &agent.ActiveCounter{}
+	finishOld := counter.Begin()
+	loop := newLoopForTest(t, agent.Config{}, counter, newFakeMeshRuntime(counter), &fakeUpdater{}, nil)
+
+	loop.setManager(newFakeMeshRuntime(counter), "")
+	finishNew := counter.Begin()
+	finishOld()
+	if got := counter.Value(); got != 1 {
+		t.Fatalf("old runtime completion changed the new runtime count to %d", got)
+	}
+	finishNew()
+	if got := counter.Value(); got != 0 {
+		t.Fatalf("new runtime request count = %d after completion, want 0", got)
+	}
 }

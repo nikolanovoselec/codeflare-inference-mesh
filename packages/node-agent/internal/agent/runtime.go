@@ -42,6 +42,10 @@ type LlamaCppSettings struct {
 	Batch           int                `json:"batch,omitempty"`
 	Ubatch          int                `json:"ubatch,omitempty"`
 	FlashAttn       *bool              `json:"flashAttn,omitempty"`
+	// MMProj nil or true keeps llama.cpp's default (auto-load the multimodal
+	// projector when the model is multimodal); false renders --no-mmproj so a
+	// text workload does not pay the projector's VRAM. REQ-RUN-015.
+	MMProj          *bool              `json:"mmproj,omitempty"`
 	MaxOutputTokens int                `json:"maxOutputTokens,omitempty"`
 	GPULayers       string             `json:"gpuLayers,omitempty"`
 	Alias           string             `json:"alias"`

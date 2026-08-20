@@ -46,7 +46,6 @@ This domain covers the local cross-platform service that registers nodes, proxie
 5. A failing heartbeat is never silent: the failure is logged to the agent's stderr on every state change (failure, different failure, recovery) and carried in the local dashboard status until a heartbeat succeeds. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::recordHeartbeatError --> <!-- @impl: packages/node-agent/internal/agent/dashboard.go::DashboardStatus --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002HeartbeatFailuresSurfaceAndClear) -->
 6. The heartbeat loop starts before initial runtime provisioning, which runs in the background and lands its manager through the current-manager accessor — a hanging binary download or runtime launch can never block the node's first check-in. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::launchInitialRuntime --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart) -->
 7. The host GPU telemetry probe inside a heartbeat tick runs under its own deadline — a stalled `system_profiler` (minutes-long under macOS Metal churn during a model switch) can never freeze the heartbeat loop and read as a phantom Offline. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::defaultGpuProbeTimeout --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE002HeartbeatTelemetryProbeIsBounded) -->
-
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 
 **Priority:** P0
@@ -329,6 +328,8 @@ This domain covers the local cross-platform service that registers nodes, proxie
 3. llama.cpp startup honors `llamaCppBinaryPath` when set, otherwise prefers a host `llama-server` before installing a verified managed release asset. <!-- @impl: packages/node-agent/internal/agent/config.go::Config --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::llamaCppBinaryPath --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::EnsureLlamaCpp --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::llamaCppRuntimeEnv --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppDiscoversHostInstalledBinary) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppPrefersUsableHostGpuBinaryOverManagedFallback) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppAssetPrefersGpuBackendWhenAvailable) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppDoesNotReuseGenericBinaryForGpuBackend) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppInstallsManagedBinary) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQNODE013LlamaCppLaunchEnvIncludesRuntimeLibraryPath) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppVersionQueryUsesRuntimeLibraryPath) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppRejectsUnsafeTarArchiveEntry) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppRejectsUnsafeZipArchiveEntry) -->
 4. Checksum mismatch or missing compatible assets leave the node running but ineligible with `dependency-missing`, preserving the current fail-closed scheduling behavior and surfacing the install error in heartbeat metrics. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppRejectsChecksumMismatch) -->
 
+5. Direct llama.cpp model downloads stay beneath the agent data directory, replacing any inherited cache location so disk accounting and cleanup can cover them. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::llamaCppRuntimeEnvFor --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::upsertSingleEnv --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQNODE013LlamaCppLaunchEnvPinsHuggingFaceCacheToDataDir) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQNODE013LlamaCppLaunchEnvLeavesHuggingFaceCacheUnsetWithoutDataDir) -->
+
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
@@ -352,7 +353,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 1. A valid `owner/repo` in the `MESHLLM_RELEASE_REPOSITORY` Worker variable makes an overlay-hardened fork available as a mesh-llm binary source alongside upstream `Mesh-LLM/mesh-llm`; an unset or invalid value leaves upstream as the only source. <!-- @impl: packages/router-worker/src/runtime-versions.ts::meshllmReleaseRepository --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) -->
 2. Claim and heartbeat responses carry `meshllmRepository` inside `desiredRuntimeVersions` when the fork is the active source, and the agent follows the router's word exactly — adopting a present value and resetting to upstream when absent. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @impl: packages/node-agent/internal/agent/client.go::ApplyDesiredRuntimeVersions --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE014RepositoryFollowsRouterExactly) -->
-3. The agent downloads mesh-llm archives and their checksum sidecars from the configured repository's releases, with unchanged SHA-256 verification. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE014ReleaseRepositoryOverride) -->
+3. The agent downloads verified mesh-llm archives, checksum sidecars, and platform runtimes from the same configured repository. <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLMVersion --> <!-- @impl: packages/node-agent/internal/agent/meshllm_render.go::MeshLLMEnv --> <!-- @test: packages/node-agent/internal/agent/meshllm_install_test.go (TestREQNODE014ReleaseRepositoryOverride) --> <!-- @test: packages/node-agent/internal/agent/meshllm_render_test.go (TestREQNODE014NativeRuntimeManifestFollowsSource) --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQNODE014ManagerLaunchesWithForkNativeRuntimeManifest) -->
 4. A release-tag cache row recorded from a different repository is never served; switching the source refetches from the new repository. <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsList --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 claim and heartbeat carry the configured mesh-llm release repository) -->
 5. The active mesh-llm binary source defaults to the configured fork and switches to upstream only when the operator chooses `official`; the choice persists in `router_config` `meshllm_release_source`, drives release listing, selection, and the fleet's `meshllmRepository`, and never requires a redeploy. <!-- @impl: packages/router-worker/src/runtime-versions.ts::activeMeshllmRepository --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-NODE-014 the operator switches the active binary source between official and fork) --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-NODE-014 persists the operator binary-source choice, audits it, and flips the active repository) -->
 6. `POST /admin/runtime-versions` and its automation twin accept `{ meshllmSource: 'official' | 'fork' }`, reject an unknown source with `400 invalid_meshllm_source` and a fork choice with no fork configured with `400 meshllm_fork_unavailable`, and audit an accepted change as `runtime_source_selected`. <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsSelect --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-NODE-014 rejects a fork choice with no fork configured and rejects unknown sources) -->
@@ -363,6 +364,53 @@ This domain covers the local cross-platform service that registers nodes, proxie
 **Priority:** P1
 
 **Dependencies:** [REQ-NODE-006](#req-node-006-meshllm-binary-install-and-update), [REQ-ADM-033](setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-NODE-015: Runtime-scoped request accounting
+
+**Intent:** Runtime replacement must discard stale capacity accounting without allowing late completions from the replaced runtime to corrupt traffic counts for the new runtime.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. A runtime swap starts a fresh in-flight generation; requests completing against an older generation cannot decrement or erase the current runtime's count. <!-- @impl: packages/node-agent/internal/agent/proxy.go::Begin --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::setManager --> <!-- @test: packages/node-agent/internal/agent/agent_test.go (TestREQNODE015RuntimeGenerationIsolatesRequestAccounting) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE015RuntimeSwapIsolatesInFlightGenerations) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-003](#req-node-003-node-inference-proxy)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-NODE-016: Direct runtime backend identity
+
+**Intent:** Runtime directories and node telemetry must identify only backend families verified by the managed installer, without guessing the build of an arbitrary host binary.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. A managed llama.cpp install is stored under the backend family contained in its selected release archive. <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::ResolvedLlamaCppBackend --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::llamaCppManagedTarget --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE016LlamaCppResolvedBackendNamesTheArchiveItInstalls) -->
+2. Heartbeat metrics report the verified backend family of the selected managed binary. <!-- @impl: packages/node-agent/internal/agent/metrics.go::NodeMetrics --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::managedLlamaCppBackend --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE016LlamaCppMetricsCarryResolvedBackend) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE016ManagedLlamaCppBackendFollowsSelectedBinary) -->
+3. Custom or host binaries whose builds the installer did not verify report backend `unknown`. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::llamaCppBinaryPath --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride) -->
+4. A verified install stored under its former requested-backend name migrates to the resolved-backend directory without downloading again. <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::EnsureLlamaCpp --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE016LlamaCppMigratesRequestedBackendInstallToResolvedName) -->
+
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-013](#req-node-013-runtime-binary-bootstrap)
 
 **Verification:** Automated test
 

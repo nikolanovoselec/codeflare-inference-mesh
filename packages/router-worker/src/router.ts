@@ -10,7 +10,7 @@ import { InvalidJsonBodyError } from './errors'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName, type MeshRecord } from './meshes'
-import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, nodeMeshId, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
+import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, llamaCppQuantError, nodeMeshId, parseLlamaCppModelRef, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
 import { activeMeshllmRepository, desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
@@ -1026,6 +1026,7 @@ interface LlamaCppConfigBody {
   readonly batch?: unknown
   readonly ubatch?: unknown
   readonly flashAttn?: unknown
+  readonly mmproj?: unknown
   readonly kvUnified?: unknown
   readonly maxOutputTokens?: unknown
   readonly gpuLayers?: unknown
@@ -1110,6 +1111,11 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
     if (body.flashAttn === null) delete next.flashAttn
     else if (typeof body.flashAttn === 'boolean') next.flashAttn = body.flashAttn
     else return { error: 'invalid_flash_attn' }
+  }
+  if (body.mmproj !== undefined) {
+    if (body.mmproj === null) delete next.mmproj
+    else if (typeof body.mmproj === 'boolean') next.mmproj = body.mmproj
+    else return { error: 'invalid_mmproj' }
   }
   if (body.kvUnified !== undefined) {
     if (body.kvUnified === null) delete next.kvUnified
@@ -1340,13 +1346,24 @@ function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, 
 
 function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly ModelProfile[], body: ModelConfigBody): { profile: ModelProfile; settings: LlamaCppProfileSettings } | { error: string; status: number } {
   if (existing.meshllm?.split) return { error: 'split_requires_meshllm', status: 400 }
-  const modelRef = body.modelRef !== undefined ? (typeof body.modelRef === 'string' ? body.modelRef.trim() : '') : (existing.llamacpp?.modelRef ?? existing.meshllm?.modelRef ?? existing.upstreamModel)
+  const storedRef = existing.llamacpp?.modelRef ?? existing.meshllm?.modelRef ?? existing.upstreamModel
+  const modelRef = body.modelRef !== undefined ? (typeof body.modelRef === 'string' ? body.modelRef.trim() : '') : storedRef
   if (!modelRef) return { error: 'invalid_model_ref', status: 400 }
   const generated = buildCustomProfile({ modelRef, split: false, runtime: 'llamacpp', existing: profiles }).llamacpp!
   const existingDirect = existing.runtime === 'llamacpp' ? existing.llamacpp : undefined
   const baseSource = existingDirect ?? generated
+  // Editing the reference re-derives the launch source: the stored repo/quant belong
+  // to the old reference, and a stale file override still points into the old repo.
+  // The node agent reads only hfRepo/quant — never modelRef — so the source must
+  // always follow the reference, or the console shows one model and the node
+  // launches another.
+  const refChanged = body.modelRef !== undefined && modelRef !== storedRef
+  const sourceWithoutDerivedFields = Object.fromEntries(
+    Object.entries(baseSource).filter(([key]) => key !== 'hfFile' && key !== 'quant')
+  ) as LlamaCppProfileSettings
   const base: LlamaCppProfileSettings = {
-    ...baseSource,
+    ...(refChanged ? sourceWithoutDerivedFields : baseSource),
+    ...(refChanged ? { hfRepo: generated.hfRepo, ...(generated.quant !== undefined ? { quant: generated.quant } : {}) } : {}),
     bindPort: baseSource.bindPort ?? generated.bindPort,
     contextWindow: baseSource.contextWindow ?? generated.contextWindow,
     parallel: baseSource.parallel ?? generated.parallel,
@@ -1360,6 +1377,14 @@ function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly Mod
   // 0 = Auto (llama-server loads the model's native context); fixed values keep the 4096 floor.
   if (!Number.isInteger(contextWindow) || (contextWindow !== 0 && contextWindow < 4096)) return { error: 'invalid_context_window', status: 400 }
   settings = { ...settings, contextWindow, alias: modelRef, modelRef }
+  // The launch source must always reconstruct from the reference and stay within
+  // the typo class that once took the fleet down: a trailing-dot or whitespace
+  // quant tag resolves no file on Hugging Face.
+  const parsedRef = parseLlamaCppModelRef(modelRef)
+  const quantError = llamaCppQuantError(settings.quant)
+  if (quantError) return { error: quantError, status: 400 }
+  if (settings.hfRepo !== parsedRef.hfRepo) return { error: 'model_source_mismatch', status: 400 }
+  if (settings.quant !== parsedRef.quant) return { error: 'model_source_mismatch', status: 400 }
   let displayName = existing.displayName
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -1481,6 +1506,12 @@ async function handleProfileAdd(request: Request, deps: RouterDeps, requestId: s
   const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
   const profile = buildCustomProfile({ modelRef, split, existing, name, runtime, meshId })
+  // A quant tag that resolves no Hugging Face file (trailing dot, whitespace) is
+  // refused before it can cost an outage; the node would only fail at load time.
+  if (runtime === 'llamacpp') {
+    const quantError = llamaCppQuantError(profile.llamacpp?.quant)
+    if (quantError) return json({ error: quantError, requestId }, 400, requestId)
+  }
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
   await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor, target: profile.id, detail: { modelRef, split, runtime, meshId } })
@@ -2418,6 +2449,12 @@ async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: 
   const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
   const profile = buildCustomProfile({ modelRef, split, existing, name, runtime, meshId })
+  // Same quant-tag validation as the console add path: the automation API and the
+  // console share buildCustomProfile and must share the door too.
+  if (runtime === 'llamacpp') {
+    const quantError = llamaCppQuantError(profile.llamacpp?.quant)
+    if (quantError) return json({ error: quantError, requestId }, 400, requestId)
+  }
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
   await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: `automation:${automation.id}`, target: profile.id, detail: { modelRef, split, runtime } })
