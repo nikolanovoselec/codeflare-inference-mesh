@@ -426,18 +426,40 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Intent:** Operators must control multimodal-projector loading per direct profile without host-wide environment changes.
 
-**Applies To:** Admin, Automation
+**Applies To:** Admin
 
 **Acceptance Criteria:**
 
 1. The model drawer exposes a per-profile projector toggle and saves its selected boolean state. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer) -->
-2. Admin and automation configuration APIs accept the projector boolean, while null restores the default behavior. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCppSettings --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 sets and clears the multimodal projector opt-out) -->
+2. The admin configuration API accepts the projector boolean, while null restores the default behavior. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCppSettings --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 sets and clears the multimodal projector opt-out) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-013](#req-run-013-direct-llamacpp-custom-profiles), [REQ-RUN-015](#req-run-015-direct-llamacpp-launch-rendering)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-020: Automation projector control
+
+**Intent:** Automation clients must control the same per-profile projector behavior as the admin console.
+
+**Applies To:** Automation
+
+**Acceptance Criteria:**
+
+1. The automation model-configuration API accepts the projector boolean, while null restores llama.cpp's default projector auto-load. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCppSettings --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 sets and clears the multimodal projector opt-out) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-015](#req-run-015-direct-llamacpp-launch-rendering), [REQ-RUN-019](#req-run-019-direct-projector-control)
 
 **Verification:** Automated test
 

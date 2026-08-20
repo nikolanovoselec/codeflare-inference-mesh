@@ -364,6 +364,7 @@ func TestREQOBS011LlamaCppReadyClearsStaleRuntimeError(t *testing.T) {
 	}
 
 	proc := newFakeMeshProcess(&eventLog{})
+	manager.proc = proc
 	done := make(chan struct{})
 	go func() {
 		manager.awaitReadiness(proc)

@@ -880,9 +880,11 @@ MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama
 
 For MeshLLM profiles, the tunables mirror `POST /admin/profiles/config`: `parallel`/`batch`/`ubatch`/`maxOutputTokens` are positive integers, `cacheTypeK`/`cacheTypeV` one of `f16`/`q8_0`/`q4_0`, `flashAttn` a boolean, `toolEmulation` a boolean forcing mesh-llm's server-side tool-call emulation (for templates whose native tool grammar mesh-llm cannot parse), `wireDtype`/`prefillChunking`/`prefillChunkSize` the staged-transport tunables (unset resolves to the WARP-optimized `q8` + `adaptive-ramp` defaults on split models), and `reasoning` a `{ enabled?, format?, budget? }` object (layered onto the existing block). A `null` / `0` / `""` value clears a tunable back to Auto.
 
-For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block. `parallel` is `-1` (Auto) or `>= 1`; `kvUnified` is a boolean, and `false` with Auto parallel is rejected. `gpuLayers` accepts `0`, a positive integer, `"auto"`, or `"all"`. Cache, batch, flash-attention, generation, and reasoning fields use the documented types and ranges; reserved bind ports are rejected.
+For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block. `parallel` is `-1` (Auto) or `>= 1`. `kvUnified` is boolean; `null` restores on, while `false` with Auto parallel is rejected. `gpuLayers` accepts `0`, a positive integer, `"auto"`, or `"all"`; `null` or `""` clears it.
 
-`mmproj` is boolean. `null` restores llama.cpp's default projector auto-load, while `false` renders `--no-mmproj` so a text workload can avoid projector VRAM. Optional values accept their documented clear sentinels (`null`, `0`, or `""` depending on the field).
+`cachePrompt` is boolean and `cacheReuse` is an integer `>= 0`. `cacheTypeK` and `cacheTypeV` accept `f32`, `f16`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, or `q5_1`. `batch`, `ubatch`, and `maxOutputTokens` are positive integers; `null` or `0` clears these optional values. `flashAttn` is boolean and `null` clears it.
+
+`mmproj` is boolean; `false` renders `--no-mmproj` and `null` restores projector auto-load. `reasoning` accepts `{ enabled?, format?, budget? }`, while `null` clears the block. `bindPort` is optional and reserved ports are rejected.
 
 The launch source is carried by the `llamacpp` block's `hfRepo`, `quant`, and optional `hfFile` (a per-file override inside the repo). The node agent reads **only** `hfRepo`/`quant`/`hfFile` — never `modelRef` — to build its `--hf-repo` argument, so the model reference is the single source of truth: posting a `modelRef` different from the stored one re-derives `hfRepo`/`quant` from it (dropping any stale `hfFile`), and a save whose `hfRepo`/`quant` no longer reconstruct from the reference is refused with `model_source_mismatch`. A `quant` tag ending in `.` or containing whitespace resolves no Hugging Face file and is refused with `invalid_quant_tag`, at creation and on every save.
 
@@ -896,7 +898,7 @@ The launch source is carried by the `llamacpp` block's `hfRepo`, `quant`, and op
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is a reserved mesh stable alias (`codeflare-mesh` or a `codeflare-mesh-` prefix) or collides with another model. | `call_name_conflict` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity), [REQ-RUN-019](../../sdd/spec/runtime-profiles.md#req-run-019-direct-projector-control), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity), [REQ-RUN-020](../../sdd/spec/runtime-profiles.md#req-run-020-automation-projector-control), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 ### POST /api/v1/models/{id}/enable
 

@@ -744,7 +744,7 @@ describe('dashboard overview contracts', () => {
     await harness.clickAction(ADMIN_UI_DRAWER.closeAction)
     await harness.clickAction('node-detail', { nodeId: 'node-ready-error' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    expect(fields.find((node) => node.dataset.drawerField === 'runtime-detail')?.dataset.tone).toBe('danger')
+    expect(fields.find((node) => node.dataset.drawerField === 'runtime-detail')?.dataset.tone).toBe('warn')
   })
 
   it('REQ-OBS-011 the node drawer surfaces runtime errors, work state, and mesh diagnostics', async () => {
@@ -819,7 +819,7 @@ describe('dashboard overview contracts', () => {
     // Vulkan build, and the drawer says so instead of implying CUDA (REQ-NODE-013).
     expect(field('llamacpp')!.dataset.value).toBe('b10452 · vulkan')
     // The unavailable cross-divergence optimization must not be confused with
-    // ordinary text prefix caching, which remains active (REQ-OBS-014).
+    // ordinary text prefix caching, which remains independently configurable (REQ-OBS-014).
     expect(textOf(field('direct-cache')!)).not.toContain('reuse 256')
     expect(textOf(field('direct-cache')!)).toContain('cross-divergence reuse unavailable for multimodal')
   })
