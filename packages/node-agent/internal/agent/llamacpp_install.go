@@ -115,7 +115,7 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 		queryVersion:   queryLlamaCppVersion,
 		download:       downloadLlamaCppAsset,
 		fetchRelease:   fetchLlamaCppReleaseAssets,
-		backend:        detectLlamaCppBackend(runtime.GOOS),
+		backend:        DetectLlamaCppBackend(runtime.GOOS),
 		hostCandidates: llamaCppHostCandidates(runtime.GOOS),
 	}
 	for _, opt := range opts {
@@ -127,10 +127,32 @@ func EnsureLlamaCpp(dataDir, version string, opts ...LlamaCppInstallOption) (str
 		return pathBinary, nil
 	}
 
-	target := llamaCppManagedTarget(dataDir, binaryName, options.backend)
+	// The install directory is named after the backend the release archive
+	// actually contains, not the requested one: upstream publishes no Linux
+	// CUDA archive, so an nvidia request on Linux installs the Vulkan build
+	// and the directory must say so.
+	resolved := ResolvedLlamaCppBackend(options.goos, options.goarch, options.backend)
+	target := llamaCppManagedTarget(dataDir, binaryName, resolved)
 	if _, err := os.Stat(target); err == nil {
 		if out, versionErr := options.queryVersion(target); versionErr == nil && llamaCppVersionMatches(out, version) {
 			return target, nil
+		}
+	}
+	// Migrate a verified install the agent used to name after the requested
+	// backend (llamacpp-nvidia on a Linux NVIDIA box) instead of re-downloading it.
+	legacy := llamaCppManagedTarget(dataDir, binaryName, options.backend)
+	if legacy != target {
+		if _, err := os.Stat(legacy); err == nil && strings.HasPrefix(filepath.Base(filepath.Dir(legacy)), "llamacpp-") {
+			if out, versionErr := options.queryVersion(legacy); versionErr == nil && llamaCppVersionMatches(out, version) {
+				// Create the target's PARENT, not the target itself: renaming a
+				// non-empty directory onto an existing directory fails (ENOTEMPTY),
+				// and the target directory must not pre-exist for the rename.
+				if err := os.MkdirAll(filepath.Dir(filepath.Dir(target)), 0o700); err == nil {
+					if err := os.Rename(filepath.Dir(legacy), filepath.Dir(target)); err == nil {
+						return target, nil
+					}
+				}
+			}
 		}
 	}
 
@@ -265,6 +287,9 @@ func llamaCppAssetNames(version, goos, goarch string, backend string) ([]string,
 	}
 }
 
+// llamaCppManagedTarget names the managed install after the resolved backend
+// (vulkan/cuda/rocm/sycl) rather than the requested one, so the directory on
+// disk describes what the node actually runs.
 func llamaCppManagedTarget(dataDir string, binaryName string, backend string) string {
 	backend = strings.TrimSpace(strings.ToLower(backend))
 	if backend == "" || backend == "cpu" || backend == "metal" {
@@ -272,6 +297,46 @@ func llamaCppManagedTarget(dataDir string, binaryName string, backend string) st
 	}
 	backend = strings.NewReplacer("/", "-", "\\", "-", ":", "-", " ", "-").Replace(backend)
 	return filepath.Join(dataDir, "bin", "llamacpp-"+backend, binaryName)
+}
+
+// ResolvedLlamaCppBackend maps the requested backend (the operator's choice or
+// auto-detection) to the backend family the release archive actually installs.
+// It mirrors llamaCppAssetNames exactly: on Linux an nvidia request resolves to
+// the Vulkan build because upstream publishes no Linux CUDA asset, on Windows
+// it resolves to the CUDA build, and on macOS to Metal.
+func ResolvedLlamaCppBackend(goos, goarch, requested string) string {
+	requested = strings.TrimSpace(strings.ToLower(requested))
+	switch goos + "/" + goarch {
+	case "linux/amd64":
+		switch requested {
+		case "rocm":
+			return "rocm"
+		case "vulkan", "nvidia":
+			return "vulkan"
+		case "sycl":
+			return "sycl"
+		default:
+			return "cpu"
+		}
+	case "linux/arm64":
+		if requested == "vulkan" || requested == "nvidia" {
+			return "vulkan"
+		}
+		return "cpu"
+	case "darwin/amd64", "darwin/arm64":
+		return "metal"
+	case "windows/amd64":
+		switch requested {
+		case "cuda12", "cuda13", "nvidia":
+			return "cuda"
+		case "vulkan":
+			return "vulkan"
+		default:
+			return "cpu"
+		}
+	default:
+		return "cpu"
+	}
 }
 
 func findUsableLlamaCppHostBinary(binaryName string, version string, options llamaCppInstallOptions) (string, bool) {
@@ -329,7 +394,7 @@ func llamaCppHostCandidates(goos string) []string {
 	}
 }
 
-func detectLlamaCppBackend(goos string) string {
+func DetectLlamaCppBackend(goos string) string {
 	if override := strings.TrimSpace(os.Getenv("INFERENCE_MESH_LLAMA_CPP_BACKEND")); override != "" {
 		return strings.ToLower(override)
 	}

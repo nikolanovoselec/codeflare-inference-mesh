@@ -32,6 +32,14 @@ type NodeMetrics struct {
 	ConsoleReady              bool                    `json:"consoleReady,omitempty"`
 	MeshLLMVersion            string   `json:"meshllmVersion,omitempty"`
 	LlamaCppVersion           string   `json:"llamacppVersion,omitempty"`
+	// LlamaCppBackend is the backend family the release archive actually
+	// installs (vulkan on a Linux NVIDIA box, not the requested nvidia), so
+	// the console can show what the node really runs (REQ-NODE-013).
+	LlamaCppBackend string `json:"llamacppBackend,omitempty"`
+	// Multimodal is set when llama-server announced the loaded model is
+	// multimodal and silently ignores --cache-reuse, so the console can stop
+	// advertising a reuse the runtime does not honour (REQ-OBS-009).
+	Multimodal bool `json:"multimodal,omitempty"`
 	CtxSize                   int      `json:"ctxSize,omitempty"`
 	Parallel                  int      `json:"parallel,omitempty"`
 	CachePrompt               bool     `json:"cachePrompt,omitempty"`

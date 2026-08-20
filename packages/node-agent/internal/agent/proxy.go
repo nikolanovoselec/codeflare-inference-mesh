@@ -21,6 +21,13 @@ func (c *ActiveCounter) Dec() {
 	atomic.AddInt64(&c.value, -1)
 }
 
+// Reset zeroes the counter. The in-flight count measures requests against the
+// CURRENT runtime, so replacing the runtime (after drain) invalidates the previous
+// count and a recovered node must not carry a stale in-flight into the fresh one.
+func (c *ActiveCounter) Reset() {
+	atomic.StoreInt64(&c.value, 0)
+}
+
 func (c *ActiveCounter) Value() int {
 	return int(atomic.LoadInt64(&c.value))
 }

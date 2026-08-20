@@ -922,3 +922,35 @@ func TestREQRUN007SplitReadinessGatedOnFullModelId(t *testing.T) {
 		waitForManagerState(t, fixture.manager, "ready")
 	})
 }
+
+func TestREQOBS011MeshLLMReadyClearsStaleRuntimeError(t *testing.T) {
+	// A captured startup error from a previous lifecycle must not survive the
+	// fresh ready state: the console reads a ready node as healthy. REQ-OBS-011.
+	console := &consoleFixture{status: statusPayload("serving", "mesh-1", "tok-1")}
+	consoleServer := httptest.NewServer(console)
+	defer consoleServer.Close()
+	models := &modelsFixture{ids: []string{"target-model"}}
+	modelsServer := httptest.NewServer(models)
+	defer modelsServer.Close()
+
+	fixture := newMeshManagerForTest(t, MeshLLMRenderInput{
+		ModelRef:    "target-model",
+		APIPort:     serverPort(t, modelsServer),
+		ConsolePort: serverPort(t, consoleServer),
+	}, 0)
+	fixture.manager.stderrLog.Write([]byte(`{"level":"error","msg":"failed to allocate Vulkan0 buffer"}` + "\n"))
+	fixture.manager.lastError = "mesh-llm readiness deadline exceeded"
+	if fixture.manager.RuntimeErrorDetail() == "" {
+		t.Fatal("setup: the stale line must be present before start")
+	}
+	if err := fixture.manager.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForManagerState(t, fixture.manager, "ready")
+	if got := fixture.manager.RuntimeErrorDetail(); got != "" {
+		t.Fatalf("ready must clear the stale captured line, got %q", got)
+	}
+	if got := fixture.manager.LastError(); got != "" {
+		t.Fatalf("ready must clear the stale lastError, got %q", got)
+	}
+}

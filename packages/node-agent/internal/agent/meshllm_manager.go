@@ -582,6 +582,9 @@ func (m *MeshLLMManager) awaitReadiness(proc meshProcess, exited <-chan struct{}
 		if mapped == "ready" {
 			m.state = "ready"
 			m.lastError = ""
+			// A fresh ready state outlives the previous lifecycle: clear the stderr
+			// ring so a healthy node reports no captured error (REQ-OBS-011).
+			m.stderrLog.Reset()
 			m.mu.Unlock()
 			return
 		}

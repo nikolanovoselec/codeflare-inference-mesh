@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -687,6 +688,27 @@ func TestREQRUN005RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
 	detailed := runtimeMetrics(manager, loadState, cfg, 0, "download mesh-llm-asset: checksum mismatch")
 	if detailed.RuntimeState != "dependency-missing" || detailed.LastError != "download mesh-llm-asset: checksum mismatch" {
 		t.Fatalf("dependency-missing metrics should carry the install error detail, got %#v", detailed)
+	}
+}
+
+func TestREQNODE013LlamaCppMetricsCarryResolvedBackend(t *testing.T) {
+	// An NVIDIA Linux box runs the Vulkan build, not CUDA: the heartbeat must
+	// carry the backend the release archive actually installs so the console
+	// can show it next to the version. REQ-NODE-013.
+	profile := agent.ModelProfile{ID: "p", UpstreamModel: "m", Version: 2}
+	cfg := agent.Config{RuntimeModel: "m", ActiveProfileIDs: []string{"p"}, Profiles: []agent.ModelProfile{profile}}
+	manager := agent.NewLlamaCppManager(agent.LlamaCppInput{ProfileID: "p", UpstreamModel: "m", BinaryPath: "llama-server"})
+	manager.SetState("ready")
+	loadState := &runtimeLoadState{}
+	loadState.Set(profile)
+
+	metrics := runtimeMetrics(manager, loadState, cfg, 0, "")
+	want := agent.ResolvedLlamaCppBackend(runtime.GOOS, runtime.GOARCH, agent.DetectLlamaCppBackend())
+	if metrics.LlamaCppBackend != want {
+		t.Fatalf("llamacpp metrics backend = %q, want %q", metrics.LlamaCppBackend, want)
+	}
+	if want == "" {
+		t.Fatal("resolved backend must never be empty")
 	}
 }
 
@@ -1384,4 +1406,22 @@ func TestREQRUN010RuntimeKindMismatchSelfHealsEachHeartbeat(t *testing.T) {
 	manager.SetState("ready")
 	loop.handleResponse(context.Background(), unchanged)
 	waitFailed("second heartbeat")
+}
+
+func TestREQNODE002InFlightResetsOnRuntimeSwap(t *testing.T) {
+	// A request that died with the previous runtime must not ride on as a stuck
+	// in-flight forever: the swap only happens after drain, and the fresh
+	// runtime must start counting from zero. REQ-NODE-002.
+	counter := &agent.ActiveCounter{}
+	counter.Inc() // a request that was in flight against the old runtime
+	if counter.Value() != 1 {
+		t.Fatalf("setup: expected in-flight 1, got %d", counter.Value())
+	}
+	loop := newLoopForTest(t, agent.Config{}, counter, newFakeMeshRuntime(counter), &fakeUpdater{}, nil)
+
+	loop.setManager(newFakeMeshRuntime(counter), "")
+
+	if got := counter.Value(); got != 0 {
+		t.Fatalf("in-flight must reset to zero on runtime swap, got %d", got)
+	}
 }

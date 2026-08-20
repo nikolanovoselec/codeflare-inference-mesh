@@ -45,6 +45,33 @@ func TestREQRUN015LlamaCppRenderArgsIncludesCacheAndAlias(t *testing.T) {
 	if !hasExactArg(args, "--kv-unified") || hasExactArg(args, "--no-kv-unified") {
 		t.Fatalf("an absent kvUnified must render --kv-unified, got %q", joined)
 	}
+	// An absent mmproj keeps llama.cpp's default (auto-load the multimodal
+	// projector) and must not render --no-mmproj.
+	if hasExactArg(args, "--no-mmproj") {
+		t.Fatalf("an absent mmproj must keep the default and not render --no-mmproj, got %q", joined)
+	}
+}
+
+func TestREQRUN015LlamaCppRenderArgsNoMMProjOptOut(t *testing.T) {
+	// A text workload can opt out of the multimodal projector's VRAM: an explicit
+	// mmproj off renders --no-mmproj, while on/absent keep the default. REQ-RUN-015.
+	off := false
+	on := true
+	rendered := func(mmproj *bool) []string {
+		return RenderLlamaCppArgs(LlamaCppInput{
+			UpstreamModel: "unsloth/Code-Model-GGUF:Q4_K_M",
+			Settings:      LlamaCppSettings{HFRepo: "unsloth/Code-Model-GGUF", Quant: "Q4_K_M", BindPort: 4300, ContextWindow: 262144, Parallel: 4, CachePrompt: true, CacheReuse: 256, MMProj: mmproj},
+		})
+	}
+	if !hasExactArg(rendered(&off), "--no-mmproj") {
+		t.Fatalf("mmproj off must render --no-mmproj, got %q", joinArgs(rendered(&off)))
+	}
+	if hasExactArg(rendered(&on), "--no-mmproj") {
+		t.Fatalf("mmproj on must keep the default, got %q", joinArgs(rendered(&on)))
+	}
+	if hasExactArg(rendered(nil), "--no-mmproj") {
+		t.Fatalf("an absent mmproj must keep the default, got %q", joinArgs(rendered(nil)))
+	}
 }
 
 func TestREQRUN015LlamaCppRenderArgsKVUnifiedAndAutoParallel(t *testing.T) {
@@ -80,6 +107,29 @@ func TestREQNODE013LlamaCppLaunchEnvIncludesRuntimeLibraryPath(t *testing.T) {
 	}
 	if !strings.Contains(joined, "PATH=/var/lib/inference-mesh/bin") {
 		t.Fatalf("PATH missing managed runtime dir in %q", joined)
+	}
+}
+
+func TestREQNODE013LlamaCppLaunchEnvPinsHuggingFaceCacheToDataDir(t *testing.T) {
+	// Direct llama.cpp models must download under the agent's data directory, not
+	// the agent user's home, so disk accounting and cleanup can see them. REQ-NODE-013.
+	env := llamaCppRuntimeEnvFor([]string{"PATH=/usr/bin", "HF_HOME=/root/.cache/huggingface"}, "/var/lib/inference-mesh/bin/llamacpp-vulkan/llama-server", "/var/lib/inference-mesh")
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "HF_HOME=/var/lib/inference-mesh/.cache/huggingface") {
+		t.Fatalf("HF_HOME not pinned under dataDir in %q", joined)
+	}
+	// An existing HF_HOME must be replaced, not path-list-prepended.
+	if strings.Contains(joined, "HF_HOME=/var/lib/inference-mesh/.cache/huggingface:/root/.cache/huggingface") {
+		t.Fatalf("HF_HOME must replace the inherited value, not prepend to it: %q", joined)
+	}
+}
+
+func TestREQNODE013LlamaCppLaunchEnvLeavesHuggingFaceCacheUnsetWithoutDataDir(t *testing.T) {
+	env := llamaCppRuntimeEnvFor([]string{"PATH=/usr/bin"}, "/var/lib/inference-mesh/bin/llama-server", "")
+	for _, item := range env {
+		if strings.HasPrefix(item, "HF_HOME=") {
+			t.Fatalf("HF_HOME must stay unset without a dataDir, got %q", item)
+		}
 	}
 }
 
@@ -291,5 +341,60 @@ func TestREQOBS009LlamaCppThroughputResetsOnRestartAndFailure(t *testing.T) {
 	manager.PollThroughput(context.Background())
 	if metrics := manager.Metrics(); metrics.PromptTokensPerSecond != 0 || metrics.GenerationTokensPerSecond != 0 {
 		t.Fatalf("first poll after a failure must reseed, not compute a bogus delta: %+v", metrics)
+	}
+}
+
+func TestREQOBS011LlamaCppReadyClearsStaleRuntimeError(t *testing.T) {
+	// An OOM captured while an oversized load was attempted used to live on as a
+	// yellow "Serving" warning long after the runtime recovered. A fresh ready
+	// state must clear the captured line and lastError. REQ-OBS-011.
+	models := &modelsFixture{ids: []string{"unsloth/Test-GGUF:Q4"}}
+	modelsServer := httptest.NewServer(models)
+	t.Cleanup(modelsServer.Close)
+	manager := NewLlamaCppManager(LlamaCppInput{
+		UpstreamModel: "unsloth/Test-GGUF:Q4",
+		Settings:      LlamaCppSettings{BindPort: portOf(t, modelsServer.URL)},
+	})
+	manager.pollInterval = 5 * time.Millisecond
+
+	manager.stderrLog.Write([]byte("E ggml_gallocr_reserve_n_impl: failed to allocate Vulkan0 buffer\n"))
+	manager.lastError = "llama.cpp readiness timed out"
+	if manager.RuntimeErrorDetail() == "" || manager.LastError() == "" {
+		t.Fatal("setup: the stale error lines must be present before readiness")
+	}
+
+	proc := newFakeMeshProcess(&eventLog{})
+	done := make(chan struct{})
+	go func() {
+		manager.awaitReadiness(proc)
+		close(done)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for manager.State() != "ready" {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the runtime to report ready")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	<-done
+
+	if got := manager.RuntimeErrorDetail(); got != "" {
+		t.Fatalf("ready must clear the stale captured line, got %q", got)
+	}
+	if got := manager.LastError(); got != "" {
+		t.Fatalf("ready must clear the stale lastError, got %q", got)
+	}
+}
+
+func TestREQOBS009LlamaCppMetricsCarryMultimodalFlag(t *testing.T) {
+	// The heartbeat must carry the multimodal flag so the console can mark the
+	// advertised cache reuse as disabled by the runtime. REQ-OBS-009.
+	manager, _ := throughputManager(t, &fakeLlamaMetrics{})
+	if manager.Metrics().Multimodal {
+		t.Fatal("a fresh runtime must not report multimodal")
+	}
+	manager.stderrLog.Write([]byte("load_model: cache_reuse is not supported by multimodal, it will be disabled\n"))
+	if !manager.Metrics().Multimodal {
+		t.Fatal("metrics must carry the multimodal flag once llama-server announces it")
 	}
 }

@@ -130,3 +130,32 @@ func TestREQOBS011RuntimeErrorDetailReflectsRing(t *testing.T) {
 		t.Fatalf("expected RuntimeErrorDetail to reflect the stderr ring, got %q", got)
 	}
 }
+
+func TestREQOBS011RuntimeLogResetClearsCapturedLine(t *testing.T) {
+	// A ready transition resets the ring: an error captured by a previous lifecycle
+	// must not keep reporting after the runtime is healthy again. REQ-OBS-011.
+	l := &runtimeLog{}
+	_, _ = l.Write([]byte("E ggml_gallocr_reserve_n_impl: failed to allocate Vulkan0 buffer\n"))
+	if got := l.Detail(); got == "" {
+		t.Fatal("setup: the error line must be captured before the reset")
+	}
+	l.Reset()
+	if got := l.Detail(); got != "" {
+		t.Fatalf("reset must clear the captured line, got %q", got)
+	}
+}
+
+func TestREQOBS009RuntimeLogFlagsMultimodalCacheReuse(t *testing.T) {
+	// llama.cpp disables --cache-reuse for multimodal models on exactly this
+	// line; the ring must remember it so the console stops advertising a reuse
+	// the runtime ignores. REQ-OBS-009.
+	l := &runtimeLog{}
+	_, _ = l.Write([]byte("load_model: loaded multimodal model, '/cache/Qwen3.8-27B-UD-Q3_K_XL.gguf'\n"))
+	if l.Multimodal() {
+		t.Fatal("the model-load line alone must not flag multimodal cache-reuse")
+	}
+	_, _ = l.Write([]byte("load_model: cache_reuse is not supported by multimodal, it will be disabled\n"))
+	if !l.Multimodal() {
+		t.Fatal("the cache_reuse multimodal line must flag the ring")
+	}
+}

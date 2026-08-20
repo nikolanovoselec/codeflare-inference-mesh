@@ -101,9 +101,10 @@ const runtimeLogLineCap = 500
 // the most recent error-looking line so the agent can report why mesh-llm failed in heartbeat
 // metrics. It is an io.Writer teed alongside os.Stderr and is safe for concurrent use.
 type runtimeLog struct {
-	mu      sync.Mutex
-	pending []byte
-	lastErr string
+	mu         sync.Mutex
+	pending    []byte
+	lastErr    string
+	multimodal bool
 }
 
 func (l *runtimeLog) Write(p []byte) (int, error) {
@@ -130,6 +131,12 @@ func (l *runtimeLog) consumeLine(raw string) {
 	if line == "" {
 		return
 	}
+	// llama.cpp disables --cache-reuse for multimodal models and says so on
+	// exactly this line; remember it so the console stops advertising a reuse
+	// the runtime ignores. REQ-OBS-009.
+	if strings.Contains(line, "cache_reuse is not supported by multimodal") {
+		l.multimodal = true
+	}
 	lower := strings.ToLower(line)
 	chatter := containsLevelToken(lower, runtimeNonErrorLevels) || letterLevelChatter(line)
 	if !containsMarker(lower, runtimeStrongErrorMarkers) && chatter {
@@ -148,4 +155,23 @@ func (l *runtimeLog) Detail() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.lastErr
+}
+
+// Reset clears the captured line. The runtime just reached a fresh ready state, so
+// whatever the ring still holds belongs to an earlier lifecycle and must not keep
+// reporting as a live degradation on a healthy node (REQ-OBS-011). The multimodal
+// flag is a fact about the loaded model, not about a failure, so it survives.
+func (l *runtimeLog) Reset() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lastErr = ""
+}
+
+// Multimodal reports whether llama-server announced that the loaded model is
+// multimodal and therefore ignores --cache-reuse. The flag is sticky for the
+// lifetime of the ring, which is created with the runtime process.
+func (l *runtimeLog) Multimodal() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.multimodal
 }
