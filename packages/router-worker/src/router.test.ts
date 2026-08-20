@@ -5031,21 +5031,24 @@ describe('control-plane API (/api/v1)', () => {
     expect(missing.status).toBe(404)
   })
 
-  it('REQ-API-005 configures direct llama.cpp settings over the automation API', async () => {
+  it('REQ-API-005 REQ-RUN-020 configures direct llama.cpp settings over the automation API', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)
     const headers = { ...bearer(key.token), 'content-type': 'application/json' }
     const add = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single', 'llamacpp')
     const profileId = (await add.json() as { model: { id: string } }).model.id
 
-    const ok = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { contextWindow: 131072, parallel: 2, cacheReuse: 512 } }) }))
-    const body = await ok.json() as { model: { runtime: string; llamacpp?: { contextWindow: number; parallel: number; cacheReuse: number } } }
+    const ok = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { contextWindow: 131072, parallel: 2, cacheReuse: 512, mmproj: false } }) }))
+    const body = await ok.json() as { model: { runtime: string; llamacpp?: { contextWindow: number; parallel: number; cacheReuse: number; mmproj?: boolean } } }
     const stored = (await store.listProfiles()).find((profile) => profile.id === profileId)!
 
     expect(ok.status).toBe(200)
     expect(body.model.runtime).toBe('llamacpp')
-    expect(body.model.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512 })
-    expect(stored.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512 })
+    expect(body.model.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512, mmproj: false })
+    expect(stored.llamacpp).toMatchObject({ contextWindow: 131072, parallel: 2, cacheReuse: 512, mmproj: false })
+    const cleared = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { mmproj: null } }) }))
+    expect(cleared.status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.llamacpp?.mmproj).toBeUndefined()
     expect((await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { cacheReuse: -1 } }) }))).status).toBe(400)
   })
 

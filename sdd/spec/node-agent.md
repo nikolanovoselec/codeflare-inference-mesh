@@ -328,11 +328,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 3. llama.cpp startup honors `llamaCppBinaryPath` when set, otherwise prefers a host `llama-server` before installing a verified managed release asset. <!-- @impl: packages/node-agent/internal/agent/config.go::Config --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::llamaCppBinaryPath --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::EnsureLlamaCpp --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::llamaCppRuntimeEnv --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppDiscoversHostInstalledBinary) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppPrefersUsableHostGpuBinaryOverManagedFallback) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppAssetPrefersGpuBackendWhenAvailable) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppDoesNotReuseGenericBinaryForGpuBackend) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppInstallsManagedBinary) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQNODE013LlamaCppLaunchEnvIncludesRuntimeLibraryPath) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppVersionQueryUsesRuntimeLibraryPath) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppRejectsUnsafeTarArchiveEntry) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppRejectsUnsafeZipArchiveEntry) -->
 4. Checksum mismatch or missing compatible assets leave the node running but ineligible with `dependency-missing`, preserving the current fail-closed scheduling behavior and surfacing the install error in heartbeat metrics. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::runtimeMetrics --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013EnsureLlamaCppRejectsChecksumMismatch) -->
 
-5. Managed llama.cpp installs are named after the backend family contained in the selected release archive, and heartbeat metrics report that verified family; custom or host binaries whose builds the installer did not verify report backend `unknown`. <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::ResolvedLlamaCppBackend --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::llamaCppManagedTarget --> <!-- @impl: packages/node-agent/internal/agent/metrics.go::NodeMetrics --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::managedLlamaCppBackend --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::llamaCppBinaryPath --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppResolvedBackendNamesTheArchiveItInstalls) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE013LlamaCppMetricsCarryResolvedBackend) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE013ManagedLlamaCppBackendFollowsSelectedBinary) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride) -->
-
-6. A verified install stored under its former requested-backend name migrates to the resolved-backend directory without downloading again. <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::EnsureLlamaCpp --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE013LlamaCppMigratesRequestedBackendInstallToResolvedName) -->
-
-7. Direct llama.cpp model downloads stay beneath the agent data directory, replacing any inherited cache location so disk accounting and cleanup can cover them. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::llamaCppRuntimeEnvFor --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::upsertSingleEnv --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQNODE013LlamaCppLaunchEnvPinsHuggingFaceCacheToDataDir) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQNODE013LlamaCppLaunchEnvLeavesHuggingFaceCacheUnsetWithoutDataDir) -->
+5. Direct llama.cpp model downloads stay beneath the agent data directory, replacing any inherited cache location so disk accounting and cleanup can cover them. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::llamaCppRuntimeEnvFor --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::upsertSingleEnv --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQNODE013LlamaCppLaunchEnvPinsHuggingFaceCacheToDataDir) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQNODE013LlamaCppLaunchEnvLeavesHuggingFaceCacheUnsetWithoutDataDir) -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
@@ -390,6 +386,31 @@ This domain covers the local cross-platform service that registers nodes, proxie
 **Priority:** P1
 
 **Dependencies:** [REQ-NODE-003](#req-node-003-node-inference-proxy)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-NODE-016: Direct runtime backend identity
+
+**Intent:** Runtime directories and node telemetry must identify only backend families verified by the managed installer, without guessing the build of an arbitrary host binary.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. A managed llama.cpp install is stored under the backend family contained in its selected release archive. <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::ResolvedLlamaCppBackend --> <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::llamaCppManagedTarget --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE016LlamaCppResolvedBackendNamesTheArchiveItInstalls) -->
+2. Heartbeat metrics report the verified backend family of the selected managed binary. <!-- @impl: packages/node-agent/internal/agent/metrics.go::NodeMetrics --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::managedLlamaCppBackend --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE016LlamaCppMetricsCarryResolvedBackend) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE016ManagedLlamaCppBackendFollowsSelectedBinary) -->
+3. Custom or host binaries whose builds the installer did not verify report backend `unknown`. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/main.go::llamaCppBinaryPath --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/main_test.go (TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride) -->
+4. A verified install stored under its former requested-backend name migrates to the resolved-backend directory without downloading again. <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::EnsureLlamaCpp --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE016LlamaCppMigratesRequestedBackendInstallToResolvedName) -->
+
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-013](#req-node-013-runtime-binary-bootstrap)
 
 **Verification:** Automated test
 

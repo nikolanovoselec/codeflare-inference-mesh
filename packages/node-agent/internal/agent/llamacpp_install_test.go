@@ -312,7 +312,7 @@ func TestREQRUN014SelectedMeshLLMVersionDownloadsChecksumSidecar(t *testing.T) {
 	}
 }
 
-func TestREQNODE013LlamaCppResolvedBackendNamesTheArchiveItInstalls(t *testing.T) {
+func TestREQNODE016LlamaCppResolvedBackendNamesTheArchiveItInstalls(t *testing.T) {
 	// Upstream publishes no Linux CUDA archive, so an nvidia request on Linux
 	// installs the Vulkan build; the directory must describe what runs.
 	cases := []struct {
@@ -336,7 +336,7 @@ func TestREQNODE013LlamaCppResolvedBackendNamesTheArchiveItInstalls(t *testing.T
 	}
 }
 
-func TestREQNODE013LlamaCppMigratesRequestedBackendInstallToResolvedName(t *testing.T) {
+func TestREQNODE016LlamaCppMigratesRequestedBackendInstallToResolvedName(t *testing.T) {
 	// A node that installed under the old requested-backend name (llamacpp-nvidia)
 	// must not re-download after the rename: a verified legacy install migrates.
 	archive := buildFakeMeshLLMTarGz(t, []fakeArchiveEntry{{name: "llama-b9912/bin/llama-server", body: []byte("vulkan llama-server"), mode: 0o755}})

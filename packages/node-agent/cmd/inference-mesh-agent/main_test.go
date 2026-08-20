@@ -696,7 +696,7 @@ func TestREQRUN005RuntimeMetricsReportsActualLoadedProfile(t *testing.T) {
 	}
 }
 
-func TestREQNODE013LlamaCppMetricsCarryResolvedBackend(t *testing.T) {
+func TestREQNODE016LlamaCppMetricsCarryResolvedBackend(t *testing.T) {
 	// An NVIDIA Linux box runs the Vulkan build, not CUDA: the heartbeat must
 	// carry the backend the release archive actually installs so the console
 	// can show it next to the version. REQ-NODE-013.
@@ -962,7 +962,7 @@ func TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride(t *testing.T) {
 	}
 }
 
-func TestREQNODE013ManagedLlamaCppBackendFollowsSelectedBinary(t *testing.T) {
+func TestREQNODE016ManagedLlamaCppBackendFollowsSelectedBinary(t *testing.T) {
 	dataDir := t.TempDir()
 	managed := filepath.Join(dataDir, "bin", "llamacpp-vulkan", "llama-server")
 	if got := managedLlamaCppBackend(dataDir, managed); got != "vulkan" {

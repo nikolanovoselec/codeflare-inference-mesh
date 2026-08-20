@@ -453,7 +453,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Acceptance Criteria:**
 
-1. The automation model-configuration API accepts the projector boolean, while null restores llama.cpp's default projector auto-load. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCppSettings --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 sets and clears the multimodal projector opt-out) -->
+1. The automation model-configuration API accepts the projector boolean, while null restores llama.cpp's default projector auto-load. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCppSettings --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-API-005 REQ-RUN-020 configures direct llama.cpp settings over the automation API) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 

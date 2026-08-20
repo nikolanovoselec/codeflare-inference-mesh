@@ -1358,18 +1358,17 @@ function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly Mod
   // always follow the reference, or the console shows one model and the node
   // launches another.
   const refChanged = body.modelRef !== undefined && modelRef !== storedRef
+  const sourceWithoutDerivedFields = Object.fromEntries(
+    Object.entries(baseSource).filter(([key]) => key !== 'hfFile' && key !== 'quant')
+  ) as LlamaCppProfileSettings
   const base: LlamaCppProfileSettings = {
-    ...baseSource,
-    ...(refChanged ? { hfRepo: generated.hfRepo, quant: generated.quant } : {}),
+    ...(refChanged ? sourceWithoutDerivedFields : baseSource),
+    ...(refChanged ? { hfRepo: generated.hfRepo, ...(generated.quant !== undefined ? { quant: generated.quant } : {}) } : {}),
     bindPort: baseSource.bindPort ?? generated.bindPort,
     contextWindow: baseSource.contextWindow ?? generated.contextWindow,
     parallel: baseSource.parallel ?? generated.parallel,
     cachePrompt: baseSource.cachePrompt ?? generated.cachePrompt,
     cacheReuse: baseSource.cacheReuse ?? generated.cacheReuse
-  }
-  if (refChanged) {
-    if (generated.quant === undefined) delete base.quant
-    delete base.hfFile
   }
   const settingsResult = resolveLlamaCppSettings(base, body.llamacpp)
   if ('error' in settingsResult) return { error: settingsResult.error, status: 400 }
