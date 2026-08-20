@@ -16,6 +16,7 @@
 - [Runtime exits with `libcudart.so.<N>: cannot open shared object file`](#runtime-exits-with-libcudartson-cannot-open-shared-object-file)
 - [Peer count stays at one](#peer-count-stays-at-one)
 - [Model never appears in ready models](#model-never-appears-in-ready-models)
+- [Direct llama.cpp model fails to load (`failed to load model`)](#direct-llamacpp-model-fails-to-load-failed-to-load-model)
 - [Requests fail briefly after mesh rotation](#requests-fail-briefly-after-mesh-rotation)
 - [Admin status shows mesh_state_key_missing](#admin-status-shows-mesh_state_key_missing)
 - [Dashboard shows "The router hit a temporary error"](#dashboard-shows-the-router-hit-a-temporary-error)
@@ -137,6 +138,36 @@
 **Cause:** A split profile's stages are incomplete — not every serving node needed for the layer split is online — the model download is still in progress, peer discovery is stuck, or MeshLLM's split planner rejected the available budgets. In the capacity case the peers can be connected and the API/console can be up while `/v1/models` stays empty; the key signal is a split-readiness blocker such as `split_capacity_shortfall` with participant planner capacity and shortfall bytes.
 
 **Fix:** Compare `stageAssignments` / `stageCount` and `splitReadiness` in node metrics or `/api/v1/status?detail=full` against the online serving nodes for the profile, and check the node drawer's Mesh VRAM limit row. If the desired limit differs from the running launch budget, wait for the updated agent to restart from the current profile config. If a split runtime keeps reporting `waiting_for_peers` on consecutive heartbeats, or reports `mesh-llm readiness deadline exceeded`, the agent relaunches it automatically for the current mesh bootstrap/profile key. Use Force Reload from the node's Manage drawer or `POST /api/v1/nodes/{id}/reload` only if repeated heartbeats do not self-heal the stalled runtime. ([REQ-RUN-007](../../sdd/spec/runtime-profiles.md#req-run-007-split-serving-via-layer-packages)) ([REQ-RUN-005](../../sdd/spec/runtime-profiles.md#req-run-005-runtime-readiness-and-status-reporting)) ([REQ-ADM-032](../../sdd/spec/setup-admin.md#req-adm-032-node-force-reload))
+
+## Direct llama.cpp model fails to load (`failed to load model`)
+
+**Symptom:** The node stays `online` but the profile never serves: `runtimeState: failed`, `lastError: "llama.cpp readiness timed out"`, and the gateway returns `503 no_healthy_node` fleet-wide. The runtime's stderr shows the model resolving to nothing:
+
+```
+load_model: loading model 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL.'
+common_init_: failed to load model ''
+srv  llama_server: exiting due to model loading error
+```
+
+**Cause:** The profile's launch source does not name a real Hugging Face file. The classic case is a typo in the quantization tag — a trailing `.` (a `.gguf` copy-paste that overshot by one character, as in `UD-Q3_K_XL.` above) or embedded whitespace — so `--hf-repo hfRepo:quant` matches no file and the resolved model path comes back empty. Because the node agent reads **only** the stored `hfRepo`/`quant`/`hfFile` and never the `modelRef`, editing the reference alone in the console is not enough: the stored source must reconstruct from the reference.
+
+**Fix:**
+
+1. Confirm the effective launch source in the model drawer's read-only **Launch source** row (the stored `hfRepo:quant`, plus any `hfFile` override) and compare it with the model reference.
+2. Correct the reference and the explicit source together through the model config endpoint, e.g. `POST /api/v1/models/{id}` (or `POST /admin/profiles/config`) with both the clean `modelRef` and a matching `llamacpp` block:
+
+   ```bash
+   curl -s -X POST "https://mesh.example.com/api/v1/models/{profileId}" \
+     -H "authorization: Bearer $AUTOMATION_TOKEN" \
+     -H "content-type: application/json" \
+     -d '{"modelRef":"unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL",
+          "llamacpp":{"hfRepo":"unsloth/Qwen3.8-27B-GGUF","quant":"UD-Q3_K_XL"}}'
+   ```
+
+   A reference edit re-derives `hfRepo`/`quant` from it and drops a stale `hfFile`; a source that no longer reconstructs from the reference is refused with `model_source_mismatch`, and a trailing-dot or whitespace quant tag is refused with `invalid_quant_tag`.
+3. Wait for the node to download, load, and report `ready` again; the profile returns to serving and the `no_healthy_node` clears.
+
+([REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles)) ([REQ-RUN-015](../../sdd/spec/runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering))
 
 ## Requests fail briefly after mesh rotation
 
