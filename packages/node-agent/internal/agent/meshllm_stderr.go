@@ -131,9 +131,9 @@ func (l *runtimeLog) consumeLine(raw string) {
 	if line == "" {
 		return
 	}
-	// llama.cpp disables --cache-reuse for multimodal models and says so on
-	// exactly this line; remember it so the console stops advertising a reuse
-	// the runtime ignores. REQ-OBS-009.
+	// llama.cpp reports its cross-divergence reuse optimization as unsupported
+	// for multimodal models. Ordinary text prefix caching remains separate and
+	// available through cache-prompt. REQ-OBS-013.
 	if strings.Contains(line, "cache_reuse is not supported by multimodal") {
 		l.multimodal = true
 	}
@@ -167,9 +167,18 @@ func (l *runtimeLog) Reset() {
 	l.lastErr = ""
 }
 
-// Multimodal reports whether llama-server announced that the loaded model is
-// multimodal and therefore ignores --cache-reuse. The flag is sticky for the
-// lifetime of the ring, which is created with the runtime process.
+// ResetLifecycle clears model-specific state before a replacement process starts.
+// Readiness Reset deliberately preserves multimodal for the current process, while
+// a new model must rediscover that capability from its own stderr.
+func (l *runtimeLog) ResetLifecycle() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lastErr = ""
+	l.multimodal = false
+}
+
+// Multimodal reports whether llama-server announced that the current loaded model
+// cannot use the cross-divergence reuse optimization.
 func (l *runtimeLog) Multimodal() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()

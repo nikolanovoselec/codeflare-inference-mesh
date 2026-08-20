@@ -359,8 +359,6 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 7. Disabling unified KV together with Auto parallel is rejected with status 400. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-021 configures direct llama.cpp settings through the admin profile config path) -->
 
-8. The model reference is the single source of truth for the launch source: because the node agent reads `hfRepo`/`quant` — never the reference — a save whose reference differs from the stored one re-derives `hfRepo`/`quant` from it and drops any stale file override, a save whose launch source no longer reconstructs from the reference is refused, and a quant tag ending in `.` or containing whitespace is refused at creation and on every save so the two can never silently diverge. The model drawer shows the effective launch source read-only, so what the node will run is visible before a save. <!-- @impl: packages/router-worker/src/router.ts::configureLlamaCppProfile --> <!-- @impl: packages/router-worker/src/profiles.ts::parseLlamaCppModelRef --> <!-- @impl: packages/router-worker/src/profiles.ts::llamaCppQuantError --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 re-derives the launch source when the model reference is edited) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 refuses launch sources that cannot reconstruct the model reference) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 refuses a quant tag that resolves no file at creation) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-012 REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
-
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P2
@@ -385,13 +383,61 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 2. Rendered launch arguments enable unified KV (`--kv-unified`) unless the profile explicitly disables it (`--no-kv-unified`); Auto parallel passes through as `--parallel -1` and Auto context as `--ctx-size 0`, so llama-server plans slots itself and loads the model's native training context. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::RenderLlamaCppArgs --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN015LlamaCppRenderArgsKVUnifiedAndAutoParallel) --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN015LlamaCppRenderArgsAutoContext) -->
 
-3. The profile's multimodal-projector toggle maps to `--no-mmproj` when explicitly off, so a text workload can opt out of the projector's VRAM; an absent or on toggle keeps llama.cpp's default auto-load and renders no flag. The setting is a per-profile boolean in the `llamacpp` block, surfaced as a console toggle and accepted (with `null` clearing it back to the default) by both config APIs. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::RenderLlamaCppArgs --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCppSettings --> <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN015LlamaCppRenderArgsNoMMProjOptOut) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 sets and clears the multimodal projector opt-out) -->
+3. Disabling the multimodal projector renders its opt-out launch flag; enabled or absent settings preserve llama.cpp's default auto-load behavior. <!-- @impl: packages/node-agent/internal/agent/llamacpp_manager.go::RenderLlamaCppArgs --> <!-- @test: packages/node-agent/internal/agent/llamacpp_manager_test.go (TestREQRUN015LlamaCppRenderArgsNoMMProjOptOut) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-013](#req-run-013-direct-llamacpp-custom-profiles), [REQ-SCH-004](state-scheduling.md#req-sch-004-direct-session-affinity)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-018: Direct launch-source integrity
+
+**Intent:** A direct profile's displayed model and effective Hugging Face launch source must remain one consistent operator choice.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. Changing a direct profile's model reference re-derives its repository and optional quantization and removes a stale per-file override. <!-- @impl: packages/router-worker/src/router.ts::configureLlamaCppProfile --> <!-- @impl: packages/router-worker/src/profiles.ts::parseLlamaCppModelRef --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 re-derives the launch source when the model reference is edited) -->
+2. A save is refused when its effective repository or optional quantization differs from the model reference. <!-- @impl: packages/router-worker/src/router.ts::configureLlamaCppProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 refuses launch sources that cannot reconstruct the model reference) -->
+3. Quantization tags ending in a period or containing whitespace are refused during creation and configuration. <!-- @impl: packages/router-worker/src/profiles.ts::llamaCppQuantError --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 refuses launch sources that cannot reconstruct the model reference) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 refuses a quant tag that resolves no file at creation) -->
+4. The model drawer shows the effective launch source read-only before an operator saves changes. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-OBS-012 REQ-RUN-013 keeps direct llama.cpp UI controls backed by admin API payloads) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-RUN-013](#req-run-013-direct-llamacpp-custom-profiles)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-019: Direct projector control
+
+**Intent:** Operators must control multimodal-projector loading per direct profile without host-wide environment changes.
+
+**Applies To:** Admin, Automation
+
+**Acceptance Criteria:**
+
+1. The model drawer exposes a per-profile projector toggle and saves its selected boolean state. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-dashboard.test.ts (REQ-RUN-013 loads and saves direct llama.cpp runtime tunables from the model drawer) -->
+2. Admin and automation configuration APIs accept the projector boolean, while null restores the default behavior. <!-- @impl: packages/router-worker/src/router.ts::resolveLlamaCppSettings --> <!-- @impl: packages/node-agent/internal/agent/runtime.go::LlamaCppSettings --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-013 sets and clears the multimodal projector opt-out) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-013](#req-run-013-direct-llamacpp-custom-profiles), [REQ-RUN-015](#req-run-015-direct-llamacpp-launch-rendering)
 
 **Verification:** Automated test
 

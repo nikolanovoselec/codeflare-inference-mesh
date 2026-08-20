@@ -140,7 +140,7 @@ POST /node/heartbeat
 | `403` | Node is revoked and cannot restore eligibility. | `{ "error": "node_revoked" }` |
 | `404` | Node record does not exist. | `{ "error": "unknown_node" }` |
 
-**Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-NODE-007](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
+**Implements:** [REQ-NODE-002](../../sdd/spec/node-agent.md), [REQ-NODE-007](../../sdd/spec/node-agent.md), [REQ-OBS-003](../../sdd/spec/observability.md), [REQ-OBS-013](../../sdd/spec/observability.md#req-obs-013-direct-runtime-capability-reporting), [REQ-RUN-008](../../sdd/spec/runtime-profiles.md), [REQ-SEC-006](../../sdd/spec/security.md), [REQ-ADM-008](../../sdd/spec/setup-admin.md)
 
 **Notes:** Invite-token values (`meshToken`, `joinTokens`) are stored encrypted, never logged, and never surfaced through any admin or status response. ([REQ-SEC-006](../../sdd/spec/security.md)) The `metrics` and `meshBootstrap` shapes are detailed below.
 
@@ -153,6 +153,8 @@ POST /node/heartbeat
 - `readyModels` — the model ids from the node's own `/v1/models` (the mesh-wide union).
 - `gpuName`, `gpuMemoryUsedMiB`, and `gpuMemoryTotalMiB` from trusted GPU telemetry. MeshLLM may report rated capacity without used memory; the node agent fills missing used memory from the host GPU tool when available so node projections can render used/total VRAM without using split planner capacity.
 - `peerCount`, `splitEnabled`, `stageCount`, `stageAssignments[]` (`stageId`, `stageIndex`, `nodeId`, `layerStart`, `layerEnd`, `state`, optional backend/device fields), `apiReady`, `consoleReady`, `meshllmVersion`, and `meshMaxVramGb` (the launched MeshLLM `--max-vram` budget).
+- `llamacppBackend` — verified managed backend family; `unknown` for a custom or host binary whose build is not verified by the installer.
+- `multimodal` — true when the current direct model cannot use llama.cpp's cross-divergence reuse optimization; ordinary text prefix caching remains separate.
 - `splitReadiness` for split profiles when MeshLLM reports diagnostics: `verdict`, `capacityAdvice` (`requiredBytes`, `aggregateCapacityBytes`, `shortfallBytes`, `eligibleNodeCount`), `participants[]`, `blockers[]`, and `recommendations[]`. Aggregated status adds `routerNodeId`/`displayName` to participants when `meshNodeId` can be matched, so operators see machine names instead of MeshLLM hashes. This distinguishes peer/download problems from planner capacity shortfalls.
 
 #### `meshBootstrap` envelope
@@ -878,7 +880,9 @@ MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama
 
 For MeshLLM profiles, the tunables mirror `POST /admin/profiles/config`: `parallel`/`batch`/`ubatch`/`maxOutputTokens` are positive integers, `cacheTypeK`/`cacheTypeV` one of `f16`/`q8_0`/`q4_0`, `flashAttn` a boolean, `toolEmulation` a boolean forcing mesh-llm's server-side tool-call emulation (for templates whose native tool grammar mesh-llm cannot parse), `wireDtype`/`prefillChunking`/`prefillChunkSize` the staged-transport tunables (unset resolves to the WARP-optimized `q8` + `adaptive-ramp` defaults on split models), and `reasoning` a `{ enabled?, format?, budget? }` object (layered onto the existing block). A `null` / `0` / `""` value clears a tunable back to Auto.
 
-For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block; `parallel` is `-1` (Auto: llama-server plans the slot count with unified KV) or `>= 1`, `kvUnified` is a boolean (`null` clears back to on; `false` together with Auto parallel is rejected because llama-server force-enables unified KV under Auto), `gpuLayers` accepts `0` or a positive integer plus `"auto"` / `"all"` (`null`/`""` clears), `cacheReuse` must be `>= 0`, `cachePrompt` is boolean, `cacheTypeK`/`cacheTypeV` accept llama.cpp KV cache types, `batch`/`ubatch`/`maxOutputTokens` are positive integers (`null`/`0` clears optional values), `flashAttn` is boolean (`null` clears), `mmproj` is a boolean (`null` clears back to llama.cpp's default auto-load; `false` renders `--no-mmproj`, opting a text workload out of the multimodal projector's VRAM), `reasoning` layers or clears the direct reasoning block, and reserved bind ports are rejected.
+For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block. `parallel` is `-1` (Auto) or `>= 1`; `kvUnified` is a boolean, and `false` with Auto parallel is rejected. `gpuLayers` accepts `0`, a positive integer, `"auto"`, or `"all"`. Cache, batch, flash-attention, generation, and reasoning fields use the documented types and ranges; reserved bind ports are rejected.
+
+`mmproj` is boolean. `null` restores llama.cpp's default projector auto-load, while `false` renders `--no-mmproj` so a text workload can avoid projector VRAM. Optional values accept their documented clear sentinels (`null`, `0`, or `""` depending on the field).
 
 The launch source is carried by the `llamacpp` block's `hfRepo`, `quant`, and optional `hfFile` (a per-file override inside the repo). The node agent reads **only** `hfRepo`/`quant`/`hfFile` — never `modelRef` — to build its `--hf-repo` argument, so the model reference is the single source of truth: posting a `modelRef` different from the stored one re-derives `hfRepo`/`quant` from it (dropping any stale `hfFile`), and a save whose `hfRepo`/`quant` no longer reconstruct from the reference is refused with `model_source_mismatch`. A `quant` tag ending in `.` or containing whitespace resolves no Hugging Face file and is refused with `invalid_quant_tag`, at creation and on every save.
 
@@ -892,7 +896,7 @@ The launch source is carried by the `llamacpp` block's `hfRepo`, `quant`, and op
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is a reserved mesh stable alias (`codeflare-mesh` or a `codeflare-mesh-` prefix) or collides with another model. | `call_name_conflict` error body. |
 
-**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
+**Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity), [REQ-RUN-019](../../sdd/spec/runtime-profiles.md#req-run-019-direct-projector-control), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 ### POST /api/v1/models/{id}/enable
 

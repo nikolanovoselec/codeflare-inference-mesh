@@ -149,25 +149,24 @@ common_init_: failed to load model ''
 srv  llama_server: exiting due to model loading error
 ```
 
-**Cause:** The profile's launch source does not name a real Hugging Face file. The classic case is a typo in the quantization tag — a trailing `.` (a `.gguf` copy-paste that overshot by one character, as in `UD-Q3_K_XL.` above) or embedded whitespace — so `--hf-repo hfRepo:quant` matches no file and the resolved model path comes back empty. Because the node agent reads **only** the stored `hfRepo`/`quant`/`hfFile` and never the `modelRef`, editing the reference alone in the console is not enough: the stored source must reconstruct from the reference.
+**Cause:** The profile's launch source does not name a real Hugging Face file. The classic case is a typo in the quantization tag — a trailing `.` (a `.gguf` copy-paste that overshot by one character, as in `UD-Q3_K_XL.` above) or embedded whitespace — so the source matches no file and model resolution returns empty. The stored launch source must reconstruct exactly from the model reference.
 
 **Fix:**
 
 1. Confirm the effective launch source in the model drawer's read-only **Launch source** row (the stored `hfRepo:quant`, plus any `hfFile` override) and compare it with the model reference.
-2. Correct the reference and the explicit source together through the model config endpoint, e.g. `POST /api/v1/models/{id}` (or `POST /admin/profiles/config`) with both the clean `modelRef` and a matching `llamacpp` block:
+2. Correct the reference through `POST /api/v1/models/{id}` (or `POST /admin/profiles/config`). A changed reference automatically re-derives the repository and quantization and drops a stale file override:
 
    ```bash
    curl -s -X POST "https://mesh.example.com/api/v1/models/{profileId}" \
      -H "authorization: Bearer $AUTOMATION_TOKEN" \
      -H "content-type: application/json" \
-     -d '{"modelRef":"unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL",
-          "llamacpp":{"hfRepo":"unsloth/Qwen3.8-27B-GGUF","quant":"UD-Q3_K_XL"}}'
+     -d '{"modelRef":"unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL"}'
    ```
 
-   A reference edit re-derives `hfRepo`/`quant` from it and drops a stale `hfFile`; a source that no longer reconstructs from the reference is refused with `model_source_mismatch`, and a trailing-dot or whitespace quant tag is refused with `invalid_quant_tag`.
+   Supply explicit source fields only when repairing stored source data without changing the reference. A mismatch is refused with `model_source_mismatch`; a trailing-dot or whitespace quant tag is refused with `invalid_quant_tag`.
 3. Wait for the node to download, load, and report `ready` again; the profile returns to serving and the `no_healthy_node` clears.
 
-([REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles)) ([REQ-RUN-015](../../sdd/spec/runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering))
+([REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity)) ([REQ-RUN-015](../../sdd/spec/runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering))
 
 ## Requests fail briefly after mesh rotation
 

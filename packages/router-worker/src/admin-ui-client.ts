@@ -785,17 +785,11 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   // agent, which treats an inflected marker ("panicked at") as the hard token it carries.
   const letterLevelChatter = (detail) => detail.trim().split(/\\s+/).slice(0, 2).some((field) => field === 'W' || field === 'I' || field === 'D');
   const chatterDetail = (detail) => (/\\b(warn|info|debug|trace)\\b/i.test(detail) || letterLevelChatter(detail)) && !/\\b(error|fatal|panic)/i.test(detail);
-  // A running runtime carrying a captured error line is degraded, not healthy: the split
-  // just collapsed around it or a lane failed mid-request. The row and drawer must show
-  // it even while the node still serves.
+  // Current agents clear startup errors at readiness, so any later captured line is
+  // a current degradation even when the runtime still serves. Chatter remains hidden.
   function degradedRuntimeError(node) {
     if (node.status !== 'online' || node.deactivated) return '';
     const metrics = node.metrics || {};
-    // A ready/running runtime has outgrown the captured line: the agent resets the
-    // stderr ring and lastError on the ready transition, and nodes on older agents
-    // keep forwarding their stale line until they update. The warning must not
-    // outlive the failure — a serving node reads green (REQ-OBS-011).
-    if (metrics.runtimeState === 'ready' || metrics.runtimeState === 'running') return '';
     const detail = metrics.runtimeDetail || '';
     if (!detail || chatterDetail(detail)) return '';
     return detail;
@@ -1228,7 +1222,7 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     if (metrics.meshllmVersion && !(install.runtime === 'meshllm' && install.installedVersion)) bodyEl.appendChild(drawerField('meshllm', 'mesh-llm', metrics.meshllmVersion));
     // The backend family (vulkan on a Linux NVIDIA box, not the requested
     // nvidia) is what the node actually runs, so it reads next to the version.
-    if (metrics.llamacppVersion && !(install.runtime === 'llamacpp' && install.installedVersion)) {
+    if (metrics.llamacppVersion && (metrics.llamacppBackend || !(install.runtime === 'llamacpp' && install.installedVersion))) {
       const backend = metrics.llamacppBackend ? ' · ' + metrics.llamacppBackend : '';
       bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion + backend, metrics.llamacppVersion + backend));
     }
@@ -1244,15 +1238,14 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
       if (metrics.parallel != null) slotsRow.setAttribute('data-parallel', String(metrics.parallel));
       bodyEl.appendChild(slotsRow);
       const cacheState = metrics.cachePrompt === true ? 'on' : metrics.cachePrompt === false ? 'off' : 'not reported';
-      // llama.cpp silently ignores --cache-reuse for multimodal models, so a
-      // ready multimodal runtime must not advertise a reuse it does not honour.
-      const reuseNote = metrics.cacheReuse != null ? ' · reuse ' + metrics.cacheReuse : '';
-      const multimodalNote = metrics.multimodal === true ? ' · reuse disabled by multimodal' : '';
-      bodyEl.appendChild(drawerField('direct-cache', 'Prompt cache', cacheState + reuseNote + multimodalNote));
+      // Multimodal loading can disable llama.cpp's cross-divergence reuse
+      // optimization without affecting ordinary text prefix caching.
+      const reuseNote = metrics.multimodal === true ? ' · cross-divergence reuse unavailable for multimodal' : (metrics.cacheReuse != null ? ' · reuse ' + metrics.cacheReuse : '');
+      bodyEl.appendChild(drawerField('direct-cache', 'Prompt cache', cacheState + reuseNote));
       bodyEl.appendChild(drawerField('direct-cached-tokens', 'Last cached tokens', reportedText(metrics.cachedTokensLast), metrics.cachedTokensLast != null ? String(metrics.cachedTokensLast) : ''));
-      // A captured startup error (e.g. "llama.cpp readiness timed out") belongs to a
-      // previous lifecycle; a ready/running runtime reads as healthy, not as an error.
-      if (metrics.lastError && metrics.runtimeState !== 'ready' && metrics.runtimeState !== 'running') {
+      // Current agents clear startup failures at readiness, so a subsequently
+      // reported error remains current even if the runtime still serves.
+      if (metrics.lastError) {
         const llamaErr = drawerField('llamacpp-last-error', 'llama.cpp error', metrics.lastError);
         llamaErr.setAttribute('data-tone', 'danger');
         bodyEl.appendChild(llamaErr);

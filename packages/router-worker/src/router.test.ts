@@ -2752,6 +2752,9 @@ describe('router worker behavioral contracts', () => {
     const driftedQuant = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M', llamacpp: { hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q5_K_M' } })
     expect(driftedQuant.status).toBe(400)
     expect(await driftedQuant.json()).toMatchObject({ error: 'model_source_mismatch' })
+    const quantOnUntaggedRef = await configure({ modelRef: 'unsloth/Qwen3-14B-GGUF', llamacpp: { hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M' } })
+    expect(quantOnUntaggedRef.status).toBe(400)
+    expect(await quantOnUntaggedRef.json()).toMatchObject({ error: 'model_source_mismatch' })
     // Refused saves leave the stored profile untouched.
     expect(await profile()).toMatchObject({ upstreamModel: 'unsloth/Qwen3-14B-GGUF:Q4_K_M' })
     expect((await profile()).llamacpp).toMatchObject({ hfRepo: 'unsloth/Qwen3-14B-GGUF', quant: 'Q4_K_M' })

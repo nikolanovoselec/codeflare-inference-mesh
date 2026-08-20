@@ -568,6 +568,25 @@ func TestREQNODE003UpstreamProxyEnforcesBearerAndStreams(t *testing.T) {
 	})
 }
 
+func TestREQNODE015RuntimeGenerationIsolatesRequestAccounting(t *testing.T) {
+	counter := &ActiveCounter{}
+	finishOld := counter.Begin()
+	if got := counter.Value(); got != 1 {
+		t.Fatalf("old runtime request count = %d, want 1", got)
+	}
+
+	counter.Reset()
+	finishNew := counter.Begin()
+	finishOld()
+	if got := counter.Value(); got != 1 {
+		t.Fatalf("old runtime completion changed the new generation count to %d", got)
+	}
+	finishNew()
+	if got := counter.Value(); got != 0 {
+		t.Fatalf("new runtime request count = %d after completion, want 0", got)
+	}
+}
+
 func TestREQNODE004DashboardRendersOperationalStatusUI(t *testing.T) {
 	t.Run("REQ-NODE-004", func(t *testing.T) {
 		handler := DashboardHandler(func() DashboardStatus {
@@ -957,9 +976,16 @@ func TestREQOBS009GPUFallbackPerOSAndMerge(t *testing.T) {
 			t.Fatalf("failed probe must yield zero VRAM, got %#v", got)
 		}
 		// MergeRuntimeMetrics carries GPU fields, and a zero extra never clears the base.
-		merged := MergeRuntimeMetrics(NodeMetrics{RuntimeState: "ready"}, NodeMetrics{GPUName: "RTX 4090", GPUMemoryUsedMiB: 8000, GPUMemoryTotalMiB: 24576})
+		merged := MergeRuntimeMetrics(NodeMetrics{RuntimeState: "ready"}, NodeMetrics{GPUName: "RTX 4090", GPUMemoryUsedMiB: 8000, GPUMemoryTotalMiB: 24576, Multimodal: true})
 		if merged.GPUName != "RTX 4090" || merged.GPUMemoryUsedMiB != 8000 || merged.GPUMemoryTotalMiB != 24576 {
 			t.Fatalf("merge must carry GPU fields: %#v", merged)
+		}
+		if !merged.Multimodal {
+			t.Fatalf("merge must carry direct-runtime capability telemetry: %#v", merged)
+		}
+		cleared := MergeRuntimeMetrics(NodeMetrics{RuntimeKind: "llamacpp", Multimodal: true}, NodeMetrics{RuntimeKind: "llamacpp"})
+		if cleared.Multimodal {
+			t.Fatalf("a new direct lifecycle must clear stale multimodal telemetry: %#v", cleared)
 		}
 		if kept := MergeRuntimeMetrics(NodeMetrics{GPUMemoryTotalMiB: 24576}, NodeMetrics{}); kept.GPUMemoryTotalMiB != 24576 {
 			t.Fatalf("zero extra must not clear base GPU total, got %#v", kept)

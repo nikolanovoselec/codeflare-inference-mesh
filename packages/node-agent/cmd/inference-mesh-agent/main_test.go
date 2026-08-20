@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -435,6 +434,12 @@ func TestREQRUN010ProfileRestartContinuesAfterStaleDrainCounter(t *testing.T) {
 	if manager.State() == "failed" || manager.LastError() != "" {
 		t.Fatalf("stale drain counter should not mark runtime failed, state=%q error=%q", manager.State(), manager.LastError())
 	}
+	manager.mu.Lock()
+	drained := append([]int(nil), manager.restartDrained...)
+	manager.mu.Unlock()
+	if len(drained) != 1 || drained[0] != 0 {
+		t.Fatalf("replacement runtime must start with fresh request accounting, got %v", drained)
+	}
 }
 
 func TestREQNODE010ProfileRestartProvisionsMeshPeerFirewall(t *testing.T) {
@@ -697,18 +702,14 @@ func TestREQNODE013LlamaCppMetricsCarryResolvedBackend(t *testing.T) {
 	// can show it next to the version. REQ-NODE-013.
 	profile := agent.ModelProfile{ID: "p", UpstreamModel: "m", Version: 2}
 	cfg := agent.Config{RuntimeModel: "m", ActiveProfileIDs: []string{"p"}, Profiles: []agent.ModelProfile{profile}}
-	manager := agent.NewLlamaCppManager(agent.LlamaCppInput{ProfileID: "p", UpstreamModel: "m", BinaryPath: "llama-server"})
+	manager := agent.NewLlamaCppManager(agent.LlamaCppInput{ProfileID: "p", UpstreamModel: "m", BinaryPath: "llama-server", Backend: "vulkan"})
 	manager.SetState("ready")
 	loadState := &runtimeLoadState{}
 	loadState.Set(profile)
 
 	metrics := runtimeMetrics(manager, loadState, cfg, 0, "")
-	want := agent.ResolvedLlamaCppBackend(runtime.GOOS, runtime.GOARCH, agent.DetectLlamaCppBackend())
-	if metrics.LlamaCppBackend != want {
-		t.Fatalf("llamacpp metrics backend = %q, want %q", metrics.LlamaCppBackend, want)
-	}
-	if want == "" {
-		t.Fatal("resolved backend must never be empty")
+	if metrics.LlamaCppBackend != "vulkan" {
+		t.Fatalf("llamacpp metrics backend = %q, want selected backend", metrics.LlamaCppBackend)
 	}
 }
 
@@ -949,12 +950,26 @@ func TestREQRUN007VersionBumpRestartsEverySplitServingNode(t *testing.T) {
 
 func TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride(t *testing.T) {
 	cfg := agent.Config{DataDir: t.TempDir(), LlamaCppBinaryPath: " /opt/llama-cuda/bin/llama-server ", RuntimeVersions: agent.RuntimeBinaryVersions{LlamaCpp: "b9928"}}
-	binaryPath, installError := llamaCppBinaryPath(cfg)
+	binaryPath, backend, installError := llamaCppBinaryPath(cfg)
 	if binaryPath != "/opt/llama-cuda/bin/llama-server" {
 		t.Fatalf("expected host-installed llama.cpp binary override, got %q", binaryPath)
 	}
+	if backend != "unknown" {
+		t.Fatalf("unverified custom binary backend = %q, want unknown", backend)
+	}
 	if installError != "" {
 		t.Fatalf("expected override to skip managed install, got %q", installError)
+	}
+}
+
+func TestREQNODE013ManagedLlamaCppBackendFollowsSelectedBinary(t *testing.T) {
+	dataDir := t.TempDir()
+	managed := filepath.Join(dataDir, "bin", "llamacpp-vulkan", "llama-server")
+	if got := managedLlamaCppBackend(dataDir, managed); got != "vulkan" {
+		t.Fatalf("managed backend = %q, want vulkan", got)
+	}
+	if got := managedLlamaCppBackend(dataDir, "/opt/llama.cpp/bin/llama-server"); got != "unknown" {
+		t.Fatalf("host binary backend = %q, want unknown", got)
 	}
 }
 
@@ -1408,20 +1423,19 @@ func TestREQRUN010RuntimeKindMismatchSelfHealsEachHeartbeat(t *testing.T) {
 	waitFailed("second heartbeat")
 }
 
-func TestREQNODE002InFlightResetsOnRuntimeSwap(t *testing.T) {
-	// A request that died with the previous runtime must not ride on as a stuck
-	// in-flight forever: the swap only happens after drain, and the fresh
-	// runtime must start counting from zero. REQ-NODE-002.
+func TestREQNODE015RuntimeSwapIsolatesInFlightGenerations(t *testing.T) {
 	counter := &agent.ActiveCounter{}
-	counter.Inc() // a request that was in flight against the old runtime
-	if counter.Value() != 1 {
-		t.Fatalf("setup: expected in-flight 1, got %d", counter.Value())
-	}
+	finishOld := counter.Begin()
 	loop := newLoopForTest(t, agent.Config{}, counter, newFakeMeshRuntime(counter), &fakeUpdater{}, nil)
 
 	loop.setManager(newFakeMeshRuntime(counter), "")
-
+	finishNew := counter.Begin()
+	finishOld()
+	if got := counter.Value(); got != 1 {
+		t.Fatalf("old runtime completion changed the new runtime count to %d", got)
+	}
+	finishNew()
 	if got := counter.Value(); got != 0 {
-		t.Fatalf("in-flight must reset to zero on runtime swap, got %d", got)
+		t.Fatalf("new runtime request count = %d after completion, want 0", got)
 	}
 }

@@ -1385,7 +1385,7 @@ function configureLlamaCppProfile(existing: ModelProfile, profiles: readonly Mod
   const quantError = llamaCppQuantError(settings.quant)
   if (quantError) return { error: quantError, status: 400 }
   if (settings.hfRepo !== parsedRef.hfRepo) return { error: 'model_source_mismatch', status: 400 }
-  if (parsedRef.quant !== undefined && settings.quant !== parsedRef.quant) return { error: 'model_source_mismatch', status: 400 }
+  if (settings.quant !== parsedRef.quant) return { error: 'model_source_mismatch', status: 400 }
   let displayName = existing.displayName
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : ''

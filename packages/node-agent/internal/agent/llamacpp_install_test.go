@@ -353,7 +353,7 @@ func TestREQNODE013LlamaCppMigratesRequestedBackendInstallToResolvedName(t *test
 		WithLlamaCppPlatform("linux", "amd64"),
 		WithLlamaCppBackend("nvidia"),
 		WithLlamaCppLookPath(lookPathWith(map[string]string{})),
-		WithLlamaCppHostCandidates(nil),
+		WithLlamaCppHostCandidates(),
 		WithLlamaCppVersionQuery(func(binaryPath string) (string, error) {
 			if _, err := os.Stat(binaryPath); err == nil {
 				return "llama.cpp build 9912", nil

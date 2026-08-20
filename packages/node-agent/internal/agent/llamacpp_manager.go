@@ -23,6 +23,9 @@ type LlamaCppInput struct {
 	UpstreamModel  string
 	Settings       LlamaCppSettings
 	BinaryPath     string
+	// Backend is the verified managed backend family, or unknown for a custom or
+	// host-selected binary whose build cannot be inferred reliably.
+	Backend string
 	// DataDir is the agent's data directory; the runtime's Hugging Face cache is
 	// pinned under it so direct llama.cpp models never accumulate outside dataDir
 	// (in root's home) where disk accounting and cleanup cannot see them.
@@ -154,6 +157,7 @@ func (m *LlamaCppManager) Start(ctx context.Context) error {
 		m.mu.Unlock()
 		return nil
 	}
+	m.stderrLog.ResetLifecycle()
 	if _, err := exec.LookPath(m.input.BinaryPath); err != nil {
 		m.state = "dependency-missing"
 		m.lastError = fmt.Sprintf("llama-server binary missing: %s", m.input.BinaryPath)
@@ -429,6 +433,7 @@ func (m *LlamaCppManager) Metrics() NodeMetrics {
 		TokensPerSecond:           m.generationRate,
 		PromptTokensPerSecond:     m.promptRate,
 		GenerationTokensPerSecond: m.generationRate,
+		LlamaCppBackend:           m.input.Backend,
 		LastError:                 m.lastError,
 		RuntimeDetail:             m.RuntimeErrorDetail(),
 		Multimodal:                m.multimodal(),

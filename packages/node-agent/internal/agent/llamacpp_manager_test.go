@@ -386,9 +386,9 @@ func TestREQOBS011LlamaCppReadyClearsStaleRuntimeError(t *testing.T) {
 	}
 }
 
-func TestREQOBS009LlamaCppMetricsCarryMultimodalFlag(t *testing.T) {
-	// The heartbeat must carry the multimodal flag so the console can mark the
-	// advertised cache reuse as disabled by the runtime. REQ-OBS-009.
+func TestREQOBS013LlamaCppMetricsCarryMultimodalFlag(t *testing.T) {
+	// The heartbeat must carry the multimodal capability flag without implying
+	// ordinary text prefix caching is disabled. REQ-OBS-013.
 	manager, _ := throughputManager(t, &fakeLlamaMetrics{})
 	if manager.Metrics().Multimodal {
 		t.Fatal("a fresh runtime must not report multimodal")
@@ -396,5 +396,16 @@ func TestREQOBS009LlamaCppMetricsCarryMultimodalFlag(t *testing.T) {
 	manager.stderrLog.Write([]byte("load_model: cache_reuse is not supported by multimodal, it will be disabled\n"))
 	if !manager.Metrics().Multimodal {
 		t.Fatal("metrics must carry the multimodal flag once llama-server announces it")
+	}
+}
+
+func TestREQOBS013LlamaCppStartClearsPreviousModelCapabilities(t *testing.T) {
+	manager := NewLlamaCppManager(LlamaCppInput{BinaryPath: "definitely-missing-llama-server"})
+	manager.stderrLog.Write([]byte("load_model: cache_reuse is not supported by multimodal, it will be disabled\n"))
+	if err := manager.Start(context.Background()); err == nil {
+		t.Fatal("setup requires the replacement launch to fail on its missing binary")
+	}
+	if manager.Metrics().Multimodal {
+		t.Fatal("a replacement launch attempt must clear the previous model capability")
 	}
 }

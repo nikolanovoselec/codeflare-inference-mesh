@@ -145,10 +145,10 @@ func TestREQOBS011RuntimeLogResetClearsCapturedLine(t *testing.T) {
 	}
 }
 
-func TestREQOBS009RuntimeLogFlagsMultimodalCacheReuse(t *testing.T) {
-	// llama.cpp disables --cache-reuse for multimodal models on exactly this
-	// line; the ring must remember it so the console stops advertising a reuse
-	// the runtime ignores. REQ-OBS-009.
+func TestREQOBS013RuntimeLogFlagsMultimodalCacheReusePerLifecycle(t *testing.T) {
+	// llama.cpp disables only its cross-divergence reuse optimization on this
+	// line; ordinary text prefix caching is separate. The capability applies
+	// only to the model lifecycle that emitted it.
 	l := &runtimeLog{}
 	_, _ = l.Write([]byte("load_model: loaded multimodal model, '/cache/Qwen3.8-27B-UD-Q3_K_XL.gguf'\n"))
 	if l.Multimodal() {
@@ -157,5 +157,9 @@ func TestREQOBS009RuntimeLogFlagsMultimodalCacheReuse(t *testing.T) {
 	_, _ = l.Write([]byte("load_model: cache_reuse is not supported by multimodal, it will be disabled\n"))
 	if !l.Multimodal() {
 		t.Fatal("the cache_reuse multimodal line must flag the ring")
+	}
+	l.ResetLifecycle()
+	if l.Multimodal() {
+		t.Fatal("a new model lifecycle must not inherit the previous model's multimodal state")
 	}
 }
