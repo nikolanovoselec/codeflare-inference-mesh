@@ -2,7 +2,6 @@
 
 ## 2026-08-20
 
-- CI, packaging, deployment, fuzzing, and the node module now use Go 1.26.6, removing standard-library vulnerabilities reported against the previous patch levels. ([REQ-REL-001](release-ci.md#req-rel-001-pull-request-checks), [REQ-REL-004](release-ci.md#req-rel-004-security-workflows))
 - Direct llama.cpp profiles can disable the multimodal projector per model, avoiding its VRAM cost for text workloads while keeping auto-load as the default. The model drawer and both configuration APIs expose the control. ([REQ-RUN-015](runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering), [REQ-RUN-019](runtime-profiles.md#req-run-019-direct-projector-control), [REQ-RUN-020](runtime-profiles.md#req-run-020-automation-projector-control))
 - Direct llama.cpp model downloads now stay beneath the agent data directory, where disk accounting and cleanup can cover them. Existing blobs outside that directory require a one-time operator migration. ([REQ-NODE-013](node-agent.md#req-node-013-runtime-binary-bootstrap))
 - Runtime replacement now starts fresh in-flight accounting without allowing late completions from the old runtime to corrupt the new count. A recovered single-slot node therefore cannot remain occupied by stale traffic. ([REQ-NODE-015](node-agent.md#req-node-015-runtime-scoped-request-accounting))
