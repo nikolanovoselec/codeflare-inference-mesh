@@ -1,6 +1,6 @@
 /** First-run setup, console sign-in, Access configuration, and the agent installers. */
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, advancePhase, breakGlassActive, setupPhase } from '../setup-state'
-import { bearerToken, createTokenRecord, generateBearerToken, hashToken, verifyPlainOrHashed } from '../auth'
+import { createTokenRecord, generateBearerToken, hashToken } from '../auth'
 import { CloudflareAccessClient } from '../access-provisioning'
 import { CloudflareGatewayClient } from '../cloudflare-api'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from '../installers'
@@ -38,9 +38,7 @@ export async function handleFirstSetup(deps: RouterDeps, requestId: string, now:
   return json({ adminToken }, 201, requestId)
 }
 
-export async function handleAdminRecovery(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const recoveryToken = deps.env.ADMIN_RECOVERY_TOKEN
-  if (!recoveryToken || !(await verifyPlainOrHashed(recoveryToken, bearerToken(request)))) return json({ error: 'unauthorized' }, 401, requestId)
+export async function handleAdminRecovery(deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const existingAdmins = await deps.store.listTokens('admin')
   await Promise.all(existingAdmins.filter((token) => token.active).map((token) => deps.store.revokeToken('admin', token.id, now)))
   const adminToken = generateBearerToken('admin')
@@ -60,7 +58,7 @@ export async function handleSetupToken(deps: RouterDeps, requestId: string, now:
   return json({ setupToken, expiresAt: now + SETUP_TOKEN_TTL_MS }, 201, requestId)
 }
 
-async function handleInstaller(request: Request, deps: RouterDeps, url: URL, requestId: string): Promise<Response> {
+export async function handleInstaller(request: Request, deps: RouterDeps, url: URL, requestId: string): Promise<Response> {
   const platform = url.pathname.split('/').at(-1) as InstallerPlatform
   if (!['linux', 'macos', 'windows'].includes(platform)) return json({ error: 'unknown_platform' }, 404, requestId)
   const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
@@ -104,7 +102,7 @@ export async function handleCustomDomain(request: Request, deps: RouterDeps, req
 
 /** REQ-ADM-017: lets the console render the admin vs read-only user surface. */
 export async function handleWhoami(requestId: string, actor: string, role: ConsoleRole): Promise<Response> {
-  return json({ role: role, actor: actor }, 200, requestId)
+  return json({ role, actor }, 200, requestId)
 }
 
 /**

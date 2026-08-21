@@ -712,9 +712,10 @@ describe('dashboard overview contracts', () => {
     const harness = await dashboardHarness({ status: statusFixture({ nodes, meshHealth }) })
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'linux-node')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
-    // Suppressed means the cell's status detail stays the live node state. Had the blocker won,
-    // this would read the 'model_size_unknown' reason instead.
-    expect(statusCell.dataset.statusDetail).toBe('loading model meshllm/ERNIE')
+    // The cell reports the peer-discovery blocker, not the readiness reason. Were
+    // model_size_unknown no longer suppressed, the blocker would carry its splitReadiness and
+    // this would read 'model_size_unknown' instead.
+    expect(statusCell.dataset.statusDetail).toBe('split-mesh-peer-discovery')
 
     await harness.clickAction('node-detail', { nodeId: 'linux-node' })
     let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))

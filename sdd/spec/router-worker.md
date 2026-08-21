@@ -17,9 +17,6 @@ This domain covers the public Worker that receives provider calls, protects rout
 3. Authenticated admin action routes use admin session or admin token credentials rather than provider credentials. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
 4. Provider authentication applies only to provider model-listing and chat-completion route families. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
 5. Unknown routes return a not-found response after all known route families are checked. <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-001 REQ-RTR-001 separates health, provider, node, and admin route families) -->
-6. Every route declares its required credential class in one ordered table, and each declaration names a class its route family permits. <!-- @impl: packages/router-worker/src/routes.ts::RouteGate --> <!-- @impl: packages/router-worker/src/router.ts::ROUTES --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-001 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family) -->
-7. The declared credential class is enforced once before the handler runs, so a route cannot be under-gated by a handler that omits the check, and two routes sharing one handler are separated only by the credential each declares. <!-- @impl: packages/router-worker/src/auth-gates.ts::resolveGate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-001 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-001 REQ-SEC-001 admits a shared handler only through the credential its own route declares) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-001 REQ-SEC-010 refuses every admin-gated route to a verified read-only user) -->
-8. A per-node credential is the one class the dispatcher cannot resolve, because the token is selected by the node named in the request body; those routes verify it themselves. <!-- @impl: packages/router-worker/src/auth-gates.ts::resolveGate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-001 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family) -->
 
 **Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
@@ -126,6 +123,31 @@ This domain covers the public Worker that receives provider calls, protects rout
 **Priority:** P2
 
 **Dependencies:** [REQ-RTR-002](#req-rtr-002-chat-completion-forwarding)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RTR-006: Declared credential gates
+
+**Intent:** Which credential opens a route must be readable in one place and enforced from that same place. When each handler performed its own check, the declaration and the enforcement could drift apart silently, and an operation reachable from both the console and the automation API had to be written twice because the two copies differed only in the check at the top. Declaring the credential on the route and enforcing it before dispatch makes the table the authority: a handler cannot under-gate its route by omitting a check, and one handler can serve two routes that admit different callers.
+
+**Applies To:** Node Agent, Admin, Automation, Client
+
+**Acceptance Criteria:**
+
+1. Every route declares its required credential class in one ordered table, and each declaration names a class its route family permits. <!-- @impl: packages/router-worker/src/routes.ts::RouteGate --> <!-- @impl: packages/router-worker/src/router.ts::ROUTES --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-006 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family) -->
+2. The declared credential class is enforced once before the handler runs, so a route cannot be under-gated by a handler that omits the check. <!-- @impl: packages/router-worker/src/auth-gates.ts::resolveGate --> <!-- @impl: packages/router-worker/src/router.ts::createRouter --> <!-- @impl: packages/router-worker/src/router.ts::required --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-006 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-006 REQ-SEC-010 refuses every admin-gated route to a verified read-only user) -->
+3. Two routes sharing one handler are separated only by the credential each declares. <!-- @impl: packages/router-worker/src/router.ts::ROUTES --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-006 REQ-SEC-001 admits a shared handler only through the credential its own route declares) -->
+4. A per-node credential is the one class the dispatcher cannot resolve, because the token is selected by the node named in the request body; those routes verify it themselves. <!-- @impl: packages/router-worker/src/auth-gates.ts::resolveGate --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RTR-006 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family) -->
+
+**Constraints:** [CON-CF-002](constraints.md#con-cf-002-worker-runtime-compatibility), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P0
+
+**Dependencies:** [REQ-RTR-001](#req-rtr-001-route-family-separation)
 
 **Verification:** Automated test
 

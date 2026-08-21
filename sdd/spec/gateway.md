@@ -165,7 +165,7 @@ This domain covers how Cloudflare AI Gateway reaches the router and how the rout
 **Acceptance Criteria:**
 
 1. A failed Cloudflare Gateway or gateway-options API call includes Cloudflare's error code and message in the thrown error. <!-- @impl: packages/router-worker/src/cloudflare-api.ts::formatCloudflareApiErrors --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-GWY-006 surfaces the Cloudflare error code and message on a failed API call) -->
-2. A failed Cloudflare Access provisioning API call includes Cloudflare's error code and message in the thrown error. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient.accountRequest --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-GWY-006 surfaces the Cloudflare error code and message on a failed Access API call) -->
+2. A failed Cloudflare Access provisioning API call includes Cloudflare's error code and message in the thrown error. <!-- @impl: packages/router-worker/src/access-provisioning.ts::CloudflareAccessClient --> <!-- @test: packages/router-worker/src/access-provisioning.test.ts (REQ-GWY-006 surfaces the Cloudflare error code and message on a failed Access API call) -->
 
 **Constraints:** [CON-CF-001](constraints.md#con-cf-001-cloudflare-first-public-control-plane)
 

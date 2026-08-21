@@ -5,7 +5,7 @@
  * regardless of where it lands, and the table that says where it lands.
  */
 import { adminUiHtml } from './admin-ui'
-import { adminUiState, handleAdminLogin, handleAdminRecovery, handleCustomDomain, handleFirstSetup, handleInstallScript, handleSetupAccess, handleSetupComplete, handleSetupToken, handleWhoami, handleZones } from './handlers/setup'
+import { adminUiState, handleAdminLogin, handleAdminRecovery, handleCustomDomain, handleFirstSetup, handleInstaller, handleInstallScript, handleSetupAccess, handleSetupComplete, handleSetupToken, handleWhoami, handleZones } from './handlers/setup'
 import { agentVersionSelect, agentVersionsList, runtimeVersionSelect, runtimeVersionsList } from './handlers/versions'
 import { apiSetNodeDeactivated, handleApiNodeDecommission, handleApiNodeGet, handleApiNodeList, handleApiNodeReconfigure, handleNodeConfig, handleNodeRevoke, requestNodeReload, setNodeDeactivated } from './handlers/nodes'
 import { applyFleetSettings, handleAdminStatus, handleApiSettingsGet, handleApiStatus } from './handlers/status'
@@ -73,9 +73,32 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
 /**
  * The decoded id segment of a path, counted from the end: 1 is the last segment
  * (`/meshes/{id}`), 2 the one before it (`/nodes/{id}/deactivate`).
+ *
+ * A route pattern matches any non-slash run, including one `decodeURIComponent` rejects
+ * such as a bare `%`. That is a malformed id, not a router fault, so it passes through
+ * undecoded and the handler answers not-found for it like any other unknown id.
  */
 function idFromPath(url: URL, fromEnd: 1 | 2): string {
-  return decodeURIComponent(url.pathname.split('/').at(-fromEnd) ?? '')
+  const raw = url.pathname.split('/').at(-fromEnd) ?? ''
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+/**
+ * A value the row's handler needs and the row's gate is expected to have resolved.
+ *
+ * `role` and `credentialId` are optional on `GateOutcome` because only some gates produce
+ * them, so nothing in the type system ties a row's gate to the fields its handler reads.
+ * Failing closed here means changing a row's gate surfaces as an audited error rather than
+ * passing `undefined` into a handler that would act on it, which for the enrollment token
+ * would silently leave a single-use credential unspent.
+ */
+function required<T>(value: T | undefined, field: string, path: string): T {
+  if (value === undefined) throw new Error(`route ${path} declares a gate that does not resolve ${field}`)
+  return value
 }
 
 /**
@@ -113,15 +136,15 @@ export const ROUTES: readonly Route<RouteContext>[] = [
   { method: 'GET', path: '/health', gate: 'open', handler: async (c) => json({ ok: true, service: 'inference-mesh-router' }, 200, c.requestId) },
   { method: 'GET', path: '/v1/models', gate: 'provider', handler: (c) => handleModels(c.deps, c.requestId) },
   { method: 'POST', path: '/v1/chat/completions', gate: 'provider', handler: (c) => handleChat(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/node/claim', gate: 'setup', handler: (c) => handleNodeClaim(c.request, c.deps, c.requestId, c.now, c.credentialId!) },
+  { method: 'POST', path: '/node/claim', gate: 'setup', handler: (c) => handleNodeClaim(c.request, c.deps, c.requestId, c.now, required(c.credentialId, 'credentialId', '/node/claim')) },
   { method: 'POST', path: '/node/heartbeat', gate: 'node', handler: (c) => handleNodeHeartbeat(c.request, c.deps, c.requestId, c.now) },
   { method: 'POST', path: '/node/unregister', gate: 'node', handler: (c) => handleNodeUnregister(c.request, c.deps, c.requestId, c.now) },
   { method: 'POST', path: '/admin/setup', gate: 'bootstrapOrAdmin', handler: (c) => handleFirstSetup(c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/recovery/reset', gate: 'recovery', handler: (c) => handleAdminRecovery(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/recovery/reset', gate: 'recovery', handler: (c) => handleAdminRecovery(c.deps, c.requestId, c.now) },
   { method: 'GET', path: '/install.sh', gate: 'open', handler: async (c) => handleInstallScript(c.deps, c.url.searchParams.get('platform') === 'macos' ? 'macos' : 'linux') },
   { method: 'GET', path: '/install.ps1', gate: 'open', handler: async (c) => handleInstallScript(c.deps, 'windows') },
   { method: 'POST', path: '/admin/login', gate: 'admin', handler: (c) => handleAdminLogin(c.requestId) },
-  { method: 'GET', path: '/admin/status', gate: 'user', handler: (c) => handleAdminStatus(c.deps, c.requestId, c.now, c.role!) },
+  { method: 'GET', path: '/admin/status', gate: 'user', handler: (c) => handleAdminStatus(c.deps, c.requestId, c.now, required(c.role, 'role', '/admin/status')) },
   { method: 'POST', path: '/admin/setup-tokens', gate: 'admin', handler: (c) => handleSetupToken(c.deps, c.requestId, c.now, c.actor) },
   { method: 'GET', path: /^\/admin\/installers\//, gate: 'admin', handler: (c) => handleInstaller(c.request, c.deps, c.url, c.requestId) },
   { method: 'POST', path: '/admin/cloudflare/gateway/sync', gate: 'admin', handler: (c) => syncGatewayForActor(c.request, c.deps, c.requestId, c.now, c.actor) },
@@ -152,10 +175,10 @@ export const ROUTES: readonly Route<RouteContext>[] = [
   { method: 'POST', path: '/admin/mesh/rotate', gate: 'admin', handler: (c) => meshRotateCore(c.request, c.deps, c.now, c.actor) },
   { method: 'GET', path: '/admin/agent-versions', gate: 'admin', handler: (c) => agentVersionsList(c.request, c.deps) },
   { method: 'POST', path: '/admin/agent-version', gate: 'admin', handler: (c) => agentVersionSelect(c.request, c.deps, c.actor) },
-  { method: 'POST', path: '/admin/playground/chat', gate: 'user', handler: (c) => handlePlaygroundChat(c.request, c.deps, c.requestId, c.role!) },
+  { method: 'POST', path: '/admin/playground/chat', gate: 'user', handler: (c) => handlePlaygroundChat(c.request, c.deps, c.requestId, required(c.role, 'role', '/admin/playground/chat')) },
   { method: 'POST', path: '/admin/playground/direct-chat', gate: 'user', handler: (c) => handlePlaygroundDirect(c.request, c.deps, c.requestId, c.now) },
   { method: 'POST', path: '/admin/playground/speed-test', gate: 'user', handler: (c) => speedTestCore(c.request, c.deps, c.requestId, c.now, c.role === 'admin') },
-  { method: 'GET', path: '/admin/whoami', gate: 'user', handler: (c) => handleWhoami(c.requestId, c.actor, c.role!) },
+  { method: 'GET', path: '/admin/whoami', gate: 'user', handler: (c) => handleWhoami(c.requestId, c.actor, required(c.role, 'role', '/admin/whoami')) },
   { method: 'POST', path: '/api/v1/keys', gate: 'keyAdmin', handler: (c) => handleApiKeyCreate(c.deps, c.requestId, c.now, c.actor) },
   { method: 'GET', path: '/api/v1/keys', gate: 'keyAdmin', handler: (c) => handleApiKeyList(c.deps, c.requestId) },
   { method: 'POST', path: /^\/api\/v1\/keys\/[^/]+\/rotate$/, gate: 'keyAdmin', handler: (c) => handleApiKeyRotate(c.deps, c.url, c.requestId, c.now, c.actor) },

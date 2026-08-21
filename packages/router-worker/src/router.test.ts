@@ -752,7 +752,7 @@ describe('router worker behavioral contracts', () => {
     expect((await router(new Request('https://router.test/missing'))).status).toBe(404)
   })
 
-  it('REQ-RTR-001 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family', async () => {
+  it('REQ-RTR-006 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family', async () => {
     // RouteGateMatrixTestAnchor
     const { router, store } = routerFixture()
     // /admin/setup is open only while the deployment is unclaimed; claim it so its gate applies.
@@ -787,7 +787,7 @@ describe('router worker behavioral contracts', () => {
     expect(new Set(ROUTES.map((route) => route.gate)).size).toBe(11)
   })
 
-  it('REQ-RTR-001 REQ-SEC-001 admits a shared handler only through the credential its own route declares', async () => {
+  it('REQ-RTR-006 REQ-SEC-001 admits a shared handler only through the credential its own route declares', async () => {
     // RouteGateEnforcementTestAnchor
     const { router, store } = routerFixture()
     await store.putToken(await createTokenRecord('admin', 'admin-secret', 1_700_000_000_000))
@@ -3668,7 +3668,7 @@ describe('Access-first setup and host gating contracts', () => {
     expect(write.status).toBe(401)
   })
 
-  it('REQ-RTR-001 REQ-SEC-010 refuses every admin-gated route to a verified read-only user', async () => {
+  it('REQ-RTR-006 REQ-SEC-010 refuses every admin-gated route to a verified read-only user', async () => {
     // The uncredentialed sweep cannot catch under-gating: a route declared `admin` whose
     // handler only calls requireUser answers 401 without a credential and passes. This
     // drives the case that separates them, a verified user-role session with same-origin
