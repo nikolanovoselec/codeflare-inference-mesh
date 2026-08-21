@@ -95,8 +95,12 @@ function idFromPath(url: URL, fromEnd: 1 | 2): string {
  * Failing closed here means changing a row's gate surfaces as an audited error rather than
  * passing `undefined` into a handler that would act on it, which for the enrollment token
  * would silently leave a single-use credential unspent.
+ *
+ * Exported for its own test: no row in the table can reach the throw, because every gate that
+ * a row declares resolves the fields that row's handler reads. Reaching it takes editing the
+ * table, which is exactly the mistake this guards, so the guard is verified directly.
  */
-function required<T>(value: T | undefined, field: string, path: string): T {
+export function required<T>(value: T | undefined, field: string, path: string): T {
   if (value === undefined) throw new Error(`route ${path} declares a gate that does not resolve ${field}`)
   return value
 }

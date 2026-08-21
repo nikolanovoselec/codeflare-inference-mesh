@@ -7,7 +7,7 @@ import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan, SETUP_TOKEN_PLACEHOLDER } from './installers'
 import { buildCustomProfile, DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
-import { createRouter, ROUTES } from './router'
+import { createRouter, required, ROUTES } from './router'
 import type { RouteGate } from './routes'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
 import { accessJwksFetcher, accessTestKey, MemoryStore, nodeFixture, signAccessJwt } from './test-helpers'
@@ -805,6 +805,27 @@ describe('router worker behavioral contracts', () => {
     expect([consoleWithAutomation.status, apiWithAdmin.status]).toEqual([401, 401])
     // Admitted through either door, the shared handler answers identically.
     expect(await consoleWithAdmin.json()).toEqual(await apiWithAutomation.json())
+  })
+
+  it('REQ-API-011 answers not-found for an id the URL decoder rejects instead of faulting', async () => {
+    const { router, store } = routerFixture()
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+
+    // A bare '%' satisfies the route pattern but decodeURIComponent throws on it. A malformed
+    // id is a client's mistake, so it has to reach the handler's unknown-id answer rather than
+    // the dispatcher's audited fault path.
+    const response = await router(new Request('https://router.test/api/v1/meshes/%', { method: 'DELETE', headers: bearer('auto-secret') }))
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: 'unknown_mesh' })
+    expect((await store.listAudit(10)).some((entry) => entry.type === 'router_error')).toBe(false)
+  })
+
+  it('REQ-RTR-006 refuses a gate-provided value the route did not resolve rather than passing undefined', () => {
+    // Verified directly: no row can reach this, because every gate a row declares resolves the
+    // fields that row's handler reads. It exists for the edit that breaks that pairing, where
+    // passing undefined through would spend nothing and look like success.
+    expect(required('setup-token-1', 'credentialId', '/node/claim')).toBe('setup-token-1')
+    expect(() => required(undefined, 'credentialId', '/node/claim')).toThrow('/node/claim')
   })
 
   it('REQ-ADM-007 assembles the console client script from its sections in order', () => {
