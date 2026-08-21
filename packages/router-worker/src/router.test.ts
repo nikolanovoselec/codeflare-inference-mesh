@@ -3602,8 +3602,8 @@ describe('Access-first setup and host gating contracts', () => {
     // The viewer gets its own measurement back...
     expect(response.status).toBe(200)
     expect((await response.json() as { tokens: { completion: number } }).tokens.completion).toBe(1)
-    // ...but the shared per-profile record every mesh card reads is byte-identical to what it
-    // was. An admin run of the same route does persist, asserted by the measurement test.
+    // ...but the shared per-profile record every mesh card reads is structurally unchanged.
+    // An admin run of the same route does persist, asserted by the measurement test.
     expect(await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')).toEqual({ 'mesh-smoke': priorSummary })
   })
 

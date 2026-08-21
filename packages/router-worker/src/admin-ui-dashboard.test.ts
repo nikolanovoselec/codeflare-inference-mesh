@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ADMIN_UI_DRAWER, ADMIN_UI_MESH_ROLE, ADMIN_UI_MESHES, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, ADMIN_UI_WORK_STATE, adminUiHtml } from './admin-ui'
-import { ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
 import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
@@ -101,19 +100,50 @@ describe('dashboard overview contracts', () => {
     delete (globalThis as { matchMedia?: unknown }).matchMedia
   })
 
-  it('REQ-OBS-011 REQ-ADM-015 keeps the console script emitting the contract work-state and mesh-role tokens', () => {
-    // The console cannot import the contract: it is a template literal that emits these
-    // tokens as its own string literals. Pinning the constants alone would stay green if
-    // the script drifted, so assert the served script actually contains each value, then
-    // pin the values so a rename is a visible contract change rather than a silent one.
-    // Comments are stripped first: a token mentioned in prose would otherwise satisfy the
-    // check without the script ever emitting it. Five of these tokens have no rendering
-    // test of their own, so this is their only tie to the contract.
-    const emitted = ADMIN_UI_CLIENT_SCRIPT.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
-    for (const token of [...Object.values(ADMIN_UI_WORK_STATE), ...Object.values(ADMIN_UI_MESH_ROLE)]) {
-      expect(emitted).toContain(`'${token}'`)
+  it('REQ-OBS-011 REQ-ADM-015 renders every mesh-role token onto the node status cell', async () => {
+    // Rendered, not matched against the script's own text: the console can contain a token
+    // literal and still never apply it to a node. Covers the roles the other drawer tests
+    // do not reach.
+    const roleNodes = [
+      { id: 'role-coordinator', status: 'online', activeProfileIds: [], metrics: { runtimeState: 'ready', meshRole: 'coordinator', activeRequests: 0 } },
+      { id: 'role-serving-peer', status: 'online', activeProfileIds: [], metrics: { runtimeState: 'ready', meshRole: 'serving-peer', activeRequests: 0 } },
+      { id: 'role-api-client', status: 'online', activeProfileIds: [], metrics: { runtimeState: 'ready', meshRole: 'api-client', activeRequests: 0 } },
+      { id: 'role-stage-owner', status: 'online', activeProfileIds: [], metrics: { runtimeState: 'ready', meshRole: 'serving-peer', stageCount: 1, apiReady: true, consoleReady: true, activeRequests: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes: roleNodes }) })
+    const roleOf = (nodeId: string) => {
+      const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === nodeId)!
+      return descendants(row).find((candidate) => candidate.dataset.cell === 'status')!.dataset.meshRole
     }
 
+    expect(roleOf('role-coordinator')).toBe(ADMIN_UI_MESH_ROLE.coordinator)
+    expect(roleOf('role-serving-peer')).toBe(ADMIN_UI_MESH_ROLE.servingPeer)
+    expect(roleOf('role-api-client')).toBe(ADMIN_UI_MESH_ROLE.noStageAssigned)
+    // A node holding a stage reads as the stage owner even though it reports serving-peer.
+    expect(roleOf('role-stage-owner')).toBe(ADMIN_UI_MESH_ROLE.stageOwner)
+  })
+
+  it('REQ-OBS-011 REQ-ADM-015 renders every work-state token onto the node drawer', async () => {
+    const stateNodes = [
+      { id: 'ws-installing', status: 'online', activeProfileIds: [], metrics: { runtimeState: 'downloading', activeRequests: 0 } },
+      { id: 'ws-attention', status: 'online', activeProfileIds: [], metrics: { runtimeState: 'failed', activeRequests: 0 } },
+      { id: 'ws-online', status: 'online', activeProfileIds: [], metrics: { runtimeState: 'ready', apiReady: true, activeRequests: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes: stateNodes }) })
+    const workStateOf = async (nodeId: string) => {
+      await harness.clickAction('node-detail', { nodeId })
+      const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+      return fields.find((node) => node.dataset.drawerField === 'work-state')?.dataset.value
+    }
+
+    expect(await workStateOf('ws-installing')).toBe(ADMIN_UI_WORK_STATE.installingRuntime)
+    expect(await workStateOf('ws-attention')).toBe(ADMIN_UI_WORK_STATE.needsAttention)
+    expect(await workStateOf('ws-online')).toBe(ADMIN_UI_WORK_STATE.runtimeOnline)
+  })
+
+  it('REQ-OBS-011 REQ-ADM-015 pins the work-state and mesh-role token vocabulary', () => {
+    // The rendering tests above and the drawer tests below prove the console emits these.
+    // This pins the values themselves, so a rename is a visible contract change.
     expect(ADMIN_UI_WORK_STATE).toEqual({
       servingSplitStage: 'serving-split-stage',
       servingModel: 'serving-model',

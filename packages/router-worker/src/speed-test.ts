@@ -29,6 +29,8 @@ interface SpeedTestMeasurement {
   readonly outputChars: number
   readonly usage: Record<string, unknown> | null
   readonly upstreamTimings: Record<string, unknown> | null
+  /** The budget ran out before the upstream finished. The numbers describe a partial read. */
+  readonly timedOut: boolean
 }
 /**
  * `persist` is false for a read-only console viewer: the measurement still runs and is
@@ -65,7 +67,10 @@ export async function runSpeedTest(deps: SpeedTestDeps, body: SpeedTestBody | un
   // profile's latest measurement — duplicated profiles share an upstreamModel, so
   // the id is the only collision-free key (a gateway-route run credits the profile
   // it resolved to).
-  if (persist) {
+  // A timed-out run is a partial read whose token counts are estimated from whatever arrived,
+  // so it must not land on the mesh cards as though it were a completed measurement. The
+  // caller still receives it, with timedOut set, so the operator can see what happened.
+  if (persist && !measured.timedOut) {
     const speedProfile = await deps.store.getProfileByPublicModel(routablePublicModel(model))
     const priorSpeedTests = await deps.store.getConfig<Record<string, LastSpeedTestSummary>>(LAST_SPEED_TESTS_CONFIG_KEY) ?? {}
     await deps.store.putConfig(LAST_SPEED_TESTS_CONFIG_KEY, { ...priorSpeedTests, [speedProfile?.id ?? model]: speedTestSummary(result, now, requestId) })
@@ -166,6 +171,7 @@ export async function measureSpeedStream(
   // Measured from startedAt, which is stamped before the upstream call, so the budget bounds
   // the whole request rather than restarting once the body arrives.
   const deadlineAt = startedAt + deadlineMs
+  let timedOut = false
   while (true) {
     if (outputChars > maxOutputChars) {
       await reader.cancel().catch(() => undefined)
@@ -175,6 +181,7 @@ export async function measureSpeedStream(
     const chunk = await readWithinDeadline(reader, deadlineAt)
     completedAt = Date.now()
     if (chunk === 'deadline') {
+      timedOut = true
       await reader.cancel().catch(() => undefined)
       break
     }
@@ -222,7 +229,8 @@ export async function measureSpeedStream(
     chunks,
     outputChars,
     usage: usage ?? null,
-    upstreamTimings: upstreamTimings ?? null
+    upstreamTimings: upstreamTimings ?? null,
+    timedOut
   }
 }
 function rate(tokens: number, ms: number): number {

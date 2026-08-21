@@ -22,6 +22,8 @@ describe('speed test stream measurement', () => {
     expect(measured.outputChars).toBe(5)
     // Bounded by the 50ms budget, not merely by the test runner giving up.
     expect(measured.timingsMs.total).toBeLessThan(500)
+    // Marked, so the caller does not store a partial read as a completed measurement.
+    expect(measured.timedOut).toBe(true)
   })
 
   it('REQ-ADM-034 stops reading once the output cap is exceeded', async () => {
@@ -38,5 +40,7 @@ describe('speed test stream measurement', () => {
     expect(measured.outputChars).toBeGreaterThan(200)
     // A 200-char cap at 50 chars per chunk implies about five reads, not an endless drain.
     expect(enqueued).toBeLessThan(10)
+    // The ceiling is not a timeout: this run stopped on size, so it stays storable.
+    expect(measured.timedOut).toBe(false)
   })
 })
