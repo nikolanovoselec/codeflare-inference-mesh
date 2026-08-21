@@ -135,7 +135,11 @@ func EnsureVllm(dataDir string, version string, opts ...VllmInstallOption) (stri
 		return currentBinary, nil
 	}
 
-	if free, err := options.diskFree(dataDir); err == nil && free < vllmMinFreeBytes {
+	free, err := options.diskFree(dataDir)
+	if err != nil {
+		return "", fmt.Errorf("%w: disk preflight failed for vLLM install: %s", ErrRuntimeDependencyMissing, err)
+	}
+	if free < vllmMinFreeBytes {
 		return "", fmt.Errorf("%w: insufficient free disk for vLLM install: %d GiB free, need ~%d GiB (venv + model cache)", ErrRuntimeDependencyMissing, free>>30, vllmMinFreeBytes>>30)
 	}
 
@@ -203,14 +207,18 @@ func swapVllmCurrent(root string, versionDir string) error {
 	return nil
 }
 
-// ensureUv reuses a managed uv when present, otherwise downloads the pinned
-// release, verifies it against the embedded checksum, and installs it under
-// dataDir/bin. uv is deliberately not in the router's desired-versions wire
-// contract — the pin here is the only source.
+// ensureUv reuses a managed uv only while its version stamp matches the pin,
+// otherwise downloads the pinned release, verifies it against the embedded
+// checksum, and installs it under dataDir/bin. The stamp is what lets a
+// re-pin actually reach nodes that installed uv once. uv is deliberately not
+// in the router's desired-versions wire contract — the pin here is the only source.
 func ensureUv(dataDir string, options vllmInstallOptions) (string, error) {
 	uvPath := filepath.Join(dataDir, "bin", "uv")
-	if _, err := os.Stat(uvPath); err == nil {
-		return uvPath, nil
+	stampPath := filepath.Join(dataDir, "bin", ".uv-version")
+	if stamp, err := os.ReadFile(stampPath); err == nil && strings.TrimSpace(string(stamp)) == UvPinnedVersion {
+		if _, err := os.Stat(uvPath); err == nil {
+			return uvPath, nil
+		}
 	}
 	asset, err := UvAssetFor(options.goos, options.goarch)
 	if err != nil {
@@ -233,6 +241,9 @@ func ensureUv(dataDir string, options vllmInstallOptions) (string, error) {
 	}
 	if err := os.WriteFile(uvPath, binary, 0o700); err != nil {
 		return "", fmt.Errorf("install uv: %w", err)
+	}
+	if err := os.WriteFile(stampPath, []byte(UvPinnedVersion+"\n"), 0o600); err != nil {
+		return "", fmt.Errorf("write uv version stamp: %w", err)
 	}
 	return uvPath, nil
 }

@@ -142,7 +142,7 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
   ]) {
     if (err) return { error: err }
   }
-  if (typeof next.bindPort === 'number' && (next.bindPort === 9337 || next.bindPort === 3131)) return { error: 'bind_port_conflict' }
+  if (typeof next.bindPort === 'number' && RESERVED_NODE_PORTS.has(next.bindPort)) return { error: 'bind_port_conflict' }
   if (body.cachePrompt !== undefined) {
     if (typeof body.cachePrompt !== 'boolean') return { error: 'invalid_cachePrompt' }
     next.cachePrompt = body.cachePrompt
@@ -455,6 +455,11 @@ export function configureLlamaCppProfile(existing: ModelProfile, profiles: reado
   }
 }
 
+// Ports the node agent reserves for the managed mesh runtime (inference 9337,
+// console 3131): a direct profile bound there would collide with mesh-llm.
+// Shared by every direct-runtime resolver so the reservation stays one edit.
+const RESERVED_NODE_PORTS: ReadonlySet<number> = new Set([9337, 3131])
+
 // vLLM dtype vocabulary (`--dtype`); quantization stays an open string because
 // vLLM's method registry is wide and auto-detected from the checkpoint anyway.
 const VLLM_DTYPES = new Set(['auto', 'half', 'float16', 'bfloat16', 'float', 'float32'])
@@ -477,7 +482,7 @@ function resolveVllmSettings(existing: VllmProfileSettings, value: unknown): { s
   if (value === undefined) return { settings: existing }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return { error: 'invalid_vllm' }
   const body = value as VllmConfigBody
-  const next: Record<string, unknown> = { ...existing }
+  const next: { -readonly [K in keyof VllmProfileSettings]?: VllmProfileSettings[K] } = { ...existing }
   // contextWindow 0 = Auto (vLLM derives max-model-len from the model config);
   // a fixed value keeps the same 4096 sanity floor as the other runtimes.
   if (body.contextWindow !== undefined) {
@@ -508,14 +513,14 @@ function resolveVllmSettings(existing: VllmProfileSettings, value: unknown): { s
     if (typeof body.bindPort !== 'number' || !Number.isInteger(body.bindPort) || body.bindPort < 1) return { error: 'invalid_bindPort' }
     next.bindPort = body.bindPort
   }
-  if (typeof next.bindPort === 'number' && (next.bindPort === 9337 || next.bindPort === 3131)) return { error: 'bind_port_conflict' }
+  if (typeof next.bindPort === 'number' && RESERVED_NODE_PORTS.has(next.bindPort)) return { error: 'bind_port_conflict' }
   if (body.hfRepo !== undefined) {
     if (body.hfRepo === null || body.hfRepo === '') delete next.hfRepo
     else if (typeof body.hfRepo === 'string') next.hfRepo = body.hfRepo.trim()
     else return { error: 'invalid_hfRepo' }
   }
   if (typeof next.hfRepo !== 'string' || next.hfRepo.length === 0) return { error: 'invalid_hfRepo' }
-  return { settings: next as unknown as VllmProfileSettings }
+  return { settings: next as VllmProfileSettings }
 }
 
 export function configureVllmProfile(existing: ModelProfile, profiles: readonly ModelProfile[], body: ModelConfigBody): { profile: ModelProfile; settings: VllmProfileSettings } | { error: string; status: number } {

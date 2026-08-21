@@ -74,6 +74,9 @@ func seedManagedUv(t *testing.T, dataDir string) string {
 	if err := os.WriteFile(uvPath, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatalf("write managed uv: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(binDir, ".uv-version"), []byte(UvPinnedVersion+"\n"), 0o600); err != nil {
+		t.Fatalf("write managed uv stamp: %v", err)
+	}
 	return uvPath
 }
 
@@ -128,6 +131,56 @@ func TestREQNODE017EnsureVllmRefusesLowDisk(t *testing.T) {
 	}
 	if len(runner.calls) != 0 {
 		t.Fatalf("venv install must not start below the disk floor, got %v", runner.joinedCalls())
+	}
+}
+
+func TestREQNODE017EnsureVllmRefusesWhenDiskProbeFails(t *testing.T) {
+	dataDir := t.TempDir()
+	seedManagedUv(t, dataDir)
+	runner := &fakeVllmRunner{dataDir: dataDir}
+	opts := vllmTestOptions(dataDir, runner, "0.27.1")
+	opts = append(opts, WithVllmDiskFree(func(path string) (uint64, error) { return 0, errors.New("statfs unavailable") }))
+	_, err := EnsureVllm(dataDir, "", opts...)
+	if !errors.Is(err, ErrRuntimeDependencyMissing) {
+		t.Fatalf("error = %v, want ErrRuntimeDependencyMissing", err)
+	}
+	if !strings.Contains(err.Error(), "disk preflight") {
+		t.Fatalf("a failed probe must fail closed naming the preflight, got %q", err.Error())
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("venv install must not start when the disk probe fails, got %v", runner.joinedCalls())
+	}
+}
+
+func TestREQNODE017EnsureVllmRedownloadsUvOnStaleStamp(t *testing.T) {
+	// A managed uv is reused only while its version stamp matches the pin, so a
+	// re-pin reaches nodes that already hold a uv binary. The stale stamp must
+	// force the download path, whose checksum gate then rejects the fake bytes —
+	// proving the stat-only reuse fast path was not taken.
+	dataDir := t.TempDir()
+	seedManagedUv(t, dataDir)
+	if err := os.WriteFile(filepath.Join(dataDir, "bin", ".uv-version"), []byte("0.11.0\n"), 0o600); err != nil {
+		t.Fatalf("write stale uv stamp: %v", err)
+	}
+	runner := &fakeVllmRunner{dataDir: dataDir}
+	var downloads []string
+	_, err := EnsureVllm(dataDir, "",
+		WithVllmPlatform("linux"),
+		WithVllmCudaProbe(func() bool { return true }),
+		WithVllmDiskFree(func(path string) (uint64, error) { return 64 << 30, nil }),
+		WithVllmUvDownload(func(assetURL string) ([]byte, error) {
+			downloads = append(downloads, assetURL)
+			return []byte("not the pinned uv archive"), nil
+		}),
+		WithVllmRunner(runner.run))
+	if !errors.Is(err, ErrRuntimeDependencyMissing) {
+		t.Fatalf("error = %v, want ErrRuntimeDependencyMissing", err)
+	}
+	if len(downloads) != 1 || !strings.Contains(downloads[0], UvPinnedVersion) {
+		t.Fatalf("a stale stamp must trigger one pinned re-download, got %v", downloads)
+	}
+	if !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("an unverifiable re-download must fail closed on checksum, got %q", err.Error())
 	}
 }
 

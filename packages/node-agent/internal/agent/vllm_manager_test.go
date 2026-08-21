@@ -236,6 +236,7 @@ func TestREQOBS014VllmMetricsParserAcceptsTotalSuffixAndLabels(t *testing.T) {
 	exposition := "# TYPE vllm:num_requests_running gauge\n" +
 		"vllm:num_requests_running{engine=\"0\",model_name=\"org/model\"} 2\n" +
 		"vllm:num_requests_waiting{engine=\"0\",model_name=\"org/model\"} 1\n" +
+		// An unconsumed series in the exposition must be skipped, never break the parse.
 		"vllm:kv_cache_usage_perc{engine=\"0\",model_name=\"org/model\"} 0.42\n" +
 		"vllm:prompt_tokens_total{engine=\"0\",model_name=\"org/model\"} 1200\n" +
 		"vllm:generation_tokens_total{engine=\"0\",model_name=\"org/model\"} 340\n" +
@@ -247,9 +248,6 @@ func TestREQOBS014VllmMetricsParserAcceptsTotalSuffixAndLabels(t *testing.T) {
 	}
 	if sample.Running != 2 || sample.Waiting != 1 {
 		t.Fatalf("queue gauges = running %d waiting %d", sample.Running, sample.Waiting)
-	}
-	if sample.KVCacheUsage != 0.42 {
-		t.Fatalf("kv cache usage = %v", sample.KVCacheUsage)
 	}
 	if sample.PromptTokens != 1200 || sample.GenerationTokens != 340 {
 		t.Fatalf("token counters = prompt %v generation %v (another model's series must not leak in)", sample.PromptTokens, sample.GenerationTokens)

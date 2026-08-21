@@ -260,6 +260,11 @@ func (m *VllmManager) finishStop(proc meshProcess, cancel context.CancelFunc, st
 // so connection-refused means still-loading — only the flat deadline fails the
 // runtime. REQ-RUN-022.
 func (m *VllmManager) awaitReadiness(proc meshProcess) {
+	// The render input is swapped under m.mu on restart; capture the model this
+	// lifecycle is waiting for once, instead of racing the swap on every poll.
+	m.mu.Lock()
+	upstream := m.input.UpstreamModel
+	m.mu.Unlock()
 	deadline := time.NewTimer(m.readinessTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(m.pollInterval)
@@ -267,11 +272,19 @@ func (m *VllmManager) awaitReadiness(proc meshProcess) {
 	for {
 		select {
 		case <-deadline.C:
-			m.SetFailure(fmt.Errorf("vllm readiness timed out"))
+			// Only the goroutine still owning the live process may fail it: a
+			// restart orphans this loop, and the replacement runtime must not be
+			// marked failed by its predecessor's deadline.
+			m.mu.Lock()
+			if m.proc == proc {
+				m.state = "failed"
+				m.lastError = "vllm readiness timed out"
+			}
+			m.mu.Unlock()
 			return
 		case <-ticker.C:
 			models, ok := m.pollModels(context.Background())
-			if ok && containsString(models, m.input.UpstreamModel) {
+			if ok && containsString(models, upstream) {
 				m.mu.Lock()
 				if m.proc == proc {
 					m.state = "ready"
@@ -410,7 +423,6 @@ func (m *VllmManager) pollMetrics(ctx context.Context) (vllmMetricsSample, bool)
 type vllmMetricsSample struct {
 	Running          int
 	Waiting          int
-	KVCacheUsage     float64
 	PromptTokens     float64
 	GenerationTokens float64
 }
@@ -447,8 +459,6 @@ func parseVllmMetrics(r io.Reader, servedModel string) (vllmMetricsSample, bool)
 			sample.Running = int(value)
 		case "vllm:num_requests_waiting":
 			sample.Waiting = int(value)
-		case "vllm:kv_cache_usage_perc":
-			sample.KVCacheUsage = value
 		case "vllm:prompt_tokens":
 			sample.PromptTokens, havePrompt = value, true
 		case "vllm:generation_tokens":
