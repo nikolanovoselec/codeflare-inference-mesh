@@ -77,10 +77,12 @@ function routeFamily(pathname: string): RouteFamily {
 }
 
 /**
- * Routes whose credential is per-node: the handler must read `nodeId` from the body to
- * know which node's token to verify, so body validation answers 400 before the token
- * check can run. They still never admit an uncredentialed caller, which is what the
- * sweep below actually asserts. Any third route joining this set has to be justified.
+ * The two routes whose credential the dispatcher cannot resolve. Every other gate is
+ * enforced before the handler runs, but a per-node token is selected by the `nodeId` in
+ * the request body, so these handlers must parse the body first and body validation
+ * answers 400 before the token check can run. They still never admit an uncredentialed
+ * caller, which is what the sweep below actually asserts. Any third route joining this
+ * set is a handler doing its own auth again, and has to be justified.
  */
 const IDENTIFIES_CALLER_FROM_BODY: ReadonlySet<string> = new Set(['/node/heartbeat', '/node/unregister'])
 
@@ -783,6 +785,26 @@ describe('router worker behavioral contracts', () => {
     // Guards the sweep itself: an empty or truncated table would pass both checks vacuously.
     expect(ROUTES).toHaveLength(79)
     expect(new Set(ROUTES.map((route) => route.gate)).size).toBe(11)
+  })
+
+  it('REQ-RTR-001 REQ-SEC-001 admits a shared handler only through the credential its own route declares', async () => {
+    // RouteGateEnforcementTestAnchor
+    const { router, store } = routerFixture()
+    await store.putToken(await createTokenRecord('admin', 'admin-secret', 1_700_000_000_000))
+    await store.putToken(await createTokenRecord('automation', 'auto-secret', 1_700_000_000_000))
+
+    // GET /admin/meshes and GET /api/v1/meshes are one function, meshListCore, reached by two
+    // rows that differ only in their gate. Nothing inside it inspects the caller, so the only
+    // thing separating these four outcomes is the dispatcher enforcing the declared gate.
+    const consoleWithAdmin = await router(new Request('https://router.test/admin/meshes', { headers: bearer('admin-secret') }))
+    const consoleWithAutomation = await router(new Request('https://router.test/admin/meshes', { headers: bearer('auto-secret') }))
+    const apiWithAutomation = await router(new Request('https://router.test/api/v1/meshes', { headers: bearer('auto-secret') }))
+    const apiWithAdmin = await router(new Request('https://router.test/api/v1/meshes', { headers: bearer('admin-secret') }))
+
+    expect([consoleWithAdmin.status, apiWithAutomation.status]).toEqual([200, 200])
+    expect([consoleWithAutomation.status, apiWithAdmin.status]).toEqual([401, 401])
+    // Admitted through either door, the shared handler answers identically.
+    expect(await consoleWithAdmin.json()).toEqual(await apiWithAutomation.json())
   })
 
   it('REQ-ADM-007 assembles the console client script from its sections in order', () => {

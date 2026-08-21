@@ -206,7 +206,7 @@ srv  llama_server: exiting due to model loading error
 
 **Cause:** Gateway sync catches Cloudflare rejections from `syncCustomProvider` (needs `AI Gateway: Edit`, a missing gateway, or a route conflict) locally rather than letting them fall through to the Worker's top-level catch-all; it records a `gateway_sync_failed` audit event with the raw cause and returns `424` with the actionable copy above instead of the generic `internal_error`/`500`. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
-**Fix:** Confirm the AI Gateway named in Routing settings still exists, and add `AI Gateway: Edit` to the runtime Cloudflare token if missing, then re-sync. For the exact Cloudflare rejection, look up the `gateway_sync_failed` audit entry's `reason` field by request ID. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync -->
+**Fix:** Confirm the AI Gateway named in Routing settings still exists, and add `AI Gateway: Edit` to the runtime Cloudflare token if missing, then re-sync. For the exact Cloudflare rejection, look up the `gateway_sync_failed` audit entry's `reason` field by request ID. <!-- @impl: packages/router-worker/src/handlers/gateway.ts::syncGatewayForActor -->
 
 ## Clients get "Model execution failed" from the dynamic route while the playground works
 

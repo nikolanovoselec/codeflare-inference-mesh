@@ -160,9 +160,13 @@ export async function authenticateAnyStoredToken(request: Request, store: Store,
 /**
  * The identity a gate resolved, or a refusal. `actor` is what the handler writes to the
  * audit log, already in its final form, so no handler formats a credential into a name.
+ *
+ * `credentialId` names the specific stored token that opened the route, for the one gate
+ * whose handler has to act on it: a single-use enrollment token is revoked as it is spent.
+ * Carrying it here is what lets that handler consume the token without verifying it twice.
  */
 export type GateOutcome =
-  | { readonly ok: true; readonly actor: string; readonly role?: ConsoleRole }
+  | { readonly ok: true; readonly actor: string; readonly role?: ConsoleRole; readonly credentialId?: string }
   | { readonly ok: false }
 
 const REFUSED: GateOutcome = { ok: false }
@@ -184,8 +188,10 @@ export async function resolveGate(gate: RouteGate, request: Request, deps: AuthD
       return { ok: true, actor: 'node' }
     case 'provider':
       return (await authenticateKind(request, deps, 'provider', now, deps.env.ROUTER_PROVIDER_TOKEN)) ? { ok: true, actor: 'provider' } : REFUSED
-    case 'setup':
-      return (await authenticateAnyStoredToken(request, deps.store, 'setup', now)) ? { ok: true, actor: 'setup' } : REFUSED
+    case 'setup': {
+      const token = await authenticateAnyStoredToken(request, deps.store, 'setup', now)
+      return token ? { ok: true, actor: 'setup', credentialId: token.id } : REFUSED
+    }
     case 'recovery': {
       const secret = deps.env.ADMIN_RECOVERY_TOKEN
       return secret && await verifyPlainOrHashed(secret, bearerToken(request)) ? { ok: true, actor: 'recovery' } : REFUSED

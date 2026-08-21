@@ -121,7 +121,7 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 
 **Acceptance Criteria:**
 
-1. The public model listing includes only aliases of active profiles. <!-- @impl: packages/router-worker/src/router.ts::handleModels --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-005 lists only active profile aliases in the public model listing) -->
+1. The public model listing includes only aliases of active profiles. <!-- @impl: packages/router-worker/src/handlers/inference.ts::handleModels --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-005 lists only active profile aliases in the public model listing) -->
 2. The scheduler returns `no-profile` when no profile is configured for the requested public alias. <!-- @impl: packages/router-worker/src/scheduler.ts::selectEntryNode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-005 returns no-profile when the public model has no configured profile) -->
 3. The scheduler returns `no-node` when no node is eligible for the requested profile. <!-- @impl: packages/router-worker/src/scheduler.ts::selectEntryNode --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-003 REQ-OBS-004 excludes expired unhealthy and unsafe nodes from selection) -->
 4. The Worker translates `no-profile` into `404` with a request ID. <!-- @impl: packages/router-worker/src/inference.ts::runInference --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-005 returns no-profile when the public model has no configured profile) -->
@@ -152,13 +152,13 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 
 2. The default mesh always exists first in the registry, is never stored, and cannot be deleted; operator-created meshes persist in the `meshes` router configuration record and delete cleanly. <!-- @impl: packages/router-worker/src/meshes.ts::listMeshes --> <!-- @impl: packages/router-worker/src/meshes.ts::deleteMesh --> <!-- @test: packages/router-worker/src/meshes.test.ts (REQ-SCH-006 lists the implicit Default mesh first and persists created meshes) -->
 
-3. Claim and heartbeat responses carry only the profiles of the node's own mesh, and a newly claimed node joins the default mesh. <!-- @impl: packages/router-worker/src/router.ts::meshProfilesFor --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-006 heartbeat and claim send only the node mesh profiles) -->
+3. Claim and heartbeat responses carry only the profiles of the node's own mesh, and a newly claimed node joins the default mesh. <!-- @impl: packages/router-worker/src/handlers/node-protocol.ts::meshProfilesFor --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-006 heartbeat and claim send only the node mesh profiles) -->
 
-4. A heartbeat from a node still self-reporting a foreign mesh's profile ids receives no mesh bootstrap for that mesh and cannot re-add its invite token to that mesh's state. <!-- @impl: packages/router-worker/src/router.ts::selectedMeshProfile --> <!-- @impl: packages/router-worker/src/mesh-state.ts::selectedMeshProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reassigning a node drops its mesh tokens and heartbeats do not re-add them) -->
+4. A heartbeat from a node still self-reporting a foreign mesh's profile ids receives no mesh bootstrap for that mesh and cannot re-add its invite token to that mesh's state. <!-- @impl: packages/router-worker/src/mesh-state.ts::selectedMeshProfile --> <!-- @impl: packages/router-worker/src/mesh-state.ts::selectedMeshProfile --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-ADM-023 reassigning a node drops its mesh tokens and heartbeats do not re-add them) -->
 
 5. Seed election and mesh health consider only nodes in the profile's own mesh. <!-- @impl: packages/router-worker/src/mesh-state.ts::isSeedEligible --> <!-- @impl: packages/router-worker/src/mesh-state.ts::nodeParticipatesInProfile --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SCH-006 seed election and mesh health ignore foreign-mesh nodes) -->
 
-6. Profile readiness counts only nodes in the profile's own mesh. <!-- @impl: packages/router-worker/src/router.ts::profileReadiness --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-006 profile readiness counts only same-mesh nodes) -->
+6. Profile readiness counts only nodes in the profile's own mesh. <!-- @impl: packages/router-worker/src/handlers/status.ts::profileReadiness --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-SCH-006 profile readiness counts only same-mesh nodes) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
 
