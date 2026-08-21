@@ -30,8 +30,3 @@ export class SessionAffinityDO implements DurableObject {
     return Response.json({ error: 'not_found' }, { status: 404 })
   }
 }
-
-export const DURABLE_ANCHORS = {
-  REQ_SCH_002: 'REQ-SCH-002',
-  REQ_SCH_004: 'REQ-SCH-004'
-} as const

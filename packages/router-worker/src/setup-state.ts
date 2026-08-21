@@ -49,6 +49,7 @@ export async function breakGlassActive(store: Store, env: Partial<RouterEnv>): P
   return (await store.getConfig<string>(SETUP_REOPEN_CONSUMED_KEY)) !== await hashToken(env.SETUP_REOPEN)
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const SETUP_STATE_ANCHORS = {
   REQ_ADM_013: 'REQ-ADM-013',
   REQ_ADM_014: 'REQ-ADM-014'

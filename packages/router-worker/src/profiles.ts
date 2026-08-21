@@ -308,6 +308,7 @@ export function nodeMeshId(node: NodeRecord): string {
   return node.meshId ?? 'default'
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const PROFILE_ANCHORS = {
   REQ_RUN_001: 'REQ-RUN-001',
   REQ_RUN_002: 'REQ-RUN-002',

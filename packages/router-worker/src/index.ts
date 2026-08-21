@@ -18,6 +18,7 @@ export default {
   }
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const INDEX_ANCHORS = {
   REQ_GWY_001: 'REQ-GWY-001'
 } as const

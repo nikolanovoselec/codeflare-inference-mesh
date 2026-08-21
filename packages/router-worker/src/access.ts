@@ -177,6 +177,7 @@ function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
   return bytes
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const ACCESS_ANCHORS = {
   REQ_SEC_009: 'REQ-SEC-009'
 } as const

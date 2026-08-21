@@ -2,6 +2,7 @@
 
 ## 2026-08-21
 
+- Pull request checks now run a real linter and a dead-code report. The previous `lint` step was a single hand-rolled rule that rejected `console.log` and looked at nothing else, so type errors were the only static analysis the repository had. A new quality check runs oxlint across the repository and knip for unused files, exports, and dependencies, and the aggregate gate asserts its result so a failure blocks the run. Removing a source anchor that only the specification references would now be reported, so each one is tagged to say why it has no importer. ([REQ-REL-001](release-ci.md#req-rel-001-pull-request-checks))
 - The durable schema no longer carries the retired `sessions` and `reservations` tables. Nothing has read or written them since the router became a stateless forwarder, and dropping them also retires the two indexes that existed only to serve the reservation reclaim scan. Cache-warm affinity for direct llama.cpp models is unaffected; it lives in the separate `direct_sessions` table. ([REQ-SCH-001](state-scheduling.md#req-sch-001-durable-router-state))
 
 ## 2026-08-20

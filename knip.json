@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "tags": ["-specanchor"],
+  "workspaces": {
+    "packages/router-worker": {
+      "entry": ["src/index.ts", "src/**/*.test.ts", "scripts/*.mjs", "vitest.config.ts"],
+      "project": ["src/**/*.ts", "scripts/*.mjs"]
+    }
+  },
+  "ignoreDependencies": ["@cloudflare/workers-types"],
+  "rules": {
+    "classMembers": "off",
+    "duplicates": "off",
+    "enumMembers": "off"
+  }
+}

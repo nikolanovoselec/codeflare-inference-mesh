@@ -2791,6 +2791,7 @@ function stableNodeId(displayName: string, meshIp: string): string {
   return `${displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${meshIp.replace(/\./g, '-')}`
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const ROUTER_ANCHORS = {
   REQ_GWY_001: 'REQ-GWY-001',
   REQ_RTR_001: 'REQ-RTR-001',

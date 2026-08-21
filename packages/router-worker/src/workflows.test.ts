@@ -118,14 +118,19 @@ describe('workflow contract values', () => {
     expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push', 'workflow_dispatch'])
     expect(ci.on.pull_request).toEqual({ branches: ['main', 'develop'] })
     expect(ci.on.push).toEqual({ branches: ['main'] })
-    expect(Object.keys(ci.jobs).sort()).toEqual(['agent', 'dependency-review', 'packaging', 'router', 'test', 'vulnerability-checks'])
+    expect(Object.keys(ci.jobs).sort()).toEqual(['agent', 'dependency-review', 'packaging', 'quality', 'router', 'test', 'vulnerability-checks'])
     expect(ci.permissions).toEqual({ contents: 'read' })
-    expect(ci.jobs.test!.needs).toEqual(['router', 'agent', 'packaging', 'dependency-review', 'vulnerability-checks'])
+    expect(ci.jobs.test!.needs).toEqual(['quality', 'router', 'agent', 'packaging', 'dependency-review', 'vulnerability-checks'])
 
     expect(stepUses(ci.jobs.router!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SETUP_NODE]))
     expect(ci.jobs.router!.steps.find((step) => step.uses === ACTION_SETUP_NODE)?.with).toEqual({ 'node-version': '24' })
     expect(stepByName(ci.jobs.router!, 'Install dependencies')?.run).toBe('npm ci')
-    expect(ci.jobs.router!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Install dependencies', 'Lint router', 'Test router behavior', 'Type-check router', 'Generate Wrangler types', 'Worker dry-run deploy']))
+    expect(ci.jobs.router!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Install dependencies', 'Test router behavior', 'Type-check router', 'Generate Wrangler types', 'Worker dry-run deploy']))
+    expect(stepByName(ci.jobs.quality!, 'Lint')?.run).toBe('npm run lint')
+    expect(stepByName(ci.jobs.quality!, 'Dead code and dependency check')?.run).toBe('npm run knip')
+    // A job listed in `needs` does not block on its own, because the gate runs `if: always()`.
+    // The gate blocks only for the results it explicitly asserts, so assert quality is one of them.
+    expect(stepByName(ci.jobs.test!, 'Require required checks')?.run).toContain('test "${{ needs.quality.result }}" = "success"')
     expect(stepUses(ci.jobs.agent!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SETUP_GO]))
     expect(ci.jobs.agent!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.6', 'cache-dependency-path': 'packages/node-agent/go.mod' })
     expect(ci.jobs.packaging!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.6', 'cache-dependency-path': 'packages/node-agent/go.mod' })

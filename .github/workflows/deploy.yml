@@ -134,7 +134,8 @@ jobs:
 
       - name: Repeat critical checks
         run: |
-          npm run lint --workspace packages/router-worker
+          npm run lint
+          npm run knip
           npm run test --workspace packages/router-worker
           npm run typecheck --workspace packages/router-worker
           cd packages/node-agent

@@ -113,6 +113,7 @@ function toHex(data: Uint8Array): string {
   return [...data].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const AUTH_ANCHORS = {
   REQ_GWY_002: 'REQ-GWY-002',
   REQ_GWY_004: 'REQ-GWY-004',

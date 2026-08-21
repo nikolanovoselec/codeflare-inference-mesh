@@ -58,6 +58,7 @@ export async function decideDirectSession(store: Store, request: DirectSessionDe
   return { node: selected, affinity: failedOver ? 'failed_over' : 'pinned', session: next }
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const DIRECT_AFFINITY_ANCHORS = {
   REQ_SCH_004: 'REQ-SCH-004'
 } as const

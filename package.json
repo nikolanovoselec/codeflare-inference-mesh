@@ -7,7 +7,8 @@
     "packages/router-worker"
   ],
   "scripts": {
-    "lint": "npm run lint --workspace packages/router-worker",
+    "lint": "oxlint",
+    "knip": "knip",
     "test": "npm run test --workspace packages/router-worker",
     "typecheck": "npm run typecheck --workspace packages/router-worker",
     "cf-types": "npm run cf-types --workspace packages/router-worker",
@@ -15,5 +16,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "knip": "6.32.2",
+    "oxlint": "1.79.0"
   }
 }

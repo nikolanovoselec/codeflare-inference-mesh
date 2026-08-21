@@ -116,6 +116,7 @@ function cidrContains(cidr: string, address: number): boolean {
   return (address & mask) === (baseAddress & mask)
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const SCHEDULER_ANCHORS = {
   REQ_SCH_002: 'REQ-SCH-002',
   REQ_SCH_003: 'REQ-SCH-003',

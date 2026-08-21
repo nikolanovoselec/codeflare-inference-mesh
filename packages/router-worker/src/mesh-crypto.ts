@@ -35,6 +35,7 @@ function fromBase64(text: string): Uint8Array<ArrayBuffer> {
   return data
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const MESH_CRYPTO_ANCHORS = {
   REQ_SEC_006: 'REQ-SEC-006'
 } as const

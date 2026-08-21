@@ -125,6 +125,7 @@ function scriptJson(value: unknown): string {
     .replace(/\u2029/g, '\\u2029')
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const ADMIN_UI_ANCHORS = {
   REQ_ADM_006: 'REQ-ADM-006',
   REQ_ADM_007: 'REQ-ADM-007',

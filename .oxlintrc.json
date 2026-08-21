@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    ".wrangler",
+    "graphify-out"
+  ],
+  "overrides": [
+    {
+      "files": ["packages/router-worker/src/**/*.ts"],
+      "rules": {
+        "no-console": "error"
+      }
+    }
+  ]
+}
