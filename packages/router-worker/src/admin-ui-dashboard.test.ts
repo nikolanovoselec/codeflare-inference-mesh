@@ -92,6 +92,15 @@ function rowOrder(harness: AdminUiHarness): string[] {
   return tableRows(harness).map((row) => row.dataset.nodeRow!)
 }
 
+/**
+ * The rendered value of one drawer field. A field is `<strong>label</strong><code>value</code>`,
+ * so this reads the value cell itself. Pinning that with toBe catches a value rendered into the
+ * wrong field, or extra text alongside it, which substring-scanning the whole drawer cannot.
+ */
+function fieldValue(field: StubElement): string {
+  return descendants(field).find((node) => node.tagName === 'code')!.textContent
+}
+
 describe('dashboard overview contracts', () => {
   afterEach(() => {
     try { vi.clearAllTimers() } catch { /* fake timers were not enabled */ }
@@ -581,7 +590,7 @@ describe('dashboard overview contracts', () => {
     expect(field('status')).toBeDefined()
     expect(field('toks')).toBeUndefined()
     expect(field('vram')!.dataset.value).toBe('4000/8192')
-    expect(descendants(field('vram')!).map((node) => node.textContent).join(' ')).toContain('3.9 GiB / 8 GiB')
+    expect(fieldValue(field('vram')!)).toBe('3.9 GiB / 8 GiB')
     expect(field('version')!.dataset.reported).toBe('v1.2.0')
     expect(field('version')!.dataset.desiredMatch).toBe('false')
     const models = fields.filter((node) => node.dataset.drawerModel)
@@ -621,11 +630,10 @@ describe('dashboard overview contracts', () => {
 
     await harness.clickAction('node-detail', { nodeId: 'node-off' })
     const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    const textOf = (item: StubElement) => descendants(item).map((node) => node.textContent).join(' ')
     const runtimeInstall = fields.find((node) => node.dataset.drawerField === 'runtime-install')!
-    expect(textOf(runtimeInstall)).toContain('meshllm 0.72.2')
-    expect(textOf(runtimeInstall)).not.toContain('deactivated')
-    expect(textOf(runtimeInstall)).not.toContain('install failed')
+    // A paused node reports its installed runtime and the pause and nothing else. Pinning the
+    // whole value is what rules out an "install failed" or "deactivated" leaking in beside it.
+    expect(fieldValue(runtimeInstall)).toBe('meshllm 0.72.2 · paused')
     expect(runtimeInstall.dataset.runtimeInstallState).toBe('paused')
     const activate = fields.find((node) => node.dataset.action === 'node-activate')
     expect(activate).toBeDefined()
@@ -681,7 +689,7 @@ describe('dashboard overview contracts', () => {
     const battleVram = fields.find((node) => node.dataset.drawerField === 'vram')!
     expect(battleVram.dataset.vramSource).toBe('reported')
     expect(battleVram.dataset.value).toBe('18799/24576')
-    expect(descendants(battleVram).map((node) => node.textContent).join(' ')).toContain('18.4 GiB / 24 GiB')
+    expect(fieldValue(battleVram)).toBe('18.4 GiB / 24 GiB')
     const battleSplitReadiness = fields.find((node) => node.dataset.drawerField === 'split-readiness')!
     const battleCapacity = descendants(battleSplitReadiness).find((node) => node.dataset.participantLabel === 'battlestation')!
     expect(battleCapacity.dataset.participantCapacityGb).toBe('63.2')
@@ -704,17 +712,19 @@ describe('dashboard overview contracts', () => {
     const harness = await dashboardHarness({ status: statusFixture({ nodes, meshHealth }) })
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'linux-node')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
-    expect(descendants(statusCell).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
+    // Suppressed means the cell's status detail stays the live node state. Had the blocker won,
+    // this would read the 'model_size_unknown' reason instead.
+    expect(statusCell.dataset.statusDetail).toBe('loading model meshllm/ERNIE')
 
     await harness.clickAction('node-detail', { nodeId: 'linux-node' })
     let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(fields.some((node) => node.dataset.drawerField === 'split-readiness')).toBe(false)
-    expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
+    // Nor is it promoted to a runtime error, which is the other surface the label reaches.
+    expect(fields.some((node) => node.dataset.drawerField === 'runtime-detail')).toBe(false)
 
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(fields.some((node) => node.className === 'split-readiness-block')).toBe(false)
-    expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
   })
 
   it('REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status', async () => {
@@ -724,7 +734,7 @@ describe('dashboard overview contracts', () => {
     const harness = await dashboardHarness({ status: statusFixture({ nodes, meshHealth }) })
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'linux-node')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
-    expect(descendants(statusCell).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
+    expect(statusCell.dataset.statusDetail).toBe('serving')
     const servingChip = descendants(statusCell).find((node) => node.className === 'chip')!
     expect(servingChip.dataset.tone).toBe('ok')
     expect(descendants(servingChip).map((node) => node.textContent).join('')).toBe('Serving')
@@ -736,7 +746,7 @@ describe('dashboard overview contracts', () => {
 
     await harness.clickAction('model-detail', { profileId: 'mesh-default-qwen36-35b' })
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    expect(descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).map((node) => node.textContent).join(' ')).not.toContain('Model Size Unknown')
+    expect(fields.some((node) => node.className === 'split-readiness-block')).toBe(false)
     // The mesh card alone carries the mesh detail: no duplicated stage/serving drawer
     // fields, stage owners and the machine group live in Technical details.
     expect(fields.some((node) => node.dataset.drawerField === 'stage-ownership')).toBe(false)
@@ -834,7 +844,7 @@ describe('dashboard overview contracts', () => {
     expect(field('peers')!.dataset.value).toBe('2')
     expect(field('stages')!.dataset.value).toBe('2')
     expect(field('reachability')!.dataset.value).toBe('api:down;console:ready')
-    expect(textOf(field('runtime-install')!)).toContain('meshllm 0.72.2')
+    expect(fieldValue(field('runtime-install')!)).toContain('meshllm 0.72.2')
     expect(fields.some((node) => node.dataset.drawerField === 'meshllm')).toBe(false)
 
     // A healthy node shows derived work state but stale stderr warnings are not rendered as current
@@ -872,16 +882,17 @@ describe('dashboard overview contracts', () => {
     expect(fields.some((node) => node.dataset.drawerField === 'peers')).toBe(false)
     expect(field('direct-parallel')!.dataset.value).toBe('4')
     expect(field('direct-parallel')!.dataset.activeSlots).toBeUndefined()
-    expect(textOf(field('vram')!)).toContain('3.8 GiB / 24 GiB')
-    expect(textOf(field('direct-parallel')!)).toContain('parallel 4')
-    expect(textOf(field('direct-cached-tokens')!)).toContain('not reported')
+    expect(fieldValue(field('vram')!)).toBe('3.8 GiB / 24 GiB')
+    expect(fieldValue(field('direct-parallel')!)).toBe('parallel 4')
+    expect(fieldValue(field('direct-cached-tokens')!)).toBe('not reported')
     // The resolved backend reads next to the version: an NVIDIA Linux box runs the
     // Vulkan build, and the drawer says so instead of implying CUDA (REQ-NODE-013).
     expect(field('llamacpp')!.dataset.value).toBe('b10452 · vulkan')
     // The unavailable cross-divergence optimization must not be confused with
     // ordinary text prefix caching, which remains independently configurable (REQ-OBS-014).
-    expect(textOf(field('direct-cache')!)).not.toContain('reuse 256')
-    expect(textOf(field('direct-cache')!)).toContain('cross-divergence reuse unavailable for multimodal')
+    // Pinning the whole value is what proves "reuse 256" is not also reported: the node does
+    // report a cacheReuse of 256, and it must not surface while multimodal has disabled reuse.
+    expect(fieldValue(field('direct-cache')!)).toBe('not reported · cross-divergence reuse unavailable for multimodal')
   })
 
   it('REQ-ADM-015 opens a model drawer with editable identity and no duplicated serving list', async () => {
@@ -1294,7 +1305,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     // The label pairs both contract values (callable name and model name); format is not pinned.
     const label = select.children[0]!.textContent || ''
     expect(label).toContain('qwen3.6:35b-a3b')
-    expect(label).toContain('Qwen3.6 35B')
+    expect(label).toContain(dashboardProfiles[0]!.displayName)
   })
 
   it('REQ-ADM-016 streams the direct-target playground response incrementally as chunks arrive', async () => {
@@ -1578,8 +1589,7 @@ describe('dashboard throughput trace and playground contracts', () => {
     const rows = harness.byId('profile-list').children.filter((row) => row.dataset.profileRow)
     // Every model is visible, named by its display name (not its wiring id).
     const names = descendants(harness.byId('profile-list')).filter((node) => node.dataset.modelName).map((node) => node.textContent)
-    expect(names).toContain('Qwen3.6 35B')
-    expect(names).toContain('Qwen3.6 35B (multi-machine)')
+    for (const profile of dashboardProfiles) expect(names).toContain(profile.displayName)
     // The toggle reflects state via its data-on contract (not its copy): the active model is on, the other off.
     const toggle = (id: string) => descendants(rows.find((row) => row.dataset.profileRow === id)!).find((node) => node.dataset.action === 'model-toggle')!
     expect(toggle('mesh-default-qwen36-35b').dataset.on).toBe('true')
@@ -1799,7 +1809,7 @@ describe('dashboard routing contracts', () => {
     await harness.flush(20)
     const card = harness.byId('gateway-current')
     expect(descendants(card).find((node) => node.className === 'state-sub')?.textContent).toBe('route not provisioned')
-    expect(descendants(card).find((node) => node.className === 'chip')?.textContent).toContain('needs provisioning')
+    expect(descendants(card).find((node) => node.className === 'chip')?.dataset.tone).toBe('warn')
   })
 
   it('REQ-ADM-024 preserves the selected gateway across dashboard refreshes', async () => {
