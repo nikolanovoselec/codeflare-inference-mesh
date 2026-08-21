@@ -190,7 +190,8 @@ func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, man
 // restartLlamaCppRuntime re-renders the llama.cpp input against the current
 // config and restarts in place. A live manager that is not the concrete
 // llama.cpp manager (mid-switch, test fakes) falls through to the mesh restart
-// tail, preserving the historical assert ladder.
+// tail: its seam asserts still apply, and a manager matching neither restart
+// seam fails closed there.
 func restartLlamaCppRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, manager agent.RuntimeManager) (string, error) {
 	if direct, ok := manager.(*agent.LlamaCppManager); ok {
 		binaryPath, backend, installError := llamaCppBinaryPath(cfg)
