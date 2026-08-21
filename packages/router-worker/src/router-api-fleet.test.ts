@@ -41,7 +41,7 @@ describe('control-plane API: fleet status, settings, versions and body handling'
     expect(body.generatedAt).toBe(1_700_000_000_000)
     expect(typeof body.nodes.total).toBe('number')
     expect(typeof body.nodes.online).toBe('number')
-    expect(body.runtimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
+    expect(body.runtimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912', vllm: 'v0.27.1' })
     expect(body.runtimeInstalls).toEqual([])
     // Seeded default profiles are visible to the snapshot.
     expect(body.models.total).toBeGreaterThan(0)

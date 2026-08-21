@@ -422,6 +422,23 @@ describe('nodes table and node drawer contracts', () => {
     expect(fieldValue(field('direct-cache')!)).toBe('not reported · cross-divergence reuse unavailable for multimodal')
   })
 
+  it('REQ-RUN-021 vllm node drawer reports the installed vllm version', async () => {
+    const nodes = [
+      { id: 'vllm-node', status: 'online', runtime: 'vllm', metrics: {
+        runtimeKind: 'vllm', runtimeState: 'ready', apiReady: true,
+        vllmVersion: 'v0.27.1', platform: 'linux', cudaAvailable: true,
+        readyModels: ['org/model'] } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ nodes }) })
+    await harness.clickAction('node-detail', { nodeId: 'vllm-node' })
+    const fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
+    const field = (name: string) => fields.find((node) => node.dataset.drawerField === name)
+
+    expect(field('vllm')!.dataset.value).toBe('v0.27.1')
+    // A vllm node carries no mesh-only drawer rows.
+    expect(fields.some((node) => node.dataset.drawerField === 'mesh-role')).toBe(false)
+  })
+
   it('REQ-OBS-012 renders runtime install status in the node table and drawer', async () => {
     const nodes = [{
       id: 'direct-node',

@@ -166,9 +166,9 @@ export const CLIENT_NODE_STATE = `\
   function runtimeInstallInfo(node) {
     if (node.runtimeInstall && !node.deactivated) return { ...node.runtimeInstall, error: node.runtimeInstall.state === 'failed' ? node.runtimeInstall.error : null };
     const metrics = node.metrics || {};
-    const runtime = metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp' ? 'llamacpp' : 'meshllm';
+    const runtime = metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp' ? 'llamacpp' : (metrics.runtimeKind === 'vllm' || node.runtime === 'vllm' ? 'vllm' : 'meshllm');
     const desired = lastStatus && lastStatus.desiredRuntimeVersions ? lastStatus.desiredRuntimeVersions[runtime] : '';
-    const installed = node.runtimeInstall && node.runtimeInstall.installedVersion ? node.runtimeInstall.installedVersion : (runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion);
+    const installed = node.runtimeInstall && node.runtimeInstall.installedVersion ? node.runtimeInstall.installedVersion : (runtime === 'llamacpp' ? metrics.llamacppVersion : (runtime === 'vllm' ? metrics.vllmVersion : metrics.meshllmVersion));
     if (node.deactivated) return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: 'paused', error: null };
     const error = currentRuntimeError(metrics);
     // Install failure = the agent's dependency-missing state; startup stderr chatter on a
@@ -176,7 +176,7 @@ export const CLIENT_NODE_STATE = `\
     const state = metrics.runtimeState === 'downloading' ? 'installing' : (metrics.runtimeState === 'dependency-missing' ? 'failed' : (installed ? 'installed' : 'pending'));
     return { runtime: runtime, desiredVersion: desired || '', installedVersion: installed || null, state: state, error: state === 'failed' ? (error || null) : null };
   }
-  const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : 'meshllm';
+  const runtimeInstallLabel = (info) => info.runtime === 'llamacpp' ? 'llama.cpp' : (info.runtime === 'vllm' ? 'vLLM' : 'meshllm');
   const runtimeInstallTone = (info) => info.state === 'failed' ? 'danger' : (info.state === 'installed' ? 'ok' : 'warn');
   // Chip text always leads with the runtime's name ("llama.cpp b9928", "meshllm 0.72.2"),
   // never a bare version an operator has to guess the runtime for.

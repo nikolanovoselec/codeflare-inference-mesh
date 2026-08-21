@@ -5,7 +5,7 @@
  * `./router-test-support`.
  */
 import { bearer, routerFixture, seedLegacyDefaults } from './router-test-support'
-import { DEFAULT_MODEL_PROFILES } from './profiles'
+import { buildCustomProfile, DEFAULT_MODEL_PROFILES } from './profiles'
 import { describe, expect, it } from 'vitest'
 
 describe('model configuration and naming contracts', () => {
@@ -112,6 +112,123 @@ describe('model configuration and naming contracts', () => {
     expect((await configure({ llamacpp: { cacheTypeK: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { gpuLayers: 'bad' } })).status).toBe(400)
     expect((await configure({ llamacpp: { bindPort: 9337 } })).status).toBe(400)
+  })
+
+
+  it('REQ-RUN-021 adds and configures a direct vLLM profile through the admin paths', async () => {
+    const { router, store } = routerFixture()
+    const add = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'org/model', mode: 'single', runtime: 'vllm' })
+    }))
+    expect(add.status).toBe(201)
+    const profileId = (await add.json() as { profileId: string }).profileId
+    const added = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    // A new vllm profile arrives inactive, HF-repo-sourced, with Auto context and
+    // its own advanced bind port; tunables stay unset so vLLM's defaults rule.
+    expect(added.runtime).toBe('vllm')
+    expect(added.sourceMode).toBe('vllm-hf')
+    expect(added.active).toBe(false)
+    expect(added.vllm).toMatchObject({ hfRepo: 'org/model', contextWindow: 0 })
+    expect(added.vllm!.bindPort).toBeGreaterThanOrEqual(4310)
+    expect(added.vllm!.maxNumSeqs).toBeUndefined()
+    expect(added.vllm!.gpuMemoryUtilization).toBeUndefined()
+
+    const configure = (body: Record<string, unknown>) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId, ...body })
+    }))
+    const ok = await configure({ vllm: { contextWindow: 32768, maxNumSeqs: 8, gpuMemoryUtilization: 0.85, dtype: 'half', quantization: 'awq' } })
+    expect(ok.status).toBe(200)
+    const configured = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(configured.vllm).toMatchObject({ hfRepo: 'org/model', contextWindow: 32768, maxNumSeqs: 8, gpuMemoryUtilization: 0.85, dtype: 'half', quantization: 'awq' })
+    expect(configured.contextWindow).toBe(32768)
+    expect(configured.version).toBe(added.version + 1)
+
+    // House clearing convention: null / 0 / "" removes a tunable back to Auto.
+    expect((await configure({ vllm: { maxNumSeqs: null, gpuMemoryUtilization: null, dtype: '', quantization: null } })).status).toBe(200)
+    const cleared = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(cleared.vllm?.maxNumSeqs).toBeUndefined()
+    expect(cleared.vllm?.gpuMemoryUtilization).toBeUndefined()
+    expect(cleared.vllm?.dtype).toBeUndefined()
+    expect(cleared.vllm?.quantization).toBeUndefined()
+
+    // Validation fails closed: fractional utilization above 1, unknown dtype,
+    // agent-reserved bind ports, and sub-floor fixed contexts are rejected.
+    expect((await configure({ vllm: { gpuMemoryUtilization: 1.5 } })).status).toBe(400)
+    expect((await configure({ vllm: { dtype: 'q4' } })).status).toBe(400)
+    expect((await configure({ vllm: { bindPort: 9337 } })).status).toBe(400)
+    expect((await configure({ vllm: { bindPort: 3131 } })).status).toBe(400)
+    expect((await configure({ vllm: { bindPort: 70000 } })).status).toBe(400)
+    expect((await configure({ vllm: { contextWindow: 2048 } })).status).toBe(400)
+    expect((await configure({ vllm: { contextWindow: 0 } })).status).toBe(200)
+
+    // A vllm model reference is a bare HF safetensors repo: llama-style :quant
+    // file tags name GGUF files vLLM does not load in-tree.
+    const quantRef = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'org/model:Q4_K_M', mode: 'single', runtime: 'vllm' })
+    }))
+    expect(quantRef.status).toBe(400)
+  })
+
+
+  it('REQ-RUN-021 converts a profile between llama.cpp and vLLM on the requested runtime', async () => {
+    const { router, store } = routerFixture()
+    const add = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'unsloth/model-GGUF:Q4_K_M', mode: 'single', runtime: 'llamacpp' })
+    }))
+    expect(add.status).toBe(201)
+    const profileId = (await add.json() as { profileId: string }).profileId
+
+    const configure = (body: Record<string, unknown>) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId, ...body })
+    }))
+
+    // llamacpp -> vllm: the requested runtime picks the arm, not the stored one,
+    // and the old llama.cpp source block does not survive the conversion.
+    expect((await configure({ runtime: 'vllm', modelRef: 'org/safetensors-model' })).status).toBe(200)
+    const converted = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(converted.runtime).toBe('vllm')
+    expect(converted.sourceMode).toBe('vllm-hf')
+    expect(converted.vllm).toMatchObject({ hfRepo: 'org/safetensors-model' })
+    expect(converted.llamacpp).toBeUndefined()
+    expect(converted.upstreamModel).toBe('org/safetensors-model')
+
+    // vllm -> llamacpp: the reverse conversion re-derives the llama.cpp source
+    // and drops the stale vllm block.
+    expect((await configure({ runtime: 'llamacpp', modelRef: 'unsloth/model-GGUF:Q4_K_M' })).status).toBe(200)
+    const back = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(back.runtime).toBe('llamacpp')
+    expect(back.sourceMode).toBe('llamacpp-hf')
+    expect(back.llamacpp).toMatchObject({ hfRepo: 'unsloth/model-GGUF' })
+    expect(back.vllm).toBeUndefined()
+
+    // Converting a direct profile back to meshllm is not supported: the request
+    // fails closed instead of silently keeping the direct runtime.
+    expect((await configure({ runtime: 'meshllm' })).status).toBe(400)
+    const unchanged = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(unchanged.runtime).toBe('llamacpp')
+  })
+
+
+  it('REQ-RUN-021 advances new bind ports past every runtime block including vllm', () => {
+    // The bind-port scan must see all three runtime blocks: a new profile built
+    // beside a vllm profile holding the highest port has to advance past it, or
+    // two runtimes would collide on the same node port.
+    const vllmExisting = { ...buildCustomProfile({ modelRef: 'org/model', split: false, runtime: 'vllm', existing: [] }) }
+    const vllmHigh = { ...vllmExisting, vllm: { ...vllmExisting.vllm!, bindPort: 4390 } }
+    const nextLlama = buildCustomProfile({ modelRef: 'unsloth/x-GGUF:Q4', split: false, runtime: 'llamacpp', existing: [vllmHigh] })
+    expect(nextLlama.llamacpp!.bindPort).toBe(4400)
+    const nextVllm = buildCustomProfile({ modelRef: 'org/other', split: false, runtime: 'vllm', existing: [vllmHigh] })
+    expect(nextVllm.vllm!.bindPort).toBe(4400)
   })
 
 

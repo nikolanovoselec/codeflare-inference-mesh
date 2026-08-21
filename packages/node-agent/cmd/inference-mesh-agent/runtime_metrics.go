@@ -70,6 +70,9 @@ func runtimeMetrics(manager agent.RuntimeManager, loadState *runtimeLoadState, c
 				metrics.LlamaCppBackend = direct.Metrics().LlamaCppBackend
 			}
 		}
+		// vllm deliberately has no arm here: the manager reports the *installed*
+		// version from the completion marker, so echoing the desired config back
+		// would make the console's desired-vs-installed comparison a tautology.
 	}
 	if loaded {
 		metrics.LoadedProfileID = profile.ID

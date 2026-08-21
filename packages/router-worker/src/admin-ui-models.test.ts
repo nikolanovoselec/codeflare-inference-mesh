@@ -122,6 +122,31 @@ describe('model drawer and model management contracts', () => {
   })
 
 
+  it('REQ-RUN-021 loads and saves direct vLLM runtime tunables from the model drawer', async () => {
+    const profiles = [
+      { id: 'custom-vllm', displayName: 'Direct vLLM', publicAliases: ['codeflare-mesh', 'org-model'], upstreamModel: 'org/model', active: true, rolloutPercent: 100, contextWindow: 32768, runtime: 'vllm', vllm: { hfRepo: 'org/model', bindPort: 4400, contextWindow: 32768, maxNumSeqs: 8, gpuMemoryUtilization: 0.85, dtype: 'half', quantization: 'awq' } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }) })
+    await harness.clickAction('model-detail', { profileId: 'custom-vllm' })
+
+    expect(harness.byId('model-edit-vllm-max-num-seqs').value).toBe('8')
+    expect(harness.byId('model-edit-vllm-gpu-mem').value).toBe('0.85')
+    expect(harness.byId('model-edit-vllm-dtype').value).toBe('half')
+    expect(harness.byId('model-edit-vllm-quant').value).toBe('awq')
+
+    // Clearing a tunable saves it as null (back to vLLM's own default), and the
+    // save posts the vllm block to the validated profile-config endpoint.
+    harness.byId('model-edit-vllm-max-num-seqs').value = '16'
+    harness.byId('model-edit-vllm-gpu-mem').value = '0.9'
+    harness.byId('model-edit-vllm-dtype').value = ''
+    harness.byId('model-edit-vllm-quant').value = ''
+    await harness.clickAction('model-save', { profileId: 'custom-vllm', runtime: 'vllm', out: 'model-output' })
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
+    const body = JSON.parse(String(call?.init?.body))
+    expect(body.vllm).toMatchObject({ maxNumSeqs: 16, gpuMemoryUtilization: 0.9, dtype: null, quantization: null })
+  })
+
+
   it('REQ-ADM-026 shows a Delete control for any switched-off model', async () => {
     const profiles = [
       { id: 'custom-qwen3-14b-gguf-q4-k-m', displayName: 'Qwen3-14B', publicAliases: ['codeflare-mesh', 'q'], active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } },

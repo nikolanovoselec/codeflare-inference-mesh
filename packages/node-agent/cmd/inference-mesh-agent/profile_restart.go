@@ -60,8 +60,15 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 			return
 		}
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = manager.Stop(stopCtx)
+		stopErr := manager.Stop(stopCtx)
 		stopCancel()
+		if errors.Is(stopErr, agent.ErrStopInProgress) {
+			// Do not start a replacement over a process another Stop is still
+			// terminating (same bind port and GPU); fail the switch and let a
+			// later heartbeat retry once the shutdown completes.
+			manager.SetFailure(stopErr)
+			return
+		}
 		started, installError, err := startRuntimeForProfile(ctx, cfg, profile, nil)
 		if err != nil {
 			s.setManager(manager, installError)
@@ -196,6 +203,21 @@ func restartLlamaCppRuntime(ctx context.Context, cfg agent.Config, profile agent
 	if direct, ok := manager.(*agent.LlamaCppManager); ok {
 		binaryPath, backend, installError := llamaCppBinaryPath(cfg)
 		if err := direct.RestartWithLlamaInput(ctx, llamaCppInput(profile, binaryPath, cfg.DataDir, backend)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+			return installError, err
+		}
+		return installError, nil
+	}
+	return restartMeshRuntime(ctx, cfg, profile, manager)
+}
+
+// restartVllmRuntime re-renders the vLLM input against the current config
+// (re-resolving the pinned venv binary) and restarts in place. A live manager
+// that is not the concrete vLLM manager falls through to the mesh restart
+// tail, whose fail-closed ending covers managers matching no restart seam.
+func restartVllmRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, manager agent.RuntimeManager) (string, error) {
+	if direct, ok := manager.(*agent.VllmManager); ok {
+		binaryPath, installError := vllmBinaryPath(ctx, cfg)
+		if err := direct.RestartWithVllmInput(ctx, vllmInput(profile, binaryPath, cfg.DataDir)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
 			return installError, err
 		}
 		return installError, nil

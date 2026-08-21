@@ -151,7 +151,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 4. The agent launches the `mesh-llm` binary provisioned per REQ-NODE-013; a missing or failed install surfaces as a dependency-missing error instead of a runtime start. <!-- @impl: packages/node-agent/internal/agent/meshllm_manager.go::MeshLLMManager --> <!-- @test: packages/node-agent/internal/agent/meshllm_manager_test.go (TestREQRUN010MissingBinaryReportsDependencyMissing) -->
 5. When the selected profile changes, the agent preempts an in-flight download or start of a now-deselected profile and switches to the newly selected profile without requiring a manual restart. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/profile_restart.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/profile_restart_test.go (TestREQRUN010PreemptsDeselectedInflightDownload) -->
 
-6. Each heartbeat reconciles the running manager's runtime kind against the selected profile's: two disagreeing managed kinds relaunch through the cross-runtime switch path until actual matches desired, while a runtime already loading or serving the selected profile is never restarted. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/heartbeat.go::runtimeKindMismatch --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/profile_restart.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/profile_restart_test.go (TestREQRUN010RuntimeKindMismatchSelfHealsEachHeartbeat) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/profile_restart_test.go (TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted) -->
+6. Each heartbeat reconciles the running manager's runtime kind against the selected profile's: two disagreeing managed kinds relaunch through the cross-runtime switch path until actual matches desired, while a runtime already loading or serving the selected profile is never restarted — including a crashed runtime for the still-selected profile, which stays failed rather than hot-relaunching in a loop; recovery arrives only through a profile or version re-key. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/heartbeat.go::runtimeKindMismatch --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/profile_restart.go::beginRuntimeProfileRestart --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/profile_restart_test.go (TestREQRUN010RuntimeKindMismatchSelfHealsEachHeartbeat) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/profile_restart_test.go (TestREQRUN010ReadyRuntimeForSelectedProfileIsNotRestarted) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQRUN010CrashedVllmRuntimeIsNotHotRelaunched) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/profile_restart_test.go (TestREQRUN010LlamaProfileWithoutRestartSeamFailsClosed) -->
 7. A runtime stop/restart attempt is timeout-bounded, releases the restart latch, marks failure on timeout, and allows later heartbeat retry. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/profile_restart.go::finishProfileRestart --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/profile_restart.go::restartCtx --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/profile_restart_test.go (TestREQRUN010RestartLatchReleasedWhenRuntimeHangs) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
@@ -460,6 +460,68 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-015](#req-run-015-direct-llamacpp-launch-rendering), [REQ-RUN-019](#req-run-019-direct-projector-control)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-021: Direct vLLM custom profiles
+
+**Intent:** Operators must be able to add, tune, and version direct vLLM profiles that serve a Hugging Face safetensors repository on a single CUDA node, with the same console and automation surfaces as the other runtimes, while split serving remains MeshLLM-only.
+
+**Applies To:** Admin, Node Agent
+
+**Acceptance Criteria:**
+
+1. `POST /admin/profiles/add` and its automation twin with runtime `vllm` and serving mode `single` create an inactive direct profile with source mode `vllm-hf` whose reference is a bare Hugging Face repository; a llama-style `:quant` file tag is rejected with `400 invalid_model_ref`, and serving mode `split` with any non-MeshLLM runtime is rejected with `400 split_requires_meshllm`. <!-- @impl: packages/router-worker/src/handlers/models.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/handlers/models.ts::handleApiModelAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 adds and configures a direct vLLM profile through the admin paths) -->
+
+2. `POST /admin/profiles/config` and its automation twin accept a `vllm` settings block validating max concurrent sequences (integer ≥ 1, null clears to Auto), GPU memory utilization (a fraction in (0, 1], null clears), compute dtype against vLLM's dtype vocabulary, an open quantization-method string, context window (0 = Auto or ≥ 4096), and a bind port that never collides with the agent's reserved ports; invalid values return 400 without persisting. <!-- @impl: packages/router-worker/src/profile-config.ts::configureVllmProfile --> <!-- @impl: packages/router-worker/src/profile-config.ts::resolveVllmSettings --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 adds and configures a direct vLLM profile through the admin paths) -->
+
+3. New-profile bind-port allocation scans every runtime's settings block — meshllm, llamacpp, and vllm — so profiles of different runtimes never collide on a node port. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 advances new bind ports past every runtime block including vllm) -->
+
+4. A stored vLLM profile round-trips normalization unchanged: the vllm arm precedes the unknown-runtime fallback, so a router rollback boundary is the only path that could repatriate it to meshllm. <!-- @impl: packages/router-worker/src/profiles.ts::normalizeModelProfile --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-021 round-trips a stored vllm profile without meshllm repatriation) -->
+
+5. A chat request for a vLLM profile dispatches direct to a pinned eligible node with session affinity, rewrites the public alias to the profile's Hugging Face repository, and crosses the Worker-to-node credential boundary with only the upstream token. <!-- @impl: packages/router-worker/src/inference.ts::runDirectInference --> <!-- @impl: packages/router-worker/src/scheduler.ts::isDirectEligible --> <!-- @test: packages/router-worker/src/router-routing.test.ts (REQ-RUN-021 dispatches a vllm profile direct with session affinity and the node credential boundary) -->
+
+6. The node agent treats `vllm` as a managed runtime kind: the shared launch table starts and restarts it, kind reconciliation heals mismatches in both directions, and the launch profile key includes the vLLM settings so a saved configuration or version change re-keys and restarts the runtime. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_launch.go::startVllmRuntime --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/profile_restart.go::restartVllmRuntime --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_state.go::profileKey --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQRUN021VllmIsAManagedRuntimeKind) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQRUN021ProfileKeyHashesVllmSettings) -->
+
+7. The console exposes the vLLM surface end to end: the model drawer loads and saves the four vLLM tunables and shows the launch source, the model card carries a `vllm` runtime pill, the node drawer reports the installed vLLM version, and Settings lists, defaults, and persists the desired vLLM release tag alongside its siblings. <!-- @impl: packages/router-worker/src/client/drawers.ts::openModelDrawer --> <!-- @impl: packages/router-worker/src/runtime-versions.ts::desiredRuntimeVersions --> <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsSelect --> <!-- @impl: packages/router-worker/src/admin-ui-views.ts::settingsSection --> <!-- @test: packages/router-worker/src/admin-ui-models.test.ts (REQ-RUN-021 loads and saves direct vLLM runtime tunables from the model drawer) --> <!-- @test: packages/router-worker/src/admin-ui-playground.test.ts (REQ-RUN-021 a vllm model card carries its runtime pill attribute) --> <!-- @test: packages/router-worker/src/admin-ui-nodes.test.ts (REQ-RUN-021 vllm node drawer reports the installed vllm version) --> <!-- @test: packages/router-worker/src/admin-ui-settings.test.ts (REQ-RUN-021 renders and saves the vllm runtime version control from Settings) --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-RUN-021 resolves the desired vllm version alongside its siblings) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-RUN-013](#req-run-013-direct-llamacpp-custom-profiles), [REQ-SCH-004](state-scheduling.md#req-sch-004-direct-session-affinity)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-022: Direct vLLM launch rendering
+
+**Intent:** Saved vLLM profile settings must become deterministic `vllm serve` launch arguments on the node, and the managed process must be judged ready only by its own OpenAI-compatible API.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. The node agent renders saved vLLM settings into deterministic launch arguments: `serve <hfRepo>` with `--served-model-name`, the profile's bind port as `--port`, and a fixed context window as `--max-model-len`. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::RenderVllmArgs --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmRenderArgsCoreContract) -->
+
+2. Unset tunables are omitted from the argv entirely — Auto means vLLM's model-derived defaults rule, never a fabricated flag value. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::RenderVllmArgs --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmRenderArgsOmitsUnsetTunables) -->
+
+3. The manager reports runtime kind `vllm` and launches the installed venv binary; readiness polls the runtime's own `/v1/models` on the bound port, treats connection-refused as still loading under a generous first-load deadline (model download plus load), and fails closed with a readiness error when the deadline passes or the process exits before readiness. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::VllmManager --> <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::awaitReadiness --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmManagerIdentityAndTarget) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmReadinessTreatsConnectionRefusedAsLoading) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmReadinessDeadlineFailsClosed) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmExitBeforeReadinessFailsRuntime) -->
+
+4. The drain gate counts a direct vLLM runtime's in-flight work as its running plus waiting engine requests, so a profile switch drains the continuous-batch queue depth, not just active decodes. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::Inflight --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmInflightCountsRunningAndWaiting) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-021](#req-run-021-direct-vllm-custom-profiles), [REQ-NODE-017](node-agent.md#req-node-017-vllm-runtime-bootstrap), [REQ-SEC-013](security.md#req-sec-013-vllm-api-exposure)
 
 **Verification:** Automated test
 

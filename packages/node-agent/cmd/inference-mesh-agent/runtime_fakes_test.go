@@ -214,6 +214,15 @@ type fakeKindRuntime struct {
 
 func (f *fakeKindRuntime) Runtime() string { return f.kind }
 
+// stopBusyRuntime simulates a manager whose shutdown is already owned by a
+// concurrent Stop: the cross-runtime switch must not start a replacement.
+type stopBusyRuntime struct{ *fakeMeshRuntime }
+
+func (f *stopBusyRuntime) Stop(context.Context) error {
+	f.record("stop")
+	return agent.ErrStopInProgress
+}
+
 // fakeSeamlessRuntime hides the embedded fake's RestartWithInput behind an
 // incompatible signature, yielding a RuntimeManager that satisfies neither
 // restart seam (not *agent.MeshLLMManager, not meshInputRestarter).

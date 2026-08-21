@@ -205,7 +205,7 @@ POST /admin/playground/chat
 
 **Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
-**Request body:** JSON body with `gatewayId` (the target gateway) and `route` (the dynamic route to forward as `dynamic/<route>`), plus `messages` (chat message array) and, for direct llama.cpp-backed routes, `user` in the grammar `user:<id>|session:<id>`. The Admin console supplies a stable browser-session `user` automatically.
+**Request body:** JSON body with `gatewayId` (the target gateway) and `route` (the dynamic route to forward as `dynamic/<route>`), plus `messages` (chat message array) and, for direct-runtime-backed routes (llama.cpp or vLLM), `user` in the grammar `user:<id>|session:<id>`. The Admin console supplies a stable browser-session `user` automatically.
 
 Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer generation cap) are forwarded to the upstream route as `tools` and `max_tokens` when supplied, so an agentic (tool-calling) request can be reproduced and a runaway response bounded; when absent, neither is sent. The body is optional — absent fields fall back to the resolved gateway defaults — but a present, malformed body is rejected with the shared `400` `invalid_json`. A non-admin (read-only user) caller's `gatewayId` and `route` are ignored and forced to the default gateway and route, so a viewer cannot target an arbitrary gateway.
 
@@ -234,7 +234,7 @@ POST /admin/playground/direct-chat
 
 **Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
-**Request body:** JSON body with `model` (an internal callable model), `messages`, and — for direct llama.cpp profiles — `user` in the grammar `user:<id>|session:<id>`. The Admin console supplies a stable browser-session value automatically. Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer cap, forwarded as `max_tokens`) are passed through when supplied. `model` is required; a present, malformed body is rejected with the shared `400` `invalid_json`.
+**Request body:** JSON body with `model` (an internal callable model), `messages`, and — for direct profiles (llama.cpp or vLLM) — `user` in the grammar `user:<id>|session:<id>`. The Admin console supplies a stable browser-session value automatically. Optional `tools` (an OpenAI-format tool-definitions array) and `maxTokens` (a positive integer cap, forwarded as `max_tokens`) are passed through when supplied. `model` is required; a present, malformed body is rejected with the shared `400` `invalid_json`.
 
 **Response**
 
@@ -799,18 +799,18 @@ POST /admin/profiles/add
 
 **Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
-**Request body:** JSON body with `modelRef` (required, trimmed, non-empty), `mode` (`single` or `split`, default `single`), `runtime` (`meshllm` or `llamacpp`, default `meshllm`), optional `name` (display name; defaults to the model-file segment), and optional `meshId` (an existing mesh id; absent means the default mesh). Mode `split` builds a MeshLLM layer-package profile and forces `runtime: "meshllm"`; `runtime: "llamacpp"` is single-machine only and creates a direct cache-local profile. The profile id and own callable alias are derived from the reference.
+**Request body:** JSON body with `modelRef` (required, trimmed, non-empty), `mode` (`single` or `split`, default `single`), `runtime` (`meshllm`, `llamacpp`, or `vllm`, default `meshllm`), optional `name` (display name; defaults to the model-file segment), and optional `meshId` (an existing mesh id; absent means the default mesh). Mode `split` builds a MeshLLM layer-package profile and forces `runtime: "meshllm"`; `runtime: "llamacpp"` and `runtime: "vllm"` are single-machine only and create direct profiles. A vLLM reference is a bare Hugging Face safetensors repository — a llama-style `:quant` file tag is rejected because vLLM does not load GGUF files in-tree. The profile id and own callable alias are derived from the reference.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `201` | A new inactive profile is created in its mesh carrying that mesh's stable alias (`codeflare-mesh` for the default mesh) with `rolloutPercent` zero, `split` set per mode for MeshLLM, `runtime` set to the selected runtime, and a `profile_added` audit event records the reference and mesh. | `{ "ok": true, "profileId": string, "displayName": string, "split": boolean, "runtime": "meshllm" \| "llamacpp" }` |
-| `400` | `modelRef` is missing/blank, `runtime` is invalid, `runtime: "llamacpp"` was requested with `mode: "split"`, or `meshId` named no existing mesh. | `{ "error": "invalid_model_ref" \| "invalid_runtime" \| "split_requires_meshllm" \| "unknown_mesh", "requestId": string }` |
+| `201` | A new inactive profile is created in its mesh carrying that mesh's stable alias (`codeflare-mesh` for the default mesh) with `rolloutPercent` zero, `split` set per mode for MeshLLM, `runtime` set to the selected runtime, and a `profile_added` audit event records the reference and mesh. | `{ "ok": true, "profileId": string, "displayName": string, "split": boolean, "runtime": "meshllm" \| "llamacpp" \| "vllm" }` |
+| `400` | `modelRef` is missing/blank or carries a `:quant` tag with `runtime: "vllm"`, `runtime` is invalid, a direct runtime was requested with `mode: "split"`, or `meshId` named no existing mesh. | `{ "error": "invalid_model_ref" \| "invalid_runtime" \| "split_requires_meshllm" \| "unknown_mesh", "requestId": string }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 | `409` | The reference's derived profile id already exists. | `{ "error": "duplicate_profile", "profileId": string, "requestId": string }` |
 
-**Implements:** [REQ-RUN-011](../../sdd/spec/runtime-profiles.md), [REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles), [REQ-ADM-025](../../sdd/spec/setup-admin.md), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
+**Implements:** [REQ-RUN-011](../../sdd/spec/runtime-profiles.md), [REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles), [REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles), [REQ-ADM-025](../../sdd/spec/setup-admin.md), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 ### POST /admin/profiles/config
 
@@ -824,9 +824,9 @@ POST /admin/profiles/config
 
 **Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
-**Request body:** JSON body with `profileId` (required) plus any of `runtime` (`meshllm` or `llamacpp`), `contextWindow`, `modelRef` (non-empty string), `maxVramGb` (MeshLLM-only number `≥ 0`, `0` = no cap), `name` (display name; non-blank), `callName` (slugified callable alias; non-empty, not a reserved mesh stable alias — neither `codeflare-mesh` nor any name starting with `codeflare-mesh-` — and not a collision), and `meshId` (an existing mesh id; moves the model to that machine group).
+**Request body:** JSON body with `profileId` (required) plus any of `runtime` (`meshllm`, `llamacpp`, or `vllm`), `contextWindow`, `modelRef` (non-empty string), `maxVramGb` (MeshLLM-only number `≥ 0`, `0` = no cap), `name` (display name; non-blank), `callName` (slugified callable alias; non-empty, not a reserved mesh stable alias — neither `codeflare-mesh` nor any name starting with `codeflare-mesh-` — and not a collision), and `meshId` (an existing mesh id; moves the model to that machine group).
 
-A changed call name keeps the profile's mesh stable alias. A changed `meshId` swaps in the new mesh's stable alias, deactivates the model (rollout zero) so it arrives switched off in its new mesh, bumps the profile version, and appends a `model_mesh_assigned` audit event with `{ "from": string, "to": string }`. Each field besides `profileId` is optional; an omitted field is left unchanged. The context window accepts `0` for Auto on both runtimes (direct llama.cpp Auto renders `--ctx-size 0`, loading the model's native training context); a fixed direct llama.cpp value must be at least `4096`.
+A changed call name keeps the profile's mesh stable alias. A changed `meshId` swaps in the new mesh's stable alias, deactivates the model (rollout zero) so it arrives switched off in its new mesh, bumps the profile version, and appends a `model_mesh_assigned` audit event with `{ "from": string, "to": string }`. Each field besides `profileId` is optional; an omitted field is left unchanged. The context window accepts `0` for Auto on every runtime (direct llama.cpp Auto renders `--ctx-size 0`, loading the model's native training context; direct vLLM Auto omits `--max-model-len` so vLLM derives it from the model); a fixed direct value must be at least `4096`.
 
 MeshLLM profiles accept the per-model runtime tunables: `parallel`, `batch`, `ubatch`, `maxOutputTokens` (positive integers), `cacheTypeK` / `cacheTypeV` (`f16` \| `q8_0` \| `q4_0`), `flashAttn` (boolean), `toolEmulation` (boolean; `true` forces mesh-llm's server-side tool-call emulation for models whose template advertises a native tool grammar mesh-llm cannot parse; `null`/`false` restores native), `wireDtype` (`f16` \| `f32` \| `q8`; stage-lane activation precision), `prefillChunking` (`fixed` \| `adaptive-ramp`; prefill burst pacing), and `prefillChunkSize` (positive integer for fixed pacing).
 
@@ -842,17 +842,21 @@ The launch source comprises `hfRepo`, `quant`, and optional `hfFile`. The model 
 
 New direct llama.cpp profiles apply the proven direct defaults: context Auto (`0`), parallel Auto (`-1`), unified KV on, GPU layers `99`, `q4_0` KV cache, batch `8192`, micro-batch `2048`, flash attention on, prompt cache on with reuse `256`, generation cap `16384`, and `deepseek` reasoning. ([REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles))
 
+Direct vLLM profiles accept a `vllm` block: `maxNumSeqs` (integer `>= 1`; `null`/`0` clears to Auto), `gpuMemoryUtilization` (number in `(0, 1]`; `null`/`0` clears), `dtype` (`auto` \| `half` \| `float16` \| `bfloat16` \| `float` \| `float32`; `null`/`""` clears), `quantization` (non-empty method string, e.g. `awq`, `gptq`, `fp8`; `null`/`""` clears to checkpoint auto-detect), `contextWindow` (`0` = Auto or `>= 4096`), and optional `bindPort` (reserved agent ports are rejected with `bind_port_conflict`). The model reference stays a bare Hugging Face repository; a `:quant` tag or a stored launch source that no longer reconstructs from the reference is refused. New vLLM profiles leave every tunable unset so vLLM's model-derived defaults rule. <!-- @impl: packages/router-worker/src/profile-config.ts::resolveVllmSettings --> ([REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles))
+
+An invalid `vllm` block answers `400` with `invalid_vllm`, `invalid_maxNumSeqs`, `invalid_gpuMemoryUtilization`, `invalid_dtype`, or `invalid_quantization`; the shared `invalid_contextWindow`, `invalid_bindPort`, and `invalid_hfRepo` tokens cover its numeric and source fields. Naming a `runtime` converts a direct profile between `llamacpp` and `vllm` (the stale source block is dropped); converting a direct profile back to `meshllm` is not supported and answers `invalid_model_config`. <!-- @impl: packages/router-worker/src/profile-config.ts::configureVllmProfile --> ([REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles))
+
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | The updated profile's settings (`displayName`/`callableNames` reflect a changed name or call name, `meshId` the profile's mesh); a `profile_configured` audit event records the context window, model reference, and runtime-relevant settings. | `{ "ok": true, "profileId": string, "contextWindow": number, "modelRef": string, "maxVramGb"?: number, "displayName": string, "callableNames": string[], "runtime"?: "meshllm" \| "llamacpp", "meshId"?: string }` |
-| `400` | `profileId` is missing, the mesh id named no existing mesh, or the context window, model reference, VRAM budget, display name, call name, runtime, or runtime tunable was invalid — including a launch source that no longer reconstructs from the reference or a quant tag that resolves no file. | `invalid_profile_config` / `unknown_mesh` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_mmproj` / `invalid_kv_unified` / `kv_unified_auto_conflict` / `invalid_reasoning` / `invalid_prefix_cache` / `invalid_llamacpp` / `invalid_hfRepo` / `invalid_cachePrompt` / `bind_port_conflict` / `invalid_quant_tag` / `model_source_mismatch` error body. |
+| `200` | The updated profile's settings (`displayName`/`callableNames` reflect a changed name or call name, `meshId` the profile's mesh); a `profile_configured` audit event records the context window, model reference, and runtime-relevant settings. | `{ "ok": true, "profileId": string, "contextWindow": number, "modelRef": string, "maxVramGb"?: number, "displayName": string, "callableNames": string[], "runtime"?: "meshllm" \| "llamacpp" \| "vllm", "meshId"?: string }` |
+| `400` | `profileId` is missing, the mesh id named no existing mesh, or the context window, model reference, VRAM budget, display name, call name, runtime, or runtime tunable was invalid — including a launch source that no longer reconstructs from the reference or a quant tag that resolves no file. | `invalid_profile_config` / `unknown_mesh` / `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_mmproj` / `invalid_kv_unified` / `kv_unified_auto_conflict` / `invalid_reasoning` / `invalid_prefix_cache` / `invalid_llamacpp` / `invalid_contextWindow` / `invalid_bindPort` / `invalid_hfRepo` / `invalid_cachePrompt` / `bind_port_conflict` / `invalid_quant_tag` / `model_source_mismatch` error body. |
 | `401` | Admin credential is missing or invalid. | Error object. |
 | `404` | No profile with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is a reserved mesh stable alias (`codeflare-mesh` or a `codeflare-mesh-` prefix) or collides with another model. | `call_name_conflict` error body. |
 
-**Implements:** [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity), [REQ-RUN-019](../../sdd/spec/runtime-profiles.md#req-run-019-direct-projector-control), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
+**Implements:** [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity), [REQ-RUN-019](../../sdd/spec/runtime-profiles.md#req-run-019-direct-projector-control), [REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
 ### POST /admin/profiles/delete
 
@@ -997,7 +1001,7 @@ GET /admin/runtime-versions
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Runtime release tags are served from cached GitHub release lists; stale caches are marked when a refresh fails. The `meshllm` entry also carries the binary source picture: `source` (`"official"`/`"fork"`), `officialRepository`, and — only when a fork is configured — `forkRepository`. | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string, "source": "official" \| "fork", "officialRepository": string, "forkRepository"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
+| `200` | Runtime release tags are served from cached GitHub release lists; stale caches are marked when a refresh fails. The `meshllm` entry also carries the binary source picture: `source` (`"official"`/`"fork"`), `officialRepository`, and — only when a fork is configured — `forkRepository`. The `vllm` tags come from `vllm-project/vllm` releases (GitHub-shaped, e.g. `v0.27.1`). | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string, "source": "official" \| "fork", "officialRepository": string, "forkRepository"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string }, "vllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 
 **Implements:** [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility), [REQ-NODE-014](../../sdd/spec/node-agent.md#req-node-014-configurable-runtime-release-source)
@@ -1014,15 +1018,15 @@ POST /admin/runtime-versions
 
 **Origin check:** Conditional for Access-backed mutations; requires same-origin `Origin`/`Referer` or `Sec-Fetch-Site: same-origin` / `none`. Bearer paths are exempt.
 
-**Request body:** JSON body with either or both of `meshllm` and `llamacpp`; or `{ "meshllmSource": "official" | "fork" }` to switch the mesh-llm binary source (posted on its own — source and version selection are separate operations).
+**Request body:** JSON body with any of `meshllm`, `llamacpp`, and `vllm`; or `{ "meshllmSource": "official" | "fork" }` to switch the mesh-llm binary source (posted on its own — source and version selection are separate operations).
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Runtime versions are validated against the release-tag lists, stored as desired versions, and recorded as a `runtime_versions_selected` audit event. | `{ "ok": true, "desired": { "meshllm": string, "llamacpp": string } }` |
+| `200` | Runtime versions are validated against the release-tag lists, stored as desired versions, and recorded as a `runtime_versions_selected` audit event. | `{ "ok": true, "desired": { "meshllm": string, "llamacpp": string, "vllm": string } }` |
 | `200` | A `meshllmSource` change is stored and recorded as a `runtime_source_selected` audit event. | `{ "ok": true, "source": "official" \| "fork" }` |
-| `400` | No version was supplied, a value is invalid, a tag is absent from the corresponding release list, the source is unknown, or a `fork` source was requested with no fork configured. | `{ "error": "invalid_runtime_versions" }`, `{ "error": "invalid_meshllm_version" }`, `{ "error": "invalid_llamacpp_version" }`, `{ "error": "unknown_meshllm_version", "version": string }`, `{ "error": "unknown_llamacpp_version", "version": string }`, `{ "error": "invalid_meshllm_source" }`, or `{ "error": "meshllm_fork_unavailable" }` |
+| `400` | No version was supplied, a value is invalid, a tag is absent from the corresponding release list, the source is unknown, or a `fork` source was requested with no fork configured. | `{ "error": "invalid_runtime_versions" }`, `{ "error": "invalid_meshllm_version" }`, `{ "error": "invalid_llamacpp_version" }`, `{ "error": "invalid_vllm_version" }`, `{ "error": "unknown_meshllm_version", "version": string }`, `{ "error": "unknown_llamacpp_version", "version": string }`, `{ "error": "unknown_vllm_version", "version": string }`, `{ "error": "invalid_meshllm_source" }`, or `{ "error": "meshllm_fork_unavailable" }` |
 | `401` | Admin credential is missing or invalid. | `{ "error": "unauthorized" }` |
 
 **Implements:** [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility), [REQ-NODE-014](../../sdd/spec/node-agent.md#req-node-014-configurable-runtime-release-source)

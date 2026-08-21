@@ -22,7 +22,8 @@ const CHIP_TONES: ReadonlyArray<readonly [tone: string, color: string, line: str
   ['green', 'rgb(var(--pill-green-rgb))', 'rgb(var(--pill-green-rgb)/.4)'],
   ['blue', 'rgb(var(--pill-blue-rgb))', 'rgb(var(--pill-blue-rgb)/.4)'],
   ['orange', 'rgb(var(--pill-orange-rgb))', 'rgb(var(--pill-orange-rgb)/.4)'],
-  ['purple', 'rgb(var(--pill-purple-rgb))', 'rgb(var(--pill-purple-rgb)/.4)']
+  ['purple', 'rgb(var(--pill-purple-rgb))', 'rgb(var(--pill-purple-rgb)/.4)'],
+  ['teal', 'rgb(var(--pill-teal-rgb))', 'rgb(var(--pill-teal-rgb)/.4)']
 ]
 
 function chipToneCss(): string {
@@ -62,6 +63,7 @@ export function adminUiCss(): string {
   --pill-blue-rgb:96 165 250;
   --pill-orange-rgb:251 146 60;
   --pill-purple-rgb:192 132 252;
+  --pill-teal-rgb:45 212 191;
   --danger:#ef4444;
   --danger-text:#f87171;
   --danger-hover:#dc2626;

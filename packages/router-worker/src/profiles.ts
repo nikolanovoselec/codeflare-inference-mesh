@@ -133,7 +133,10 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
   const slug = slugifyModelRef(ref)
   const segment = modelRefSegment(ref)
   const name = input.name?.trim()
-  const highestBindPort = input.existing.reduce((max, profile) => Math.max(max, profile.meshllm?.bindPort ?? profile.llamacpp?.bindPort ?? BIND_PORT_BASE), BIND_PORT_BASE)
+  // The scan must see every runtime's bind port: a new profile of any kind
+  // advances past the highest port across all three blocks, or two runtimes
+  // could collide on the same node port.
+  const highestBindPort = input.existing.reduce((max, profile) => Math.max(max, profile.meshllm?.bindPort ?? profile.llamacpp?.bindPort ?? profile.vllm?.bindPort ?? BIND_PORT_BASE), BIND_PORT_BASE)
   const bindPort = highestBindPort + BIND_PORT_STEP
   const common = {
     displayName: name && name.length > 0 ? name : segment,
@@ -176,6 +179,24 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
       }
     }
   }
+  if (runtime === 'vllm') {
+    // A vLLM ref is the bare HF safetensors repo (parseLlamaCppModelRef is
+    // HF-generic; the add paths reject :quant tags before building). Tunables
+    // start unset so vLLM's model-derived defaults rule; context 0 = Auto.
+    const parsed = parseLlamaCppModelRef(ref)
+    return {
+      id: `custom-${slug}-vllm`,
+      ...common,
+      sourceMode: 'vllm-hf',
+      contextWindow: 0,
+      runtime,
+      vllm: {
+        hfRepo: parsed.hfRepo,
+        bindPort,
+        contextWindow: 0
+      }
+    }
+  }
   const payloadMode = meshllmPayloadMode(ref)
   return {
     id: `custom-${slug}${input.split ? '-split' : ''}`,
@@ -212,11 +233,11 @@ export function buildCustomProfile(input: { modelRef: string; split: boolean; ex
 export function buildDuplicateProfile(source: ModelProfile, existing: readonly ModelProfile[]): ModelProfile {
   const ownAlias = source.publicAliases.find((alias) => alias !== STABLE_PUBLIC_MODEL && !alias.startsWith(`${STABLE_PUBLIC_MODEL}-`))
   const base = slugify(ownAlias ?? source.id)
-  const duplicateId = (slug: string) => (source.runtime === 'llamacpp' ? `custom-${slug}-llamacpp` : `custom-${slug}`)
+  const duplicateId = (slug: string) => (source.runtime === 'llamacpp' ? `custom-${slug}-llamacpp` : source.runtime === 'vllm' ? `custom-${slug}-vllm` : `custom-${slug}`)
   const taken = new Set(existing.flatMap((profile) => [profile.id, ...profile.publicAliases]))
   let slug = `${base}-copy`
   for (let n = 2; taken.has(slug) || taken.has(duplicateId(slug)); n += 1) slug = `${base}-copy-${n}`
-  const highestBindPort = existing.reduce((max, profile) => Math.max(max, profile.meshllm?.bindPort ?? profile.llamacpp?.bindPort ?? BIND_PORT_BASE), BIND_PORT_BASE)
+  const highestBindPort = existing.reduce((max, profile) => Math.max(max, profile.meshllm?.bindPort ?? profile.llamacpp?.bindPort ?? profile.vllm?.bindPort ?? BIND_PORT_BASE), BIND_PORT_BASE)
   const bindPort = highestBindPort + BIND_PORT_STEP
   return {
     ...source,
@@ -227,7 +248,8 @@ export function buildDuplicateProfile(source: ModelProfile, existing: readonly M
     rolloutPercent: 0,
     active: false,
     ...(source.meshllm ? { meshllm: { ...source.meshllm, bindPort } } : {}),
-    ...(source.llamacpp ? { llamacpp: { ...source.llamacpp, bindPort } } : {})
+    ...(source.llamacpp ? { llamacpp: { ...source.llamacpp, bindPort } } : {}),
+    ...(source.vllm ? { vllm: { ...source.vllm, bindPort } } : {})
   }
 }
 
@@ -278,6 +300,25 @@ export function normalizeModelProfile(profile: ModelProfile): ModelProfile {
         // the full per-request context on the next heartbeat without a migration.
         kvUnified: profile.llamacpp.kvUnified !== false,
         cacheReuse: profile.llamacpp.cacheReuse ?? LLAMACPP_PROFILE_DEFAULTS.cacheReuse
+      }
+    }
+  }
+  // The vllm arm must precede the unknown-runtime fallback below: a stored vllm
+  // profile crossing the fallback would be silently repatriated to meshllm —
+  // the data-loss path a router rollback after vllm profiles exist would take.
+  if (runtime === 'vllm' && profile.vllm) {
+    const { meshllm: _meshllm, ...withoutMesh } = profile
+    void _meshllm
+    return {
+      ...withoutMesh,
+      runtime,
+      meshId,
+      sourceMode: 'vllm-hf',
+      contextWindow: profile.contextWindow || profile.vllm.contextWindow,
+      upstreamModel: profile.upstreamModel || profile.vllm.hfRepo,
+      vllm: {
+        ...profile.vllm,
+        contextWindow: profile.vllm.contextWindow ?? profile.contextWindow ?? 0
       }
     }
   }

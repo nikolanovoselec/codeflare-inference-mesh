@@ -649,7 +649,7 @@ describe('router runtime profile and node contracts', () => {
     expect(select.ok).toBe(true)
     expect(claim.status).toBe(201)
     expect(claimed.desiredAgentVersion).toBe('v0.2.0')
-    expect(claimed.desiredRuntimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
+    expect(claimed.desiredRuntimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912', vllm: 'v0.27.1' })
     expect(claimed.meshBootstrap).toBeDefined()
     expect(['create', 'wait']).toContain(claimed.meshBootstrap!.action)
     expect(heartbeat.status).toBe(200)
@@ -657,7 +657,7 @@ describe('router runtime profile and node contracts', () => {
     expect(heartbeatResponse.meshBootstrap).toMatchObject({ action: 'create' })
     expect(typeof heartbeatResponse.meshBootstrap!.rotation).toBe('number')
     expect(heartbeatResponse.desiredAgentVersion).toBe('v0.2.0')
-    expect(heartbeatResponse.desiredRuntimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
+    expect(heartbeatResponse.desiredRuntimeVersions).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912', vllm: 'v0.27.1' })
     expect(node?.agentVersion).toBe('v0.1.0')
   })
 

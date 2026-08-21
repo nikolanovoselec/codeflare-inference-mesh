@@ -231,7 +231,7 @@ function addModelCard(): string {
 <div class="form-grid">
 ${field({ id: 'model-add-name', label: 'Name', control: textInput({ id: 'model-add-name', name: 'name', placeholder: 'e.g. Fast Coder' }), hint: 'Shown in the console. Leave blank to name it after the model file.' })}
 ${field({ id: 'model-add-mode', label: 'Serving', control: '<span class="slot"><select id="model-add-mode" name="mode" data-model-add-mode="true"><option value="single">Single machine (full model each)</option><option value="split">Split across machines</option></select></span>' })}
-${field({ id: 'model-add-runtime', label: 'Runtime', control: '<span class="slot"><select id="model-add-runtime" name="runtime" data-model-add-runtime="true"><option value="meshllm">mesh-llm (mesh / split)</option><option value="llamacpp">llama.cpp (direct cache-local)</option></select></span>', hint: 'llama.cpp is for single-machine coding sessions and requires body.user. Split models always use mesh-llm.' })}
+${field({ id: 'model-add-runtime', label: 'Runtime', control: '<span class="slot"><select id="model-add-runtime" name="runtime" data-model-add-runtime="true"><option value="meshllm">mesh-llm (mesh / split)</option><option value="llamacpp">llama.cpp (direct cache-local)</option><option value="vllm">vLLM (direct CUDA)</option></select></span>', hint: 'llama.cpp is for single-machine coding sessions and requires body.user. vLLM serves Hugging Face repos directly on Linux + NVIDIA CUDA machines. Split models always use mesh-llm.' })}
 </div>
 <div class="form-grid">
 ${field({ id: 'model-add-ref', label: 'Model file', control: textInput({ id: 'model-add-ref', name: 'modelRef', placeholder: 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M' }), hint: 'The Hugging Face model file to serve, as repo:quant.' })}
@@ -334,6 +334,7 @@ ${field({ id: ADMIN_UI_RUNTIME_VERSION.meshllmSourceSelectId, label: 'MeshLLM bi
 <span class="slot" id="${ADMIN_UI_RUNTIME_VERSION.slotId}"><div class="form-grid">
 ${field({ id: ADMIN_UI_RUNTIME_VERSION.meshllmSelectId, label: 'MeshLLM version', control: emptySlotSelect(`${ADMIN_UI_RUNTIME_VERSION.slotId}-meshllm`, ADMIN_UI_RUNTIME_VERSION.meshllmSelectId, 'meshllmVersion', 'data-runtime-version-select="meshllm" data-stale="false"'), hint: 'Used by split and mesh-served profiles.' })}
 ${field({ id: ADMIN_UI_RUNTIME_VERSION.llamacppSelectId, label: 'llama.cpp version', control: emptySlotSelect(`${ADMIN_UI_RUNTIME_VERSION.slotId}-llamacpp`, ADMIN_UI_RUNTIME_VERSION.llamacppSelectId, 'llamacppVersion', 'data-runtime-version-select="llamacpp" data-stale="false"'), hint: 'Used by direct single-node profiles with session cache affinity.' })}
+${field({ id: ADMIN_UI_RUNTIME_VERSION.vllmSelectId, label: 'vLLM version', control: emptySlotSelect(`${ADMIN_UI_RUNTIME_VERSION.slotId}-vllm`, ADMIN_UI_RUNTIME_VERSION.vllmSelectId, 'vllmVersion', 'data-runtime-version-select="vllm" data-stale="false"'), hint: 'Used by direct vLLM profiles on Linux + NVIDIA CUDA machines.' })}
 </div></span>
 <div class="form-actions">${button({ action: 'runtime-versions-set', label: 'Apply runtime versions', out: 'runtime-version-output' })}</div>
 ${output({ id: 'runtime-version-output', kind: 'runtime-version', pre: true })}</div>

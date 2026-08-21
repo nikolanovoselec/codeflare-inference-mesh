@@ -17,6 +17,7 @@ type ModelProfile struct {
 	Runtime        string            `json:"runtime"`
 	MeshLLM        MeshLLMSettings   `json:"meshllm"`
 	LlamaCpp       LlamaCppSettings  `json:"llamacpp"`
+	Vllm           VllmSettings      `json:"vllm"`
 	Version        int               `json:"version"`
 	RolloutPercent int               `json:"rolloutPercent"`
 	Active         bool              `json:"active"`
@@ -50,6 +51,20 @@ type LlamaCppSettings struct {
 	GPULayers       string             `json:"gpuLayers,omitempty"`
 	Alias           string             `json:"alias"`
 	Reasoning       *ReasoningSettings `json:"reasoning,omitempty"`
+}
+
+// VllmSettings carries a direct vLLM profile's launch settings. A vLLM model
+// reference IS the bare HF safetensors repo, so HfRepo is the single ref field.
+// Optional tunables at their zero value are omitted from the rendered argv so
+// vLLM's model-derived defaults rule (REQ-RUN-021 / REQ-RUN-022).
+type VllmSettings struct {
+	HfRepo               string  `json:"hfRepo"`
+	BindPort             int     `json:"bindPort"`
+	ContextWindow        int     `json:"contextWindow"`
+	MaxNumSeqs           int     `json:"maxNumSeqs,omitempty"`
+	GpuMemoryUtilization float64 `json:"gpuMemoryUtilization,omitempty"`
+	Dtype                string  `json:"dtype,omitempty"`
+	Quantization         string  `json:"quantization,omitempty"`
 }
 
 type MeshLLMSettings struct {

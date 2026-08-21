@@ -411,6 +411,20 @@ describe('dashboard throughput trace and playground contracts', () => {
   })
 
 
+  it('REQ-RUN-021 a vllm model card carries its runtime pill attribute', async () => {
+    // The runtime pill is a fixed vocabulary contract (data-runtime); a vllm
+    // profile must render its own value, not fall back to a sibling runtime's.
+    const meshes = [{ id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 }]
+    const profiles = [
+      { id: 'model-vllm', displayName: 'vLLM Model', upstreamModel: 'org/model', publicAliases: ['codeflare-mesh', 'org-model'], active: true, rolloutPercent: 100, runtime: 'vllm', vllm: { hfRepo: 'org/model', bindPort: 4400, contextWindow: 0 } }
+    ]
+    const nodes = [{ id: 'node-vllm', status: 'online', runtime: 'vllm', activeProfileIds: ['model-vllm'], metrics: { runtimeKind: 'vllm', runtimeState: 'ready', activeRequests: 0, readyModels: ['org/model'], platform: 'linux', cudaAvailable: true } }]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles, nodes, meshes }) })
+    const row = descendants(harness.byId('overview-mesh')).find((el) => el.getAttribute('data-mesh-status') === 'default')!
+    expect(descendants(row).find((el) => el.getAttribute('data-runtime') !== null)!.getAttribute('data-runtime')).toBe('vllm')
+  })
+
+
   it('REQ-ADM-039 overview mesh status cards summarize each mesh: model, machines, serving, last speed test', async () => {
     const meshes = [
       { id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 },

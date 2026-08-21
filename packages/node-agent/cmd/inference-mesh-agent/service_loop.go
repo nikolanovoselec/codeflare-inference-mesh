@@ -68,6 +68,9 @@ type serviceLoop struct {
 	goos           string
 	warpIface      string
 	deactivated    bool
+	// cudaProbe overrides the nvidia-smi lookup that feeds the observed
+	// cudaAvailable capability field; nil means the real probe. REQ-NODE-016.
+	cudaProbe func() bool
 
 	restartMu      sync.Mutex
 	restartPending bool

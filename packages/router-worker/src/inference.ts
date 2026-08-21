@@ -49,7 +49,7 @@ async function runDirectInference(deps: InferenceDeps, input: { body: Record<str
   const session = parseDirectSession(input.body.user)
   if (!session) {
     await deps.store.appendAudit({ id: input.requestId, type: 'direct_session_rejected', at: input.now, actor: 'provider', target: profile.id, detail: { publicModel, reason: 'invalid_user' } })
-    return json({ error: 'session_required', message: 'llamacpp profiles require body.user formatted as user:<id>|session:<id>', requestId: input.requestId }, 400, input.requestId)
+    return json({ error: 'session_required', message: 'direct profiles require body.user formatted as user:<id>|session:<id>', requestId: input.requestId }, 400, input.requestId)
   }
   const secret = directAffinitySecret(deps.env)
   if (!secret) return json({ error: 'session_affinity_key_missing', requestId: input.requestId }, 503, input.requestId)

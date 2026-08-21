@@ -29,7 +29,7 @@ Codeflare Inference Mesh provides one stable AI Gateway route for private local 
 | Router Worker | [router-worker.md](spec/router-worker.md) | Worker routes, auth gates, request rewriting, Mesh forwarding, and streaming. | P0 |
 | State And Scheduling | [state-scheduling.md](spec/state-scheduling.md) | D1 records, mesh seed election, stateless entry-node selection, and scheduler miss behavior. | P0 |
 | Node Agent | [node-agent.md](spec/node-agent.md) | Node claim, heartbeat, local UI, upstream proxy, and service lifecycle. | P0 |
-| Runtime Profiles | [runtime-profiles.md](spec/runtime-profiles.md) | Stable public aliases, MeshLLM mesh profiles, private mesh formation, split serving, and runtime supervision. | P1 |
+| Runtime Profiles | [runtime-profiles.md](spec/runtime-profiles.md) | Stable public aliases, MeshLLM mesh profiles, private mesh formation, split serving, direct llama.cpp and vLLM profiles, and runtime supervision. | P1 |
 | Setup And Admin | [setup-admin.md](spec/setup-admin.md) | First-run setup, admin session, setup tokens, and one-line installation. | P0 |
 | Security | [security.md](spec/security.md) | Credential classes, route-level authorization, token storage, and header filtering. | P0 |
 | Release And CI | [release-ci.md](spec/release-ci.md) | PR checks, deploy workflow, signed node-agent artifacts, and update metadata. | P1 |

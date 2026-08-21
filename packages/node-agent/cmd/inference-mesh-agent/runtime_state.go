@@ -84,6 +84,7 @@ func profileKey(profile agent.ModelProfile) string {
 		ContextWindow int
 		MeshLLM       agent.MeshLLMSettings
 		LlamaCpp      agent.LlamaCppSettings
+		Vllm          agent.VllmSettings
 	}{
 		Runtime:       profile.Runtime,
 		ID:            profile.ID,
@@ -92,6 +93,7 @@ func profileKey(profile agent.ModelProfile) string {
 		ContextWindow: profile.ContextWindow,
 		MeshLLM:       profile.MeshLLM,
 		LlamaCpp:      profile.LlamaCpp,
+		Vllm:          profile.Vllm,
 	}
 	encoded, err := json.Marshal(launch)
 	if err != nil {

@@ -210,6 +210,7 @@ export const ADMIN_UI_RUNTIME_VERSION = {
   meshllmSelectId: 'runtime-meshllm-version-select',
   meshllmSourceSelectId: 'runtime-meshllm-source-select',
   llamacppSelectId: 'runtime-llamacpp-version-select',
+  vllmSelectId: 'runtime-vllm-version-select',
   slotId: 'runtime-version-slot',
   staleAttribute: 'data-stale'
 } as const

@@ -275,10 +275,16 @@ func (m *LlamaCppManager) Stop(ctx context.Context) error {
 	proc := m.proc
 	done := m.done
 	cancel := m.cancel
-	if proc == nil || done == nil {
+	if proc == nil {
 		m.state = "stopped"
 		m.mu.Unlock()
 		return nil
+	}
+	if done == nil {
+		// A concurrent Stop owns this process's shutdown; fail loudly so a
+		// restart cannot swap input and report success without relaunching.
+		m.mu.Unlock()
+		return ErrStopInProgress
 	}
 	m.done = nil
 	m.state = "stopping"
@@ -340,6 +346,11 @@ func (m *LlamaCppManager) finishStop(proc meshProcess, cancel context.CancelFunc
 }
 
 func (m *LlamaCppManager) awaitReadiness(proc meshProcess) {
+	// The render input is swapped under m.mu on restart; capture the model this
+	// lifecycle is waiting for once, instead of racing the swap on every poll.
+	m.mu.Lock()
+	upstream := m.input.UpstreamModel
+	m.mu.Unlock()
 	deadline := time.NewTimer(m.readinessTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(m.pollInterval)
@@ -347,11 +358,19 @@ func (m *LlamaCppManager) awaitReadiness(proc meshProcess) {
 	for {
 		select {
 		case <-deadline.C:
-			m.SetFailure(fmt.Errorf("llama.cpp readiness timed out"))
+			// Only the goroutine still owning the live process may fail it: a
+			// restart orphans this loop, and the replacement runtime must not be
+			// marked failed by its predecessor's deadline.
+			m.mu.Lock()
+			if m.proc == proc {
+				m.state = "failed"
+				m.lastError = "llama.cpp readiness timed out"
+			}
+			m.mu.Unlock()
 			return
 		case <-ticker.C:
 			models, ok := m.pollModels(context.Background())
-			if ok && containsString(models, m.input.UpstreamModel) {
+			if ok && containsString(models, upstream) {
 				m.mu.Lock()
 				if m.proc == proc {
 					m.state = "ready"

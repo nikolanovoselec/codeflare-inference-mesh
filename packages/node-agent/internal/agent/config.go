@@ -15,6 +15,7 @@ import (
 type RuntimeBinaryVersions struct {
 	MeshLLM  string `json:"meshllm,omitempty"`
 	LlamaCpp string `json:"llamacpp,omitempty"`
+	Vllm     string `json:"vllm,omitempty"`
 	// MeshLLMRepository is the GitHub owner/repo whose releases serve mesh-llm
 	// binaries; empty means the upstream Mesh-LLM/mesh-llm (REQ-NODE-014).
 	MeshLLMRepository string `json:"meshllmRepository,omitempty"`

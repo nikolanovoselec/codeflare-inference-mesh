@@ -21,11 +21,11 @@ export interface TokenRecord {
 
 // The single source of runtime-kind truth: validators, dispatch, and the
 // versions registry all derive from these two consts.
-export const RUNTIME_KINDS = ['meshllm', 'llamacpp'] as const
+export const RUNTIME_KINDS = ['meshllm', 'llamacpp', 'vllm'] as const
 export type RuntimeKind = (typeof RUNTIME_KINDS)[number]
 /** Runtimes dispatched per-node with session affinity, not via mesh entry selection. */
-export const DIRECT_RUNTIMES: ReadonlySet<RuntimeKind> = new Set(['llamacpp'])
-export type ModelSourceMode = 'meshllm-ref' | 'llamacpp-hf'
+export const DIRECT_RUNTIMES: ReadonlySet<RuntimeKind> = new Set(['llamacpp', 'vllm'])
+export type ModelSourceMode = 'meshllm-ref' | 'llamacpp-hf' | 'vllm-hf'
 
 export interface MeshLLMProfileSettings {
   readonly modelRef: string
@@ -107,6 +107,21 @@ export interface LlamaCppProfileSettings {
   }
 }
 
+/**
+ * Direct vLLM profile settings (REQ-RUN-021). A vLLM model reference IS the
+ * bare HF safetensors repo, so hfRepo is the single ref field; unset tunables
+ * are omitted so vLLM's model-derived defaults rule.
+ */
+export interface VllmProfileSettings {
+  readonly hfRepo: string
+  readonly bindPort: number
+  readonly contextWindow: number
+  readonly maxNumSeqs?: number
+  readonly gpuMemoryUtilization?: number
+  readonly dtype?: string
+  readonly quantization?: string
+}
+
 export interface ModelProfile {
   readonly id: string
   readonly displayName: string
@@ -117,6 +132,7 @@ export interface ModelProfile {
   readonly runtime: RuntimeKind
   readonly meshllm?: MeshLLMProfileSettings
   readonly llamacpp?: LlamaCppProfileSettings
+  readonly vllm?: VllmProfileSettings
   readonly version: number
   readonly rolloutPercent: number
   readonly active: boolean
@@ -205,6 +221,14 @@ export interface NodeMetrics {
   readonly consoleReady?: boolean
   readonly meshllmVersion?: string
   readonly llamacppVersion?: string
+  readonly vllmVersion?: string
+  /**
+   * Observed host capabilities (REQ-NODE-016 / REQ-OBS-014): present only when
+   * the agent actually probed them. The vLLM scheduler gate fails closed on
+   * absence, so an observed false is a real answer distinct from "not reported".
+   */
+  readonly platform?: string
+  readonly cudaAvailable?: boolean
   readonly ctxSize?: number
   readonly parallel?: number
   readonly cachePrompt?: boolean

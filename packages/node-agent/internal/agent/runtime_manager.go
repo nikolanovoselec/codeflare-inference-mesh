@@ -5,10 +5,16 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 )
+
+// ErrStopInProgress reports a Stop that found another Stop mid-shutdown of the
+// same process. Restart paths propagate it as a failed restart so the heartbeat
+// retries, instead of swapping render input over a process that never relaunched.
+var ErrStopInProgress = errors.New("runtime stop already in progress")
 
 // RuntimeManager is what the agent service loop needs from any managed runtime.
 // Mesh coordination deliberately stays out of this contract: it lives on
