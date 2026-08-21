@@ -2,12 +2,12 @@ import { CloudflareAccessClient, type AccessProvisionRequest, type AccessProvisi
 import { adminUiHtml, type AdminUiState } from './admin-ui'
 import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
-import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed } from './auth'
+import { bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed } from './auth'
 import { authenticateAnyStoredToken, authenticateKind, authenticateTokenByNode, recordBreakGlassEntry, requireAdmin, requireAutomation, requireKeyAdmin, requireUser, resolveHostGate } from './auth-gates'
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayProvisionStatus, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
-import { decideDirectSession, directSessionKey, type DirectSessionDecision, type DirectSessionDecisionRequest } from './direct-affinity'
 import { InvalidJsonBodyError } from './errors'
-import { html, json, parseObject, rateLimited, readJson, readOptionalObject, responseMetadataHeaders } from './http'
+import { html, json, parseObject, rateLimited, readJson, readOptionalObject } from './http'
+import { resolveUpstreamToken, routablePublicModel, runInference } from './inference'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName, type MeshRecord } from './meshes'
@@ -16,7 +16,7 @@ import { applyNodeVramOverride, configureLlamaCppProfile, INVALID_MAX_VRAM, INVA
 import { isRateLimited } from './rate-limit'
 import { matchRoute, type Route } from './routes'
 import { activeMeshllmRepository, desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
-import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
+import { isSafeMeshTarget } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { singleActiveActivation } from './store'
 import type { ClaimRequest, HeartbeatRequest, LastSpeedTestSummary, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store, StoredCustomDomain } from './types'
@@ -211,84 +211,10 @@ async function handleChat(request: Request, deps: RouterDeps, requestId: string,
   return runInference(deps, { body, requestHeaders: request.headers, requestId, now })
 }
 
-// The forward path shared by the provider `/v1/chat/completions` route and the admin
-// Playground's direct target. Mesh profiles keep the stateless mesh-llm entry selection;
-// direct llama.cpp profiles require a stable `body.user` and use session affinity so a
-// coding conversation stays on the same cache-warm node. REQ-SCH-002 / REQ-SCH-004.
-async function runInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }): Promise<Response> {
-  const publicModel = routablePublicModel(input.body.model as string)
-  const profile = await deps.store.getProfileByPublicModel(publicModel)
-  if (!profile) return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
-  const normalized = { ...input, body: { ...input.body, model: publicModel } }
-  if (profile.runtime === 'llamacpp') return runDirectLlamaCppInference(deps, { ...normalized, body: directSessionBody(normalized.body, input.requestHeaders) }, publicModel, profile)
-  return runMeshInference(deps, normalized)
-}
 
-function routablePublicModel(model: string): string {
-  return model.startsWith('dynamic/') ? model.slice('dynamic/'.length) : model
-}
 
-async function runMeshInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }): Promise<Response> {
-  const publicModel = input.body.model as string
-  const selection = await deps.scheduler.selectEntryNode({ publicModel, now: input.now })
-  if (!selection.node || !selection.profile) {
-    if (selection.reason === 'no-profile') return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
-    return json({ error: 'no_healthy_node', requestId: input.requestId }, 503, input.requestId)
-  }
-  return forwardInference(deps, input, selection.node, selection.profile)
-}
 
-async function runDirectLlamaCppInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }, publicModel: string, profile: ModelProfile): Promise<Response> {
-  const session = parseDirectSession(input.body.user)
-  if (!session) {
-    await deps.store.appendAudit({ id: input.requestId, type: 'direct_session_rejected', at: input.now, actor: 'provider', target: profile.id, detail: { publicModel, reason: 'invalid_user' } })
-    return json({ error: 'session_required', message: 'llamacpp profiles require body.user formatted as user:<id>|session:<id>', requestId: input.requestId }, 400, input.requestId)
-  }
-  const secret = directAffinitySecret(deps.env)
-  if (!secret) return json({ error: 'session_affinity_key_missing', requestId: input.requestId }, 503, input.requestId)
-  const userHash = `hmac-sha256:${await hmacHex(secret, session.userId)}`
-  const sessionHash = `hmac-sha256:${await hmacHex(secret, session.sessionId)}`
-  const affinityHash = `hmac-sha256:${await hmacHex(secret, `${session.userId}|${session.sessionId}`)}`
-  const candidates = eligibleDirectNodes(await deps.store.listNodes(input.now), profile, publicModel, input.now, deps.env)
-  const decision = await decideDirectSessionWithAffinity(deps, {
-    affinityKey: directSessionKey(publicModel, profile.id, affinityHash),
-    profileId: profile.id,
-    publicModel,
-    userHash,
-    sessionHash,
-    candidates,
-    now: input.now
-  })
-  if (!decision.node || !decision.affinity) return json({ error: 'no_healthy_node', requestId: input.requestId }, 503, input.requestId)
-  await deps.store.appendAudit({ id: input.requestId, type: `direct_session_${decision.affinity === 'failed_over' ? 'failed_over' : decision.affinity}`, at: input.now, actor: 'provider', target: profile.id, detail: { profileId: profile.id, publicModel, nodeId: decision.node.id, affinityKey: decision.session?.affinityKey ?? '', userHash, sessionHash, reason: decision.affinity === 'reused' ? 'healthy_pin' : decision.affinity === 'failed_over' ? 'node_unhealthy' : 'new' } })
-  const response = await forwardInference(deps, input, decision.node, profile)
-  response.headers.set('x-inference-mesh-affinity', decision.affinity)
-  response.headers.set('x-inference-mesh-session-node', decision.node.id)
-  return response
-}
 
-async function forwardInference(deps: RouterDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string }, node: NodeRecord, profile: ModelProfile): Promise<Response> {
-  const upstreamToken = await resolveUpstreamToken(deps)
-  if (!upstreamToken) return json({ error: 'upstream_token_missing', requestId: input.requestId }, 503, input.requestId)
-
-  const rewritten = JSON.stringify({ ...input.body, model: profile.upstreamModel })
-  let upstream: Response
-  try {
-    upstream = await deps.mesh.fetch(meshUrl(node, '/v1/chat/completions', deps.env), {
-      method: 'POST',
-      headers: approvedNodeHeaders(input.requestHeaders, upstreamToken, input.requestId),
-      body: rewritten,
-      redirect: 'manual'
-    })
-  } catch {
-    return json({ error: 'node_unreachable', requestId: input.requestId }, 502, input.requestId)
-  }
-  if (upstream.status >= 300 && upstream.status < 400) return json({ error: 'node_redirect_rejected', requestId: input.requestId }, 502, input.requestId)
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: responseMetadataHeaders(upstream.headers, input.requestId, node.id)
-  })
-}
 
 async function handleNodeClaim(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   const setupToken = await authenticateAnyStoredToken(request, deps.store, 'setup', now)
@@ -1475,73 +1401,16 @@ function usableWorkerBaseUrl(value: string | undefined): string | undefined {
   return cleaned
 }
 
-async function resolveUpstreamToken(deps: RouterDeps): Promise<string | undefined> {
-  return deps.env.NODE_UPSTREAM_TOKEN ?? await deps.store.getConfig<string>('node_upstream_token')
-}
 
-function parseDirectSession(value: unknown): { readonly userId: string; readonly sessionId: string } | undefined {
-  if (typeof value !== 'string') return undefined
-  const match = /^user:([^|\r\n]{1,256})\|session:([^|\r\n]{1,256})$/.exec(value)
-  return match ? { userId: match[1]!, sessionId: match[2]! } : undefined
-}
 
-function directSessionBody(body: Record<string, unknown>, headers: Headers): Record<string, unknown> {
-  if (parseDirectSession(body.user)) return body
-  const fallback = gatewayMetadataDirectSession(headers, body.metadata) ?? providerDefaultDirectSession(headers)
-  return fallback ? { ...body, user: fallback } : body
-}
 
-function gatewayMetadataDirectSession(headers: Headers, bodyMetadata: unknown): string | undefined {
-  const metadata = parseGatewayMetadata(headers.get('cf-aig-metadata')) ?? parseGatewayMetadataObject(bodyMetadata)
-  const user = directSessionPart(metadata?.user)
-  if (!user) return undefined
-  const session = directSessionPart(metadata?.session) ?? user
-  return `user:${user}|session:${session}`
-}
 
-function parseGatewayMetadata(value: string | null): Record<string, unknown> | undefined {
-  if (!value) return undefined
-  try {
-    return parseGatewayMetadataObject(JSON.parse(value) as unknown)
-  } catch {
-    return undefined
-  }
-}
 
-function parseGatewayMetadataObject(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
-}
 
-function directSessionPart(value: unknown): string | undefined {
-  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return undefined
-  const cleaned = String(value).trim().replace(/[|\r\n]/g, '-').slice(0, 256)
-  return cleaned || undefined
-}
 
-function providerDefaultDirectSession(headers: Headers): string | undefined {
-  return headers.get('authorization') ? 'user:ai-gateway|session:provider-default' : undefined
-}
 
-function directAffinitySecret(env: Partial<RouterEnv>): string | undefined {
-  return env.SESSION_AFFINITY_KEY ?? env.ADMIN_TOKEN
-}
 
-async function hmacHex(secret: string, value: string): Promise<string> {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value))
-  return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-}
 
-async function decideDirectSessionWithAffinity(deps: RouterDeps, request: DirectSessionDecisionRequest): Promise<DirectSessionDecision> {
-  if (!deps.env.SESSION_AFFINITY) return decideDirectSession(deps.store, request)
-  const id = deps.env.SESSION_AFFINITY.idFromName(request.affinityKey)
-  const response = await deps.env.SESSION_AFFINITY.get(id).fetch('https://session-affinity.local/direct-session', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(request)
-  })
-  return await response.json() as DirectSessionDecision
-}
 
 async function getOrCreateUpstreamToken(deps: RouterDeps): Promise<string> {
   const existing = await resolveUpstreamToken(deps)
