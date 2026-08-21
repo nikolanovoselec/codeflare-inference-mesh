@@ -106,8 +106,12 @@ describe('dashboard overview contracts', () => {
     // tokens as its own string literals. Pinning the constants alone would stay green if
     // the script drifted, so assert the served script actually contains each value, then
     // pin the values so a rename is a visible contract change rather than a silent one.
+    // Comments are stripped first: a token mentioned in prose would otherwise satisfy the
+    // check without the script ever emitting it. Five of these tokens have no rendering
+    // test of their own, so this is their only tie to the contract.
+    const emitted = ADMIN_UI_CLIENT_SCRIPT.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
     for (const token of [...Object.values(ADMIN_UI_WORK_STATE), ...Object.values(ADMIN_UI_MESH_ROLE)]) {
-      expect(ADMIN_UI_CLIENT_SCRIPT).toContain(`'${token}'`)
+      expect(emitted).toContain(`'${token}'`)
     }
 
     expect(ADMIN_UI_WORK_STATE).toEqual({

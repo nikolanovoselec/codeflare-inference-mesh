@@ -3575,6 +3575,10 @@ describe('Access-first setup and host gating contracts', () => {
     await store.putConfig('access_config', roleConfig({ adminGroups: ['admins'], userGroups: ['viewers'] }))
     await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
     await store.upsertNode(nodeFixture())
+    // Seeded so the assertion catches an overwrite, not merely the absence of a first write:
+    // a handler that persisted only over an existing record would pass against undefined.
+    const priorSummary = { at: 1_600_000_000_000, requestId: 'earlier', model: 'codeflare-mesh', requestedPromptTokens: 2048, requestedMaxTokens: 160, promptTokens: 2048, completionTokens: 80, promptTokensEstimated: false, completionTokensEstimated: false, promptTokensPerSecond: 1800.5, generationTokensPerSecond: 67.2, timeToFirstTokenMs: 900, generationMs: 1200, totalMs: 2100 }
+    await store.putConfig('last_speed_tests', { 'mesh-smoke': priorSummary })
     const stream = new ReadableStream({
       start(controller) {
         controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":8,"completion_tokens":1}}\n\n'))
@@ -3598,9 +3602,9 @@ describe('Access-first setup and host gating contracts', () => {
     // The viewer gets its own measurement back...
     expect(response.status).toBe(200)
     expect((await response.json() as { tokens: { completion: number } }).tokens.completion).toBe(1)
-    // ...but the shared per-profile record every mesh card reads is untouched. An admin run
-    // of the same route does persist it, asserted by the REQ-ADM-034 measurement test.
-    expect(await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')).toBeUndefined()
+    // ...but the shared per-profile record every mesh card reads is byte-identical to what it
+    // was. An admin run of the same route does persist, asserted by the measurement test.
+    expect(await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')).toEqual({ 'mesh-smoke': priorSummary })
   })
 
   function roleConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {

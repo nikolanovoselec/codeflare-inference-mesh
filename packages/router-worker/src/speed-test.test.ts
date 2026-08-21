@@ -20,8 +20,8 @@ describe('speed test stream measurement', () => {
 
     expect(measured.chunks).toBe(1)
     expect(measured.outputChars).toBe(5)
-    // Bounded by the deadline, not by the caller giving up.
-    expect(measured.timingsMs.total).toBeLessThan(5_000)
+    // Bounded by the 50ms budget, not merely by the test runner giving up.
+    expect(measured.timingsMs.total).toBeLessThan(500)
   })
 
   it('REQ-ADM-034 stops reading once the output cap is exceeded', async () => {
@@ -36,7 +36,7 @@ describe('speed test stream measurement', () => {
     const measured = await measureSpeedStream(stream, Date.now(), 128, 60_000, 200)
 
     expect(measured.outputChars).toBeGreaterThan(200)
-    // It stops near the cap rather than draining an endless producer.
-    expect(enqueued).toBeLessThan(20)
+    // A 200-char cap at 50 chars per chunk implies about five reads, not an endless drain.
+    expect(enqueued).toBeLessThan(10)
   })
 })

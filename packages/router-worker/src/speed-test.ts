@@ -163,7 +163,9 @@ export async function measureSpeedStream(
   let chunks = 0
   let usage: Record<string, unknown> | undefined
   let upstreamTimings: Record<string, unknown> | undefined
-  const deadlineAt = Date.now() + deadlineMs
+  // Measured from startedAt, which is stamped before the upstream call, so the budget bounds
+  // the whole request rather than restarting once the body arrives.
+  const deadlineAt = startedAt + deadlineMs
   while (true) {
     if (outputChars > maxOutputChars) {
       await reader.cancel().catch(() => undefined)
