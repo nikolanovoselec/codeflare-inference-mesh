@@ -43,3 +43,12 @@ func (f *fakeRuntimeController) Restart(context.Context) error {
 	f.restarts++
 	return nil
 }
+
+// stopBusyController simulates a manager whose shutdown is already owned by a
+// concurrent Stop: the explicit operator stop must still report success.
+type stopBusyController struct{ fakeRuntimeController }
+
+func (c *stopBusyController) Stop(context.Context) error {
+	c.stops++
+	return errStopInProgress
+}

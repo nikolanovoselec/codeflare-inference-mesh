@@ -23,17 +23,19 @@ export function resolveMaxVram(value: number | undefined): number | undefined | 
   return value
 }
 
+// A blank runtime selection (absent / null / "") shares one vocabulary between
+// the two resolvers below so their defaulting rules cannot drift apart.
+const isBlankRuntime = (value: unknown): boolean => value === undefined || value === null || value === ''
+
 export function resolveRuntime(value: unknown): RuntimeKind | 'invalid_runtime' {
-  if (value === undefined || value === null || value === '') return 'meshllm'
+  if (isBlankRuntime(value)) return 'meshllm'
   return (RUNTIME_KINDS as readonly unknown[]).includes(value) ? (value as RuntimeKind) : 'invalid_runtime'
 }
 
 // resolveTargetRuntime resolves the runtime a config request is aimed at: the
-// requested kind when the body names one, else the profile's stored kind. The
-// blank vocabulary (absent / null / "") lives here beside resolveRuntime so the
-// two defaulting rules cannot drift apart.
+// requested kind when the body names one, else the profile's stored kind.
 export function resolveTargetRuntime(value: unknown, existing: RuntimeKind): RuntimeKind | 'invalid_runtime' {
-  if (value === undefined || value === null || value === '') return existing
+  if (isBlankRuntime(value)) return existing
   return resolveRuntime(value)
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"html"
 	"net"
 	"net/http"
@@ -33,7 +34,14 @@ func DashboardHandler(status func() DashboardStatus, controllers ...RuntimeContr
 		_ = json.NewEncoder(w).Encode(safe)
 	})
 	mux.HandleFunc("/api/runtime/start", runtimeAction(status, controllers, func(ctx context.Context, controller RuntimeController) error { return controller.Start(ctx) }))
-	mux.HandleFunc("/api/runtime/stop", runtimeAction(status, controllers, func(ctx context.Context, controller RuntimeController) error { return controller.Stop(ctx) }))
+	mux.HandleFunc("/api/runtime/stop", runtimeAction(status, controllers, func(ctx context.Context, controller RuntimeController) error {
+		// An explicit stop that finds a stop already running has got what it
+		// asked for; only restart paths treat the sentinel as failure.
+		if err := controller.Stop(ctx); err != nil && !errors.Is(err, errStopInProgress) {
+			return err
+		}
+		return nil
+	}))
 	mux.HandleFunc("/api/runtime/restart", runtimeAction(status, controllers, func(ctx context.Context, controller RuntimeController) error { return controller.Restart(ctx) }))
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("content-type", "text/html; charset=utf-8")

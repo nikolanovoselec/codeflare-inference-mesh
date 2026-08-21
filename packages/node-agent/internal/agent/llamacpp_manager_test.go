@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -408,5 +409,17 @@ func TestREQOBS013LlamaCppStartClearsPreviousModelCapabilities(t *testing.T) {
 	}
 	if manager.Metrics().Multimodal {
 		t.Fatal("a replacement launch attempt must clear the previous model capability")
+	}
+}
+
+func TestREQRUN010LlamaStopDuringConcurrentStopFailsLoudly(t *testing.T) {
+	// A Stop that finds another Stop mid-shutdown must not report success: a
+	// restart would swap input and "start" over the still-terminating process,
+	// never relaunching with the new argv. REQ-RUN-010.
+	manager := NewLlamaCppManager(LlamaCppInput{UpstreamModel: "org/model"})
+	manager.proc = newFakeMeshProcess(&eventLog{})
+	manager.done = nil
+	if err := manager.Stop(context.Background()); !errors.Is(err, errStopInProgress) {
+		t.Fatalf("Stop during a concurrent stop = %v, want errStopInProgress", err)
 	}
 }

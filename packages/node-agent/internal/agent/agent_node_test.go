@@ -473,6 +473,28 @@ func TestREQNODE004DashboardRuntimeControlsUseController(t *testing.T) {
 	})
 }
 
+func TestREQNODE004DashboardStopDuringConcurrentStopReportsOk(t *testing.T) {
+	t.Run("REQ-NODE-004", func(t *testing.T) {
+		// An explicit operator stop that finds a stop already running has got
+		// what it asked for; only restart paths treat the sentinel as failure.
+		controller := &stopBusyController{}
+		handler := DashboardHandler(func() DashboardStatus {
+			return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("ready", "codeflare-mesh", 0), RuntimeState: "ready", Version: "test"}
+		}, controller)
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/stop", nil)
+		req.Header.Set("origin", "http://127.0.0.1:17777")
+		req.Header.Set("x-inference-mesh-dashboard-token", "dashboard-token")
+		handler.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("an explicit stop during an in-flight stop must report ok, got %d", resp.Code)
+		}
+		if controller.stops != 1 {
+			t.Fatalf("stop control must still reach the controller, got %d", controller.stops)
+		}
+	})
+}
+
 func TestREQNODE004DashboardRuntimeControlsReportUnavailableWithoutController(t *testing.T) {
 	t.Run("REQ-NODE-004 REQ-SEC-004", func(t *testing.T) {
 		handler := DashboardHandler(func() DashboardStatus {

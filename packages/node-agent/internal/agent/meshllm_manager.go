@@ -169,8 +169,10 @@ func (m *MeshLLMManager) Stop(ctx context.Context) error {
 		return nil
 	}
 	if done == nil {
+		// A concurrent Stop owns this process's shutdown; fail loudly so a
+		// restart cannot swap input and report success without relaunching.
 		m.mu.Unlock()
-		return nil
+		return errStopInProgress
 	}
 	m.done = nil
 	m.state = "stopping"

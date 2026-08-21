@@ -288,6 +288,25 @@ func TestREQRUN010StopDuringConcurrentStopFailsLoudly(t *testing.T) {
 	}
 }
 
+func TestREQRUN010RestartDuringConcurrentStopLeavesInputUnswapped(t *testing.T) {
+	// The regression the sentinel exists for: a restart racing a concurrent
+	// stop must fail loudly and must not swap render input over a process
+	// that never relaunched with the new argv. REQ-RUN-010.
+	manager := NewVllmManager(VllmInput{UpstreamModel: "org/model", Settings: VllmSettings{HfRepo: "org/model", BindPort: 4400}})
+	manager.proc = newFakeMeshProcess(&eventLog{})
+	manager.done = nil
+	next := VllmInput{UpstreamModel: "org/other", Settings: VllmSettings{HfRepo: "org/other", BindPort: 4401}}
+	if err := manager.RestartWithVllmInput(context.Background(), next); !errors.Is(err, errStopInProgress) {
+		t.Fatalf("restart during a concurrent stop = %v, want errStopInProgress", err)
+	}
+	manager.mu.Lock()
+	upstream := manager.input.UpstreamModel
+	manager.mu.Unlock()
+	if upstream != "org/model" {
+		t.Fatalf("a failed restart must not swap render input, got %q", upstream)
+	}
+}
+
 func TestREQOBS014VllmMetricsParserAcceptsTotalSuffixAndLabels(t *testing.T) {
 	// The exposition appends _total to counters and labels every series; the
 	// parser must read both spellings and only the served model's series, so an
