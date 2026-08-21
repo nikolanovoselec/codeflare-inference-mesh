@@ -27,7 +27,7 @@
 
 **Mitigation:** Each boundary uses a separate credential class with route-specific authorization.
 
-**Verification:** The credential-boundary router test checks cross-family credential rejection; `TestREQNODE004DashboardRuntimeControlsUseController` checks dashboard-token enforcement. <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController -->
+**Verification:** The credential-boundary router test checks cross-family credential rejection; `TestREQNODE004DashboardRuntimeControlsUseController` checks dashboard-token enforcement. <!-- @impl: packages/router-worker/src/router-routing.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE004DashboardRuntimeControlsUseController -->
 
 **Implements:** [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -71,7 +71,7 @@
 
 **Mitigation:** Provider auth applies only to `/v1/models` and `/v1/chat/completions`; node claim, heartbeat, unregister, admin, installer, and health routes use their own policy.
 
-**Verification:** The route-family router test covers public/provider/admin separation, the credential-boundary router test covers REQ-SEC-001 cross-family rejection, and the node-unregister router test covers node authorization. <!-- @impl: packages/router-worker/src/router.test.ts::RouteFamilySeparationTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::NodeUnregisterAuthorizationTestAnchor -->
+**Verification:** The route-family router test covers public/provider/admin separation, the credential-boundary router test covers REQ-SEC-001 cross-family rejection, and the node-unregister router test covers node authorization. <!-- @impl: packages/router-worker/src/router-routing.test.ts::RouteFamilySeparationTestAnchor --> <!-- @impl: packages/router-worker/src/router-routing.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/router-worker/src/router-observability.test.ts::NodeUnregisterAuthorizationTestAnchor -->
 
 **Implements:** [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-SEC-001](../../sdd/spec/security.md)
 
@@ -93,7 +93,7 @@ Heartbeat, enrollment, admin authentication, and the public catch-all each have 
 
 **Mitigation:** Durable token records are verifier-only by default. Plaintext token display is one-time at creation. The generated Worker-to-node upstream token is recoverable in router config only because the Worker must present it to nodes during forwarding. The dashboard token is node-local config state; legacy configs without it backfill and persist one during load. ([REQ-SEC-005](../../sdd/spec/security.md))
 
-**Verification:** The token-verifier router test asserts verifier-only token records, the upstream-token reuse router test asserts generated upstream-token reuse, the admin-status router test asserts admin status redaction, and `TestREQSEC005LegacyConfigBackfillsDashboardToken` asserts dashboard-token backfill persistence. <!-- @impl: packages/router-worker/src/router.test.ts::TokenVerifierStorageTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::UpstreamTokenReuseTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminStatusRedactionTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQSEC005LegacyConfigBackfillsDashboardToken -->
+**Verification:** The token-verifier router test asserts verifier-only token records, the upstream-token reuse router test asserts generated upstream-token reuse, the admin-status router test asserts admin status redaction, and `TestREQSEC005LegacyConfigBackfillsDashboardToken` asserts dashboard-token backfill persistence. <!-- @impl: packages/router-worker/src/router-routing.test.ts::TokenVerifierStorageTestAnchor --> <!-- @impl: packages/router-worker/src/router-routing.test.ts::UpstreamTokenReuseTestAnchor --> <!-- @impl: packages/router-worker/src/router-admin.test.ts::AdminStatusRedactionTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQSEC005LegacyConfigBackfillsDashboardToken -->
 
 **Implements:** [REQ-SEC-002](../../sdd/spec/security.md), [REQ-SEC-005](../../sdd/spec/security.md)
 
@@ -103,7 +103,7 @@ Heartbeat, enrollment, admin authentication, and the public catch-all each have 
 
 **Mitigation:** The Worker forwards only approved inference metadata and the upstream token to a node. The node proxy strips credentials before forwarding to the local MeshLLM API.
 
-**Verification:** The Worker header-filtering router test and `TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` assert forbidden headers are absent at the next hop. <!-- @impl: packages/router-worker/src/router.test.ts::WorkerHeaderFilteringTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams -->
+**Verification:** The Worker header-filtering router test and `TestREQNODE003UpstreamProxyEnforcesBearerAndStreams` assert forbidden headers are absent at the next hop. <!-- @impl: packages/router-worker/src/router-observability.test.ts::WorkerHeaderFilteringTestAnchor --> <!-- @impl: packages/node-agent/internal/agent/agent_test.go::TestREQNODE003UpstreamProxyEnforcesBearerAndStreams -->
 
 **Implements:** [REQ-SEC-003](../../sdd/spec/security.md)
 
@@ -123,7 +123,7 @@ Heartbeat, enrollment, admin authentication, and the public catch-all each have 
 
 **Mitigation:** The UI stores a token only after `POST /admin/login` verifies it, so mistyped or attacker-suggested tokens are never persisted. The client renders all dynamic content through `textContent`/`createElement` rather than HTML interpolation, and no third-party script is loaded (the only third-party fetch is the JetBrains Mono stylesheet from Google Fonts, which cannot execute script). The admin HTML response sets `content-security-policy: frame-ancestors 'none'` and `x-frame-options: DENY` (`packages/router-worker/src/http.ts::html`), which blocks clickjacking but carries no `script-src`/`default-src` directive, so it does not mitigate script injection into the same origin. A sign-out control clears both storage locations, bounding exposure on a shared browser. Operators who need defense-in-depth against this exposure should front the admin surface with Cloudflare Access after attaching a custom domain (see [SECURITY.md](../../SECURITY.md)).
 
-**Verification:** `packages/router-worker/src/router.test.ts` (`AdminConfigurationUiTestAnchor`) asserts the `content-security-policy` and `x-frame-options` header values on the admin response, and `packages/router-worker/src/admin-ui-mesh.test.ts` (`REQ-ADM-006 verifies the admin token before storing it`) asserts the verify-before-store order against the executed client script, and `packages/router-worker/src/admin-ui-mesh.test.ts` (`REQ-ADM-006 signs out and clears the stored admin token`) asserts sign-out removes the token from both storage locations and returns to the login view; no automated test currently asserts an admin-UI output-encoding boundary, so that narrower gap remains audit pending. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminConfigurationUiTestAnchor -->
+**Verification:** `packages/router-worker/src/router-admin.test.ts` (`AdminConfigurationUiTestAnchor`) asserts the `content-security-policy` and `x-frame-options` header values on the admin response, and `packages/router-worker/src/admin-ui-mesh.test.ts` (`REQ-ADM-006 verifies the admin token before storing it`) asserts the verify-before-store order against the executed client script, and `packages/router-worker/src/admin-ui-mesh.test.ts` (`REQ-ADM-006 signs out and clears the stored admin token`) asserts sign-out removes the token from both storage locations and returns to the login view; no automated test currently asserts an admin-UI output-encoding boundary, so that narrower gap remains audit pending. <!-- @impl: packages/router-worker/src/admin-ui-client.ts::ADMIN_UI_CLIENT_SCRIPT --> <!-- @impl: packages/router-worker/src/router-admin.test.ts::AdminConfigurationUiTestAnchor -->
 
 **Implements:** [REQ-ADM-002](../../sdd/spec/setup-admin.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md)
 
@@ -171,7 +171,7 @@ Heartbeat, enrollment, admin authentication, and the public catch-all each have 
 
 **Mitigation:** The Admin UI shell is public so first-run setup works on the bootstrap origin, but state-changing admin actions require admin authentication. Before Cloudflare Access is provisioned, admin routes accept the bootstrap admin bearer token (or a session derived from it). Once the setup wizard provisions Access, the Worker verifies the Access JWT for every human admin request via `requireAdmin` in `packages/router-worker/src/auth-gates.ts`, reached through the `admin` gate the route table declares and `createRouter` enforces before any handler runs; bearer credentials work only before Access exists or during an active break-glass window. The exception is the `/api/v1/keys` machine-management surface, where `requireKeyAdmin` still accepts the admin bearer credential so operators can revoke or rotate automation keys from non-browser tooling without opening the human console. See [AD-013](../decisions/README.md#ad-013-cloudflare-access-is-the-human-admin-entrance). A rejected admin request returns the same 401 status and error body whether or not first-run setup has completed, so a failed-auth probe cannot fingerprint deployment state.
 
-**Verification:** The first-run setup router test asserts setup token generation and claim, the admin-status router test asserts admin-only status, the credential-boundary router test asserts credential-class separation, and the setup-state-nondisclosure router test asserts an identical 401 response both before and after setup completes. <!-- @impl: packages/router-worker/src/router.test.ts::FirstRunSetupTokenTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::AdminStatusRedactionTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/router-worker/src/router.test.ts::SetupStateNondisclosureTestAnchor -->
+**Verification:** The first-run setup router test asserts setup token generation and claim, the admin-status router test asserts admin-only status, the credential-boundary router test asserts credential-class separation, and the setup-state-nondisclosure router test asserts an identical 401 response both before and after setup completes. <!-- @impl: packages/router-worker/src/router-admin.test.ts::FirstRunSetupTokenTestAnchor --> <!-- @impl: packages/router-worker/src/router-admin.test.ts::AdminStatusRedactionTestAnchor --> <!-- @impl: packages/router-worker/src/router-routing.test.ts::CredentialBoundaryTestAnchor --> <!-- @impl: packages/router-worker/src/router-setup.test.ts::SetupStateNondisclosureTestAnchor -->
 
 **Implements:** [REQ-ADM-001](../../sdd/spec/setup-admin.md), [REQ-ADM-002](../../sdd/spec/setup-admin.md), [REQ-ADM-006](../../sdd/spec/setup-admin.md), [REQ-SEC-009](../../sdd/spec/security.md), [REQ-ADM-013](../../sdd/spec/setup-admin.md)
 
@@ -193,7 +193,7 @@ Heartbeat, enrollment, admin authentication, and the public catch-all each have 
 
 The role is enforced server-side: `requireAdmin` gates every configuration write, so client-side hiding is convenience, not control. Access-backed mutating admin and playground routes require same-origin browser evidence; bearer automation remains header-authenticated. <!-- @impl: packages/router-worker/src/auth-gates.ts::requireAdmin --> <!-- @impl: packages/router-worker/src/auth-gates.ts::hasSameOriginSignal -->
 
-**Verification:** Router tests assert admin/user/deny resolution, admin-wins-on-overlap, the open-to-everyone default, and that the user role is refused on a config write; access tests assert the get-identity group lookup and its domain guard. <!-- @impl: packages/router-worker/src/router.test.ts::HostGatingTestAnchor --> <!-- @impl: packages/router-worker/src/access.test.ts::AccessIdentityGroupsTestAnchor -->
+**Verification:** Router tests assert admin/user/deny resolution, admin-wins-on-overlap, the open-to-everyone default, and that the user role is refused on a config write; access tests assert the get-identity group lookup and its domain guard. <!-- @impl: packages/router-worker/src/router-setup.test.ts::HostGatingTestAnchor --> <!-- @impl: packages/router-worker/src/access.test.ts::AccessIdentityGroupsTestAnchor -->
 
 **Implements:** [REQ-SEC-010](../../sdd/spec/security.md), [REQ-ADM-017](../../sdd/spec/setup-admin.md)
 
@@ -213,7 +213,7 @@ The role is enforced server-side: `requireAdmin` gates every configuration write
 
 **Mitigation:** After setup completes, non-custom-domain hostnames serve only a console-moved page and refuse provider/node routes; the custom domain is the single gate for humans and machines. Recovery requires Cloudflare account control: `wrangler secret put SETUP_REOPEN` reopens the bootstrap admin surface until the secret value is recorded as consumed, and entering and completing recovery are both audited. <!-- @impl: packages/router-worker/src/auth-gates.ts::resolveHostGate --> <!-- @impl: packages/router-worker/src/setup-state.ts::breakGlassActive -->
 
-**Verification:** Router tests assert the moved page, machine-route refusal, recovery reopening, single entry audit, and consumption closing the surface. <!-- @impl: packages/router-worker/src/router.test.ts::HostGatingTestAnchor -->
+**Verification:** Router tests assert the moved page, machine-route refusal, recovery reopening, single entry audit, and consumption closing the surface. <!-- @impl: packages/router-worker/src/router-setup.test.ts::HostGatingTestAnchor -->
 
 **Implements:** [REQ-ADM-013](../../sdd/spec/setup-admin.md), [REQ-ADM-014](../../sdd/spec/setup-admin.md)
 

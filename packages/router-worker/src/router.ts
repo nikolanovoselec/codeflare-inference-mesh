@@ -129,7 +129,7 @@ interface RouteContext {
  *
  * `gate` names the credential a route requires, and `createRouter` enforces it here
  * before the handler runs, so this column is the authority rather than a description
- * of what each handler happens to do. `router.test.ts` drives every non-open route
+ * of what each handler happens to do. `router-routing.test.ts` drives every non-open route
  * with no credential and asserts 401; because no handler checks for itself any more,
  * deleting a gate from a row fails the suite instead of shipping an open endpoint.
  *

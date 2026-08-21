@@ -19,7 +19,7 @@ export type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'DELETE'
  * a one-time setup token, and `/admin/setup` is open only until the first admin
  * token exists. Naming them separately keeps the table honest.
  *
- * Every non-`open` value is proven by the auth-matrix test in `router.test.ts`,
+ * Every non-`open` value is proven by the auth-matrix test in `router-routing.test.ts`,
  * which drives each route with no credential and asserts 401.
  */
 export type RouteGate =
