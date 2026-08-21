@@ -7,6 +7,7 @@
  */
 import { accessJwtSource, extractAccessJwt, fetchIdentityGroups, verifyAccessRequest } from './access'
 import { bearerToken, hashToken, verifyPlainOrHashed, verifyToken } from './auth'
+import type { RouteGate } from './routes'
 import { accessConfig, breakGlassActive, setupPhase, SETUP_REOPEN_SEEN_KEY } from './setup-state'
 import type { CredentialKind, RouterEnv, Store, StoredCustomDomain, TokenRecord } from './types'
 
@@ -46,7 +47,7 @@ export async function recordBreakGlassEntry(deps: AuthDeps, requestId: string, n
   await deps.store.appendAudit({ id: requestId, type: 'break_glass_entered', at: now, actor: 'recovery', detail: {} })
 }
 
-type ConsoleRole = 'admin' | 'user'
+export type ConsoleRole = 'admin' | 'user'
 
 export interface RoleVerdict {
   readonly role: ConsoleRole
@@ -154,6 +155,71 @@ export async function authenticateAnyStoredToken(request: Request, store: Store,
     if (await verifyToken(presented, token, now)) return token
   }
   return undefined
+}
+
+/**
+ * The identity a gate resolved, or a refusal. `actor` is what the handler writes to the
+ * audit log, already in its final form, so no handler formats a credential into a name.
+ */
+export type GateOutcome =
+  | { readonly ok: true; readonly actor: string; readonly role?: ConsoleRole }
+  | { readonly ok: false }
+
+const REFUSED: GateOutcome = { ok: false }
+
+/**
+ * Enforce a route's declared credential class before its handler runs, so the table in
+ * `routes.ts` is the authority rather than a description of what each handler happens to do.
+ *
+ * `node` is the one gate that cannot resolve here: a per-node token is selected by the
+ * `nodeId` in the request body, so the handler must parse the body before it knows which
+ * token to verify. Those two handlers keep their own check, and the auth-matrix test names
+ * them explicitly so a third cannot join them unnoticed.
+ */
+export async function resolveGate(gate: RouteGate, request: Request, deps: AuthDeps, now: number): Promise<GateOutcome> {
+  switch (gate) {
+    case 'open':
+      return { ok: true, actor: 'anonymous' }
+    case 'node':
+      return { ok: true, actor: 'node' }
+    case 'provider':
+      return (await authenticateKind(request, deps, 'provider', now, deps.env.ROUTER_PROVIDER_TOKEN)) ? { ok: true, actor: 'provider' } : REFUSED
+    case 'setup':
+      return (await authenticateAnyStoredToken(request, deps.store, 'setup', now)) ? { ok: true, actor: 'setup' } : REFUSED
+    case 'recovery': {
+      const secret = deps.env.ADMIN_RECOVERY_TOKEN
+      return secret && await verifyPlainOrHashed(secret, bearerToken(request)) ? { ok: true, actor: 'recovery' } : REFUSED
+    }
+    case 'bootstrapOrAdmin': {
+      // Open only until the deployment is claimed: once an admin token exists, this is admin-only.
+      const admins = await deps.store.listTokens('admin')
+      if (!admins.some((token) => token.active)) return { ok: true, actor: 'setup' }
+      const actor = await requireAdmin(request, deps, now)
+      return actor ? { ok: true, actor, role: 'admin' } : REFUSED
+    }
+    case 'admin': {
+      const actor = await requireAdmin(request, deps, now)
+      return actor ? { ok: true, actor, role: 'admin' } : REFUSED
+    }
+    case 'user': {
+      const verdict = await requireUser(request, deps, now)
+      return verdict ? { ok: true, actor: verdict.actor, role: verdict.role } : REFUSED
+    }
+    case 'keyAdmin': {
+      const actor = await requireKeyAdmin(request, deps, now)
+      return actor ? { ok: true, actor } : REFUSED
+    }
+    case 'automation': {
+      const token = await requireAutomation(request, deps, now)
+      return token ? { ok: true, actor: `automation:${token.id}` } : REFUSED
+    }
+    case 'adminOrAutomation': {
+      const token = await requireAutomation(request, deps, now)
+      if (token) return { ok: true, actor: `automation:${token.id}` }
+      const actor = await requireAdmin(request, deps, now)
+      return actor ? { ok: true, actor, role: 'admin' } : REFUSED
+    }
+  }
 }
 
 export async function authenticateTokenByNode(request: Request, store: Store, kind: CredentialKind, nodeId: string, now: number): Promise<TokenRecord | undefined> {

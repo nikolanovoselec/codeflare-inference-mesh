@@ -3,7 +3,7 @@ import { adminUiHtml, type AdminUiState } from './admin-ui'
 import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
 import { bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed } from './auth'
-import { authenticateAnyStoredToken, authenticateKind, authenticateTokenByNode, recordBreakGlassEntry, requireAdmin, requireAutomation, requireKeyAdmin, requireUser, resolveHostGate } from './auth-gates'
+import { authenticateTokenByNode, recordBreakGlassEntry, resolveGate, resolveHostGate, type ConsoleRole } from './auth-gates'
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayProvisionStatus, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
 import { InvalidJsonBodyError } from './errors'
 import { cleanString, html, json, parseObject, rateLimited, readJson, readOptionalObject } from './http'
@@ -75,7 +75,12 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
       if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/' || url.pathname === '/admin')) return html(adminUiHtml(url.origin, await adminUiState(deps, false)), id)
       const route = matchRoute(ROUTES, request.method, url.pathname)
       if (!route) return json({ error: 'not_found', requestId: id }, 404, id)
-      return await route.handler({ request, deps, url, requestId: id, now: now() })
+      // The declared gate is enforced here, once, before any handler runs. A route cannot be
+      // under-gated by a handler that forgot to check, and no handler pays for the check twice.
+      const at = now()
+      const outcome = await resolveGate(route.gate, request, deps, at)
+      if (!outcome.ok) return json({ error: 'unauthorized' }, 401, id)
+      return await route.handler({ request, deps, url, requestId: id, now: at, actor: outcome.actor, ...(outcome.role ? { role: outcome.role } : {}) })
     } catch (error) {
       // A malformed request BODY (readJson) is client error, not a router fault: answer 400
       // invalid_json (matching the chat endpoint's contract) instead of a 500. Scoped to the
@@ -87,13 +92,29 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
   }
 }
 
-/** Everything a handler needs from the request, assembled once per dispatch. */
+/**
+ * The decoded id segment of a path, counted from the end: 1 is the last segment
+ * (`/meshes/{id}`), 2 the one before it (`/nodes/{id}/deactivate`).
+ */
+function idFromPath(url: URL, fromEnd: 1 | 2): string {
+  return decodeURIComponent(url.pathname.split('/').at(-fromEnd) ?? '')
+}
+
+/**
+ * Everything a handler needs from the request, assembled once per dispatch.
+ *
+ * `actor` is the caller's audited identity, already resolved and formatted by the route's
+ * gate, so no handler re-derives it from a credential. `role` is present only for the gates
+ * that produce one; the two console routes that branch on it take it explicitly.
+ */
 interface RouteContext {
   readonly request: Request
   readonly deps: RouterDeps
   readonly url: URL
   readonly requestId: string
   readonly now: number
+  readonly actor: string
+  readonly role?: ConsoleRole
 }
 
 /**
@@ -116,79 +137,79 @@ export const ROUTES: readonly Route<RouteContext>[] = [
   { method: 'POST', path: '/node/claim', gate: 'setup', handler: (c) => handleNodeClaim(c.request, c.deps, c.requestId, c.now) },
   { method: 'POST', path: '/node/heartbeat', gate: 'node', handler: (c) => handleNodeHeartbeat(c.request, c.deps, c.requestId, c.now) },
   { method: 'POST', path: '/node/unregister', gate: 'node', handler: (c) => handleNodeUnregister(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/setup', gate: 'bootstrapOrAdmin', handler: (c) => handleFirstSetup(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/setup', gate: 'bootstrapOrAdmin', handler: (c) => handleFirstSetup(c.deps, c.requestId, c.now) },
   { method: 'POST', path: '/admin/recovery/reset', gate: 'recovery', handler: (c) => handleAdminRecovery(c.request, c.deps, c.requestId, c.now) },
   { method: 'GET', path: '/install.sh', gate: 'open', handler: async (c) => handleInstallScript(c.deps, c.url.searchParams.get('platform') === 'macos' ? 'macos' : 'linux') },
   { method: 'GET', path: '/install.ps1', gate: 'open', handler: async (c) => handleInstallScript(c.deps, 'windows') },
-  { method: 'POST', path: '/admin/login', gate: 'admin', handler: (c) => handleAdminLogin(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/admin/status', gate: 'user', handler: (c) => handleAdminStatus(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/setup-tokens', gate: 'admin', handler: (c) => handleSetupToken(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: /^\/admin\/installers\//, gate: 'admin', handler: (c) => handleInstaller(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/cloudflare/gateway/sync', gate: 'admin', handler: (c) => handleGatewaySync(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/custom-domain/validate', gate: 'admin', handler: (c) => handleCustomDomain(c.request, c.deps, c.requestId, c.now, false) },
-  { method: 'POST', path: '/admin/setup/domain', gate: 'admin', handler: (c) => handleCustomDomain(c.request, c.deps, c.requestId, c.now, true) },
-  { method: 'POST', path: '/admin/setup/access', gate: 'admin', handler: (c) => handleSetupAccess(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/setup/complete', gate: 'admin', handler: (c) => handleSetupComplete(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/admin/cloudflare/zones', gate: 'admin', handler: (c) => handleZones(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/admin/cloudflare/gateway/options', gate: 'admin', handler: (c) => handleGatewayOptions(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'GET', path: '/admin/cloudflare/gateway/provision-status', gate: 'admin', handler: (c) => handleGatewayProvisionStatus(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/revoke$/, gate: 'admin', handler: (c) => handleNodeRevoke(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/deactivate$/, gate: 'admin', handler: (c) => handleNodeDeactivate(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/activate$/, gate: 'admin', handler: (c) => handleNodeActivate(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/reload$/, gate: 'admin', handler: (c) => handleNodeReload(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/config$/, gate: 'admin', handler: (c) => handleNodeConfig(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'GET', path: '/admin/meshes', gate: 'user', handler: (c) => handleMeshList(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/meshes', gate: 'admin', handler: (c) => handleMeshCreate(c.request, c.deps, c.requestId, c.now) },
-  { method: 'DELETE', path: /^\/admin\/meshes\/[^/]+$/, gate: 'admin', handler: (c) => handleMeshDelete(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/profiles/rollout', gate: 'admin', handler: (c) => handleProfileRollout(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/profiles/activate', gate: 'admin', handler: (c) => handleProfileActivate(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/profiles/add', gate: 'admin', handler: (c) => handleProfileAdd(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/profiles/config', gate: 'admin', handler: (c) => handleProfileConfig(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/profiles/delete', gate: 'admin', handler: (c) => handleProfileDelete(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/profiles/duplicate', gate: 'admin', handler: (c) => handleProfileDuplicate(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/settings', gate: 'admin', handler: (c) => handleAdminSettings(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/admin/runtime-versions', gate: 'admin', handler: (c) => handleAdminRuntimeVersions(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/runtime-versions', gate: 'admin', handler: (c) => handleAdminRuntimeVersionSelect(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/mesh/rotate', gate: 'admin', handler: (c) => handleAdminMeshRotate(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/admin/agent-versions', gate: 'admin', handler: (c) => handleAdminAgentVersions(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/agent-version', gate: 'admin', handler: (c) => handleAdminAgentVersionSelect(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/playground/chat', gate: 'user', handler: (c) => handlePlaygroundChat(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/login', gate: 'admin', handler: (c) => handleAdminLogin(c.requestId) },
+  { method: 'GET', path: '/admin/status', gate: 'user', handler: (c) => handleAdminStatus(c.deps, c.requestId, c.now, c.role!) },
+  { method: 'POST', path: '/admin/setup-tokens', gate: 'admin', handler: (c) => handleSetupToken(c.deps, c.requestId, c.now, c.actor) },
+  { method: 'GET', path: /^\/admin\/installers\//, gate: 'admin', handler: (c) => handleInstaller(c.request, c.deps, c.url, c.requestId) },
+  { method: 'POST', path: '/admin/cloudflare/gateway/sync', gate: 'admin', handler: (c) => syncGatewayForActor(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/admin/custom-domain/validate', gate: 'admin', handler: (c) => handleCustomDomain(c.request, c.deps, c.requestId, c.now, false, c.actor) },
+  { method: 'POST', path: '/admin/setup/domain', gate: 'admin', handler: (c) => handleCustomDomain(c.request, c.deps, c.requestId, c.now, true, c.actor) },
+  { method: 'POST', path: '/admin/setup/access', gate: 'admin', handler: (c) => handleSetupAccess(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/admin/setup/complete', gate: 'admin', handler: (c) => handleSetupComplete(c.deps, c.requestId, c.now, c.actor) },
+  { method: 'GET', path: '/admin/cloudflare/zones', gate: 'admin', handler: (c) => handleZones(c.deps, c.requestId) },
+  { method: 'GET', path: '/admin/cloudflare/gateway/options', gate: 'admin', handler: (c) => handleGatewayOptions(c.deps, c.url, c.requestId) },
+  { method: 'GET', path: '/admin/cloudflare/gateway/provision-status', gate: 'admin', handler: (c) => handleGatewayProvisionStatus(c.deps, c.url, c.requestId) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/revoke$/, gate: 'admin', handler: (c) => handleNodeRevoke(c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/deactivate$/, gate: 'admin', handler: (c) => setNodeDeactivated(c.deps, idFromPath(c.url, 2), true, c.actor, c.requestId, c.now) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/activate$/, gate: 'admin', handler: (c) => setNodeDeactivated(c.deps, idFromPath(c.url, 2), false, c.actor, c.requestId, c.now) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/reload$/, gate: 'admin', handler: (c) => requestNodeReload(c.deps, idFromPath(c.url, 2), c.actor, c.requestId, c.now) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/config$/, gate: 'admin', handler: (c) => handleNodeConfig(c.request, c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'GET', path: '/admin/meshes', gate: 'user', handler: (c) => meshListCore(c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/meshes', gate: 'admin', handler: (c) => meshCreateCore(c.request, c.deps, c.actor, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/admin\/meshes\/[^/]+$/, gate: 'admin', handler: (c) => meshDeleteCore(c.deps, idFromPath(c.url, 1), c.actor, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/profiles/rollout', gate: 'admin', handler: (c) => handleProfileRollout(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/admin/profiles/activate', gate: 'admin', handler: (c) => handleProfileActivate(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/admin/profiles/add', gate: 'admin', handler: (c) => handleProfileAdd(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/admin/profiles/config', gate: 'admin', handler: (c) => handleProfileConfig(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/admin/profiles/delete', gate: 'admin', handler: (c) => handleProfileDelete(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/admin/profiles/duplicate', gate: 'admin', handler: (c) => handleProfileDuplicate(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/admin/settings', gate: 'admin', handler: (c) => applyFleetSettings(c.request, c.deps, c.actor, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/runtime-versions', gate: 'admin', handler: (c) => handleAdminRuntimeVersions(c.request, c.deps) },
+  { method: 'POST', path: '/admin/runtime-versions', gate: 'admin', handler: (c) => handleAdminRuntimeVersionSelect(c.request, c.deps, c.actor) },
+  { method: 'POST', path: '/admin/mesh/rotate', gate: 'admin', handler: (c) => handleAdminMeshRotate(c.request, c.deps, c.now, c.actor) },
+  { method: 'GET', path: '/admin/agent-versions', gate: 'admin', handler: (c) => handleAdminAgentVersions(c.request, c.deps) },
+  { method: 'POST', path: '/admin/agent-version', gate: 'admin', handler: (c) => handleAdminAgentVersionSelect(c.request, c.deps, c.actor) },
+  { method: 'POST', path: '/admin/playground/chat', gate: 'user', handler: (c) => handlePlaygroundChat(c.request, c.deps, c.requestId, c.role!) },
   { method: 'POST', path: '/admin/playground/direct-chat', gate: 'user', handler: (c) => handlePlaygroundDirect(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/admin/playground/speed-test', gate: 'user', handler: (c) => handlePlaygroundSpeedTest(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/admin/whoami', gate: 'user', handler: (c) => handleWhoami(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/api/v1/keys', gate: 'keyAdmin', handler: (c) => handleApiKeyCreate(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/api/v1/keys', gate: 'keyAdmin', handler: (c) => handleApiKeyList(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/keys\/[^/]+\/rotate$/, gate: 'keyAdmin', handler: (c) => handleApiKeyRotate(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'DELETE', path: /^\/api\/v1\/keys\/[^/]+$/, gate: 'keyAdmin', handler: (c) => handleApiKeyRevoke(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/playground/speed-test', gate: 'user', handler: (c) => handlePlaygroundSpeedTest(c.request, c.deps, c.requestId, c.now, c.role!) },
+  { method: 'GET', path: '/admin/whoami', gate: 'user', handler: (c) => handleWhoami(c.requestId, c.actor, c.role!) },
+  { method: 'POST', path: '/api/v1/keys', gate: 'keyAdmin', handler: (c) => handleApiKeyCreate(c.deps, c.requestId, c.now, c.actor) },
+  { method: 'GET', path: '/api/v1/keys', gate: 'keyAdmin', handler: (c) => handleApiKeyList(c.deps, c.requestId) },
+  { method: 'POST', path: /^\/api\/v1\/keys\/[^/]+\/rotate$/, gate: 'keyAdmin', handler: (c) => handleApiKeyRotate(c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'DELETE', path: /^\/api\/v1\/keys\/[^/]+$/, gate: 'keyAdmin', handler: (c) => handleApiKeyRevoke(c.deps, c.url, c.requestId, c.now, c.actor) },
   { method: 'GET', path: '/api/v1/status', gate: 'automation', handler: (c) => handleApiStatus(c.request, c.deps, c.requestId, c.now) },
   { method: 'POST', path: '/api/v1/speed-test', gate: 'automation', handler: (c) => handleApiSpeedTest(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/api/v1/gateway/sync', gate: 'automation', handler: (c) => handleApiGatewaySync(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/api/v1/enrollment-tokens', gate: 'adminOrAutomation', handler: (c) => handleApiEnrollmentToken(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/api/v1/nodes', gate: 'automation', handler: (c) => handleApiNodeList(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'GET', path: /^\/api\/v1\/nodes\/[^/]+$/, gate: 'automation', handler: (c) => handleApiNodeGet(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/reconfigure$/, gate: 'automation', handler: (c) => handleApiNodeReconfigure(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/deactivate$/, gate: 'automation', handler: (c) => handleApiNodeDeactivate(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/activate$/, gate: 'automation', handler: (c) => handleApiNodeActivate(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/reload$/, gate: 'automation', handler: (c) => handleApiNodeReload(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'DELETE', path: /^\/api\/v1\/nodes\/[^/]+$/, gate: 'automation', handler: (c) => handleApiNodeDecommission(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'GET', path: '/api/v1/models', gate: 'automation', handler: (c) => handleApiModelList(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/api/v1/models', gate: 'automation', handler: (c) => handleApiModelAdd(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/enable$/, gate: 'automation', handler: (c) => handleApiModelEnable(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/disable$/, gate: 'automation', handler: (c) => handleApiModelDisable(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/duplicate$/, gate: 'automation', handler: (c) => handleApiModelDuplicate(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'DELETE', path: /^\/api\/v1\/models\/[^/]+$/, gate: 'automation', handler: (c) => handleApiModelDelete(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+$/, gate: 'automation', handler: (c) => handleApiModelConfigure(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'GET', path: '/api/v1/agent-versions', gate: 'automation', handler: (c) => handleApiAgentVersions(c.request, c.deps, c.requestId, c.now) },
-  { method: 'PUT', path: '/api/v1/agent-version', gate: 'automation', handler: (c) => handleApiAgentVersionSet(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/api/v1/mesh/rotate', gate: 'automation', handler: (c) => handleApiMeshRotate(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/api/v1/settings', gate: 'automation', handler: (c) => handleApiSettingsGet(c.request, c.deps, c.requestId, c.now) },
-  { method: 'PUT', path: '/api/v1/settings', gate: 'automation', handler: (c) => handleApiSettingsSet(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/api/v1/runtime-versions', gate: 'automation', handler: (c) => handleApiRuntimeVersions(c.request, c.deps, c.requestId, c.now) },
-  { method: 'PUT', path: '/api/v1/runtime-versions', gate: 'automation', handler: (c) => handleApiRuntimeVersionSet(c.request, c.deps, c.requestId, c.now) },
-  { method: 'GET', path: '/api/v1/meshes', gate: 'automation', handler: (c) => handleApiMeshList(c.request, c.deps, c.requestId, c.now) },
-  { method: 'POST', path: '/api/v1/meshes', gate: 'automation', handler: (c) => handleApiMeshCreate(c.request, c.deps, c.requestId, c.now) },
-  { method: 'DELETE', path: /^\/api\/v1\/meshes\/[^/]+$/, gate: 'automation', handler: (c) => handleApiMeshDelete(c.request, c.deps, c.url, c.requestId, c.now) },
-  { method: 'GET', path: '/api/v1/events', gate: 'automation', handler: (c) => handleApiEvents(c.request, c.deps, c.url, c.requestId, c.now) }
+  { method: 'POST', path: '/api/v1/gateway/sync', gate: 'automation', handler: (c) => syncGatewayForActor(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: '/api/v1/enrollment-tokens', gate: 'adminOrAutomation', handler: (c) => handleApiEnrollmentToken(c.deps, c.requestId, c.now, c.actor) },
+  { method: 'GET', path: '/api/v1/nodes', gate: 'automation', handler: (c) => handleApiNodeList(c.deps, c.url, c.requestId, c.now) },
+  { method: 'GET', path: /^\/api\/v1\/nodes\/[^/]+$/, gate: 'automation', handler: (c) => handleApiNodeGet(c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/reconfigure$/, gate: 'automation', handler: (c) => handleApiNodeReconfigure(c.request, c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/deactivate$/, gate: 'automation', handler: (c) => apiSetNodeDeactivated(c.deps, idFromPath(c.url, 2), true, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/activate$/, gate: 'automation', handler: (c) => apiSetNodeDeactivated(c.deps, idFromPath(c.url, 2), false, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/reload$/, gate: 'automation', handler: (c) => requestNodeReload(c.deps, idFromPath(c.url, 2), c.actor, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/api\/v1\/nodes\/[^/]+$/, gate: 'automation', handler: (c) => handleApiNodeDecommission(c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'GET', path: '/api/v1/models', gate: 'automation', handler: (c) => handleApiModelList(c.deps, c.requestId) },
+  { method: 'POST', path: '/api/v1/models', gate: 'automation', handler: (c) => handleApiModelAdd(c.request, c.deps, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/enable$/, gate: 'automation', handler: (c) => handleApiModelEnable(c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/disable$/, gate: 'automation', handler: (c) => handleApiModelDisable(c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/duplicate$/, gate: 'automation', handler: (c) => duplicateProfileCore(c.deps, idFromPath(c.url, 2), c.actor, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/api\/v1\/models\/[^/]+$/, gate: 'automation', handler: (c) => handleApiModelDelete(c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+$/, gate: 'automation', handler: (c) => handleApiModelConfigure(c.request, c.deps, c.url, c.requestId, c.now, c.actor) },
+  { method: 'GET', path: '/api/v1/agent-versions', gate: 'automation', handler: (c) => handleApiAgentVersions(c.request, c.deps) },
+  { method: 'PUT', path: '/api/v1/agent-version', gate: 'automation', handler: (c) => handleApiAgentVersionSet(c.request, c.deps, c.actor) },
+  { method: 'POST', path: '/api/v1/mesh/rotate', gate: 'automation', handler: (c) => handleApiMeshRotate(c.request, c.deps, c.now, c.actor) },
+  { method: 'GET', path: '/api/v1/settings', gate: 'automation', handler: (c) => handleApiSettingsGet(c.deps, c.requestId) },
+  { method: 'PUT', path: '/api/v1/settings', gate: 'automation', handler: (c) => applyFleetSettings(c.request, c.deps, c.actor, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/runtime-versions', gate: 'automation', handler: (c) => handleApiRuntimeVersions(c.request, c.deps) },
+  { method: 'PUT', path: '/api/v1/runtime-versions', gate: 'automation', handler: (c) => handleApiRuntimeVersionSet(c.request, c.deps, c.actor) },
+  { method: 'GET', path: '/api/v1/meshes', gate: 'automation', handler: (c) => meshListCore(c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/api/v1/meshes', gate: 'automation', handler: (c) => meshCreateCore(c.request, c.deps, c.actor, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/api\/v1\/meshes\/[^/]+$/, gate: 'automation', handler: (c) => meshDeleteCore(c.deps, idFromPath(c.url, 1), c.actor, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/events', gate: 'automation', handler: (c) => handleApiEvents(c.deps, c.url, c.requestId) }
 ]
 
 async function handleModels(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -373,9 +394,9 @@ async function adminUiState(deps: RouterDeps, recovery: boolean): Promise<AdminU
   }
 }
 
-async function handleFirstSetup(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const existingAdmins = await deps.store.listTokens('admin')
-  if (existingAdmins.some((token) => token.active) && !(await requireAdmin(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+// The bootstrapOrAdmin gate has already decided whether this caller may claim: open while no
+// active admin token exists, admin-only once one does.
+async function handleFirstSetup(deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   // Claim mints ONLY the bootstrap token. The machine credentials surface where
   // they are used: the provider token in the gateway-sync result, the setup token
   // inside the install command, and the upstream token lazily at node claim.
@@ -397,9 +418,7 @@ async function handleAdminRecovery(request: Request, deps: RouterDeps, requestId
   return json({ adminToken }, 201, requestId)
 }
 
-async function handleAdminLogin(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleAdminLogin(requestId: string): Promise<Response> {
   return json({ ok: true, session: 'bearer-token' }, 200, requestId)
 }
 
@@ -412,13 +431,6 @@ async function offlinePruneSeconds(deps: RouterDeps): Promise<number> {
   return typeof stored === 'number' && Number.isInteger(stored) && stored >= 0 ? stored : DEFAULT_OFFLINE_PRUNE_SECONDS
 }
 
-// handleAdminSettings persists operator-tunable fleet settings. offlinePruneSeconds
-// must be a non-negative integer (0 disables offline-node pruning).
-async function handleAdminSettings(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return applyFleetSettings(request, deps, actor, requestId, now)
-}
 
 // applyFleetSettings is the shared core for the console and automation settings writers, so
 // the two surfaces validate and persist identically and can never diverge.
@@ -448,10 +460,8 @@ async function pruneStaleNodes(deps: RouterDeps, requestId: string, now: number)
   }
 }
 
-async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const viewer = await requireUser(request, deps, now)
-  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
-  const isAdmin = viewer.role === 'admin'
+async function handleAdminStatus(deps: RouterDeps, requestId: string, now: number, role: ConsoleRole): Promise<Response> {
+  const isAdmin = role === 'admin'
   // Prune stale nodes only on admin polls: a read-only user viewer must never
   // trigger fleet mutation (node deletion + audit writes) from a status read.
   if (isAdmin) await pruneStaleNodes(deps, requestId, now)
@@ -484,7 +494,7 @@ async function handleAdminStatus(request: Request, deps: RouterDeps, requestId: 
   const meshes = (await listMeshes(deps.store)).map((mesh) => meshSummary(mesh, nodes, profiles))
   return json({
     ...redacted,
-    viewerRole: viewer.role,
+    viewerRole: role,
     meshes,
     meshHealth: await meshHealth(deps.store, deps.env, profiles, nodes, now),
     ...(desiredVersion !== undefined ? { desiredAgentVersion: desiredVersion } : {})
@@ -560,18 +570,14 @@ function nodeReadyForProfile(node: NodeRecord, profile: ModelProfile): boolean {
   return node.metrics?.apiReady === true || runtimeState === 'ready' || runtimeState === 'running' || profile.runtime === 'meshllm'
 }
 
-async function handleSetupToken(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleSetupToken(deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const setupToken = generateBearerToken('setup')
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
   await deps.store.appendAudit({ id: requestId, type: 'setup_token_created', at: now, actor, detail: {} })
   return json({ setupToken, expiresAt: now + SETUP_TOKEN_TTL_MS }, 201, requestId)
 }
 
-async function handleInstaller(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleInstaller(request: Request, deps: RouterDeps, url: URL, requestId: string): Promise<Response> {
   const platform = url.pathname.split('/').at(-1) as InstallerPlatform
   if (!['linux', 'macos', 'windows'].includes(platform)) return json({ error: 'unknown_platform' }, 404, requestId)
   const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
@@ -589,17 +595,7 @@ function handleInstallScript(deps: RouterDeps, platform: InstallerPlatform): Res
   return new Response(installScript({ platform, repository, releaseTag }), { status: 200, headers: { 'content-type': contentType } })
 }
 
-async function handleGatewaySync(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return await syncGatewayForActor(request, deps, requestId, now, actor)
-}
 
-async function handleApiGatewaySync(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return await syncGatewayForActor(request, deps, requestId, now, `automation:${automation.id}`)
-}
 
 async function syncGatewayForActor(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readOptionalObject<Partial<GatewaySettings>>(request)
@@ -666,9 +662,7 @@ async function syncGatewayForActor(request: Request, deps: RouterDeps, requestId
   return json({ ...result, providerToken, byokInstruction: `Paste this key into the AI Gateway provider "${result.providerSlug}".` }, 200, requestId)
 }
 
-async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number, advance: boolean): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleCustomDomain(request: Request, deps: RouterDeps, requestId: string, now: number, advance: boolean, actor: string): Promise<Response> {
   const body = await readJson<{ hostname: string; zoneId?: string }>(request)
   const hostname = typeof body?.hostname === 'string' ? body.hostname.trim().toLowerCase() : ''
   const zoneId = typeof body?.zoneId === 'string' ? body.zoneId.trim() : ''
@@ -697,9 +691,7 @@ async function handleCustomDomain(request: Request, deps: RouterDeps, requestId:
 // cannot rejoin) and then deletes the node row so the machine disappears from the
 // console immediately. The node_revoked audit event preserves the record; a real
 // re-enrollment mints a fresh row.
-async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleNodeRevoke(deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const nodeId = decodeURIComponent(url.pathname.split('/')[3] ?? '')
   // Neutralize the node first so a failure mid-sequence fails closed: revokeNode marks it
   // revoked and strips its verifier, and the heartbeat/unregister handlers reject a revoked
@@ -714,20 +706,7 @@ async function handleNodeRevoke(request: Request, deps: RouterDeps, url: URL, re
   return json({ ok: true }, 200, requestId)
 }
 
-// Deactivate/activate taint a node without decommissioning it: a deactivated node stays enrolled and
-// keeps heartbeating but runs no model and is excluded from selection (REQ-ADM-030). Both are reversible,
-// so neither is destructive; revoke remains the one-way decommission.
-async function handleNodeDeactivate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return setNodeDeactivated(deps, decodeURIComponent(url.pathname.split('/')[3] ?? ''), true, actor, requestId, now)
-}
 
-async function handleNodeActivate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return setNodeDeactivated(deps, decodeURIComponent(url.pathname.split('/')[3] ?? ''), false, actor, requestId, now)
-}
 
 async function setNodeDeactivated(deps: RouterDeps, nodeId: string, deactivated: boolean, actor: string, requestId: string, now: number): Promise<Response> {
   const node = await deps.store.getNode(nodeId)
@@ -740,17 +719,7 @@ async function setNodeDeactivated(deps: RouterDeps, nodeId: string, deactivated:
   return json({ ok: true, deactivated }, 200, requestId)
 }
 
-async function handleNodeReload(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return requestNodeReload(deps, decodeURIComponent(url.pathname.split('/').at(-2) ?? ''), actor, requestId, now)
-}
 
-async function handleApiNodeReload(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return requestNodeReload(deps, decodeURIComponent(url.pathname.split('/').at(-2) ?? ''), `automation:${automation.id}`, requestId, now)
-}
 
 // Force Reload stamps a one-shot nonce on the node. The node applies it once (draining and
 // restarting mesh-llm) and echoes it back on the next heartbeat, when the router retires it. It is
@@ -767,9 +736,7 @@ async function requestNodeReload(deps: RouterDeps, nodeId: string, actor: string
 // handleNodeConfig updates operator-owned node settings from the admin console. The display name
 // is stored in the node JSON row and preserved across future heartbeats; blank/`null` VRAM override
 // reverts to the model default while a non-negative number caps this node.
-async function handleNodeConfig(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleNodeConfig(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const nodeId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
   const node = await deps.store.getNode(nodeId)
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
@@ -863,43 +830,13 @@ async function meshDeleteCore(deps: RouterDeps, meshId: string, actor: string, r
   return json({ ok: true }, 200, requestId)
 }
 
-async function handleMeshList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await requireUser(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
-  return meshListCore(deps, requestId, now)
-}
 
-async function handleMeshCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return meshCreateCore(request, deps, actor, requestId, now)
-}
 
-async function handleMeshDelete(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
-  return meshDeleteCore(deps, decodeURIComponent(url.pathname.split('/').at(-1) ?? ''), actor, requestId, now)
-}
 
-async function handleApiMeshList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
-  return meshListCore(deps, requestId, now)
-}
 
-async function handleApiMeshCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return meshCreateCore(request, deps, `automation:${automation.id}`, requestId, now)
-}
 
-async function handleApiMeshDelete(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return meshDeleteCore(deps, decodeURIComponent(url.pathname.split('/').at(-1) ?? ''), `automation:${automation.id}`, requestId, now)
-}
 
-async function handleProfileRollout(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleProfileRollout(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readJson<{ profileId: string; rolloutPercent: number }>(request)
   if (!body || typeof body.profileId !== 'string' || typeof body.rolloutPercent !== 'number') return json({ error: 'invalid_rollout' }, 400, requestId)
   if (body.rolloutPercent > 0) {
@@ -912,9 +849,7 @@ async function handleProfileRollout(request: Request, deps: RouterDeps, requestI
   return json({ ok: true }, 200, requestId)
 }
 
-async function handleProfileActivate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleProfileActivate(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readJson<{ profileId?: string }>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_activation', requestId }, 400, requestId)
   const activation = singleActiveActivation(await deps.store.listProfiles(), body.profileId)
@@ -930,9 +865,7 @@ async function handleProfileActivate(request: Request, deps: RouterDeps, request
 // only for a positive value). Returns undefined when the caller omits the field
 // (leave the current setting), or INVALID_MAX_VRAM when it is present but not a
 // finite number >= 0. Shared by the admin and automation model-config endpoints.
-async function handleProfileConfig(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleProfileConfig(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readJson<ModelConfigBody>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
   const profiles = await deps.store.listProfiles()
@@ -1000,9 +933,7 @@ async function handleProfileConfig(request: Request, deps: RouterDeps, requestId
 // is trimmed and must be non-empty; mode "split" builds a MeshLLM layer-package profile,
 // while direct llama.cpp is allowed only for single-machine profiles. A reference whose
 // derived id collides with an existing profile is refused rather than overwriting it.
-async function handleProfileAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleProfileAdd(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readJson<{ modelRef?: string; mode?: string; runtime?: unknown; name?: string; meshId?: unknown }>(request)
   const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
   if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
@@ -1035,41 +966,29 @@ async function resolveOnboardingMesh(deps: RouterDeps, rawMeshId: unknown): Prom
   return (await listMeshes(deps.store)).some((mesh) => mesh.id === rawMeshId) ? rawMeshId : undefined
 }
 
-async function handleAdminMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleAdminMeshRotate(request: Request, deps: RouterDeps, now: number, actor: string): Promise<Response> {
   return await handleMeshRotate(request, deps.store, deps.env, now, actor)
 }
 
-async function handleAdminAgentVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleAdminAgentVersions(request: Request, deps: RouterDeps): Promise<Response> {
   return await handleAgentVersionsList(request, deps.store, deps.env, deps.releasesFetcher)
 }
 
-async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleAdminAgentVersionSelect(request: Request, deps: RouterDeps, actor: string): Promise<Response> {
   return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, actor)
 }
 
-async function handleAdminRuntimeVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleAdminRuntimeVersions(request: Request, deps: RouterDeps): Promise<Response> {
   return await handleRuntimeVersionsList(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, deps.env)
 }
 
-async function handleAdminRuntimeVersionSelect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleAdminRuntimeVersionSelect(request: Request, deps: RouterDeps, actor: string): Promise<Response> {
   return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, actor, deps.env)
 }
 
 /** REQ-ADM-017: lets the console render the admin vs read-only user surface. */
-async function handleWhoami(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const viewer = await requireUser(request, deps, now)
-  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
-  return json({ role: viewer.role, actor: viewer.actor }, 200, requestId)
+async function handleWhoami(requestId: string, actor: string, role: ConsoleRole): Promise<Response> {
+  return json({ role: role, actor: actor }, 200, requestId)
 }
 
 /**
@@ -1079,9 +998,7 @@ async function handleWhoami(request: Request, deps: RouterDeps, requestId: strin
  * non-`codeflare-mesh` routes, not just the last sync), and streams the response back behind
  * fresh headers so no upstream gateway header reaches the browser.
  */
-async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const viewer = await requireUser(request, deps, now)
-  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
+async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestId: string, role: ConsoleRole): Promise<Response> {
   const body = await readOptionalObject<{ gatewayId?: unknown; route?: unknown; user?: unknown; messages?: unknown; tools?: unknown; maxTokens?: unknown }>(request)
   const messages = Array.isArray(body?.messages) ? body!.messages : []
   const user = cleanString(body?.user)
@@ -1093,7 +1010,7 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
   // Non-admin console users are locked to the default gateway and route: a read-only
   // viewer must not be able to proxy inference through an arbitrary gateway on the
   // operator's account. Admins may target any gateway and route they select.
-  const isAdmin = viewer.role === 'admin'
+  const isAdmin = role === 'admin'
   const gatewayId = isAdmin ? (cleanString(body?.gatewayId) ?? defaults.gatewayId) : defaults.gatewayId
   const route = isAdmin ? (cleanString(body?.route) ?? defaults.routeName) : defaults.routeName
   if (!accountId || !gatewayId) return json({ error: 'gateway_not_configured', requestId }, 409, requestId)
@@ -1120,8 +1037,6 @@ async function handlePlaygroundChat(request: Request, deps: RouterDeps, requestI
 // Playground "direct" target: bypass the gateway and drive the router's own scheduler straight
 // to a node, so an operator can verify inference even when no AI Gateway is reachable.
 async function handlePlaygroundDirect(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const viewer = await requireUser(request, deps, now)
-  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readOptionalObject<{ model?: unknown; user?: unknown; messages?: unknown; tools?: unknown; maxTokens?: unknown }>(request)
   const model = cleanString(body?.model)
   if (!model) return json({ error: 'model_required', requestId }, 400, requestId)
@@ -1132,17 +1047,14 @@ async function handlePlaygroundDirect(request: Request, deps: RouterDeps, reques
   return runInference(deps, { body: { model, ...(user ? { user } : {}), messages, stream: true, ...(tools ? { tools } : {}), ...(maxTokens ? { max_tokens: maxTokens } : {}) }, requestHeaders: request.headers, requestId, now })
 }
 
-async function handlePlaygroundSpeedTest(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const viewer = await requireUser(request, deps, now)
-  if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
+async function handlePlaygroundSpeedTest(request: Request, deps: RouterDeps, requestId: string, now: number, role: ConsoleRole): Promise<Response> {
   const body = await readOptionalObject<SpeedTestBody>(request)
   // A read-only viewer gets its own measurement back but does not overwrite the stored
   // per-profile record the whole console reads.
-  return await runSpeedTest(deps, body, request.headers, requestId, now, viewer.role === 'admin')
+  return await runSpeedTest(deps, body, request.headers, requestId, now, role === 'admin')
 }
 
 async function handleApiSpeedTest(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readOptionalObject<SpeedTestBody>(request)
   return await runSpeedTest(deps, body, request.headers, requestId, now, true)
 }
@@ -1251,9 +1163,7 @@ async function getOrCreateUpstreamToken(deps: RouterDeps): Promise<string> {
   return token
 }
 
-async function handleSetupAccess(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleSetupAccess(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readJson<{ adminEmails?: unknown; adminGroups?: unknown; userEmails?: unknown; userGroups?: unknown; emails?: unknown }>(request)
   const adminEmails = normalizeEmailList(body?.adminEmails ?? body?.emails)
   const adminGroups = normalizeGroupList(body?.adminGroups)
@@ -1275,9 +1185,7 @@ async function handleSetupAccess(request: Request, deps: RouterDeps, requestId: 
   return json({ ok: true, teamDomain: result.teamDomain, hostname: domain.hostname, consoleUrl: `https://${domain.hostname}/admin`, usersOpen: result.usersOpen }, 200, requestId)
 }
 
-async function handleSetupComplete(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleSetupComplete(deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const phase = await setupPhase(deps.store)
   if (phase !== 'access_ready' && phase !== 'complete') return json({ error: 'setup_incomplete', phase, requestId }, 409, requestId)
   await advancePhase(deps.store, 'complete', { completedAt: now })
@@ -1290,9 +1198,7 @@ async function handleSetupComplete(request: Request, deps: RouterDeps, requestId
   return json({ ok: true, ...(domain?.hostname ? { customDomain: domain.hostname } : {}) }, 200, requestId)
 }
 
-async function handleZones(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleZones(deps: RouterDeps, requestId: string): Promise<Response> {
   const accountId = deps.env.CLOUDFLARE_ACCOUNT_ID ?? deps.env.AI_GATEWAY_ACCOUNT_ID
   const token = deps.env.CLOUDFLARE_API_TOKEN_RUNTIME
   if (!accountId || (!token && !deps.cloudflareClient?.listZones)) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
@@ -1301,9 +1207,7 @@ async function handleZones(request: Request, deps: RouterDeps, requestId: string
   return json({ zones: await client.listZones(accountId) }, 200, requestId)
 }
 
-async function handleGatewayOptions(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleGatewayOptions(deps: RouterDeps, url: URL, requestId: string): Promise<Response> {
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
   const defaults = gatewaySettings({ env: deps.env, ...(storedSettings ? { stored: storedSettings } : {}) })
   const accountId = defaults.accountId
@@ -1319,9 +1223,7 @@ async function handleGatewayOptions(request: Request, deps: RouterDeps, url: URL
 
 // Live-verify whether the *selected* gateway carries the mesh route + canonical provider,
 // so the Routing chip reflects that gateway's true state rather than the last-synced one.
-async function handleGatewayProvisionStatus(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleGatewayProvisionStatus(deps: RouterDeps, url: URL, requestId: string): Promise<Response> {
   const storedSettings = await deps.store.getConfig<Partial<GatewaySettings>>('cloudflare_gateway_settings')
   const defaults = gatewaySettings({ env: deps.env, ...(storedSettings ? { stored: storedSettings } : {}) })
   const accountId = defaults.accountId
@@ -1334,9 +1236,7 @@ async function handleGatewayProvisionStatus(request: Request, deps: RouterDeps, 
   return json({ gatewayId, ...status }, 200, requestId)
 }
 
-async function handleApiKeyCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireKeyAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiKeyCreate(deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const token = generateBearerToken('automation')
   const record = await createTokenRecord('automation', token, now)
   await deps.store.putToken(record)
@@ -1344,18 +1244,14 @@ async function handleApiKeyCreate(request: Request, deps: RouterDeps, requestId:
   return json({ id: record.id, token, createdAt: record.createdAt }, 201, requestId)
 }
 
-async function handleApiKeyList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireKeyAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiKeyList(deps: RouterDeps, requestId: string): Promise<Response> {
   const keys = (await deps.store.listTokens('automation'))
     .filter((token) => token.active)
     .map((token) => ({ id: token.id, createdAt: token.createdAt }))
   return json({ keys }, 200, requestId)
 }
 
-async function handleApiKeyRevoke(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireKeyAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiKeyRevoke(deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const keyId = decodeURIComponent(url.pathname.split('/').pop() ?? '')
   const existing = await deps.store.getToken('automation', keyId)
   if (!existing) return json({ error: 'not_found', requestId }, 404, requestId)
@@ -1366,9 +1262,7 @@ async function handleApiKeyRevoke(request: Request, deps: RouterDeps, url: URL, 
 
 // handleApiKeyRotate retires a key and issues a fresh secret in one step so the previous
 // secret stops authenticating immediately; the new secret is returned exactly once.
-async function handleApiKeyRotate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const actor = await requireKeyAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiKeyRotate(deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const keyId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
   const existing = await deps.store.getToken('automation', keyId)
   if (!existing) return json({ error: 'not_found', requestId }, 404, requestId)
@@ -1381,7 +1275,6 @@ async function handleApiKeyRotate(request: Request, deps: RouterDeps, url: URL, 
 }
 
 async function handleApiStatus(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
   const url = new URL(request.url)
   const detailed = url.searchParams.get('detail') === 'full' || url.searchParams.get('include') === 'details'
   const nodes = await deps.store.listNodes(now)
@@ -1411,11 +1304,7 @@ async function handleApiStatus(request: Request, deps: RouterDeps, requestId: st
 }
 
 /** Mint a setup (enrollment) token programmatically. Accepts an automation key or an admin credential. */
-async function handleApiEnrollmentToken(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  const adminActor = automation ? undefined : await requireAdmin(request, deps, now)
-  if (!automation && !adminActor) return json({ error: 'unauthorized' }, 401, requestId)
-  const actor = automation ? `automation:${automation.id}` : adminActor!
+async function handleApiEnrollmentToken(deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const setupToken = generateBearerToken('setup')
   await deps.store.putToken(await createTokenRecord('setup', setupToken, now, undefined, now + SETUP_TOKEN_TTL_MS))
   await deps.store.appendAudit({ id: requestId, type: 'setup_token_created', at: now, actor, detail: {} })
@@ -1446,8 +1335,7 @@ function toApiNode(node: NodeRecord, runtimeVersions?: { readonly meshllm: strin
   }
 }
 
-async function handleApiNodeList(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiNodeList(deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
   const statusFilter = url.searchParams.get('status') ?? undefined
   const query = (url.searchParams.get('q') ?? '').trim().toLowerCase()
   const limitParam = Number(url.searchParams.get('limit') ?? '100')
@@ -1463,8 +1351,7 @@ async function handleApiNodeList(request: Request, deps: RouterDeps, url: URL, r
   return json({ nodes: page.map((node) => toApiNode(node, runtimeVersions)), nextCursor }, 200, requestId)
 }
 
-async function handleApiNodeGet(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiNodeGet(deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
   const nodeId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
   const node = (await deps.store.listNodes(now)).find((candidate) => candidate.id === nodeId)
   if (!node) return json({ error: 'not_found', requestId }, 404, requestId)
@@ -1474,21 +1361,17 @@ async function handleApiNodeGet(request: Request, deps: RouterDeps, url: URL, re
 /** Decommission a node: revoke it and its node/mesh tokens so it must re-enroll. */
 // handleApiNodeReconfigure updates a node's operator-owned settings for an automation caller,
 // mirroring the admin console control so MDM/fleet tooling can rename or cap weaker nodes.
-async function handleApiNodeReconfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiNodeReconfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const nodeId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
   const node = await deps.store.getNode(nodeId)
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
   const body = await readJson<NodeConfigBody>(request)
-  const result = await reconfigureNode(deps, node, body, `automation:${automation.id}`, requestId, now)
+  const result = await reconfigureNode(deps, node, body, actor, requestId, now)
   if (result instanceof Response) return result
   return json({ ok: true, node: toApiNode(result, await desiredRuntimeVersions(deps.store)) }, 200, requestId)
 }
 
-async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiNodeDecommission(deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const nodeId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
   // getNode (not listNodes) so decommission can still reach — and reap — a node whose row is
   // already a revoked tombstone: listNodes now hides revoked nodes, but the delete must remain
@@ -1502,53 +1385,36 @@ async function handleApiNodeDecommission(request: Request, deps: RouterDeps, url
   await Promise.all(nodeTokens.filter((token) => token.nodeId === nodeId && token.active).map((token) => deps.store.revokeToken('node', token.id, now)))
   await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
   await deps.store.deleteNode(nodeId)
-  await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
+  await deps.store.appendAudit({ id: requestId, type: 'node_revoked', at: now, actor: actor, target: nodeId, detail: {} })
   return json({ ok: true, id: nodeId }, 200, requestId)
 }
 
-// Automation twins of the console deactivate/activate: taint or clear a node's taint via the API.
-async function handleApiNodeDeactivate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  return apiSetNodeDeactivated(request, deps, url, true, requestId, now)
-}
 
-async function handleApiNodeActivate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  return apiSetNodeDeactivated(request, deps, url, false, requestId, now)
-}
 
-async function apiSetNodeDeactivated(request: Request, deps: RouterDeps, url: URL, deactivated: boolean, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  const nodeId = decodeURIComponent(url.pathname.split('/').at(-2) ?? '')
+// The automation twin of setNodeDeactivated. Same state change, different response contract:
+// this one returns the machine-facing node projection the /api/v1 surface promises.
+async function apiSetNodeDeactivated(deps: RouterDeps, nodeId: string, deactivated: boolean, requestId: string, now: number, actor: string): Promise<Response> {
   const node = await deps.store.getNode(nodeId)
   if (!node || node.status === 'revoked') return json({ error: 'unknown_node', requestId }, 404, requestId)
   const updated = { ...node, deactivated }
   await deps.store.upsertNode(updated)
   if (deactivated) await removeNodeMeshTokens(deps.store, deps.env, nodeId, now)
-  await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor: `automation:${automation.id}`, target: nodeId, detail: {} })
+  await deps.store.appendAudit({ id: requestId, type: deactivated ? 'node_deactivated' : 'node_activated', at: now, actor: actor, target: nodeId, detail: {} })
   return json({ ok: true, node: toApiNode(updated, await desiredRuntimeVersions(deps.store)) }, 200, requestId)
 }
 
 // Automation twin of the console mesh secret rotation (POST /admin/mesh/rotate): rotate
 // the mesh join secret via the API, reusing the same shared rotation core.
-async function handleApiMeshRotate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleMeshRotate(request, deps.store, deps.env, now, `automation:${automation.id}`)
+async function handleApiMeshRotate(request: Request, deps: RouterDeps, now: number, actor: string): Promise<Response> {
+  return await handleMeshRotate(request, deps.store, deps.env, now, actor)
 }
 
 // Automation twins of the console operator settings (POST /admin/settings): read and write
 // the fleet-tunable settings via the API, reusing the same shared validation core.
-async function handleApiSettingsGet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiSettingsGet(deps: RouterDeps, requestId: string): Promise<Response> {
   return json({ offlinePruneSeconds: await offlinePruneSeconds(deps), desiredRuntimeVersions: await desiredRuntimeVersions(deps.store) }, 200, requestId)
 }
 
-async function handleApiSettingsSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return applyFleetSettings(request, deps, `automation:${automation.id}`, requestId, now)
-}
 
 /** Machine-facing model projection: identity, the names callers use, and rollout state. */
 function toApiModel(profile: ModelProfile) {
@@ -1585,8 +1451,7 @@ function toApiModel(profile: ModelProfile) {
   }
 }
 
-async function handleApiModelList(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiModelList(deps: RouterDeps, requestId: string): Promise<Response> {
   const profiles = await deps.store.listProfiles()
   return json({ models: profiles.map(toApiModel) }, 200, requestId)
 }
@@ -1595,9 +1460,7 @@ async function handleApiModelList(request: Request, deps: RouterDeps, requestId:
 // manager adds a model to the catalog with an automation key instead of an Access
 // session, wrapping the same buildCustomProfile lever so the API and console never
 // diverge. The new model is inactive and reaches production only through the enable path.
-async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readJson<{ modelRef?: string; mode?: string; runtime?: unknown; name?: string; meshId?: unknown }>(request)
   const modelRef = typeof body?.modelRef === 'string' ? body.modelRef.trim() : ''
   if (!modelRef) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
@@ -1618,7 +1481,7 @@ async function handleApiModelAdd(request: Request, deps: RouterDeps, requestId: 
   }
   if (existing.some((candidate) => candidate.id === profile.id)) return json({ error: 'duplicate_profile', profileId: profile.id, requestId }, 409, requestId)
   await deps.store.setProfile(profile)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: `automation:${automation.id}`, target: profile.id, detail: { modelRef, split, runtime } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_added', at: now, actor: actor, target: profile.id, detail: { modelRef, split, runtime } })
   return json({ ok: true, model: toApiModel(profile) }, 201, requestId)
 }
 
@@ -1633,22 +1496,18 @@ function classifyModelDeletion(profiles: readonly ModelProfile[], profileId: str
   return { profile }
 }
 
-async function handleApiModelDelete(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiModelDelete(deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const profileId = decodeURIComponent(url.pathname.split('/').pop() ?? '')
   const outcome = classifyModelDeletion(await deps.store.listProfiles(), profileId)
   if ('error' in outcome) return json({ error: outcome.error, requestId }, outcome.status, requestId)
   await deps.store.deleteProfile(profileId)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_deleted', at: now, actor: `automation:${automation.id}`, target: profileId, detail: {} })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_deleted', at: now, actor: actor, target: profileId, detail: {} })
   return json({ ok: true, id: profileId }, 200, requestId)
 }
 
 // handleProfileDelete is the Access-session twin of handleApiModelDelete: the console
 // removes a custom, switched-off model through the same shared deletion rules.
-async function handleProfileDelete(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleProfileDelete(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readJson<{ profileId?: string }>(request)
   const profileId = typeof body?.profileId === 'string' ? body.profileId.trim() : ''
   const outcome = classifyModelDeletion(await deps.store.listProfiles(), profileId)
@@ -1670,23 +1529,14 @@ async function duplicateProfileCore(deps: RouterDeps, profileId: string, actor: 
   return json({ ok: true, profileId: copy.id, model: toApiModel(copy) }, 201, requestId)
 }
 
-async function handleProfileDuplicate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const actor = await requireAdmin(request, deps, now)
-  if (!actor) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleProfileDuplicate(request: Request, deps: RouterDeps, requestId: string, now: number, actor: string): Promise<Response> {
   const body = await readJson<{ profileId?: unknown }>(request)
   if (!body || typeof body.profileId !== 'string') return json({ error: 'invalid_profile_config', requestId }, 400, requestId)
   return duplicateProfileCore(deps, body.profileId, actor, requestId, now)
 }
 
-async function handleApiModelDuplicate(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return duplicateProfileCore(deps, decodeURIComponent(url.pathname.split('/').at(-2) ?? ''), `automation:${automation.id}`, requestId, now)
-}
 
-async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
   const body = await readJson<ModelConfigBody>(request)
   if (!body) return json({ error: 'invalid_model_config', requestId }, 400, requestId)
@@ -1703,8 +1553,8 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
     const direct = configureLlamaCppProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
     await deps.store.setProfile(direct.profile)
-    if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor: `automation:${automation.id}`, target: direct.profile.id, detail: { ...reassignment.change } })
-    await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
+    if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor: actor, target: direct.profile.id, detail: { ...reassignment.change } })
+    await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
     return json({ ok: true, model: toApiModel(direct.profile) }, 200, requestId)
   }
   const contextWindow = body.contextWindow ?? existing.contextWindow
@@ -1741,60 +1591,49 @@ async function handleApiModelConfigure(request: Request, deps: RouterDeps, url: 
   }
   const updated: ModelProfile = { ...existing, contextWindow, upstreamModel, meshllm, displayName, publicAliases, version: existing.version + 1 }
   await deps.store.setProfile(updated)
-  if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { ...reassignment.change } })
-  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: `automation:${automation.id}`, target: updated.id, detail: { contextWindow, modelRef: meshllm.modelRef } })
+  if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor: actor, target: updated.id, detail: { ...reassignment.change } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: actor, target: updated.id, detail: { contextWindow, modelRef: meshllm.modelRef } })
   return json({ ok: true, model: toApiModel(updated) }, 200, requestId)
 }
 
-async function handleApiModelEnable(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiModelEnable(deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
   const activation = singleActiveActivation(await deps.store.listProfiles(), profileId)
   if (!activation) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   for (const profile of activation.deactivated) await deps.store.setProfile(profile)
   await deps.store.setProfile(activation.activated)
   const deactivatedIds = activation.deactivated.map((profile) => profile.id)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_activated', at: now, actor: `automation:${automation.id}`, target: profileId, detail: { deactivated: deactivatedIds } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_activated', at: now, actor: actor, target: profileId, detail: { deactivated: deactivatedIds } })
   return json({ ok: true, activated: activation.activated.id, deactivated: deactivatedIds }, 200, requestId)
 }
 
-async function handleApiModelDisable(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiModelDisable(deps: RouterDeps, url: URL, requestId: string, now: number, actor: string): Promise<Response> {
   const profileId = decodeURIComponent(url.pathname.split('/')[4] ?? '')
   const existing = (await deps.store.listProfiles()).find((profile) => profile.id === profileId)
   if (!existing) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   await deps.store.setActiveProfile(profileId, 0)
-  await deps.store.appendAudit({ id: requestId, type: 'profile_rollout', at: now, actor: `automation:${automation.id}`, target: profileId, detail: { rolloutPercent: 0 } })
+  await deps.store.appendAudit({ id: requestId, type: 'profile_rollout', at: now, actor: actor, target: profileId, detail: { rolloutPercent: 0 } })
   return json({ ok: true, id: profileId }, 200, requestId)
 }
 
-async function handleApiAgentVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiAgentVersions(request: Request, deps: RouterDeps): Promise<Response> {
   return await handleAgentVersionsList(request, deps.store, deps.env, deps.releasesFetcher)
 }
 
-async function handleApiAgentVersionSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, `automation:${automation.id}`)
+async function handleApiAgentVersionSet(request: Request, deps: RouterDeps, actor: string): Promise<Response> {
+  return await handleAgentVersionSelect(request, deps.store, deps.env, deps.releasesFetcher ?? globalThis.fetch, actor)
 }
 
-async function handleApiRuntimeVersions(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiRuntimeVersions(request: Request, deps: RouterDeps): Promise<Response> {
   return await handleRuntimeVersionsList(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, deps.env)
 }
 
-async function handleApiRuntimeVersionSet(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
-  const automation = await requireAutomation(request, deps, now)
-  if (!automation) return json({ error: 'unauthorized' }, 401, requestId)
-  return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, `automation:${automation.id}`, deps.env)
+async function handleApiRuntimeVersionSet(request: Request, deps: RouterDeps, actor: string): Promise<Response> {
+  return await handleRuntimeVersionsSelect(request, deps.store, deps.releasesFetcher ?? globalThis.fetch, actor, deps.env)
 }
 
 /** Poll operational events oldest-first, filtered by since/type, paginated by an `at` cursor. */
-async function handleApiEvents(request: Request, deps: RouterDeps, url: URL, requestId: string, now: number): Promise<Response> {
-  if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
+async function handleApiEvents(deps: RouterDeps, url: URL, requestId: string): Promise<Response> {
   const raw = url.searchParams.get('since') ?? '0'
   const i = raw.indexOf(':')
   const atStr = i >= 0 ? raw.slice(0, i) : raw
