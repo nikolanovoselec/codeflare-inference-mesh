@@ -18,8 +18,8 @@
 
 | Variable | Default | Required | Consumed by | Implements |
 | --- | --- | --- | --- | --- |
-| `ROUTER_PROVIDER_TOKEN` | n/a | yes for seeded provider auth | `packages/router-worker/src/router.ts::authenticateKind` | [REQ-GWY-002](../../sdd/spec/gateway.md) |
-| `ADMIN_TOKEN` | n/a | no after browser setup creates admin token records | `packages/router-worker/src/router.ts::authenticateKind` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
+| `ROUTER_PROVIDER_TOKEN` | n/a | yes for seeded provider auth | `packages/router-worker/src/auth-gates.ts::authenticateKind` | [REQ-GWY-002](../../sdd/spec/gateway.md) |
+| `ADMIN_TOKEN` | n/a | no after browser setup creates admin token records | `packages/router-worker/src/auth-gates.ts::authenticateKind` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | `ADMIN_RECOVERY_TOKEN` | n/a | yes only for emergency admin reset | `packages/router-worker/src/router.ts::handleAdminRecovery` | [REQ-ADM-002](../../sdd/spec/setup-admin.md) |
 | `SETUP_REOPEN` | n/a | no (break-glass only, set via wrangler) | `packages/router-worker/src/setup-state.ts::breakGlassActive`, `packages/router-worker/src/router.ts::handleSetupComplete` | [REQ-ADM-013](../../sdd/spec/setup-admin.md) |
 | `NODE_UPSTREAM_TOKEN` | generated during first setup when absent | no | `packages/router-worker/src/router.ts::resolveUpstreamToken` | [REQ-SEC-001](../../sdd/spec/security.md) |

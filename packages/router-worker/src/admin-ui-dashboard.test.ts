@@ -234,7 +234,7 @@ describe('dashboard overview contracts', () => {
     expect(harness.byId(ADMIN_UI_TOPOLOGY.captionId).dataset.serving).toBe('2')
     const battlestation = tableRows(harness).find((row) => row.dataset.nodeRow === 'battlestation')!
     const statusCell = descendants(battlestation).find((node) => node.dataset.cell === 'status')!
-    expect(statusCell.dataset.meshRole).toBe('No stage assigned')
+    expect(statusCell.dataset.meshRole).toBe(ADMIN_UI_MESH_ROLE.noStageAssigned)
     expect(statusCell.dataset.statusDetail).toBe('standby')
     const chip = descendants(statusCell).find((node) => node.className === 'chip')!
     // An api-client advertising ready models without a ready runtime or a stage is
