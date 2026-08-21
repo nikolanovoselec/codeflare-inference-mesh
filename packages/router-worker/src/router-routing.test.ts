@@ -306,6 +306,40 @@ describe('router route, scheduling and gateway contracts', () => {
   })
 
 
+  it('REQ-RUN-021 dispatches a vllm profile direct with session affinity and the node credential boundary', async () => {
+    // A vllm profile rides the same direct path as llama.cpp: session-affine node
+    // choice, body.model rewritten to the upstream model, and the provider token
+    // never crossing to the node. REQ-RUN-021 / REQ-SCH-004 / REQ-SEC-004.
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
+    const direct = { ...buildCustomProfile({ modelRef: 'org/model', split: false, runtime: 'vllm', existing: [] }), active: true, rolloutPercent: 100, version: 2 }
+    await store.setProfile(direct)
+    await store.upsertNode(nodeFixture({
+      runtime: 'vllm',
+      activeProfileIds: [direct.id],
+      publicModels: [...direct.publicAliases],
+      runtimeModel: direct.upstreamModel,
+      metrics: { runtimeState: 'ready', runtimeKind: 'vllm', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel], platform: 'linux', cudaAvailable: true }
+    }))
+    const callable = direct.publicAliases.find((alias) => alias !== 'codeflare-mesh') ?? direct.publicAliases[0]!
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: callable, messages: [{ role: 'user', content: 'hi' }] })
+    }))
+    await response.text()
+    const forwarded = capture.request!
+    const forwardedBody = await forwarded.json() as { model: string }
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('x-inference-mesh-affinity')).toBe('pinned')
+    expect(forwardedBody.model).toBe(direct.upstreamModel)
+    expect(forwarded.headers.get('authorization') ?? '').not.toContain('provider-secret')
+    expect(JSON.stringify([...store.directSessions.values()])).not.toContain('provider-secret')
+  })
+
+
   it('REQ-SCH-004 derives direct llama.cpp session affinity from AI Gateway metadata', async () => {
     const capture: { request?: Request } = {}
     const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })

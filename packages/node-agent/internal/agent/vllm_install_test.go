@@ -331,6 +331,27 @@ func TestREQNODE017EnsureVllmKeepsCurrentUntilNewInstallCompletes(t *testing.T) 
 	}
 }
 
+func TestREQNODE017EnsureVllmStripsTagPrefixForPipPin(t *testing.T) {
+	// The router's desired versions are GitHub release tags (v0.27.1); the pip
+	// spec takes the bare version. The agent strips the leading v so a selected
+	// tag never produces an unresolvable `vllm==v…` pin. REQ-NODE-017.
+	dataDir := t.TempDir()
+	seedManagedUv(t, dataDir)
+	runner := &fakeVllmRunner{dataDir: dataDir}
+	if _, err := EnsureVllm(dataDir, "v0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
+		t.Fatalf("EnsureVllm returned error: %v", err)
+	}
+	for _, call := range runner.joinedCalls() {
+		if strings.Contains(call, "pip install") {
+			if !strings.Contains(call, "vllm==0.27.1") || strings.Contains(call, "vllm==v0.27.1") {
+				t.Fatalf("tag-shaped desired version must pin the bare pip version, got %q", call)
+			}
+			return
+		}
+	}
+	t.Fatalf("no pip install step recorded: %v", runner.joinedCalls())
+}
+
 func TestREQNODE017EnsureVllmDefaultsToPinnedVersion(t *testing.T) {
 	dataDir := t.TempDir()
 	seedManagedUv(t, dataDir)

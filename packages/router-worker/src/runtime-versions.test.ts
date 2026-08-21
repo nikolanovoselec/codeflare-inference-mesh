@@ -3,7 +3,7 @@ import { createTokenRecord, hashToken } from './auth'
 import { createRouter } from './router'
 import { StoreScheduler } from './scheduler'
 import { MemoryStore, nodeFixture } from './test-helpers'
-import { activeMeshllmRepository, DEFAULT_LLAMACPP_VERSION, DEFAULT_MESHLLM_VERSION, desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
+import { activeMeshllmRepository, DEFAULT_LLAMACPP_VERSION, DEFAULT_MESHLLM_VERSION, DEFAULT_VLLM_VERSION, desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 
 interface RuntimeVersionsBody {
   readonly meshllm: { readonly tags: readonly string[]; readonly desired: string; readonly stale: boolean }
@@ -53,6 +53,17 @@ describe('runtime binary version management', () => {
     expect(body).toEqual({ ok: true, desired: { meshllm: 'v0.73.0', llamacpp: 'b9900' } })
     expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
     expect(store.audit.find((event) => event.type === 'runtime_versions_selected')).toMatchObject({ actor: 'admin:test', detail: { meshllm: 'v0.73.0', llamacpp: 'b9900' } })
+  })
+
+  it('REQ-RUN-021 resolves the desired vllm version alongside its siblings', async () => {
+    // vllm joins the desired-versions wire contract: an unset config resolves to
+    // the pinned default, and a stored selection wins. The agent strips the tag's
+    // leading v for its pip pin, so tags stay GitHub-shaped here.
+    const store = new MemoryStore()
+    expect((await desiredRuntimeVersions(store)).vllm).toBe(DEFAULT_VLLM_VERSION)
+    await store.putConfig('desired_vllm_version', 'v0.28.0')
+    expect((await desiredRuntimeVersions(store)).vllm).toBe('v0.28.0')
+    expect((await desiredRuntimeVersions(store)).meshllm).toBe(DEFAULT_MESHLLM_VERSION)
   })
 
   it('REQ-ADM-033 rejects unknown runtime versions without changing stored desires', async () => {
