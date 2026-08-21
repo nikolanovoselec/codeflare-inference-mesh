@@ -46,6 +46,8 @@ type runtimeSpec struct {
 	restart func(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, manager agent.RuntimeManager) (string, error)
 }
 
+// runtimeSpecs is initialised here once and never mutated; heartbeat, restart,
+// and launch goroutines read it concurrently through specForRuntime.
 var runtimeSpecs = map[string]runtimeSpec{
 	"meshllm":  {start: startMeshRuntimeManager, restart: restartMeshRuntime},
 	"llamacpp": {start: startLlamaCppRuntime, restart: restartLlamaCppRuntime},

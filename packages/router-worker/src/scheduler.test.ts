@@ -44,6 +44,9 @@ describe('scheduler entry-node selection', () => {
     const directNode = nodeFixture({ runtime: 'llamacpp', publicModels: ['codeflare-mesh-development', 'direct-a'], activeProfileIds: ['direct-a'], metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] } })
     expect(isDirectEligible({ ...directNode, meshId: 'development' }, direct, 'direct-a', NOW)).toBe(true)
     expect(isDirectEligible(directNode, direct, 'direct-a', NOW)).toBe(false)
+    // A node running a different runtime kind never serves a direct profile, even
+    // when otherwise eligible (REQ-SCH-004 direct dispatch keys on the profile's own kind).
+    expect(isDirectEligible({ ...directNode, meshId: 'development', runtime: 'meshllm' }, direct, 'direct-a', NOW)).toBe(false)
   })
 
   it('REQ-SCH-002 selectNode picks the least-loaded ready node by active requests', () => {

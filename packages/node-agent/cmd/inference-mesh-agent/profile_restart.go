@@ -54,7 +54,7 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 		provisionMeshPeerFirewall(ctx, s.cmdRunner, s.goos, s.warpIface, profile)
 	}
 	manager := s.currentManager()
-	if hasProfile && manager != nil && manager.Runtime() != profile.Runtime {
+	if hasProfile && manager != nil && effectiveRuntimeKind(manager.Runtime()) != effectiveRuntimeKind(profile.Runtime) {
 		if err := waitForDrain(ctx, s.activeRequests, manager, s.drainTimeout); err != nil && ctx.Err() != nil {
 			manager.SetFailure(err)
 			return
@@ -225,6 +225,9 @@ func restartMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.Mod
 		if err := restarter.RestartWithInput(ctx, meshRenderInput(profile, cfg), profile.ContextWindow); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
 			return "", err
 		}
+		return "", nil
 	}
-	return "", nil
+	// Fail closed: a manager satisfying neither restart seam must surface as a
+	// failed restart, never as a silent success the reconciler marks ready.
+	return "", fmt.Errorf("no restart path for runtime kind %q", manager.Runtime())
 }

@@ -30,7 +30,7 @@ export async function runInference(deps: InferenceDeps, input: { body: Record<st
   const profile = await deps.store.getProfileByPublicModel(publicModel)
   if (!profile) return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
   const normalized = { ...input, body: { ...input.body, model: publicModel } }
-  if (DIRECT_RUNTIMES.has(profile.runtime)) return runDirectLlamaCppInference(deps, { ...normalized, body: directSessionBody(normalized.body, input.requestHeaders) }, publicModel, profile)
+  if (DIRECT_RUNTIMES.has(profile.runtime)) return runDirectInference(deps, { ...normalized, body: directSessionBody(normalized.body, input.requestHeaders) }, publicModel, profile)
   return runMeshInference(deps, normalized)
 }
 export function routablePublicModel(model: string): string {
@@ -45,7 +45,7 @@ async function runMeshInference(deps: InferenceDeps, input: { body: Record<strin
   }
   return forwardInference(deps, input, selection.node, selection.profile)
 }
-async function runDirectLlamaCppInference(deps: InferenceDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }, publicModel: string, profile: ModelProfile): Promise<Response> {
+async function runDirectInference(deps: InferenceDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }, publicModel: string, profile: ModelProfile): Promise<Response> {
   const session = parseDirectSession(input.body.user)
   if (!session) {
     await deps.store.appendAudit({ id: input.requestId, type: 'direct_session_rejected', at: input.now, actor: 'provider', target: profile.id, detail: { publicModel, reason: 'invalid_user' } })
