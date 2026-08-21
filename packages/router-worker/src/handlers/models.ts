@@ -1,6 +1,6 @@
 /** Model profiles: the catalogue, its rollout state, and per-profile configuration. */
 import { buildCustomProfile, buildDuplicateProfile, llamaCppQuantError, parseLlamaCppModelRef, profileMeshId } from '../profiles'
-import { configureLlamaCppProfile, configureVllmProfile, INVALID_MAX_VRAM, resolveCallNameAliases, resolveMaxVram, resolveMeshReassignment, resolveMeshllmTunables, resolveRuntime, type ModelConfigBody } from '../profile-config'
+import { configureLlamaCppProfile, configureVllmProfile, INVALID_MAX_VRAM, resolveCallNameAliases, resolveMaxVram, resolveMeshReassignment, resolveMeshllmTunables, resolveRuntime, resolveTargetRuntime, type ModelConfigBody } from '../profile-config'
 import { json, readJson } from '../http'
 import { listMeshes } from '../meshes'
 import type { ModelProfile } from '../types'
@@ -45,12 +45,11 @@ export async function handleProfileConfig(request: Request, deps: RouterDeps, re
   const reassignment = await resolveMeshReassignment(deps, found, body.meshId)
   if ('error' in reassignment) return json({ error: reassignment.error, requestId }, 400, requestId)
   const existing = reassignment.profile
-  const runtime = resolveRuntime(body.runtime)
-  if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   // The dispatch target is the runtime the profile is being configured *into*:
   // the requested kind when one rides the body, else the stored kind. Keying on
   // either-side matches sent a llamacpp→vllm conversion into the llamacpp arm.
-  const target = body.runtime === undefined || body.runtime === null || body.runtime === '' ? existing.runtime : runtime
+  const target = resolveTargetRuntime(body.runtime, existing.runtime)
+  if (target === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   if (body.llamacpp !== undefined && target !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   if (body.vllm !== undefined && target !== 'vllm') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   if (target === 'llamacpp') {
@@ -285,12 +284,11 @@ export async function handleApiModelConfigure(request: Request, deps: RouterDeps
   const reassignment = await resolveMeshReassignment(deps, found, body.meshId)
   if ('error' in reassignment) return json({ error: reassignment.error, requestId }, 400, requestId)
   const existing = reassignment.profile
-  const runtime = resolveRuntime(body.runtime)
-  if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   // The dispatch target is the runtime the profile is being configured *into*:
   // the requested kind when one rides the body, else the stored kind. Keying on
   // either-side matches sent a llamacpp→vllm conversion into the llamacpp arm.
-  const target = body.runtime === undefined || body.runtime === null || body.runtime === '' ? existing.runtime : runtime
+  const target = resolveTargetRuntime(body.runtime, existing.runtime)
+  if (target === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   if (body.llamacpp !== undefined && target !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   if (body.vllm !== undefined && target !== 'vllm') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   if (target === 'llamacpp') {

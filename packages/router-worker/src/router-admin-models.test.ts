@@ -210,6 +210,12 @@ describe('model configuration and naming contracts', () => {
     expect(back.sourceMode).toBe('llamacpp-hf')
     expect(back.llamacpp).toMatchObject({ hfRepo: 'unsloth/model-GGUF' })
     expect(back.vllm).toBeUndefined()
+
+    // Converting a direct profile back to meshllm is not supported: the request
+    // fails closed instead of silently keeping the direct runtime.
+    expect((await configure({ runtime: 'meshllm' })).status).toBe(400)
+    const unchanged = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(unchanged.runtime).toBe('llamacpp')
   })
 
 

@@ -276,6 +276,18 @@ func TestREQRUN022VllmExitBeforeReadinessFailsRuntime(t *testing.T) {
 	}
 }
 
+func TestREQRUN010StopDuringConcurrentStopFailsLoudly(t *testing.T) {
+	// A Stop that finds another Stop mid-shutdown must not report success: a
+	// restart would swap input and "start" over the still-terminating process,
+	// never relaunching with the new argv. REQ-RUN-010.
+	manager := NewVllmManager(VllmInput{UpstreamModel: "org/model"})
+	manager.proc = newFakeMeshProcess(&eventLog{})
+	manager.done = nil
+	if err := manager.Stop(context.Background()); !errors.Is(err, errStopInProgress) {
+		t.Fatalf("Stop during a concurrent stop = %v, want errStopInProgress", err)
+	}
+}
+
 func TestREQOBS014VllmMetricsParserAcceptsTotalSuffixAndLabels(t *testing.T) {
 	// The exposition appends _total to counters and labels every series; the
 	// parser must read both spellings and only the served model's series, so an
@@ -397,7 +409,7 @@ func TestREQOBS009VllmLiveThroughputFromCounterDeltas(t *testing.T) {
 func TestREQRUN022VllmInflightCountsRunningAndWaiting(t *testing.T) {
 	// Drain-before-restart waits on the runtime's own outstanding work; for vLLM
 	// that is the running plus queued requests from its scheduler gauges. An
-	// unreachable runtime contributes no backpressure. REQ-RUN-010.
+	// unreachable runtime contributes no backpressure. REQ-RUN-022.
 	fake := &fakeVllmMetrics{}
 	fake.set("org/model", 2, 1, 0, 0)
 	manager, _ := vllmThroughputManager(t, fake)

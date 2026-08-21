@@ -251,7 +251,7 @@ export const CLIENT_ACTIONS = `\
     };
   };
   const vllmTunables = () => {
-    const gpuMemRaw = readInput('model-edit-vllm-gpu-mem');
+    const gpuMemRaw = readInput('model-edit-vllm-gpu-mem').trim();
     // A typo'd fraction must reach the router as-is and be rejected there: NaN
     // serialises to JSON null, which the router reads as "clear the setting".
     const gpuMem = Number(gpuMemRaw);

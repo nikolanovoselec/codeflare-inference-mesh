@@ -28,6 +28,15 @@ export function resolveRuntime(value: unknown): RuntimeKind | 'invalid_runtime' 
   return (RUNTIME_KINDS as readonly unknown[]).includes(value) ? (value as RuntimeKind) : 'invalid_runtime'
 }
 
+// resolveTargetRuntime resolves the runtime a config request is aimed at: the
+// requested kind when the body names one, else the profile's stored kind. The
+// blank vocabulary (absent / null / "") lives here beside resolveRuntime so the
+// two defaulting rules cannot drift apart.
+export function resolveTargetRuntime(value: unknown, existing: RuntimeKind): RuntimeKind | 'invalid_runtime' {
+  if (value === undefined || value === null || value === '') return existing
+  return resolveRuntime(value)
+}
+
 // A model's own callable alias sits alongside its mesh's stable alias. Editing it must
 // preserve that mesh alias — the old hardcoded [codeflare-mesh, alias] silently
 // repatriated non-default-mesh profiles — and may not take the reserved stable alias
