@@ -92,6 +92,20 @@ func TestREQRUN010ManagerWithoutRestartSeamFailsClosed(t *testing.T) {
 	}
 }
 
+func TestREQRUN010LlamaProfileWithoutRestartSeamFailsClosed(t *testing.T) {
+	// The documented llama.cpp fall-through: a llamacpp-profile restart whose live
+	// manager is neither the concrete llama.cpp manager nor a mesh restart seam
+	// reaches the mesh tail and fails closed there. REQ-RUN-010.
+	counter := &agent.ActiveCounter{}
+	manager := &fakeSeamlessRuntime{fakeMeshRuntime: newFakeMeshRuntime(counter)}
+	profile := agent.ModelProfile{ID: "direct-profile", UpstreamModel: "direct-upstream", Version: 1, Runtime: "llamacpp"}
+	cfg := agent.Config{RuntimeModel: "direct-upstream", ActiveProfileIDs: []string{"direct-profile"}, Profiles: []agent.ModelProfile{profile}}
+
+	if _, err := restartLlamaCppRuntime(context.Background(), cfg, profile, manager); err == nil {
+		t.Fatal("restartLlamaCppRuntime must fail closed when the manager matches neither restart seam")
+	}
+}
+
 func TestREQRUN010ProfileRestartContinuesAfterStaleDrainCounter(t *testing.T) {
 	// A stale proxy counter from an aborted/hung request must not strand a model deploy as
 	// "failed" before the new runtime can even start loading the selected model. The drain
