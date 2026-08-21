@@ -4,7 +4,7 @@
  * One slice of the console dashboard suite; shared fixtures live in
  * `./admin-ui-test-support`.
  */
-import { ADMIN_UI_RUNTIME_VERSION, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_AGENT_VERSION, ADMIN_UI_RUNTIME_VERSION, adminUiHtml } from './admin-ui'
 import { dashboardHarness, resetDashboardEnvironment, statusFixture } from './admin-ui-test-support'
 import { descendants } from './admin-ui-harness'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -166,13 +166,12 @@ describe('settings, API keys and version control contracts', () => {
   })
 
   it('REQ-ADM-008 saving the agent version posts the fleet-wide selection', async () => {
-    // The select is built by the renderer, so this asserts the request the action makes
-    // and its shape rather than reaching for an element that may not exist yet.
     const harness = await dashboardHarness()
+    harness.byId(ADMIN_UI_AGENT_VERSION.selectId).value = 'v1.4.0'
     await harness.clickAction('agent-version-set', { out: 'agent-version-output' })
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/agent-version')
     expect(call?.init?.method).toBe('POST')
-    expect(JSON.parse(String(call?.init?.body))).toHaveProperty('version')
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ version: 'v1.4.0' })
   })
 
   it('REQ-ADM-033 refreshing runtime versions re-reads the version list', async () => {
