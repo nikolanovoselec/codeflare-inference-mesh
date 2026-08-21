@@ -203,6 +203,21 @@ func restartLlamaCppRuntime(ctx context.Context, cfg agent.Config, profile agent
 	return restartMeshRuntime(ctx, cfg, profile, manager)
 }
 
+// restartVllmRuntime re-renders the vLLM input against the current config
+// (re-resolving the pinned venv binary) and restarts in place. A live manager
+// that is not the concrete vLLM manager falls through to the mesh restart
+// tail, whose fail-closed ending covers managers matching no restart seam.
+func restartVllmRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, manager agent.RuntimeManager) (string, error) {
+	if direct, ok := manager.(*agent.VllmManager); ok {
+		binaryPath, installError := vllmBinaryPath(cfg)
+		if err := direct.RestartWithVllmInput(ctx, vllmInput(profile, binaryPath, cfg.DataDir)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+			return installError, err
+		}
+		return installError, nil
+	}
+	return restartMeshRuntime(ctx, cfg, profile, manager)
+}
+
 // meshInputRestarter is the render-input restart seam for managers that are not
 // the concrete MeshLLM manager (test fakes); the concrete manager instead
 // re-resolves its pinned binary before restarting.

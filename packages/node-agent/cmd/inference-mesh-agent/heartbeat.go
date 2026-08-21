@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"os/exec"
 	"runtime"
 	"time"
 
@@ -19,6 +20,23 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 	// managers' state into one metrics object. REQ-OBS-008.
 	manager, installError := s.managerSnapshot()
 	metrics := runtimeMetrics(manager, s.loadState, current, s.activeRequests.Value(), installError)
+	// Observed host capabilities ride every tick: the scheduler's vLLM gate
+	// fails closed on absent fields, so only actually-probed values are
+	// reported — including an explicit false. REQ-NODE-016 / REQ-OBS-014.
+	capabilityGoos := s.goos
+	if capabilityGoos == "" {
+		capabilityGoos = runtime.GOOS
+	}
+	probe := s.cudaProbe
+	if probe == nil {
+		probe = func() bool {
+			_, err := exec.LookPath("nvidia-smi")
+			return err == nil
+		}
+	}
+	cudaAvailable := probe()
+	metrics.Platform = capabilityGoos
+	metrics.CudaAvailable = &cudaAvailable
 	if manager != nil {
 		if coordinator, ok := manager.(agent.MeshCoordinator); ok {
 			status, consoleReady := coordinator.PollStatus(ctx)

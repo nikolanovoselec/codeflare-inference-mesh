@@ -51,6 +51,7 @@ type runtimeSpec struct {
 var runtimeSpecs = map[string]runtimeSpec{
 	"meshllm":  {start: startMeshRuntimeManager, restart: restartMeshRuntime},
 	"llamacpp": {start: startLlamaCppRuntime, restart: restartLlamaCppRuntime},
+	"vllm":     {start: startVllmRuntime, restart: restartVllmRuntime},
 }
 
 // effectiveRuntimeKind resolves a profile's runtime kind the way launch dispatch
@@ -79,6 +80,30 @@ func startLlamaCppRuntime(ctx context.Context, cfg agent.Config, profile agent.M
 		return nil, installError, err
 	}
 	return manager, installError, nil
+}
+
+func startVllmRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, _ *agent.MeshBootstrap) (agent.RuntimeManager, string, error) {
+	binaryPath, installError := vllmBinaryPath(cfg)
+	manager := agent.NewVllmManager(vllmInput(profile, binaryPath, cfg.DataDir))
+	if err := manager.Start(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+		return nil, installError, err
+	}
+	return manager, installError, nil
+}
+
+func vllmInput(profile agent.ModelProfile, binaryPath string, dataDir string) agent.VllmInput {
+	return agent.VllmInput{ProfileID: profile.ID, ProfileVersion: profile.Version, UpstreamModel: profile.UpstreamModel, Settings: profile.Vllm, BinaryPath: binaryPath, DataDir: dataDir}
+}
+
+// vllmBinaryPath provisions the pinned vLLM venv. An install failure keeps the
+// node up but never eligible: the missing binary makes the manager report
+// dependency-missing and the install error rides heartbeat metrics.
+func vllmBinaryPath(cfg agent.Config) (string, string) {
+	binaryPath, installErr := agent.EnsureVllm(cfg.DataDir, cfg.RuntimeVersions.Vllm)
+	if installErr != nil {
+		return binaryPath, installErr.Error()
+	}
+	return binaryPath, ""
 }
 
 func startMeshRuntimeManager(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (agent.RuntimeManager, string, error) {

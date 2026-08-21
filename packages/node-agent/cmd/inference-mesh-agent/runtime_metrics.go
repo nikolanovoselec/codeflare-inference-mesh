@@ -70,6 +70,9 @@ func runtimeMetrics(manager agent.RuntimeManager, loadState *runtimeLoadState, c
 				metrics.LlamaCppBackend = direct.Metrics().LlamaCppBackend
 			}
 		}
+		if runtimeKind == "vllm" {
+			metrics.VllmVersion = runtimeVersionOrDefault(cfg.RuntimeVersions.Vllm, agent.VllmPinnedVersion)
+		}
 	}
 	if loaded {
 		metrics.LoadedProfileID = profile.ID

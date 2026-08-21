@@ -399,7 +399,7 @@ func TestREQNODE004DashboardReportsMeshLLMRuntimePanel(t *testing.T) {
 		if !strings.Contains(body, "data-runtime-panel") {
 			t.Fatalf("dashboard must render a MeshLLM runtime panel section")
 		}
-		for _, field := range []string{"meshllm-version", "runtime-state", "mesh-id", "peer-count", "ready-models", "split-enabled", "stage-count", "api-port", "console-port", "api-ready", "console-ready", "tokens-per-second", "last-error"} {
+		for _, field := range []string{"meshllm-version", "vllm-version", "runtime-state", "mesh-id", "peer-count", "ready-models", "split-enabled", "stage-count", "api-port", "console-port", "api-ready", "console-ready", "tokens-per-second", "last-error"} {
 			if !strings.Contains(body, `data-field="`+field+`"`) {
 				t.Fatalf("runtime panel is missing the %s field marker", field)
 			}
