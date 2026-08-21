@@ -10,7 +10,7 @@ import { expect, vi } from 'vitest'
 
 // DashboardUiTestAnchor
 
-export const dashboardNodes = [
+const dashboardNodes = [
   {
     id: 'node-big',
     status: 'online',
@@ -58,7 +58,7 @@ export function statusFixture(overrides: Record<string, unknown> = {}): Record<s
   }
 }
 
-export interface DashboardOptions {
+interface DashboardOptions {
   readonly status?: Record<string, unknown>
   readonly failStatusAfterBoot?: boolean
   readonly respond?: (path: string, init?: RequestInit) => Response | undefined

@@ -66,7 +66,7 @@ export function samplePath(path: string | RegExp): string {
   return path.source.replace(/^\^/, '').replace(/\$$/, '').replace(/\[\^\/\]\+/g, 'sample-id').replace(/\\\//g, '/')
 }
 
-export type RouteFamily = 'data' | 'node' | 'admin' | 'api' | 'public'
+type RouteFamily = 'data' | 'node' | 'admin' | 'api' | 'public'
 
 export function routeFamily(pathname: string): RouteFamily {
   if (pathname.startsWith('/api/v1/')) return 'api'
@@ -172,7 +172,7 @@ export function valuesOf(value: unknown): string[] {
   return []
 }
 
-export interface AdminUiTestConfig {
+interface AdminUiTestConfig {
   readonly state: { view: string; phase: string; customDomain?: string; recovery?: boolean }
   readonly actions: typeof ADMIN_UI_ACTIONS
   readonly responsive: typeof ADMIN_UI_RESPONSIVE
