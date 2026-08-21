@@ -155,4 +155,31 @@ describe('settings, API keys and version control contracts', () => {
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/nodes/node-weak/config')
     expect(JSON.parse(String(call?.init?.body))).toMatchObject({ displayName: 'Mac mini', maxVramGbOverride: 2 })
   })
+
+  it('REQ-ADM-005 validating a custom domain sends the entered hostname', async () => {
+    const harness = await dashboardHarness()
+    harness.byId('custom-domain').value = 'mesh.example.com'
+    await harness.clickAction('custom-domain-validate', { out: 'domain-output' })
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/custom-domain/validate')
+    expect(call?.init?.method).toBe('POST')
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ hostname: 'mesh.example.com' })
+  })
+
+  it('REQ-ADM-008 saving the agent version posts the fleet-wide selection', async () => {
+    // The select is built by the renderer, so this asserts the request the action makes
+    // and its shape rather than reaching for an element that may not exist yet.
+    const harness = await dashboardHarness()
+    await harness.clickAction('agent-version-set', { out: 'agent-version-output' })
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/agent-version')
+    expect(call?.init?.method).toBe('POST')
+    expect(JSON.parse(String(call?.init?.body))).toHaveProperty('version')
+  })
+
+  it('REQ-ADM-033 refreshing runtime versions re-reads the version list', async () => {
+    const harness = await dashboardHarness()
+    const before = harness.fetchCalls.filter((entry) => entry.path === '/admin/runtime-versions').length
+    await harness.clickAction('runtime-versions-refresh', { out: 'runtime-version-output' })
+    expect(harness.fetchCalls.filter((entry) => entry.path === '/admin/runtime-versions').length).toBe(before + 1)
+  })
+
 })

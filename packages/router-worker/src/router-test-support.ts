@@ -206,3 +206,20 @@ export const addModel = (router: (request: Request) => Promise<Response>, modelR
     body: JSON.stringify({ modelRef, mode })
   }))
 
+export async function mintKey(router: (request: Request) => Promise<Response>): Promise<{ id: string; token: string; createdAt: number }> {
+  const res = await router(new Request('https://router.test/api/v1/keys', { method: 'POST', headers: bearer('admin-secret') }))
+  return await res.json() as { id: string; token: string; createdAt: number }
+}
+
+export const apiAddModel = (router: (request: Request) => Promise<Response>, token: string | undefined, modelRef: string, mode: string, runtime?: 'meshllm' | 'llamacpp') =>
+  router(new Request('https://router.test/api/v1/models', {
+    method: 'POST',
+    headers: { ...(token ? bearer(token) : {}), 'content-type': 'application/json' },
+    body: JSON.stringify({ modelRef, mode, ...(runtime ? { runtime } : {}) })
+  }))
+
+export const apiDeleteModel = (router: (request: Request) => Promise<Response>, token: string | undefined, id: string) =>
+  router(new Request('https://router.test/api/v1/models/' + id, { method: 'DELETE', headers: token ? bearer(token) : {} }))
+
+export const addApiModelId = async (router: (request: Request) => Promise<Response>, token: string, ref = 'unsloth/Qwen3-14B-GGUF:Q4_K_M') =>
+  (await (await apiAddModel(router, token, ref, 'single')).json() as { model: { id: string } }).model.id

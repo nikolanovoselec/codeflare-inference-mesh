@@ -12,10 +12,9 @@
  * fragment, and each one begins exactly where the previous one ended, so their order
  * here is load-bearing and a test asserts it.
  *
- * The split itself preserved the served bytes exactly. What followed did not: the
- * console's action chain became the ACTIONS table and the model-edit payload was
- * restructured, both behaviour-preserving but neither byte-identical. Do not read
- * this file as a guarantee that the emitted script is unchanged.
+ * The emitted script is not byte-stable: console actions dispatch through the ACTIONS
+ * table in ./client/actions, so changing a handler changes the output. Nothing should
+ * be asserted about the exact bytes; assert what the page needs instead.
  */
 import { CLIENT_ACTIONS } from './client/actions'
 import { CLIENT_BOOT } from './client/boot'

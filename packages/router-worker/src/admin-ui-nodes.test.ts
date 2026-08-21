@@ -461,4 +461,19 @@ describe('nodes table and node drawer contracts', () => {
     expect(errorRow?.dataset.tone).toBe('danger')
   })
 
+
+  it('REQ-ADM-007 revoking and reloading a machine reach that machine\'s endpoints', async () => {
+    // Both carry the node id on the button, so a handler bound to the wrong id would
+    // still answer but call the wrong machine.
+    const harness = await dashboardHarness()
+    await harness.clickAction('node-revoke', { nodeId: 'node-small', out: 'node-output' })
+    await harness.clickAction('node-reload', { nodeId: 'node-big', out: 'node-output' })
+    const paths = harness.fetchCalls.map((entry) => entry.path)
+    expect(paths).toContain('/admin/nodes/node-small/revoke')
+    expect(paths).toContain('/admin/nodes/node-big/reload')
+    for (const path of ['/admin/nodes/node-small/revoke', '/admin/nodes/node-big/reload']) {
+      expect(harness.fetchCalls.find((entry) => entry.path === path)!.init?.method).toBe('POST')
+    }
+  })
+
 })

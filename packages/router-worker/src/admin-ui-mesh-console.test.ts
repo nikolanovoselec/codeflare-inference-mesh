@@ -306,4 +306,13 @@ describe('mesh console contracts', () => {
     const select = harness.byId(ADMIN_UI_PLAYGROUND.selectId)
     expect(select.children.map((option) => option.value)).toEqual(['main', 'dev-coder'])
   })
+
+  it('REQ-ADM-025 resetting the sharing key names the model whose drawer asked for it', async () => {
+    const harness = await dashboardHarness()
+    await harness.clickAction('mesh-rotate', { profileId: 'mesh-default-qwen36-35b', out: 'mesh-rotate-output' })
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/mesh/rotate')
+    expect(call?.init?.method).toBe('POST')
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ profileId: 'mesh-default-qwen36-35b' })
+  })
+
 })
