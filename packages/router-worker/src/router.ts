@@ -11,7 +11,7 @@ import { html, json, parseObject, rateLimited, readJson, readOptionalObject, res
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName, type MeshRecord } from './meshes'
-import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, llamaCppQuantError, nodeMeshId, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
+import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, llamaCppQuantError, nodeMeshId, profileMeshId, STABLE_PUBLIC_MODEL } from './profiles'
 import { applyNodeVramOverride, configureLlamaCppProfile, INVALID_MAX_VRAM, INVALID_NODE_NAME, nodeWithConfig, resolveCallNameAliases, resolveMaxVram, resolveMeshReassignment, resolveMeshllmTunables, resolveRuntime, type ModelConfigBody, type NodeConfigBody } from './profile-config'
 import { isRateLimited } from './rate-limit'
 import { matchRoute, type Route } from './routes'
