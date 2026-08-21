@@ -67,3 +67,8 @@ export function responseMetadataHeaders(upstream: Headers, requestId: string, no
   headers.set('x-inference-mesh-node', nodeId)
   return headers
 }
+
+/** A trimmed non-empty string, or undefined. Reads optional body and query fields. */
+export function cleanString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
