@@ -7,11 +7,15 @@
  * and crash the whole script in production. Nothing here is derived from
  * bundled code; configuration crosses via the #admin-ui-config JSON blob.
  *
- * The fragments live in ./client and are concatenated verbatim below, so the
- * served bytes are identical to the single literal this replaced. They are not
- * independently valid scripts: the IIFE opens in the prelude and closes in the
- * boot fragment, and each one begins exactly where the previous one ended, so
- * their order here is load-bearing.
+ * The fragments live in ./client and are concatenated verbatim below. They are not
+ * independently valid scripts: the IIFE opens in the prelude and closes in the boot
+ * fragment, and each one begins exactly where the previous one ended, so their order
+ * here is load-bearing and a test asserts it.
+ *
+ * The split itself preserved the served bytes exactly. What followed did not: the
+ * console's action chain became the ACTIONS table and the model-edit payload was
+ * restructured, both behaviour-preserving but neither byte-identical. Do not read
+ * this file as a guarantee that the emitted script is unchanged.
  */
 import { CLIENT_ACTIONS } from './client/actions'
 import { CLIENT_BOOT } from './client/boot'

@@ -7,10 +7,10 @@
 import { accessJwksFetcher, accessTestKey, MemoryStore, nodeFixture, signAccessJwt } from './test-helpers'
 import { adminUiHarness, elementStub } from './admin-ui-harness'
 import { createTokenRecord, hashToken } from './auth'
-import { DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
+import { DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL, buildCustomProfile } from './profiles'
 import { describe, expect, it } from 'vitest'
 import type { LastSpeedTestSummary } from './types'
-import { required, ROUTES } from './router'
+import { ROUTES } from './router'
 import { resetJwksCache } from './access'
 import { SMOKE_UPSTREAM, adminUiConfig, bearer, makeMesh, routerFixture, samplePath } from './router-test-support'
 

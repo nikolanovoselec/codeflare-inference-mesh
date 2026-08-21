@@ -8,7 +8,7 @@ import { CloudflareGatewayClient } from './cloudflare-api'
 import { DEFAULT_MODEL_PROFILES } from './profiles'
 import { describe, expect, it } from 'vitest'
 import { hashToken } from './auth'
-import { MESH_STATE_KEY_B64, bearer, heartbeatBody, routerFixture } from './router-test-support'
+import { LEGACY_MESH_DEFAULT, MESH_STATE_KEY_B64, bearer, heartbeatBody, routerFixture } from './router-test-support'
 import { nodeFixture } from './test-helpers'
 
 describe('multi-mesh machine groups', () => {

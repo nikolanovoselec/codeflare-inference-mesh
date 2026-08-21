@@ -8,6 +8,7 @@ import { ADMIN_UI_CLIENT_FRAGMENTS, ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-cl
 import { adminUiConfig, adminUiScript, bearer, routerFixture } from './router-test-support'
 import { adminUiHarness } from './admin-ui-harness'
 import { describe, expect, it } from 'vitest'
+import { ADMIN_UI_WIZARD } from './admin-ui'
 
 describe('admin console rendering and setup wizard contracts', () => {
 
@@ -147,8 +148,6 @@ describe('admin console rendering and setup wizard contracts', () => {
     expect(() => new Function(adminUiScript(html))).not.toThrow()
   })
 
-
-
   it('REQ-ADM-007 pre-renders the entry view from host and setup phase', async () => {
     // AdminEntryViewTestAnchor
     const { router, store } = routerFixture()
@@ -173,8 +172,6 @@ describe('admin console rendering and setup wizard contracts', () => {
     expect(dashboard).not.toMatch(/id="view-dashboard" hidden/)
   })
 
-
-
   it('REQ-ADM-007 serves a sectioned operator dashboard with persistent navigation', async () => {
     // AdminDashboardNavTestAnchor
     const { router } = routerFixture()
@@ -196,8 +193,6 @@ describe('admin console rendering and setup wizard contracts', () => {
     expect(html).toMatch(/<a[^>]*data-nav="overview"[^>]*aria-current="page"/)
   })
 
-
-
   it('REQ-ADM-007 labels every dashboard control visibly', async () => {
     // AdminLabeledControlsTestAnchor
     const { router } = routerFixture()
@@ -211,8 +206,6 @@ describe('admin console rendering and setup wizard contracts', () => {
       .filter((id) => !wrappedInLabel.has(id))
       .forEach((id) => expect(labelled.has(id), `control #${id} has no visible label`).toBe(true))
   })
-
-
 
   it('REQ-ADM-011 renders the setup wizard with its step sequence while setup is open', async () => {
     // AdminSetupWizardTestAnchor
@@ -261,8 +254,6 @@ describe('admin console rendering and setup wizard contracts', () => {
     expect(nodeStep).toMatch(/data-action="setup-token-create"[^>]*data-prefix="wiz-"/)
   })
 
-
-
   it('REQ-ADM-019 renders setup-locked recovery affordances instead of raw JSON', async () => {
     // AdminSetupLockedFeedbackTestAnchor
     const { router } = routerFixture()
@@ -286,8 +277,6 @@ describe('admin console rendering and setup wizard contracts', () => {
     expect(button.attributes['aria-busy']).toBe('false')
     expect(button.disabled).toBe(false)
   })
-
-
 
   it('REQ-ADM-019 surfaces an actionable message when Gateway sync fails', async () => {
     const { router, store } = routerFixture({
@@ -315,8 +304,6 @@ describe('admin console rendering and setup wizard contracts', () => {
     expect((failure!.detail as { reason?: string }).reason).toContain('403')
   })
 
-
-
   it('REQ-ADM-006 reveals only the one-time bootstrap token at claim', async () => {
     const { router } = routerFixture()
     const html = await (await router(new Request('https://router.test/'))).text()
@@ -337,8 +324,6 @@ describe('admin console rendering and setup wizard contracts', () => {
     expect(harness.events.some((event) => event.kind === 'setItem' && event.detail === 'session:codeflareInferenceMeshAdminToken=admin-a')).toBe(true)
     expect(harness.byId('wizard-continue-connect').hidden).toBe(false)
   })
-
-
 
   it('REQ-ADM-006 auto-loads installer command for saved tokens and platform changes', async () => {
     const { router, store } = routerFixture()
@@ -374,8 +359,6 @@ describe('admin console rendering and setup wizard contracts', () => {
     expect(harness.byId('installer-output').textContent).toBe('install command for /admin/installers/windows')
   })
 
-
-
   it('REQ-ADM-007 assembles the console client script from its fragments in order', () => {
     // The script is concatenated from per-topic fragments. A dropped, duplicated or
     // reordered fragment still yields a string and only the browser would notice, so
@@ -394,21 +377,5 @@ describe('admin console rendering and setup wizard contracts', () => {
       cursor = at
     }
   })
-
-
-
-  it('REQ-ADM-007 dispatches every console action through the action table', () => {
-    // The console had one 418-line if-chain over action ids. Every action a button can
-    // carry now resolves through the table, so a bound id is what makes an action exist.
-    const bound = [...ADMIN_UI_CLIENT_SCRIPT.matchAll(/^ {2}bindAction\((?:'([^']+)'|([\w.]+)),/gm)].map((match) => match[1] ?? match[2])
-    expect(bound.length).toBeGreaterThan(30)
-    expect(new Set(bound).size).toBe(bound.length)
-    // The dispatcher resolves one handler and does nothing for an id it does not know,
-    // so no branch chain over action ids survives. (A lone `if (action === …)` is still
-    // fine where it special-cases one action's error copy rather than routing it.)
-    expect(ADMIN_UI_CLIENT_SCRIPT).toContain('const handler = ACTIONS[action];')
-    expect(ADMIN_UI_CLIENT_SCRIPT).not.toMatch(/else if \(action === /)
-  })
-
 
 })

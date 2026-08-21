@@ -7,7 +7,7 @@
 import { adminUiHarness } from './admin-ui-harness'
 import { describe, expect, it } from 'vitest'
 import { MemoryStore } from './test-helpers'
-import { routerFixture } from './router-test-support'
+import { bearer, routerFixture } from './router-test-support'
 
 describe('operator playground contracts', () => {
   const connectedGateway = { gatewayId: 'inference-mesh', routeName: 'codeflare-mesh', publicModel: 'codeflare-mesh', providerSlug: 'custom-inference-mesh-router-test', manualProviderKeyRequired: true }

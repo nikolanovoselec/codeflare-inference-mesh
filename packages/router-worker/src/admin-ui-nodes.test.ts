@@ -5,7 +5,7 @@
  * `./admin-ui-test-support`.
  */
 import { ADMIN_UI_DRAWER, ADMIN_UI_MESH_ROLE, ADMIN_UI_NODES_TABLE, ADMIN_UI_WORK_STATE } from './admin-ui'
-import { dashboardHarness, fieldValue, resetDashboardEnvironment, rowOrder, statusFixture, tableRows } from './admin-ui-test-support'
+import { dashboardHarness, dashboardProfiles, fieldValue, resetDashboardEnvironment, rowOrder, statusFixture, tableRows } from './admin-ui-test-support'
 import { descendants, type StubElement } from './admin-ui-harness'
 import { afterEach, describe, expect, it } from 'vitest'
 

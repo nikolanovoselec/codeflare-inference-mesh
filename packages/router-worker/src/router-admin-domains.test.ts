@@ -9,6 +9,7 @@ import { CloudflareGatewayClient } from './cloudflare-api'
 import { createTokenRecord } from './auth'
 import { describe, expect, it } from 'vitest'
 import { SMOKE_UPSTREAM, bearer, routerFixture, valuesOf } from './router-test-support'
+import { nodeFixture } from './test-helpers'
 
 describe('custom domain, admin status and recovery contracts', () => {
 

@@ -5,10 +5,10 @@
  * `./router-test-support`.
  */
 import { createTokenRecord, hashToken } from './auth'
-import { CUSTOM_GGUF, MESH_STATE_KEY_B64, QWEN_UPSTREAM, addModel, bearer, githubReleasesFetcher, heartbeatBody, routerFixture, seedLegacyDefaults } from './router-test-support'
-import { DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
+import { CUSTOM_GGUF, LEGACY_MESH_DEFAULT, LEGACY_MESH_SPLIT, MESH_STATE_KEY_B64, QWEN_UPSTREAM, addModel, bearer, githubReleasesFetcher, heartbeatBody, routerFixture, seedLegacyDefaults } from './router-test-support'
+import { DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL, buildCustomProfile } from './profiles'
 import { describe, expect, it } from 'vitest'
-import { MemoryStore } from './test-helpers'
+import { MemoryStore, nodeFixture } from './test-helpers'
 
 describe('router runtime profile and node contracts', () => {
 
