@@ -17,7 +17,6 @@ describe('mesh console contracts', () => {
     { id: 'ops', name: 'Ops', alias: 'codeflare-mesh-ops', machineCount: 2, modelCount: 1 }
   ]
 
-
   it('REQ-ADM-037 nodes table renders a mesh column resolved to group names', async () => {
     expect(ADMIN_UI_NODES_TABLE.columns).toContain('mesh')
     const nodes = [
@@ -32,7 +31,6 @@ describe('mesh console contracts', () => {
     expect(meshCell('node-small').getAttribute('data-value')).toBe('default')
     expect(meshCell('node-small').textContent).toBe('Default')
   })
-
 
   it('REQ-ADM-037 meshes card lists groups, gates Delete to empty non-default meshes, and posts create/delete', async () => {
     const harness = await dashboardHarness({ status: statusFixture({ meshes: consoleMeshes }), respond: (path, init) => {
@@ -73,7 +71,6 @@ describe('mesh console contracts', () => {
     expect(harness.fetchCalls.some((call) => call.path === '/admin/meshes/development' && call.init?.method === 'DELETE')).toBe(true)
   })
 
-
   it('REQ-ADM-023 node drawer saves the mesh selection only when changed', async () => {
     const nodes = [{ id: 'node-weak', displayName: 'Weak', status: 'online', metrics: { runtimeState: 'ready', activeRequests: 0 } }]
     const harness = await dashboardHarness({ status: statusFixture({ nodes, meshes: consoleMeshes }) })
@@ -92,7 +89,6 @@ describe('mesh console contracts', () => {
     const calls = harness.fetchCalls.filter((call) => call.path === '/admin/nodes/node-weak/config')
     expect(JSON.parse(String(calls[calls.length - 1]?.init?.body)).meshId).toBe('development')
   })
-
 
   it('REQ-ADM-038 model drawer saves the mesh selection only when changed', async () => {
     const profiles = [{ id: 'custom-tune', displayName: 'Tune', publicAliases: ['codeflare-mesh-development', 'tune'], meshId: 'development', active: false, rolloutPercent: 0, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } }]
@@ -114,7 +110,6 @@ describe('mesh console contracts', () => {
     expect(JSON.parse(String(calls[calls.length - 1]?.init?.body)).meshId).toBe('ops')
   })
 
-
   it('REQ-RUN-017 model drawer duplicates a model through the duplicate endpoint', async () => {
     const profiles = [{ id: 'custom-live', displayName: 'Live', publicAliases: ['codeflare-mesh', 'live'], active: true, rolloutPercent: 100, contextWindow: 32768, meshllm: { split: false, modelRef: 'unsloth/x' } }]
     const harness = await dashboardHarness({ status: statusFixture({ profiles }), respond: (path, init) => {
@@ -133,7 +128,6 @@ describe('mesh console contracts', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ profileId: 'custom-live' })
     expect(harness.byId(ADMIN_UI_DRAWER.containerId).hidden, 'drawer closes so the refreshed list shows the copy').toBe(true)
   })
-
 
   it('REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons', async () => {
     const harness = await dashboardHarness()
@@ -162,7 +156,6 @@ describe('mesh console contracts', () => {
     expect(css).toContain('.mesh-row-head .endpoint-chip{margin-left:auto}')
   })
 
-
   it('REQ-ADM-036 one token pair sizes every console button with only the email-chip and mobile exceptions', () => {
     const css = adminUiCss()
     // One reusable button size: the base .btn rule carries the size tokens, and no other
@@ -179,7 +172,6 @@ describe('mesh console contracts', () => {
     expect(btnSizingSelectors).toEqual(['.btn', '.email-chip .btn', '.btn,input,select'])
   })
 
-
   it('REQ-ADM-039 the overview carries no activity feed while settings does', async () => {
     const harness = await dashboardHarness()
     const html = harness.html
@@ -192,7 +184,6 @@ describe('mesh console contracts', () => {
     expect(auditAt).toBeGreaterThan(settingsAt)
     expect(html.indexOf('id="audit-log"', auditAt + 1)).toBe(-1)
   })
-
 
   it('REQ-ADM-025 renders the model sources panel with CSS-keyed contextual switching', async () => {
     const harness = await dashboardHarness()
@@ -221,7 +212,6 @@ describe('mesh console contracts', () => {
     expect(sources.dataset.modelSources).toBe('single')
   })
 
-
   it('REQ-ADM-038 the models list shows each profile mesh without opening the drawer', async () => {
     const profiles = [
       { id: 'model-default', displayName: 'Default Model', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
@@ -237,7 +227,6 @@ describe('mesh console contracts', () => {
     // A legacy row without a stored mesh reads as a Default member.
     expect(rowBadge('model-default')?.getAttribute('data-profile-mesh')).toBe('default')
   })
-
 
   it('REQ-ADM-018 REQ-ADM-038 model rows and the drawer lead with the runtime, serving-mode, and mesh pills', async () => {
     const profiles = [
@@ -270,7 +259,6 @@ describe('mesh console contracts', () => {
     expect(drawerPill('data-profile-mesh').getAttribute('data-profile-mesh')).toBe('development')
   })
 
-
   it('REQ-ADM-015 overview topology filters machines to the selected mesh and survives the poll', async () => {
     const nodes = [
       { id: 'node-default', status: 'online', metrics: { runtimeState: 'ready', activeRequests: 0 } },
@@ -295,7 +283,6 @@ describe('mesh console contracts', () => {
     expect(topoIds()).toEqual(['node-dev'])
   })
 
-
   it("REQ-ADM-031 direct playground lists every mesh's active model by its own alias", async () => {
     const profiles = [
       { id: 'model-default', displayName: 'Default Model', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
@@ -308,11 +295,15 @@ describe('mesh console contracts', () => {
   })
 
   it('REQ-ADM-025 resetting the sharing key names the model whose drawer asked for it', async () => {
+    // Two models, so a handler that hardcoded one profile id, or read it from whichever
+    // drawer happened to be open, cannot pass.
     const harness = await dashboardHarness()
     await harness.clickAction('mesh-rotate', { profileId: 'mesh-default-qwen36-35b', out: 'mesh-rotate-output' })
-    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/mesh/rotate')
-    expect(call?.init?.method).toBe('POST')
-    expect(JSON.parse(String(call?.init?.body))).toEqual({ profileId: 'mesh-default-qwen36-35b' })
+    await harness.clickAction('mesh-rotate', { profileId: 'mesh-split-qwen36-35b', out: 'mesh-rotate-output' })
+    const rotations = harness.fetchCalls.filter((entry) => entry.path === '/admin/mesh/rotate')
+    expect(rotations.map((entry) => entry.init?.method)).toEqual(['POST', 'POST'])
+    expect(rotations.map((entry) => JSON.parse(String(entry.init?.body)).profileId))
+      .toEqual(['mesh-default-qwen36-35b', 'mesh-split-qwen36-35b'])
   })
 
 })

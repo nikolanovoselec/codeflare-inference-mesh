@@ -12,7 +12,6 @@ import { StoreScheduler } from './scheduler'
 import { createRouter } from './router'
 import { expect } from 'vitest'
 
-
 export function makeMesh(capture: { request?: Request } = {}): Fetcher {
   return {
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -196,7 +195,6 @@ export function adminUiScript(html: string): string {
   expect(match).not.toBeNull()
   return match![1]!
 }
-
 
 export const CUSTOM_GGUF = 'unsloth/Qwen3-14B-GGUF:Q4_K_M'
 export const addModel = (router: (request: Request) => Promise<Response>, modelRef: string, mode: string, token = 'admin-secret') =>

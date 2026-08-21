@@ -12,7 +12,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 describe('nodes table and node drawer contracts', () => {
   afterEach(resetDashboardEnvironment)
 
-
   it('REQ-ADM-015 sorts the nodes table by the clicked column and flips direction on repeat', async () => {
     const harness = await dashboardHarness()
     expect(rowOrder(harness)).toEqual(['node-big', 'node-small', 'node-down'])
@@ -31,7 +30,6 @@ describe('nodes table and node drawer contracts', () => {
     // The table carries no per-model cell: model detail lives in the drawer.
     expect(cells.some((cell) => cell.dataset.cell === 'model' || cell.dataset.cell === 'models')).toBe(false)
   })
-
 
   it('REQ-ADM-015 shows a plain node status and never the stale runtime substate when offline', async () => {
     const nodes = [
@@ -63,7 +61,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(gone.text).toContain('Offline')
     expect(gone.text).not.toContain('starting')
   })
-
 
   it('REQ-OBS-011 surfaces split mesh peer discovery blockers without SSH', async () => {
     const splitProfile = { ...dashboardProfiles[1]!, active: true }
@@ -101,7 +98,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(blocker.getAttribute('data-stage-count')).toBe('0')
   })
 
-
   it('REQ-ADM-015 filters the nodes table by status chip and by search', async () => {
     const harness = await dashboardHarness()
     // Default fixture: node-big + node-small are serving (ready), node-down is offline.
@@ -121,7 +117,6 @@ describe('nodes table and node drawer contracts', () => {
     await harness.change(search)
     expect(rowOrder(harness)).toEqual(['node-small'])
   })
-
 
   it('REQ-ADM-015 REQ-ADM-032 the drawer offers Force Reload wired to the reload action', async () => {
     const harness = await dashboardHarness()
@@ -162,7 +157,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(drawer.hidden).toBe(true)
   })
 
-
   it('REQ-ADM-030 a deactivated node reads as tainted (warn tone) and its drawer offers Activate', async () => {
     const status = statusFixture({ nodes: [{ id: 'node-off', status: 'online', deactivated: true, metrics: { runtimeState: 'failed', runtimeDetail: 'readiness deadline exceeded', readyModels: [], activeRequests: 0, tokensPerSecond: 0, gpuMemoryTotalMiB: 8192, meshllmVersion: '0.72.2' } }] })
     const harness = await dashboardHarness({ status })
@@ -188,7 +182,6 @@ describe('nodes table and node drawer contracts', () => {
     // A deactivated node shows Activate, not Deactivate.
     expect(fields.some((node) => node.dataset.action === 'node-deactivate')).toBe(false)
   })
-
 
   it('REQ-OBS-011 renders a split stage owner as active work, not standby/API client', async () => {
     const nodes = [
@@ -253,7 +246,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(modelStage.textContent).toBe('Stage owners: L0-26 → battlestation · Ready; L27-28 → Mac · Ready')
   })
 
-
   it('REQ-OBS-011 hides model_size_unknown during reload and update transitions', async () => {
     const splitReadiness = { verdict: 'model_size_unknown', blockers: [{ reason: 'model_size_unknown' }] }
     const nodes = [{ id: 'linux-node', displayName: 'Arch Linux', status: 'online', activeProfileIds: ['mesh-default-qwen36-35b'], metrics: { runtimeKind: 'meshllm', runtimeState: 'starting', nodeState: 'loading model meshllm/ERNIE', meshRole: 'api-client', apiReady: true, consoleReady: true, peerCount: 1, stageCount: 0, splitEnabled: true, activeRequests: 0, splitReadiness } }]
@@ -276,7 +268,6 @@ describe('nodes table and node drawer contracts', () => {
     fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
     expect(fields.some((node) => node.className === 'split-readiness-block')).toBe(false)
   })
-
 
   it('REQ-OBS-011 keeps stale model_size_unknown from overriding serving split status', async () => {
     const splitReadiness = { verdict: 'model_size_unknown', blockers: [{ reason: 'model_size_unknown' }], participants: [{ routerNodeId: 'linux-node', displayName: 'Arch Linux', vramBytes: 63_200_000_000 }] }
@@ -305,7 +296,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(fields.find((node) => node.dataset.meshField === 'stage-owners')!.textContent).toBe('Stage owners: L0-26 → Arch Linux · Ready')
     expect(fields.find((node) => node.dataset.meshField === 'mesh-group')!.textContent).toBe('Mesh: Default')
   })
-
 
   it('REQ-OBS-014 surfaces current runtime errors after readiness and filters chatter', async () => {
     const nodes = [
@@ -355,7 +345,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(fields.find((node) => node.dataset.drawerField === 'runtime-detail')?.dataset.tone).toBe('warn')
   })
 
-
   it('REQ-OBS-011 the node drawer surfaces runtime errors, work state, and mesh diagnostics', async () => {
     const nodes = [
       { id: 'node-wedged', status: 'online', agentVersion: 'v1.3.0', metrics: {
@@ -397,7 +386,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(fields.some((node) => node.dataset.drawerField === 'stages')).toBe(false)
   })
 
-
   it('REQ-OBS-014 direct node drawer reports only observed fields and effective cache behavior', async () => {
     const nodes = [
       { id: 'direct-node', status: 'online', runtime: 'llamacpp', metrics: {
@@ -434,7 +422,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(fieldValue(field('direct-cache')!)).toBe('not reported · cross-divergence reuse unavailable for multimodal')
   })
 
-
   it('REQ-OBS-012 renders runtime install status in the node table and drawer', async () => {
     const nodes = [{
       id: 'direct-node',
@@ -460,7 +447,6 @@ describe('nodes table and node drawer contracts', () => {
     expect(installRow?.dataset.desiredVersion).toBe('b9912')
     expect(errorRow?.dataset.tone).toBe('danger')
   })
-
 
   it('REQ-ADM-007 revoking and reloading a machine reach that machine\'s endpoints', async () => {
     // Both carry the node id on the button, so a handler bound to the wrong id would

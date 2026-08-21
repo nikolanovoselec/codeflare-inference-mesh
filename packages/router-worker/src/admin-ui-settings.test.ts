@@ -12,7 +12,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 describe('settings, API keys and version control contracts', () => {
   afterEach(resetDashboardEnvironment)
 
-
   it('REQ-ADM-006 the custom domain card lives in Settings', () => {
     // The harness never trees static HTML, so placement pins on served source order:
     // the card renders exactly once, after the Settings section opens (Settings is the
@@ -26,7 +25,6 @@ describe('settings, API keys and version control contracts', () => {
     expect(domainAt).toBeGreaterThan(settingsAt)
   })
 
-
   it('REQ-ADM-020 saves the offline-machine prune window from Settings', async () => {
     const harness = await dashboardHarness()
     const input = harness.byId('prune-seconds')
@@ -38,7 +36,6 @@ describe('settings, API keys and version control contracts', () => {
     expect(JSON.parse(String(call!.init?.body))).toEqual({ offlinePruneSeconds: 3600 })
   })
 
-
   it('REQ-ADM-004 copies the install command when the command block is clicked', async () => {
     const harness = await dashboardHarness()
     const block = harness.byId('installer-output')
@@ -47,7 +44,6 @@ describe('settings, API keys and version control contracts', () => {
     await harness.click(block)
     expect(harness.copied).toContain('curl -fsSL https://mesh.example.com/install.sh | sh')
   })
-
 
   it('REQ-ADM-022 manages API keys from Settings: list renders, create reveals the secret once, rotate and revoke call the API', async () => {
     const harness = await dashboardHarness({ respond: (path, init) => {
@@ -73,7 +69,6 @@ describe('settings, API keys and version control contracts', () => {
     expect(harness.fetchCalls.find((entry) => entry.path === '/api/v1/keys/automation_a' && entry.init?.method === 'DELETE')).toBeDefined()
   })
 
-
   it('REQ-ADM-033 renders and saves MeshLLM and llama.cpp runtime version controls from Settings', async () => {
     const harness = await dashboardHarness({ respond: (path, init) => {
       const method = (init && init.method) || 'GET'
@@ -96,7 +91,6 @@ describe('settings, API keys and version control contracts', () => {
     expect(call, 'saving runtime versions posts to the admin parity endpoint').toBeDefined()
     expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
   })
-
 
   it('REQ-NODE-014 renders the MeshLLM binary source selector and switches source on change', async () => {
     const harness = await dashboardHarness({ respond: (path, init) => {
@@ -123,7 +117,6 @@ describe('settings, API keys and version control contracts', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllmSource: 'official' })
   })
 
-
   it('REQ-NODE-014 hides the binary source selector when no fork is configured', async () => {
     const harness = await dashboardHarness({ respond: (path, init) => {
       const method = (init && init.method) || 'GET'
@@ -139,7 +132,6 @@ describe('settings, API keys and version control contracts', () => {
     expect(select.hidden).toBe(true)
     expect(descendants(select).filter((el) => el.dataset.runtimeSourceOption)).toHaveLength(0)
   })
-
 
   it('REQ-ADM-023 loads and saves node name and VRAM settings from the node drawer', async () => {
     const nodes = [{ id: 'node-weak', displayName: 'Old weak node', status: 'online', agentVersion: 'v1.3.0', maxVramGbOverride: 4, metrics: { runtimeState: 'ready', readyModels: ['codeflare-mesh'], gpuMemoryTotalMiB: 8192, gpuMemoryUsedMiB: 4000, tokensPerSecond: 20, activeRequests: 0 } }]
@@ -174,11 +166,16 @@ describe('settings, API keys and version control contracts', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ version: 'v1.4.0' })
   })
 
-  it('REQ-ADM-033 refreshing runtime versions re-reads the version list', async () => {
+  it('REQ-ADM-033 refreshing runtime versions re-reads the version list and repopulates the output', async () => {
     const harness = await dashboardHarness()
-    const before = harness.fetchCalls.filter((entry) => entry.path === '/admin/runtime-versions').length
+    const reads = () => harness.fetchCalls.filter((entry) => entry.path === '/admin/runtime-versions' && (entry.init?.method ?? 'GET') === 'GET')
+    const before = reads().length
+    harness.byId('runtime-version-output').textContent = ''
     await harness.clickAction('runtime-versions-refresh', { out: 'runtime-version-output' })
-    expect(harness.fetchCalls.filter((entry) => entry.path === '/admin/runtime-versions').length).toBe(before + 1)
+    await harness.flush(3)
+    expect(reads().length).toBe(before + 1)
+    // Populated, not what it says: the wording is copy and the count is the contract.
+    expect(harness.byId('runtime-version-output').textContent).not.toBe('')
   })
 
 })
