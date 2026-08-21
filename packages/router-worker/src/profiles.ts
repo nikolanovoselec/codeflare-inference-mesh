@@ -32,15 +32,6 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
   }
 ]
 
-export function publicAliasIndex(profiles: readonly ModelProfile[]): Map<string, ModelProfile> {
-  const index = new Map<string, ModelProfile>()
-  for (const profile of profiles) {
-    if (!profile.active) continue
-    for (const alias of profile.publicAliases) index.set(alias, profile)
-  }
-  return index
-}
-
 const BIND_PORT_BASE = 4300
 const BIND_PORT_STEP = 10
 

@@ -237,28 +237,6 @@ export interface MeshHealthEntry {
   readonly lastError?: string
 }
 
-/** Mirrors the GET /admin/agent-versions response contract. */
-export interface AgentVersionsView {
-  readonly tags: readonly string[]
-  readonly fetchedAt?: number
-  readonly stale: boolean
-  readonly desired?: string
-}
-
-export interface RuntimeVersionOptionView {
-  readonly tags: readonly string[]
-  readonly fetchedAt?: number
-  readonly stale: boolean
-  readonly desired: string
-  readonly error?: string
-}
-
-/** Mirrors the GET /admin/runtime-versions response contract. */
-export interface RuntimeVersionsView {
-  readonly meshllm: RuntimeVersionOptionView
-  readonly llamacpp: RuntimeVersionOptionView
-}
-
 /** Structural subset of an admin-status node used by the client renderers. */
 export interface MeshUiStatusNode {
   readonly id: string
@@ -273,12 +251,4 @@ export interface MeshUiStatusNode {
     readonly meshNodeId?: string
     readonly meshMaxVramGb?: number
   }
-}
-
-/** Structural subset of a ModelProfile used by the activation and rotation selects. */
-export interface ActivationProfileView {
-  readonly id: string
-  readonly publicAliases: readonly string[]
-  readonly active: boolean
-  readonly meshllm: { readonly split: boolean }
 }

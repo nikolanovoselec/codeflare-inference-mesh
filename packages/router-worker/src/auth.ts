@@ -85,15 +85,6 @@ export function approvedNodeHeaders(input: Headers, upstreamToken: string, reque
   return output
 }
 
-export function approvedRuntimeHeaders(input: Headers): Headers {
-  const output = new Headers()
-  for (const name of ['content-type', 'accept', 'x-inference-mesh-request-id', 'x-inference-mesh-session']) {
-    const value = input.get(name)
-    if (value) output.set(name, value)
-  }
-  return output
-}
-
 export function timingSafeEqualText(left: string, right: string): boolean {
   const max = Math.max(left.length, right.length)
   let diff = left.length ^ right.length

@@ -43,7 +43,7 @@ export {
   ADMIN_UI_VIEWS,
   ADMIN_UI_WIZARD
 } from './admin-ui-contract'
-export type { ActivationProfileView, AdminUiAction, AdminUiStateView, AgentVersionsView, MeshHealthEntry, MeshUiStatusNode, RuntimeVersionsView } from './admin-ui-contract'
+export type { AdminUiAction, AdminUiStateView, MeshHealthEntry, MeshUiStatusNode } from './admin-ui-contract'
 
 /** Server-computed entry state: which view to pre-render and where setup stands. */
 export type AdminUiState = AdminUiStateView

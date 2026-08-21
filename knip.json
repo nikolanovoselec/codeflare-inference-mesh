@@ -1,16 +1,18 @@
 {
   "$schema": "./node_modules/knip/schema.json",
   "tags": ["-specanchor"],
+  "ignoreExportsUsedInFile": true,
   "workspaces": {
+    ".": {
+      "entry": ["assets/*.mjs"],
+      "project": ["assets/*.mjs"]
+    },
     "packages/router-worker": {
-      "entry": ["src/index.ts", "src/**/*.test.ts", "scripts/*.mjs", "vitest.config.ts"],
+      "entry": ["src/**/*.test.ts", "scripts/*.mjs"],
       "project": ["src/**/*.ts", "scripts/*.mjs"]
     }
   },
-  "ignoreDependencies": ["@cloudflare/workers-types"],
-  "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
-    "classMembers": "off",
     "duplicates": "off",
     "enumMembers": "off"
   }
