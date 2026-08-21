@@ -323,6 +323,29 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 ---
 
+### REQ-SEC-013: vLLM API exposure
+
+**Intent:** vLLM's OpenAI server binds all interfaces by default and carries no authentication of its own, so the managed launch must pin it to loopback unconditionally — like the MeshLLM console API, the only path to it is the agent's authenticated proxy.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. The rendered vLLM argv always binds `--host 127.0.0.1`, regardless of profile settings; the profile's bind port sets only `--port`. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::RenderVllmArgs --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQSEC013VllmRenderArgsAlwaysBindsLoopback) -->
+2. The vLLM inference API is reached only through the agent's authenticated upstream proxy: the Worker presents the upstream token and forwards no client, admin, or Cloudflare credentials. <!-- @impl: packages/node-agent/internal/agent/config.go::ConfigAnchors --> <!-- @test: packages/router-worker/src/router-routing.test.ts (REQ-RUN-021 dispatches a vllm profile direct with session affinity and the node credential boundary) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries), [CON-SEC-001](constraints.md#con-sec-001-separate-credential-classes)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-SEC-004](#req-sec-004-runtime-api-exposure), [REQ-NODE-003](node-agent.md#req-node-003-upstream-proxy), [REQ-RUN-022](runtime-profiles.md#req-run-022-direct-vllm-launch-rendering)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ## Related documentation
 
 - [documentation/lanes/security.md](../../documentation/lanes/security.md)

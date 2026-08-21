@@ -406,12 +406,49 @@ This domain covers the local cross-platform service that registers nodes, proxie
 2. Heartbeat metrics report the verified backend family of the selected managed binary. <!-- @impl: packages/node-agent/internal/agent/metrics.go::NodeMetrics --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_launch.go::managedLlamaCppBackend --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/node_protocol_test.go (TestREQNODE016LlamaCppMetricsCarryResolvedBackend) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/node_protocol_test.go (TestREQNODE016ManagedLlamaCppBackendFollowsSelectedBinary) -->
 3. Custom or host binaries whose builds the installer did not verify report backend `unknown`. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_launch.go::llamaCppBinaryPath --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/node_protocol_test.go (TestREQNODE013LlamaCppBinaryPathUsesHostInstalledOverride) -->
 4. A verified install stored under its former requested-backend name migrates to the resolved-backend directory without downloading again. <!-- @impl: packages/node-agent/internal/agent/llamacpp_install.go::EnsureLlamaCpp --> <!-- @test: packages/node-agent/internal/agent/llamacpp_install_test.go (TestREQNODE016LlamaCppMigratesRequestedBackendInstallToResolvedName) -->
+5. Heartbeat metrics report the host platform and CUDA availability as observed probe results, never a guess — a node that has not probed reports neither field. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/heartbeat.go::collect --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQNODE016CollectReportsObservedCapabilities) -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
 **Priority:** P1
 
 **Dependencies:** [REQ-NODE-013](#req-node-013-runtime-binary-bootstrap)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-NODE-017: vLLM runtime bootstrap
+
+**Intent:** The agent must provision the vLLM runtime the way it provisions its siblings — pinned, checksum-verified, and fail-closed — while respecting that vLLM is a Python distribution: a pinned `uv` toolchain builds a per-version virtual environment, and hosts that cannot run vLLM refuse before downloading anything.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. vLLM provisioning fails closed as `dependency-missing` before any download on hosts that are not Linux or report no NVIDIA CUDA, with an error naming the Linux + NVIDIA CUDA requirement. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::EnsureVllm --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmFailsClosedOffLinux) --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmFailsClosedWithoutCuda) -->
+
+2. A disk preflight refuses installation as `dependency-missing` when the data directory's free space cannot hold the CUDA-torch environment. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::EnsureVllm --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmRefusesLowDisk) -->
+
+3. The pinned `uv` toolchain downloads per-platform release assets selected by OS and architecture and verifies their embedded SHA-256 before extraction; a checksum mismatch fails closed as `dependency-missing`. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::UvAssetFor --> <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::ensureUv --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017UvAssetSelectionMapsPlatforms) --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmRejectsUvChecksumMismatch) -->
+
+4. Installation builds a per-version virtual environment (`uv venv` with the pinned Python, then `uv pip install vllm==<version> --torch-backend=auto`), probes the installed version, and writes a completion marker; the desired GitHub tag's leading `v` is stripped for the pip pin, and an empty selection resolves to the embedded default pin. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::EnsureVllm --> <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::VllmPinnedVersion --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmInstallsVenvAndWritesMarker) --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmStripsTagPrefixForPipPin) --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmDefaultsToPinnedVersion) -->
+
+5. A version directory without a valid completion marker reinstalls from scratch; a valid marker for the selected version skips reinstall entirely. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::EnsureVllm --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmReinstallsWhenMarkerAbsent) --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmReinstallsOnMarkerVersionMismatch) --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmSkipsReinstallWhenMarkerValid) -->
+
+6. The `current` symlink swaps to a new version only after its install completes, so a failed upgrade leaves the previously working environment launchable. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::swapVllmCurrent --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmKeepsCurrentUntilNewInstallCompletes) -->
+
+7. The agent adopts the router's desired vLLM version from claim and heartbeat responses alongside its siblings. <!-- @impl: packages/node-agent/internal/agent/client.go::mergeRuntimeVersions --> <!-- @test: packages/node-agent/internal/agent/vllm_telemetry_test.go (TestREQNODE017MergeRuntimeVersionsAdoptsDesiredVllm) -->
+
+8. The launched runtime's model and engine caches are pinned beneath the agent data directory and its process resolves binaries through the version venv, so disk accounting and cleanup cover vLLM downloads. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::vllmRuntimeEnvFor --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQNODE017VllmLaunchEnvPinsCachesUnderDataDir) -->
+
+**Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P1
+
+**Dependencies:** [REQ-NODE-013](#req-node-013-runtime-binary-bootstrap), [REQ-RUN-021](runtime-profiles.md#req-run-021-direct-vllm-custom-profiles)
 
 **Verification:** Automated test
 
