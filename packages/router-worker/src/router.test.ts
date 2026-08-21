@@ -825,7 +825,7 @@ describe('router worker behavioral contracts', () => {
     // fields that row's handler reads. It exists for the edit that breaks that pairing, where
     // passing undefined through would spend nothing and look like success.
     expect(required('setup-token-1', 'credentialId', '/node/claim')).toBe('setup-token-1')
-    expect(() => required(undefined, 'credentialId', '/node/claim')).toThrow('/node/claim')
+    expect(() => required(undefined, 'credentialId', '/node/claim')).toThrow('route /node/claim declares a gate that does not resolve credentialId')
   })
 
   it('REQ-ADM-007 assembles the console client script from its sections in order', () => {
