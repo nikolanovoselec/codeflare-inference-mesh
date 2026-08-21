@@ -50,8 +50,8 @@ describe('runtime binary version management', () => {
     const body = await response.json() as { ok: boolean; desired: { meshllm: string; llamacpp: string } }
 
     expect(response.status).toBe(200)
-    expect(body).toEqual({ ok: true, desired: { meshllm: 'v0.73.0', llamacpp: 'b9900' } })
-    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
+    expect(body).toEqual({ ok: true, desired: { meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: DEFAULT_VLLM_VERSION } })
+    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: DEFAULT_VLLM_VERSION })
     expect(store.audit.find((event) => event.type === 'runtime_versions_selected')).toMatchObject({ actor: 'admin:test', detail: { meshllm: 'v0.73.0', llamacpp: 'b9900' } })
   })
 
@@ -73,7 +73,7 @@ describe('runtime binary version management', () => {
     const response = await handleRuntimeVersionsSelect(selectRequest({ meshllm: 'v9.9.9' }), store, releasesFetcher([]))
 
     expect(response.status).toBe(400)
-    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: DEFAULT_MESHLLM_VERSION, llamacpp: DEFAULT_LLAMACPP_VERSION })
+    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: DEFAULT_MESHLLM_VERSION, llamacpp: DEFAULT_LLAMACPP_VERSION, vllm: DEFAULT_VLLM_VERSION })
     expect(store.audit.some((event) => event.type === 'runtime_versions_selected')).toBe(false)
   })
 
@@ -98,7 +98,7 @@ describe('runtime binary version management', () => {
 
     expect(response.status).toBe(200)
     expect(body.ok).toBe(true)
-    expect(body.desiredRuntimeVersions).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
+    expect(body.desiredRuntimeVersions).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: DEFAULT_VLLM_VERSION })
   })
 
   it('REQ-NODE-014 defaults the active source to the fork when configured, upstream when not', async () => {
@@ -167,7 +167,7 @@ describe('runtime binary version management', () => {
 
     expect(listed.status).toBe(200)
     expect(updated.status).toBe(200)
-    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
+    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: DEFAULT_VLLM_VERSION })
     expect(store.audit.find((event) => event.type === 'runtime_versions_selected')?.actor).toMatch(/^automation:/)
   })
 })

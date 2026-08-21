@@ -56,6 +56,9 @@ export function isDirectEligible(node: NodeRecord, profile: ModelProfile, public
   if (node.deactivated === true) return false
   if (now - node.lastSeenAt > HEARTBEAT_TTL_MS) return false
   if (node.runtime !== profile.runtime) return false
+  // vLLM runs only on Linux + NVIDIA CUDA. Fail closed: old agents report no
+  // capability fields at all, and absence must mean ineligible. REQ-SCH-003.
+  if (profile.runtime === 'vllm' && !(node.metrics?.platform === 'linux' && node.metrics?.cudaAvailable === true)) return false
   if (!node.publicModels.includes(publicModel)) return false
   if (!node.activeProfileIds.includes(profile.id)) return false
   const runtimeState = node.metrics?.runtimeState

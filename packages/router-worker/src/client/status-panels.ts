@@ -192,7 +192,7 @@ export const CLIENT_STATUS_PANELS = `\
         modelRow.appendChild(file);
         const pillRow = document.createElement('div');
         pillRow.className = 'mesh-card-pills';
-        const pills = profilePills(model, model.runtime === 'llamacpp', Boolean(model.meshllm && model.meshllm.split));
+        const pills = profilePills(model, model.runtime === 'llamacpp' || model.runtime === 'vllm', Boolean(model.meshllm && model.meshllm.split));
         pillRow.append(pills[0], pills[1]);
         modelRow.appendChild(pillRow);
       } else {
@@ -352,8 +352,9 @@ export const CLIENT_STATUS_PANELS = `\
     };
     const meshReady = populate('meshllm', config.runtimeVersion.meshllmSelectId);
     const llamaReady = populate('llamacpp', config.runtimeVersion.llamacppSelectId);
+    const vllmReady = populate('vllm', config.runtimeVersion.vllmSelectId);
     populateSource();
-    if (meshReady && llamaReady) return;
+    if (meshReady && llamaReady && vllmReady) return;
     const slot = byId(config.runtimeVersion.slotId);
     if (!slot) return;
     slot.textContent = '';
@@ -372,11 +373,13 @@ export const CLIENT_STATUS_PANELS = `\
     };
     grid.append(
       makeSelect('meshllm', 'MeshLLM version', config.runtimeVersion.meshllmSelectId),
-      makeSelect('llamacpp', 'llama.cpp version', config.runtimeVersion.llamacppSelectId)
+      makeSelect('llamacpp', 'llama.cpp version', config.runtimeVersion.llamacppSelectId),
+      makeSelect('vllm', 'vLLM version', config.runtimeVersion.vllmSelectId)
     );
     slot.appendChild(grid);
     populate('meshllm', config.runtimeVersion.meshllmSelectId);
     populate('llamacpp', config.runtimeVersion.llamacppSelectId);
+    populate('vllm', config.runtimeVersion.vllmSelectId);
   }
   function renderApiKeys(keys) {
     const listEl = byId('api-key-list');
@@ -447,8 +450,9 @@ export const CLIENT_STATUS_PANELS = `\
     renderRuntimeVersions(view);
     const meshCount = view && view.meshllm && view.meshllm.tags ? view.meshllm.tags.length : 0;
     const llamaCount = view && view.llamacpp && view.llamacpp.tags ? view.llamacpp.tags.length : 0;
-    const stale = (view && view.meshllm && view.meshllm.stale) || (view && view.llamacpp && view.llamacpp.stale);
-    setOutput('runtime-version-output', 'Loaded ' + meshCount + ' MeshLLM and ' + llamaCount + ' llama.cpp versions' + (stale ? ' (list may be out of date)' : ''));
+    const vllmCount = view && view.vllm && view.vllm.tags ? view.vllm.tags.length : 0;
+    const stale = (view && view.meshllm && view.meshllm.stale) || (view && view.llamacpp && view.llamacpp.stale) || (view && view.vllm && view.vllm.stale);
+    setOutput('runtime-version-output', 'Loaded ' + meshCount + ' MeshLLM, ' + llamaCount + ' llama.cpp, and ' + vllmCount + ' vLLM versions' + (stale ? ' (list may be out of date)' : ''));
     return view;
   }
   async function loadInstaller(prefix) {

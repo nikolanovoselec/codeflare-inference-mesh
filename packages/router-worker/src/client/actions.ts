@@ -250,6 +250,17 @@ export const CLIENT_ACTIONS = `\
       prefillChunkSize: numberOrNull('model-edit-prefill-chunk-size')
     };
   };
+  const vllmTunables = () => {
+    const gpuMemRaw = readInput('model-edit-vllm-gpu-mem');
+    const dtypeRaw = readInput('model-edit-vllm-dtype');
+    const quantRaw = readInput('model-edit-vllm-quant');
+    return {
+      maxNumSeqs: numberOrNull('model-edit-vllm-max-num-seqs'),
+      gpuMemoryUtilization: gpuMemRaw === '' ? null : Number(gpuMemRaw),
+      dtype: dtypeRaw === '' ? null : dtypeRaw,
+      quantization: quantRaw === '' ? null : quantRaw
+    };
+  };
   const modelSavePayload = (button) => {
     const runtime = button.dataset.runtime || 'meshllm';
     const payload = { profileId: button.dataset.profileId || '', runtime: runtime };
@@ -262,10 +273,10 @@ export const CLIENT_ACTIONS = `\
     payload.contextWindow = ctxRaw === '' ? 0 : Number(ctxRaw);
     const modelRaw = readInput('model-edit-model');
     if (modelRaw !== '') payload.modelRef = modelRaw;
-    // Empty means "leave as-is"; 0 explicitly clears the mesh-llm cap. Direct llama.cpp
-    // does not use this mesh-only VRAM budget.
+    // Empty means "leave as-is"; 0 explicitly clears the mesh-llm cap. Direct runtimes
+    // (llama.cpp, vLLM) do not use this mesh-only VRAM budget.
     const vramRaw = readInput('model-edit-vram');
-    if (runtime !== 'llamacpp' && vramRaw !== '') payload.maxVramGb = Number(vramRaw);
+    if (runtime !== 'llamacpp' && runtime !== 'vllm' && vramRaw !== '') payload.maxVramGb = Number(vramRaw);
     // Only send name / call name when the operator actually changed them, so saving
     // an unrelated setting never rewrites a default model's extra canonical aliases.
     const nameEl = byId('model-edit-name');
@@ -273,6 +284,7 @@ export const CLIENT_ACTIONS = `\
     if (nameEl && nameEl.value.trim() && nameEl.value !== nameEl.dataset.original) payload.name = nameEl.value.trim();
     if (callEl && callEl.value.trim() && callEl.value !== callEl.dataset.original) payload.callName = callEl.value.trim();
     if (runtime === 'llamacpp') payload.llamacpp = llamaCppTunables();
+    else if (runtime === 'vllm') payload.vllm = vllmTunables();
     else Object.assign(payload, meshllmTunables());
     return payload;
   };
@@ -347,7 +359,8 @@ export const CLIENT_ACTIONS = `\
   bindAction('runtime-versions-set', async ({ action, button, prefix, out }) => {
       const meshllm = byId(config.runtimeVersion.meshllmSelectId);
       const llamacpp = byId(config.runtimeVersion.llamacppSelectId);
-      await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '' }) });
+      const vllm = byId(config.runtimeVersion.vllmSelectId);
+      await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '', vllm: vllm ? vllm.value : '' }) });
       setOutput(out, 'Runtime versions saved.');
   });
   bindAction('settings-save', async ({ action, button, prefix, out }) => {

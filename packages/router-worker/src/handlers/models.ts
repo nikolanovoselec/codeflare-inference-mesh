@@ -1,6 +1,6 @@
 /** Model profiles: the catalogue, its rollout state, and per-profile configuration. */
-import { buildCustomProfile, buildDuplicateProfile, llamaCppQuantError, profileMeshId } from '../profiles'
-import { configureLlamaCppProfile, INVALID_MAX_VRAM, resolveCallNameAliases, resolveMaxVram, resolveMeshReassignment, resolveMeshllmTunables, resolveRuntime, type ModelConfigBody } from '../profile-config'
+import { buildCustomProfile, buildDuplicateProfile, llamaCppQuantError, parseLlamaCppModelRef, profileMeshId } from '../profiles'
+import { configureLlamaCppProfile, configureVllmProfile, INVALID_MAX_VRAM, resolveCallNameAliases, resolveMaxVram, resolveMeshReassignment, resolveMeshllmTunables, resolveRuntime, type ModelConfigBody } from '../profile-config'
 import { json, readJson } from '../http'
 import { listMeshes } from '../meshes'
 import type { ModelProfile } from '../types'
@@ -48,6 +48,7 @@ export async function handleProfileConfig(request: Request, deps: RouterDeps, re
   const runtime = resolveRuntime(body.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   if (body.llamacpp !== undefined && runtime !== 'llamacpp' && existing.runtime !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  if (body.vllm !== undefined && runtime !== 'vllm' && existing.runtime !== 'vllm') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   if (runtime === 'llamacpp' || existing.runtime === 'llamacpp') {
     const direct = configureLlamaCppProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
@@ -55,6 +56,14 @@ export async function handleProfileConfig(request: Request, deps: RouterDeps, re
     if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor, target: direct.profile.id, detail: { ...reassignment.change } })
     await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
     return json({ ok: true, profileId: direct.profile.id, contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, displayName: direct.profile.displayName, callableNames: direct.profile.publicAliases, runtime: 'llamacpp', model: toApiModel(direct.profile) }, 200, requestId)
+  }
+  if (runtime === 'vllm' || existing.runtime === 'vllm') {
+    const direct = configureVllmProfile(existing, profiles, body)
+    if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
+    await deps.store.setProfile(direct.profile)
+    if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor, target: direct.profile.id, detail: { ...reassignment.change } })
+    await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.hfRepo, runtime: 'vllm' } })
+    return json({ ok: true, profileId: direct.profile.id, contextWindow: direct.settings.contextWindow, modelRef: direct.settings.hfRepo, displayName: direct.profile.displayName, callableNames: direct.profile.publicAliases, runtime: 'vllm', model: toApiModel(direct.profile) }, 200, requestId)
   }
   const contextWindow = body.contextWindow ?? existing.contextWindow
   if (!Number.isInteger(contextWindow) || contextWindow < 0) return json({ error: 'invalid_context_window', requestId }, 400, requestId)
@@ -111,7 +120,10 @@ export async function handleProfileAdd(request: Request, deps: RouterDeps, reque
   const split = body?.mode === 'split'
   const runtime = resolveRuntime(body?.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
-  if (split && runtime === 'llamacpp') return json({ error: 'split_requires_meshllm', requestId }, 400, requestId)
+  if (split && runtime !== 'meshllm') return json({ error: 'split_requires_meshllm', requestId }, 400, requestId)
+  // A vLLM reference is a bare HF safetensors repo: a llama-style :quant file
+  // tag names a GGUF file vLLM does not load in-tree.
+  if (runtime === 'vllm' && parseLlamaCppModelRef(modelRef).quant !== undefined) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
   const meshId = await resolveOnboardingMesh(deps, body?.meshId)
   if (meshId === undefined) return json({ error: 'unknown_mesh', requestId }, 400, requestId)
   const name = typeof body?.name === 'string' ? body.name : undefined
@@ -141,6 +153,7 @@ async function resolveOnboardingMesh(deps: RouterDeps, rawMeshId: unknown): Prom
 export function toApiModel(profile: ModelProfile) {
   const m = profile.meshllm
   const l = profile.llamacpp
+  const v = profile.vllm
   return {
     id: profile.id,
     displayName: profile.displayName,
@@ -149,7 +162,7 @@ export function toApiModel(profile: ModelProfile) {
     rolloutPercent: profile.rolloutPercent,
     contextWindow: profile.contextWindow,
     runtime: profile.runtime,
-    modelRef: l?.modelRef ?? m?.modelRef ?? profile.upstreamModel,
+    modelRef: l?.modelRef ?? v?.hfRepo ?? m?.modelRef ?? profile.upstreamModel,
     split: m?.split ?? false,
     meshId: profileMeshId(profile),
     maxVramGb: m?.maxVramGb ?? 0,
@@ -168,7 +181,8 @@ export function toApiModel(profile: ModelProfile) {
       prefillChunking: m.prefillChunking ?? null,
       prefillChunkSize: m.prefillChunkSize ?? null
     } : null,
-    ...(l ? { llamacpp: l } : {})
+    ...(l ? { llamacpp: l } : {}),
+    ...(v ? { vllm: v } : {})
   }
 }
 
@@ -188,14 +202,15 @@ export async function handleApiModelAdd(request: Request, deps: RouterDeps, requ
   const split = body?.mode === 'split'
   const runtime = resolveRuntime(body?.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
-  if (split && runtime === 'llamacpp') return json({ error: 'split_requires_meshllm', requestId }, 400, requestId)
+  if (split && runtime !== 'meshllm') return json({ error: 'split_requires_meshllm', requestId }, 400, requestId)
+  // Same bare-HF-repo validation as the console add path: the automation API
+  // and the console share buildCustomProfile and must share the door too.
+  if (runtime === 'vllm' && parseLlamaCppModelRef(modelRef).quant !== undefined) return json({ error: 'invalid_model_ref', requestId }, 400, requestId)
   const meshId = await resolveOnboardingMesh(deps, body?.meshId)
   if (meshId === undefined) return json({ error: 'unknown_mesh', requestId }, 400, requestId)
   const name = typeof body?.name === 'string' ? body.name : undefined
   const existing = await deps.store.listProfiles()
   const profile = buildCustomProfile({ modelRef, split, existing, name, runtime, meshId })
-  // Same quant-tag validation as the console add path: the automation API and the
-  // console share buildCustomProfile and must share the door too.
   if (runtime === 'llamacpp') {
     const quantError = llamaCppQuantError(profile.llamacpp?.quant)
     if (quantError) return json({ error: quantError, requestId }, 400, requestId)
@@ -269,12 +284,21 @@ export async function handleApiModelConfigure(request: Request, deps: RouterDeps
   const runtime = resolveRuntime(body.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
   if (body.llamacpp !== undefined && runtime !== 'llamacpp' && existing.runtime !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  if (body.vllm !== undefined && runtime !== 'vllm' && existing.runtime !== 'vllm') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
   if (runtime === 'llamacpp' || existing.runtime === 'llamacpp') {
     const direct = configureLlamaCppProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
     await deps.store.setProfile(direct.profile)
     if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor: actor, target: direct.profile.id, detail: { ...reassignment.change } })
     await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
+    return json({ ok: true, model: toApiModel(direct.profile) }, 200, requestId)
+  }
+  if (runtime === 'vllm' || existing.runtime === 'vllm') {
+    const direct = configureVllmProfile(existing, profiles, body)
+    if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
+    await deps.store.setProfile(direct.profile)
+    if (reassignment.change) await deps.store.appendAudit({ id: crypto.randomUUID(), type: 'model_mesh_assigned', at: now, actor: actor, target: direct.profile.id, detail: { ...reassignment.change } })
+    await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.hfRepo, runtime: 'vllm' } })
     return json({ ok: true, model: toApiModel(direct.profile) }, 200, requestId)
   }
   const contextWindow = body.contextWindow ?? existing.contextWindow
