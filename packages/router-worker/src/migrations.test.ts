@@ -13,8 +13,8 @@ function tablesAfterMigrations(): ReadonlySet<string> {
   const tables = new Set<string>()
   for (const file of readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')).sort()) {
     const sql = readFileSync(join(migrationsDir, file), 'utf8').replace(/--[^\n]*/g, '')
-    for (const [, name] of sql.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)/gi)) tables.add(name)
-    for (const [, name] of sql.matchAll(/DROP TABLE (?:IF EXISTS )?([a-z_]+)/gi)) tables.delete(name)
+    for (const [, name] of sql.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)/gi)) if (name) tables.add(name)
+    for (const [, name] of sql.matchAll(/DROP TABLE (?:IF EXISTS )?([a-z_]+)/gi)) if (name) tables.delete(name)
   }
   return tables
 }

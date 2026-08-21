@@ -1,13 +1,19 @@
 /**
  * The admin console behavior script, served verbatim inside a <script> tag.
  *
- * This MUST stay a single template literal with zero interpolation: the
+ * Every section below MUST stay a template literal with zero interpolation: the
  * previous implementation serialized a bundled function via .toString(),
  * which let esbuild's keepNames helper calls (__name) leak into the page
  * and crash the whole script in production. Nothing here is derived from
  * bundled code; configuration crosses via the #admin-ui-config JSON blob.
+ *
+ * The sections are split only to keep the file readable — one of them had grown
+ * past two thousand lines. They are concatenated verbatim at the bottom, so the
+ * served bytes are identical to the single literal this replaced. The IIFE opens
+ * in CLIENT_PRELUDE and closes in CLIENT_BOOT; the pieces are not independently
+ * valid scripts, and each one begins exactly where the previous one ended.
  */
-export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
+const CLIENT_PRELUDE = `(() => {
   'use strict';
   const config = JSON.parse(document.getElementById('admin-ui-config').textContent);
   const state = config.state || { view: 'setup', phase: 'unclaimed' };
@@ -216,7 +222,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   initScramble();
 
-  // --- view + section state -------------------------------------------------
+`
+
+const CLIENT_VIEW = `  // --- view + section state -------------------------------------------------
   const setMobileMenu = (open) => {
     const sheet = byId('mobile-menu');
     if (sheet) sheet.hidden = !open;
@@ -415,7 +423,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     else setOutput(out, 'Gateway provisioned.');
   };
 
-  // --- renderers fed by /admin/status ----------------------------------------
+`
+
+const CLIENT_RENDERERS = `  // --- renderers fed by /admin/status ----------------------------------------
   const fmtAge = (ms) => {
     if (ms < 60000) return Math.max(1, Math.floor(ms / 1000)) + 's';
     if (ms < 3600000) return Math.floor(ms / 60000) + 'm';
@@ -2442,7 +2452,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     return discoveryGatewayPayload(gatewayScopeIds('routing'));
   };
 
-  // --- wizard data loaders ----------------------------------------------------
+`
+
+const CLIENT_ACTIONS = `  // --- wizard data loaders ----------------------------------------------------
   let accessIdents = { admin: [], user: [] };
   const isGroupIdent = (value) => value.indexOf('@') < 0;
   const looksLikeEmail = (value) => {
@@ -3197,7 +3209,9 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
     }
   });
 
-  // --- boot -------------------------------------------------------------------
+`
+
+const CLIENT_BOOT = `  // --- boot -------------------------------------------------------------------
   const bootView = state.view || document.body.dataset.view;
   setView(bootView);
   if (bootView === 'setup') {
@@ -3206,3 +3220,5 @@ export const ADMIN_UI_CLIENT_SCRIPT: string = `(() => {
   }
   if (bootView === 'dashboard') showDashboard();
 })();`
+
+export const ADMIN_UI_CLIENT_SCRIPT: string = CLIENT_PRELUDE + CLIENT_VIEW + CLIENT_RENDERERS + CLIENT_ACTIONS + CLIENT_BOOT

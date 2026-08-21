@@ -1239,7 +1239,7 @@ interface MeshllmTunablesBody {
 function resolveReasoning(existing: { enabled?: boolean; format?: string; budget?: number } | undefined, value: unknown): { value: { enabled?: boolean; format?: string; budget?: number } } | { error: string } {
   if (typeof value !== 'object' || value === null) return { error: 'invalid_reasoning' }
   const input = value as { enabled?: unknown; format?: unknown; budget?: unknown }
-  const next: { enabled?: boolean; format?: string; budget?: number } = { ...(existing ?? {}) }
+  const next: { enabled?: boolean; format?: string; budget?: number } = { ...existing }
   if (input.enabled !== undefined) {
     if (input.enabled === null) delete next.enabled
     else if (typeof input.enabled === 'boolean') next.enabled = input.enabled
@@ -1268,7 +1268,7 @@ const MESHLLM_PAYLOAD_MODES = new Set(['resident-kv', 'kv-recurrent', 'full-stat
 function resolvePrefixCache(existing: PrefixCacheBlock | undefined, value: unknown): { value: PrefixCacheBlock } | { error: string } {
   if (typeof value !== 'object' || value === null) return { error: 'invalid_prefix_cache' }
   const input = value as { enabled?: unknown; maxEntries?: unknown; payloadMode?: unknown; sharedStrideTokens?: unknown; sharedRecordLimit?: unknown }
-  const next: PrefixCacheBlock = { ...(existing ?? {}) }
+  const next: PrefixCacheBlock = { ...existing }
   const applyInt = (key: 'maxEntries' | 'sharedStrideTokens' | 'sharedRecordLimit', v: unknown, max: number): boolean => {
     if (v === undefined) return true
     if (v === null || v === 0) { delete next[key]; return true }

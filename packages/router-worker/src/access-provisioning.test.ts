@@ -94,20 +94,24 @@ describe('access provisioning contracts', () => {
     await provision(calls, { adminEmails: ['owner@example.com', 'sre@example.com'], userEmails: ['viewer@example.com'] })
     const adminGroup = calls.find((call) => call.method === 'POST' && call.url.endsWith('/access/groups') && (call.body as { name?: string }).name === `${WORKER}-admins`)
     expect(adminGroup).toBeDefined()
-    expect((adminGroup?.body as { include: unknown }).include).toEqual([
+    expect((adminGroup!.body as { include: unknown }).include).toEqual([
       { email: { email: 'owner@example.com' } },
       { email: { email: 'sre@example.com' } }
     ])
     const userGroup = calls.find((call) => call.method === 'POST' && call.url.endsWith('/access/groups') && (call.body as { name?: string }).name === `${WORKER}-users`)
-    expect((userGroup?.body as { include: unknown }).include).toEqual([{ email: { email: 'viewer@example.com' } }])
+    expect((userGroup!.body as { include: unknown }).include).toEqual([{ email: { email: 'viewer@example.com' } }])
   })
 
   it('invokes the fetcher as a free function so the global fetch keeps its native receiver (no Workers illegal invocation)', async () => {
     const calls: RecordedCall[] = []
     const real = fakeAccessApi(calls)
     let receiver: unknown = 'unset'
+    // Recorded through a helper rather than assigned to a local: the point is which receiver
+    // the client invokes the fetcher with, and passing `this` as an argument says that
+    // without aliasing it.
+    const recordReceiver = (value: unknown) => { receiver = value }
     const fetcher = function (this: unknown, input: RequestInfo | URL, init?: RequestInit) {
-      receiver = this
+      recordReceiver(this)
       return real(input, init)
     } as unknown as typeof fetch
     const client = new CloudflareAccessClient('token', fetcher)
@@ -126,7 +130,7 @@ describe('access provisioning contracts', () => {
     const calls: RecordedCall[] = []
     await provision(calls, { adminEmails: ['owner@example.com'], userEmails: ['viewer@example.com'] })
     const policyCreate = calls.find((call) => call.method === 'POST' && call.url.includes('/policies') && (call.body as { decision?: string }).decision === 'allow')
-    expect((policyCreate?.body as { include: unknown }).include).toEqual([
+    expect((policyCreate!.body as { include: unknown }).include).toEqual([
       { group: { id: 'group-created-1' } },
       { group: { id: 'group-created-2' } }
     ])
@@ -142,7 +146,7 @@ describe('access provisioning contracts', () => {
     // No managed email group is created when only named groups are supplied.
     expect(calls.filter((call) => call.method === 'POST' && call.url.endsWith('/access/groups'))).toHaveLength(0)
     const policyCreate = calls.find((call) => call.method === 'POST' && call.url.includes('/policies') && (call.body as { decision?: string }).decision === 'allow')
-    expect((policyCreate?.body as { include: unknown }).include).toEqual([
+    expect((policyCreate!.body as { include: unknown }).include).toEqual([
       { group: { id: 'grp-admin' } },
       { group: { id: 'grp-view' } }
     ])
@@ -152,7 +156,7 @@ describe('access provisioning contracts', () => {
     const calls: RecordedCall[] = []
     const result = await provision(calls, { adminEmails: ['owner@example.com'] })
     const policyCreate = calls.find((call) => call.method === 'POST' && call.url.includes('/policies') && (call.body as { decision?: string }).decision === 'allow')
-    expect((policyCreate?.body as { include: unknown }).include).toEqual([{ everyone: {} }])
+    expect((policyCreate!.body as { include: unknown }).include).toEqual([{ everyone: {} }])
     expect(result.usersOpen).toBe(true)
   })
 
@@ -167,10 +171,10 @@ describe('access provisioning contracts', () => {
     const appCreate = calls.find((call) => call.method === 'POST' && call.url.endsWith('/access/apps') && (call.body as { domain?: string }).domain === HOSTNAME)
     expect(appCreate?.body).toMatchObject({ type: 'self_hosted', domain: HOSTNAME })
     const bypassCreate = calls.find((call) => call.method === 'POST' && call.url.endsWith('/access/apps') && (call.body as { domain?: string }).domain !== HOSTNAME)
-    const destinations = (bypassCreate?.body as { destinations: readonly { uri: string }[] }).destinations.map((entry) => entry.uri)
+    const destinations = (bypassCreate!.body as { destinations: readonly { uri: string }[] }).destinations.map((entry) => entry.uri)
     for (const suffix of MACHINE_BYPASS_SUFFIXES) expect(destinations).toContain(`${HOSTNAME}${suffix}`)
     const bypassPolicy = calls.find((call) => call.method === 'POST' && call.url.includes('/policies') && (call.body as { decision?: string }).decision === 'bypass')
-    expect((bypassPolicy?.body as { include: unknown }).include).toEqual([{ everyone: {} }])
+    expect((bypassPolicy!.body as { include: unknown }).include).toEqual([{ everyone: {} }])
   })
 
   it('REQ-ADM-012 removes the bypass app when its bypass policy cannot be created', async () => {

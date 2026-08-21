@@ -80,7 +80,7 @@ async function resolveRole(request: Request, deps: AuthDeps, now: number): Promi
   const userEmails = access.userEmails ?? []
   const userGroups = access.userGroups ?? []
   const groups = await fetchIdentityGroups(request, access.teamDomain, deps.identityFetcher ?? deps.jwksFetcher ?? fetch)
-  const inAny = (names: readonly string[]) => names.length > 0 && names.some((name) => groups.includes(name))
+  const inAny = (names: readonly string[]) => names.some((name) => groups.includes(name))
   if (adminEmails.includes(emailKey) || inAny(adminGroups)) return { role: 'admin', actor: email }
   const usersOpen = userEmails.length === 0 && userGroups.length === 0
   if (usersOpen || userEmails.includes(emailKey) || inAny(userGroups)) return { role: 'user', actor: email }

@@ -785,6 +785,25 @@ describe('router worker behavioral contracts', () => {
     expect(new Set(ROUTES.map((route) => route.gate)).size).toBe(11)
   })
 
+  it('REQ-ADM-007 assembles the console client script from its sections in order', () => {
+    // The script is concatenated from five template literals. A dropped or reordered
+    // section still yields a string, and the browser only fails at runtime, so assert
+    // the closure the page actually needs: one IIFE, every section present, in order.
+    expect(ADMIN_UI_CLIENT_SCRIPT.startsWith("(() => {\n  'use strict';")).toBe(true)
+    expect(ADMIN_UI_CLIENT_SCRIPT.endsWith('})();')).toBe(true)
+
+    const markers = [
+      '// --- hero progressive enhancement',
+      '// --- view + section state',
+      '// --- renderers fed by /admin/status',
+      '// --- wizard data loaders',
+      '// --- boot'
+    ]
+    const offsets = markers.map((marker) => ADMIN_UI_CLIENT_SCRIPT.indexOf(marker))
+    expect(offsets.filter((offset) => offset < 0)).toEqual([])
+    expect(offsets).toEqual([...offsets].sort((left, right) => left - right))
+  })
+
   it('REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation', async () => {
     // TokenVerifierStorageTestAnchor
     const { router, store } = routerFixture()
@@ -2275,8 +2294,12 @@ describe('router worker behavioral contracts', () => {
 
   it('CloudflareGatewayClient invokes the fetcher as a free function so the global fetch keeps its native receiver (no Workers illegal invocation)', async () => {
     let receiver: unknown = 'unset'
+    // Recorded through a helper rather than assigned to a local: the point is which receiver
+    // the client invokes the fetcher with, and passing `this` as an argument says that
+    // without aliasing it.
+    const recordReceiver = (value: unknown) => { receiver = value }
     const fetcher = function (this: unknown, _input: RequestInfo | URL, _init?: RequestInit) {
-      receiver = this
+      recordReceiver(this)
       return Promise.resolve(Response.json({ success: true, result: [] }))
     } as unknown as typeof fetch
     const client = new CloudflareGatewayClient('runtime-token', fetcher)
@@ -3129,7 +3152,7 @@ describe('router worker behavioral contracts', () => {
     expect(await activeRepo()).toBe('nikolanovoselec/mesh-llm')
     // The automation twin's switch is audited under an automation actor (the admin
     // switch above logged its own runtime_source_selected event, so match on actor).
-    expect(store.audit.some((event) => event.type === 'runtime_source_selected' && /^automation:/.test(String(event.actor ?? '')))).toBe(true)
+    expect(store.audit.some((event) => event.type === 'runtime_source_selected' && String(event.actor ?? '').startsWith('automation:'))).toBe(true)
   })
 
   it('REQ-OBS-002 reports node mesh membership and readiness fields in admin status', async () => {

@@ -94,7 +94,7 @@ function rowOrder(harness: AdminUiHarness): string[] {
 
 describe('dashboard overview contracts', () => {
   afterEach(() => {
-    try { vi.clearAllTimers() } catch (_error) { /* fake timers were not enabled */ }
+    try { vi.clearAllTimers() } catch { /* fake timers were not enabled */ }
     vi.useRealTimers()
     vi.restoreAllMocks()
     delete (globalThis as { matchMedia?: unknown }).matchMedia
