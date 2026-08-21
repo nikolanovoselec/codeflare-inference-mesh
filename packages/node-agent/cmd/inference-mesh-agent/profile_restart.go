@@ -60,8 +60,15 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 			return
 		}
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = manager.Stop(stopCtx)
+		stopErr := manager.Stop(stopCtx)
 		stopCancel()
+		if errors.Is(stopErr, agent.ErrStopInProgress) {
+			// Do not start a replacement over a process another Stop is still
+			// terminating (same bind port and GPU); fail the switch and let a
+			// later heartbeat retry once the shutdown completes.
+			manager.SetFailure(stopErr)
+			return
+		}
 		started, installError, err := startRuntimeForProfile(ctx, cfg, profile, nil)
 		if err != nil {
 			s.setManager(manager, installError)

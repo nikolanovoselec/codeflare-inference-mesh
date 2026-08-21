@@ -283,8 +283,8 @@ func TestREQRUN010StopDuringConcurrentStopFailsLoudly(t *testing.T) {
 	manager := NewVllmManager(VllmInput{UpstreamModel: "org/model"})
 	manager.proc = newFakeMeshProcess(&eventLog{})
 	manager.done = nil
-	if err := manager.Stop(context.Background()); !errors.Is(err, errStopInProgress) {
-		t.Fatalf("Stop during a concurrent stop = %v, want errStopInProgress", err)
+	if err := manager.Stop(context.Background()); !errors.Is(err, ErrStopInProgress) {
+		t.Fatalf("Stop during a concurrent stop = %v, want ErrStopInProgress", err)
 	}
 }
 
@@ -296,8 +296,8 @@ func TestREQRUN010RestartDuringConcurrentStopLeavesInputUnswapped(t *testing.T) 
 	manager.proc = newFakeMeshProcess(&eventLog{})
 	manager.done = nil
 	next := VllmInput{UpstreamModel: "org/other", Settings: VllmSettings{HfRepo: "org/other", BindPort: 4401}}
-	if err := manager.RestartWithVllmInput(context.Background(), next); !errors.Is(err, errStopInProgress) {
-		t.Fatalf("restart during a concurrent stop = %v, want errStopInProgress", err)
+	if err := manager.RestartWithVllmInput(context.Background(), next); !errors.Is(err, ErrStopInProgress) {
+		t.Fatalf("restart during a concurrent stop = %v, want ErrStopInProgress", err)
 	}
 	manager.mu.Lock()
 	upstream := manager.input.UpstreamModel

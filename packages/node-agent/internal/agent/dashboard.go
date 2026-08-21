@@ -37,7 +37,7 @@ func DashboardHandler(status func() DashboardStatus, controllers ...RuntimeContr
 	mux.HandleFunc("/api/runtime/stop", runtimeAction(status, controllers, func(ctx context.Context, controller RuntimeController) error {
 		// An explicit stop that finds a stop already running has got what it
 		// asked for; only restart paths treat the sentinel as failure.
-		if err := controller.Stop(ctx); err != nil && !errors.Is(err, errStopInProgress) {
+		if err := controller.Stop(ctx); err != nil && !errors.Is(err, ErrStopInProgress) {
 			return err
 		}
 		return nil

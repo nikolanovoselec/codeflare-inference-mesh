@@ -202,7 +202,7 @@ func (m *VllmManager) Stop(ctx context.Context) error {
 		// A concurrent Stop owns this process's shutdown; fail loudly so a
 		// restart cannot swap input and report success without relaunching.
 		m.mu.Unlock()
-		return errStopInProgress
+		return ErrStopInProgress
 	}
 	m.done = nil
 	m.state = "stopping"

@@ -11,6 +11,26 @@ import (
 	"github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent/internal/agent"
 )
 
+func TestREQRUN010CrossRuntimeSwitchDoesNotStartOverBusyStop(t *testing.T) {
+	// A cross-runtime switch whose Stop finds another Stop mid-shutdown must
+	// fail the switch instead of launching the replacement over a process that
+	// is still terminating on the same bind port and GPU. REQ-RUN-010.
+	profile := vllmTestProfile("switch-busy")
+	cfg := agent.Config{RuntimeModel: "org/model", ActiveProfileIDs: []string{"switch-busy"}, Profiles: []agent.ModelProfile{profile}}
+	counter := &agent.ActiveCounter{}
+	manager := &stopBusyRuntime{fakeMeshRuntime: newFakeMeshRuntime(counter)}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+
+	loop.finishProfileRestart(context.Background(), cfg, "starting")
+
+	if got := loop.currentManager(); got != manager {
+		t.Fatal("a busy stop must keep the old manager current, not publish a replacement")
+	}
+	if manager.State() != "failed" || !strings.Contains(manager.LastError(), "stop already in progress") {
+		t.Fatalf("busy stop must fail the switch, state=%q lastError=%q", manager.State(), manager.LastError())
+	}
+}
+
 func TestREQRUN010RestartLatchReleasedWhenRuntimeHangs(t *testing.T) {
 	// A runtime restart whose Stop blocks (a mesh-llm ignoring SIGTERM) must not strand the
 	// restart-pending latch. The bounded restart timeout unblocks it so a later heartbeat can

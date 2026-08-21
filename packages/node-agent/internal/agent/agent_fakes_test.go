@@ -50,5 +50,5 @@ type stopBusyController struct{ fakeRuntimeController }
 
 func (c *stopBusyController) Stop(context.Context) error {
 	c.stops++
-	return errStopInProgress
+	return ErrStopInProgress
 }
