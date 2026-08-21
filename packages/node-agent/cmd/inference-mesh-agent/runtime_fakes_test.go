@@ -125,6 +125,15 @@ func (f *fakeMeshRuntime) PollStatus(context.Context) (agent.MeshLLMStatus, bool
 	return f.status, f.consoleOK
 }
 
+func (f *fakeMeshRuntime) Inflight(context.Context) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.consoleOK {
+		return 0
+	}
+	return f.status.InflightRequests
+}
+
 func (f *fakeMeshRuntime) ApplyBootstrap(bootstrap *agent.MeshBootstrap) {
 	if bootstrap == nil {
 		return
@@ -261,7 +270,7 @@ func (f *routerFixture) request(index int) agent.HeartbeatRequest {
 	return f.requests[index]
 }
 
-func newLoopForTest(t *testing.T, cfg agent.Config, counter *agent.ActiveCounter, manager meshRuntime, updater agentUpdater, exit func()) *serviceLoop {
+func newLoopForTest(t *testing.T, cfg agent.Config, counter *agent.ActiveCounter, manager agent.RuntimeManager, updater agentUpdater, exit func()) *serviceLoop {
 	t.Helper()
 	cfgCopy := cfg
 	if exit == nil {

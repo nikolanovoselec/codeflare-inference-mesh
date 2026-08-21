@@ -400,7 +400,7 @@ func TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart(t *testing.T) {
 	loop := newLoopForTest(t, agent.Config{}, counter, nil, &fakeUpdater{}, nil)
 	release := make(chan struct{})
 	started := newFakeMeshRuntime(counter)
-	launchInitialRuntime(context.Background(), loop, agent.Config{}, agent.ModelProfile{ID: "p1"}, nil, func(context.Context, agent.Config, agent.ModelProfile, *agent.MeshBootstrap) (meshRuntime, string, error) {
+	launchInitialRuntime(context.Background(), loop, agent.Config{}, agent.ModelProfile{ID: "p1"}, nil, func(context.Context, agent.Config, agent.ModelProfile, *agent.MeshBootstrap) (agent.RuntimeManager, string, error) {
 		<-release
 		return started, "install-detail", nil
 	})
@@ -417,7 +417,7 @@ func TestREQNODE002StartupHeartbeatsDoNotWaitOnRuntimeStart(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	manager, installError := loop.managerSnapshot()
-	if manager != meshRuntime(started) {
+	if manager != agent.RuntimeManager(started) {
 		t.Fatal("the CURRENT manager must be the started runtime")
 	}
 	if installError != "install-detail" {

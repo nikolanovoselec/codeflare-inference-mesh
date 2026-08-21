@@ -324,22 +324,6 @@ func (m *LlamaCppManager) RestartWithLlamaInput(ctx context.Context, in LlamaCpp
 	return m.Start(ctx)
 }
 
-func (m *LlamaCppManager) RestartWithInput(ctx context.Context, _ MeshLLMRenderInput, _ int) error {
-	return m.Restart(ctx)
-}
-
-func (m *LlamaCppManager) PollStatus(_ context.Context) (MeshLLMStatus, bool) {
-	return MeshLLMStatus{}, m.APIReady()
-}
-
-func (m *LlamaCppManager) ApplyBootstrap(_ *MeshBootstrap) {}
-
-func (m *LlamaCppManager) NeedsRestart(_ *MeshBootstrap) bool { return false }
-
-func (m *LlamaCppManager) CurrentToken() string { return "" }
-
-func (m *LlamaCppManager) CurrentMeshID() string { return "" }
-
 func (m *LlamaCppManager) finishStop(proc meshProcess, cancel context.CancelFunc, state string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -574,7 +558,9 @@ func (m *LlamaCppManager) APIReady() bool {
 	return m.apiReady
 }
 
-func (m *LlamaCppManager) Inflight() int { return 0 }
+// Inflight is llama-server's drain contribution: it exposes no inflight-request
+// surface of its own, so only the agent proxy counter gates a drain.
+func (m *LlamaCppManager) Inflight(_ context.Context) int { return 0 }
 
 func containsString(values []string, target string) bool {
 	for _, value := range values {

@@ -4,6 +4,7 @@ import { applyHeartbeatMeshState, meshBootstrapFor } from '../mesh-state'
 import { applyNodeVramOverride } from '../profile-config'
 import { authenticateTokenByNode } from '../auth-gates'
 import { bearerToken, createTokenRecord, generateBearerToken, hashToken, verifyPlainOrHashed } from '../auth'
+import { RUNTIME_KINDS } from '../types'
 import type { ClaimRequest, HeartbeatRequest, ModelProfile, NodeRecord, RouterEnv, Store } from '../types'
 import { desiredAgentVersion } from '../agent-versions'
 import { isSafeMeshTarget } from '../scheduler'
@@ -195,7 +196,7 @@ function validateHeartbeat(body: HeartbeatRequest | undefined, env: Pick<RouterE
   if (!Array.isArray(body.activeProfileIds) || !body.activeProfileIds.every((item) => typeof item === 'string' && item.length > 0)) errors.push('activeProfileIds')
   if (!Number.isInteger(body.capacity) || body.capacity < 1) errors.push('capacity')
   if (!Number.isInteger(body.inFlight) || body.inFlight < 0) errors.push('inFlight')
-  if (!['meshllm', 'llamacpp'].includes(body.runtime)) errors.push('runtime')
+  if (!(RUNTIME_KINDS as readonly string[]).includes(body.runtime)) errors.push('runtime')
   if (body.runtimeModel !== undefined && typeof body.runtimeModel !== 'string') errors.push('runtimeModel')
   if (body.agentVersion !== undefined && typeof body.agentVersion !== 'string') errors.push('agentVersion')
   if (body.reloadNonce !== undefined && typeof body.reloadNonce !== 'string') errors.push('reloadNonce')
@@ -208,7 +209,7 @@ function validNodeMetrics(metrics: unknown): boolean {
   const value = metrics as Record<string, unknown>
   if (typeof value.runtimeState !== 'string' || value.runtimeState.length === 0) return false
   if (typeof value.activeRequests !== 'number' || !Number.isInteger(value.activeRequests) || value.activeRequests < 0) return false
-  if (value.runtimeKind !== undefined && !['meshllm', 'llamacpp'].includes(String(value.runtimeKind))) return false
+  if (value.runtimeKind !== undefined && !(RUNTIME_KINDS as readonly string[]).includes(String(value.runtimeKind))) return false
   if (value.apiReady !== undefined && typeof value.apiReady !== 'boolean') return false
   if (value.consoleReady !== undefined && typeof value.consoleReady !== 'boolean') return false
   if (value.readyModels !== undefined && (!Array.isArray(value.readyModels) || !value.readyModels.every((item) => typeof item === 'string'))) return false

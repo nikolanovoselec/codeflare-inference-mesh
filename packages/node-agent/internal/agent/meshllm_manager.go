@@ -15,38 +15,6 @@ import (
 	"time"
 )
 
-// meshProcess abstracts the supervised mesh-llm child process so tests can
-// inject a fake in place of a real *exec.Cmd.
-type meshProcess interface {
-	Signal(sig os.Signal) error
-	Kill() error
-	Wait() error
-}
-
-// meshLauncher starts the mesh-llm binary and returns a handle to the running
-// process. The context is the process-lifetime context: cancelling it kills
-// the child, and it is never derived from a caller's request context.
-type meshLauncher func(ctx context.Context, binary string, args []string, env []string, stderr io.Writer) (meshProcess, error)
-
-type execMeshProcess struct {
-	cmd *exec.Cmd
-}
-
-func (p execMeshProcess) Signal(sig os.Signal) error { return p.cmd.Process.Signal(sig) }
-func (p execMeshProcess) Kill() error                { return p.cmd.Process.Kill() }
-func (p execMeshProcess) Wait() error                { return p.cmd.Wait() }
-
-func launchMeshProcess(ctx context.Context, binary string, args []string, env []string, stderr io.Writer) (meshProcess, error) {
-	cmd := exec.CommandContext(ctx, binary, args...)
-	cmd.Env = env
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = io.MultiWriter(os.Stderr, stderr)
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	return execMeshProcess{cmd: cmd}, nil
-}
-
 // MeshLLMManager supervises exactly one managed mesh-llm process. It reuses
 // the RuntimeManager lifecycle patterns (state machine strings, process-
 // lifetime context, done/exited channels) and implements RuntimeController,
@@ -359,6 +327,17 @@ func (m *MeshLLMManager) PollStatus(ctx context.Context) (MeshLLMStatus, bool) {
 	m.apiReady = apiReachable
 	m.mu.Unlock()
 	return status, consoleReachable
+}
+
+// Inflight reports the console's current inflight_requests, or 0 when the
+// console is unreachable — an unobservable console contributes no drain
+// backpressure, so a swap still completes on the proxy counter and timeout.
+func (m *MeshLLMManager) Inflight(ctx context.Context) int {
+	status, reachable := m.PollStatus(ctx)
+	if !reachable {
+		return 0
+	}
+	return status.InflightRequests
 }
 
 // APIReady reports whether the last poll reached the node's own /v1/models

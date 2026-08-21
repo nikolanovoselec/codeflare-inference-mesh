@@ -10,6 +10,7 @@ import { approvedNodeHeaders } from './auth'
 import { decideDirectSession, directSessionKey, type DirectSessionDecision, type DirectSessionDecisionRequest } from './direct-affinity'
 import { json, responseMetadataHeaders } from './http'
 import { eligibleDirectNodes, meshUrl } from './scheduler'
+import { DIRECT_RUNTIMES } from './types'
 import type { ModelProfile, NodeRecord, RouterEnv, Scheduler, Store } from './types'
 
 /** The slice of the router's dependencies the data plane uses. RouterDeps satisfies it. */
@@ -29,7 +30,7 @@ export async function runInference(deps: InferenceDeps, input: { body: Record<st
   const profile = await deps.store.getProfileByPublicModel(publicModel)
   if (!profile) return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
   const normalized = { ...input, body: { ...input.body, model: publicModel } }
-  if (profile.runtime === 'llamacpp') return runDirectLlamaCppInference(deps, { ...normalized, body: directSessionBody(normalized.body, input.requestHeaders) }, publicModel, profile)
+  if (DIRECT_RUNTIMES.has(profile.runtime)) return runDirectLlamaCppInference(deps, { ...normalized, body: directSessionBody(normalized.body, input.requestHeaders) }, publicModel, profile)
   return runMeshInference(deps, normalized)
 }
 export function routablePublicModel(model: string): string {
