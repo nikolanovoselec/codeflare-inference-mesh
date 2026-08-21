@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-08-21
+
+- The durable schema no longer carries the retired `sessions` and `reservations` tables. Nothing has read or written them since the router became a stateless forwarder, and dropping them also retires the two indexes that existed only to serve the reservation reclaim scan. Cache-warm affinity for direct llama.cpp models is unaffected; it lives in the separate `direct_sessions` table. ([REQ-SCH-001](state-scheduling.md#req-sch-001-durable-router-state))
+
 ## 2026-08-20
 
 - Direct llama.cpp profiles can disable the multimodal projector per model, avoiding its VRAM cost for text workloads while keeping auto-load as the default. The model drawer and both configuration APIs expose the control. ([REQ-RUN-015](runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering), [REQ-RUN-019](runtime-profiles.md#req-run-019-direct-projector-control), [REQ-RUN-020](runtime-profiles.md#req-run-020-automation-projector-control))

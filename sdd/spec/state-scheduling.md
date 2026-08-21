@@ -6,7 +6,7 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 
 ### REQ-SCH-001: Durable router state
 
-**Intent:** Router configuration must survive Worker and Durable Object restarts. D1 is the durable source for setup state, resources, nodes, models, sessions, mesh state, agent-version selection, and audit records.
+**Intent:** Router configuration must survive Worker and Durable Object restarts. D1 is the durable source for setup state, resources, nodes, models, direct-session affinity, mesh state, agent-version selection, and audit records.
 
 **Applies To:** Admin
 
@@ -19,6 +19,7 @@ This domain covers durable records, hot scheduler state, node eligibility, and s
 5. D1 stores one mesh state record per MeshLLM profile under the `mesh_state:<profileId>` router configuration key as AES-GCM ciphertext, never as plaintext token material. <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> <!-- @test: packages/router-worker/src/mesh-state.test.ts (REQ-SCH-001 stores mesh state as AES-GCM ciphertext and round-trips it from D1) -->
 6. Profile seeding is seed-once: the starter catalog is written only while the `default_profiles_seeded` marker is absent, existing rows are never refreshed or retired, and a deleted starter profile never re-seeds. <!-- @impl: packages/router-worker/src/store.ts::seedDefaultProfiles --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-002 ships only the starter profile and seeds it exactly once) --> <!-- @test: packages/router-worker/src/router.test.ts (REQ-RUN-009 seeds the starter exactly once and never resurrects or refreshes rows) -->
 7. Router startup can rebuild scheduler hot state from D1 without requiring manual repair. <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-SCH-001 REQ-SCH-002 persists durable router state and reselects the eligible node from D1) -->
+8. The migration sequence leaves no session-lease or reservation tables, because the request path forwards statelessly and holds no lease or capacity gate. <!-- @impl: packages/router-worker/migrations/0004_drop_dead_session_tables.sql::SCH001DeadSessionSchemaDrop --> <!-- @test: packages/router-worker/src/migrations.test.ts (REQ-SCH-001 leaves exactly the durable tables the router reads, carrying no session-lease or reservation schema) -->
 
 **Constraints:** [CON-STATE-001](constraints.md#con-state-001-d1-is-durable-truth), [CON-SEC-002](constraints.md#con-sec-002-no-plaintext-durable-secrets)
 

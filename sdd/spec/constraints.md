@@ -26,7 +26,7 @@ Mesh state, including invite tokens, is stored only AES-GCM envelope-encrypted v
 
 ## CON-STATE-001: D1 is durable truth
 
-D1 stores setup state, Cloudflare resource IDs, model profiles, aliases, nodes, sessions, reservations, and audit records. Durable Objects may cache hot state but must rebuild from D1.
+D1 stores setup state, Cloudflare resource IDs, model profiles, aliases, nodes, direct-session affinity, and audit records. Durable Objects may cache hot state but must rebuild from D1.
 
 ## CON-RUNTIME-001: Runtime boundaries
 

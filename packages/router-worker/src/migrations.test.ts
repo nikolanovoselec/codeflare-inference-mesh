@@ -1,0 +1,33 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+const migrationsDir = resolve(dirname(fileURLToPath(import.meta.url)), '../migrations')
+
+/**
+ * Replay the migration sequence in filename order and return the tables that survive it.
+ * Comments are stripped first so prose about a table never reads as DDL against it.
+ */
+function tablesAfterMigrations(): ReadonlySet<string> {
+  const tables = new Set<string>()
+  for (const file of readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')).sort()) {
+    const sql = readFileSync(join(migrationsDir, file), 'utf8').replace(/--[^\n]*/g, '')
+    for (const [, name] of sql.matchAll(/CREATE TABLE (?:IF NOT EXISTS )?([a-z_]+)/gi)) tables.add(name)
+    for (const [, name] of sql.matchAll(/DROP TABLE (?:IF EXISTS )?([a-z_]+)/gi)) tables.delete(name)
+  }
+  return tables
+}
+
+describe('migrations', () => {
+  it('REQ-SCH-001 leaves exactly the durable tables the router reads, carrying no session-lease or reservation schema', () => {
+    expect([...tablesAfterMigrations()].sort()).toEqual([
+      'audit_events',
+      'direct_sessions',
+      'model_profiles',
+      'nodes',
+      'router_config',
+      'tokens'
+    ])
+  })
+})
