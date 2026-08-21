@@ -76,6 +76,14 @@ function routeFamily(pathname: string): RouteFamily {
   return 'public'
 }
 
+/**
+ * Routes whose credential is per-node: the handler must read `nodeId` from the body to
+ * know which node's token to verify, so body validation answers 400 before the token
+ * check can run. They still never admit an uncredentialed caller, which is what the
+ * sweep below actually asserts. Any third route joining this set has to be justified.
+ */
+const IDENTIFIES_CALLER_FROM_BODY: ReadonlySet<string> = new Set(['/node/heartbeat', '/node/unregister'])
+
 /** Credential classes each route family is allowed to declare. */
 const FAMILY_GATES: Record<RouteFamily, readonly RouteGate[]> = {
   data: ['provider'],
@@ -749,6 +757,7 @@ describe('router worker behavioral contracts', () => {
     await store.putToken(await createTokenRecord('admin', 'admin-secret', 1_700_000_000_000))
 
     const misfiled: string[] = []
+    const admitted: string[] = []
     const unguarded: string[] = []
     for (const route of ROUTES) {
       const pathname = samplePath(route.path)
@@ -756,13 +765,20 @@ describe('router worker behavioral contracts', () => {
         misfiled.push(`${route.method} ${pathname} declares ${route.gate}`)
       }
       const status = (await router(new Request(`https://router.test${pathname}`, { method: route.method }))).status
-      const refused = status === 401
-      if (route.gate === 'open' ? refused : !refused) {
+      if (route.gate === 'open') {
+        if (status === 401) unguarded.push(`${route.method} ${pathname} is open but answered 401`)
+        continue
+      }
+      // The security invariant: a gated route never serves an uncredentialed caller.
+      if (status < 400) admitted.push(`${route.method} ${pathname} gate=${route.gate} answered ${status}`)
+      // And it refuses with 401 specifically, unless it must read the body to identify the caller.
+      if (status !== 401 && !IDENTIFIES_CALLER_FROM_BODY.has(pathname)) {
         unguarded.push(`${route.method} ${pathname} gate=${route.gate} answered ${status}`)
       }
     }
 
     expect(misfiled).toEqual([])
+    expect(admitted).toEqual([])
     expect(unguarded).toEqual([])
     // Guards the sweep itself: an empty or truncated table would pass both checks vacuously.
     expect(ROUTES).toHaveLength(79)
