@@ -216,6 +216,7 @@ export class CloudflareAccessClient {
   }
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const ACCESS_PROVISIONING_ANCHORS = {
   REQ_ADM_012: 'REQ-ADM-012',
   REQ_SEC_010: 'REQ-SEC-010'

@@ -233,6 +233,7 @@ function json(body: unknown, status: number): Response {
   return Response.json(body, { status, headers: JSON_HEADERS })
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const RUNTIME_VERSIONS_ANCHORS = {
   REQ_ADM_033: 'REQ-ADM-033',
   REQ_NODE_013: 'REQ-NODE-013'

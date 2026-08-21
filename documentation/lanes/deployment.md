@@ -22,7 +22,8 @@ Production deployment is automatic after a merged `main` push has green PR Check
 
 | Check group | Required behavior | REQs |
 | --- | --- | --- |
-| Router | Lockfile install, lint, behavioral tests, type-check, Wrangler types, dry-run deploy. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
+| Quality | Repository lint (oxlint, `correctness` category plus `no-console` under `src/`) and unused file, export, and dependency reporting (knip). Wider oxlint categories stay off until their findings are triaged; `suspicious` currently recommends `Array#toSorted()`, which is not in this project's ES2022 target. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
+| Router | Lockfile install, behavioral tests, type-check, Wrangler types, dry-run deploy. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
 | Agent | Go tests, vet, race tests, and command build; Go dependency cache points at `packages/node-agent/go.mod`. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
 | Packaging | Build one archive, generate checksums, verify hash, run staged version command; Go dependency cache points at `packages/node-agent/go.mod`. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
 | Security | Lockfile npm audit, Go vulnerability check, dependency review where available, weekly Dependabot pull requests for npm, Go modules, and GitHub Actions, pinned workflow actions, and least-privilege workflow tokens. | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |

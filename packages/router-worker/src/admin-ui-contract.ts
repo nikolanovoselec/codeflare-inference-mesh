@@ -121,6 +121,29 @@ export const ADMIN_UI_DRAWER = {
   closeAction: 'drawer-close'
 } as const
 
+/**
+ * Node work state and mesh role, as stable tokens. The console renders a label, but the
+ * drawer row's `data-value` and the status cell's `data-mesh-role` carry the token, so a
+ * test asserts which state a node is in rather than how that state is worded. Rewording a
+ * label is then a change no test notices; misclassifying a node is one every test does.
+ */
+export const ADMIN_UI_WORK_STATE = {
+  servingSplitStage: 'serving-split-stage',
+  servingModel: 'serving-model',
+  installingRuntime: 'installing-runtime',
+  startingModel: 'starting-model',
+  needsAttention: 'needs-attention',
+  runtimeOnline: 'runtime-online'
+} as const
+
+export const ADMIN_UI_MESH_ROLE = {
+  attribute: 'data-mesh-role',
+  stageOwner: 'stage-owner',
+  noStageAssigned: 'no-stage-assigned',
+  servingPeer: 'serving-peer',
+  coordinator: 'coordinator'
+} as const
+
 /** Dashboard status polling: visibility-aware, live badge reflects freshness. */
 export const ADMIN_UI_POLLING = {
   intervalMs: 5000
@@ -237,28 +260,6 @@ export interface MeshHealthEntry {
   readonly lastError?: string
 }
 
-/** Mirrors the GET /admin/agent-versions response contract. */
-export interface AgentVersionsView {
-  readonly tags: readonly string[]
-  readonly fetchedAt?: number
-  readonly stale: boolean
-  readonly desired?: string
-}
-
-export interface RuntimeVersionOptionView {
-  readonly tags: readonly string[]
-  readonly fetchedAt?: number
-  readonly stale: boolean
-  readonly desired: string
-  readonly error?: string
-}
-
-/** Mirrors the GET /admin/runtime-versions response contract. */
-export interface RuntimeVersionsView {
-  readonly meshllm: RuntimeVersionOptionView
-  readonly llamacpp: RuntimeVersionOptionView
-}
-
 /** Structural subset of an admin-status node used by the client renderers. */
 export interface MeshUiStatusNode {
   readonly id: string
@@ -273,12 +274,4 @@ export interface MeshUiStatusNode {
     readonly meshNodeId?: string
     readonly meshMaxVramGb?: number
   }
-}
-
-/** Structural subset of a ModelProfile used by the activation and rotation selects. */
-export interface ActivationProfileView {
-  readonly id: string
-  readonly publicAliases: readonly string[]
-  readonly active: boolean
-  readonly meshllm: { readonly split: boolean }
 }

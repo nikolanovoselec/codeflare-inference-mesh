@@ -135,7 +135,7 @@ function runnerPins(lines) {
 }
 
 function parseRunnerValue(value) {
-  return value.replace(/[\[\]'"]/g, '').split(',').map((item) => item.trim()).filter(Boolean)
+  return value.replace(/[[\]'"]/g, '').split(',').map((item) => item.trim()).filter(Boolean)
 }
 
 function invalidRunnerPin(runner) {

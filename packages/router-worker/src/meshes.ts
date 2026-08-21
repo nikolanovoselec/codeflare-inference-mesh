@@ -59,6 +59,7 @@ export async function deleteMesh(store: Store, meshId: string): Promise<boolean>
   return true
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const MESHES_ANCHORS = {
   REQ_SCH_006: 'REQ-SCH-006',
   REQ_RUN_016: 'REQ-RUN-016'

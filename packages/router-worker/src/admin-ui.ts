@@ -29,21 +29,22 @@ export {
   ADMIN_UI_CONFIRM,
   ADMIN_UI_DRAWER,
   ADMIN_UI_MESH_HEALTH,
+  ADMIN_UI_MESH_ROLE,
   ADMIN_UI_MESHES,
   ADMIN_UI_NAV,
   ADMIN_UI_NODES_TABLE,
   ADMIN_UI_PLAYGROUND,
   ADMIN_UI_POLLING,
-  ADMIN_UI_PROFILE_ACTIVATION,
   ADMIN_UI_RUNTIME_VERSION,
   ADMIN_UI_RESPONSIVE,
   ADMIN_UI_SETUP_LOCKED_FEEDBACK,
   ADMIN_UI_TOKS_TRACE,
   ADMIN_UI_TOPOLOGY,
   ADMIN_UI_VIEWS,
-  ADMIN_UI_WIZARD
+  ADMIN_UI_WIZARD,
+  ADMIN_UI_WORK_STATE
 } from './admin-ui-contract'
-export type { ActivationProfileView, AdminUiAction, AdminUiStateView, AgentVersionsView, MeshHealthEntry, MeshUiStatusNode, RuntimeVersionsView } from './admin-ui-contract'
+export type { AdminUiStateView, MeshHealthEntry, MeshUiStatusNode } from './admin-ui-contract'
 
 /** Server-computed entry state: which view to pre-render and where setup stands. */
 export type AdminUiState = AdminUiStateView
@@ -125,6 +126,7 @@ function scriptJson(value: unknown): string {
     .replace(/\u2029/g, '\\u2029')
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const ADMIN_UI_ANCHORS = {
   REQ_ADM_006: 'REQ-ADM-006',
   REQ_ADM_007: 'REQ-ADM-007',

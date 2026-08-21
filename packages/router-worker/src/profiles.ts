@@ -32,15 +32,6 @@ export const DEFAULT_MODEL_PROFILES: readonly ModelProfile[] = [
   }
 ]
 
-export function publicAliasIndex(profiles: readonly ModelProfile[]): Map<string, ModelProfile> {
-  const index = new Map<string, ModelProfile>()
-  for (const profile of profiles) {
-    if (!profile.active) continue
-    for (const alias of profile.publicAliases) index.set(alias, profile)
-  }
-  return index
-}
-
 const BIND_PORT_BASE = 4300
 const BIND_PORT_STEP = 10
 
@@ -308,6 +299,7 @@ export function nodeMeshId(node: NodeRecord): string {
   return node.meshId ?? 'default'
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const PROFILE_ANCHORS = {
   REQ_RUN_001: 'REQ-RUN-001',
   REQ_RUN_002: 'REQ-RUN-002',

@@ -13,6 +13,21 @@ permissions:
   contents: read
 
 jobs:
+  quality:
+    name: Lint and dead-code checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Dead code and dependency check
+        run: npm run knip
+
   router:
     name: Router Worker checks
     runs-on: ubuntu-24.04
@@ -23,8 +38,6 @@ jobs:
           node-version: '24'
       - name: Install dependencies
         run: npm ci
-      - name: Lint router
-        run: npm run lint --workspace packages/router-worker
       - name: Test router behavior
         run: npm run test --workspace packages/router-worker
       - name: Type-check router
@@ -115,11 +128,12 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-24.04
-    needs: [router, agent, packaging, dependency-review, vulnerability-checks]
+    needs: [quality, router, agent, packaging, dependency-review, vulnerability-checks]
     if: always()
     steps:
       - name: Require required checks
         run: |
+          test "${{ needs.quality.result }}" = "success"
           test "${{ needs.router.result }}" = "success"
           test "${{ needs.agent.result }}" = "success"
           test "${{ needs.packaging.result }}" = "success"

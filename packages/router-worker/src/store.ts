@@ -289,6 +289,7 @@ function parseJson<T>(text: string): T {
   return JSON.parse(text) as T
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const STORE_ANCHORS = {
   REQ_SCH_001: 'REQ-SCH-001',
   REQ_RUN_002: 'REQ-RUN-002'

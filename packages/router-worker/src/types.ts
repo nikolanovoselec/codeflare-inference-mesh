@@ -1,3 +1,10 @@
+import type { CustomDomainProvisionResult } from './cloudflare-api'
+
+/** A custom-domain provisioning result as persisted under the `custom_domain` config key. */
+export interface StoredCustomDomain extends CustomDomainProvisionResult {
+  readonly valid?: boolean
+}
+
 export type CredentialKind = 'provider' | 'admin' | 'setup' | 'node' | 'upstream' | 'automation'
 
 export type NodeStatus = 'online' | 'offline' | 'draining' | 'revoked'
@@ -283,15 +290,6 @@ export interface MeshBootstrap {
   readonly joinTokens?: readonly string[]
 }
 
-export interface ClaimResponse {
-  readonly nodeId: string
-  readonly nodeToken: string
-  readonly upstreamToken: string
-  readonly profiles: readonly ModelProfile[]
-  readonly meshBootstrap?: MeshBootstrap
-  readonly desiredAgentVersion?: string
-}
-
 export interface HeartbeatRequest {
   readonly nodeId: string
   readonly displayName: string
@@ -311,17 +309,6 @@ export interface HeartbeatRequest {
   /** The Force Reload nonce the node has already applied, echoed back so the router can retire the directive (REQ-NODE-012). */
   readonly reloadNonce?: string
   readonly metrics?: NodeMetrics
-}
-
-export interface HeartbeatResponse {
-  readonly ok: boolean
-  readonly desiredProfiles: readonly ModelProfile[]
-  readonly meshBootstrap?: MeshBootstrap
-  readonly desiredAgentVersion?: string
-  /** When true the node is deactivated: it must tear down / not launch mesh-llm. REQ-ADM-030. */
-  readonly deactivated?: boolean
-  /** One-shot Force Reload directive: when it differs from the nonce the node last applied, the node restarts mesh-llm once. REQ-NODE-012. */
-  readonly reloadNonce?: string
 }
 
 export interface EntrySelectionRequest {

@@ -494,6 +494,7 @@ function meshJson(body: unknown, status: number): Response {
   return Response.json(body, { status, headers: JSON_HEADERS })
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const MESH_STATE_ANCHORS = {
   REQ_RUN_006: 'REQ-RUN-006',
   REQ_SEC_001: 'REQ-SEC-001',

@@ -85,15 +85,6 @@ export function approvedNodeHeaders(input: Headers, upstreamToken: string, reque
   return output
 }
 
-export function approvedRuntimeHeaders(input: Headers): Headers {
-  const output = new Headers()
-  for (const name of ['content-type', 'accept', 'x-inference-mesh-request-id', 'x-inference-mesh-session']) {
-    const value = input.get(name)
-    if (value) output.set(name, value)
-  }
-  return output
-}
-
 export function timingSafeEqualText(left: string, right: string): boolean {
   const max = Math.max(left.length, right.length)
   let diff = left.length ^ right.length
@@ -113,6 +104,7 @@ function toHex(data: Uint8Array): string {
   return [...data].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const AUTH_ANCHORS = {
   REQ_GWY_002: 'REQ-GWY-002',
   REQ_GWY_004: 'REQ-GWY-004',

@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "tags": ["-specanchor"],
+  "ignoreExportsUsedInFile": true,
+  "ignoreDependencies": ["@resvg/resvg-js"],
+  "workspaces": {
+    ".": {
+      "entry": ["assets/*.mjs"],
+      "project": ["assets/*.mjs"]
+    },
+    "packages/router-worker": {
+      "entry": ["src/**/*.test.ts", "scripts/*.mjs"],
+      "project": ["src/**/*.ts", "scripts/*.mjs"]
+    }
+  },
+  "rules": {
+    "duplicates": "off",
+    "enumMembers": "off"
+  }
+}

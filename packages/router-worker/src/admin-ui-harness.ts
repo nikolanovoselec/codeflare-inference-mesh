@@ -1,7 +1,7 @@
 /**
  * Test-only stub-DOM harness that executes the FULL served admin client
  * script (never a reconstructed fragment) against recorded storages, fetch,
- * and timers. Used by router.test.ts and admin-ui-mesh.test.ts.
+ * and timers. Used by the router-*.test.ts suites and admin-ui-mesh.test.ts.
  */
 
 type StubListener = (event?: unknown) => unknown

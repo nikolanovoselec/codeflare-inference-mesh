@@ -379,6 +379,7 @@ function routeGraph(provider: string, model: string) {
   ]
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const CLOUDFLARE_API_ANCHORS = {
   REQ_GWY_003: 'REQ-GWY-003',
   REQ_ADM_005: 'REQ-ADM-005'

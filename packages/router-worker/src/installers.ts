@@ -183,6 +183,7 @@ function powershellQuote(value: string): string {
   return `'${value.replace(/'/g, `''`)}'`
 }
 
+/** @specanchor Target for the spec and documentation source anchors; deliberately has no runtime importer. */
 export const INSTALLER_ANCHORS = {
   REQ_ADM_004: 'REQ-ADM-004',
   REQ_ADM_005: 'REQ-ADM-005'

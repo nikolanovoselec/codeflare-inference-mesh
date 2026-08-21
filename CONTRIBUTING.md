@@ -47,7 +47,8 @@ GitHub Actions is the authoritative verification surface for this repository. Th
 
 CI verifies:
 
-- Worker lint, behavioral tests, type-check, Wrangler type generation, and Worker dry-run;
+- repository lint and unused file, export, and dependency reporting;
+- Worker behavioral tests, type-check, Wrangler type generation, and Worker dry-run;
 - Go tests, vet, race tests, and node-agent build;
 - release archive/checksum/version behavior;
 - dependency, vulnerability, workflow-safety, fuzz, and security checks.

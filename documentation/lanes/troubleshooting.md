@@ -206,7 +206,7 @@ srv  llama_server: exiting due to model loading error
 
 **Cause:** Gateway sync catches Cloudflare rejections from `syncCustomProvider` (needs `AI Gateway: Edit`, a missing gateway, or a route conflict) locally rather than letting them fall through to the Worker's top-level catch-all; it records a `gateway_sync_failed` audit event with the raw cause and returns `424` with the actionable copy above instead of the generic `internal_error`/`500`. ([REQ-ADM-019](../../sdd/spec/setup-admin.md#req-adm-019-console-error-affordances))
 
-**Fix:** Confirm the AI Gateway named in Routing settings still exists, and add `AI Gateway: Edit` to the runtime Cloudflare token if missing, then re-sync. For the exact Cloudflare rejection, look up the `gateway_sync_failed` audit entry's `reason` field by request ID. <!-- @impl: packages/router-worker/src/router.ts::handleGatewaySync -->
+**Fix:** Confirm the AI Gateway named in Routing settings still exists, and add `AI Gateway: Edit` to the runtime Cloudflare token if missing, then re-sync. For the exact Cloudflare rejection, look up the `gateway_sync_failed` audit entry's `reason` field by request ID. <!-- @impl: packages/router-worker/src/handlers/gateway.ts::syncGatewayForActor -->
 
 ## Clients get "Model execution failed" from the dynamic route while the playground works
 
@@ -237,7 +237,7 @@ srv  llama_server: exiting due to model loading error
 | Surface | Specification | Source |
 |---|---|---|
 | Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS`, `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
-| Forwarding failure responses | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::runInference` <!-- @impl: packages/router-worker/src/router.ts::runInference --> |
+| Forwarding failure responses | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/inference.ts::runInference` <!-- @impl: packages/router-worker/src/inference.ts::runInference --> |
 | Update checksum staging | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::StageUpdate` <!-- @impl: packages/node-agent/internal/agent/update.go::StageUpdate --> |
 | MeshLLM install failures | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM` <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM --> |
 | Mesh state and rotation | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
