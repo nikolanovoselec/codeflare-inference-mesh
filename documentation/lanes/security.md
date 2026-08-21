@@ -61,7 +61,7 @@
 
 **Mitigation:** After provider-token authentication succeeds, `/v1/chat/completions` accepts metadata that is visible to the Worker (`cf-aig-metadata.user` when forwarded by the caller, or `metadata.user` in the request body) as a fallback direct-affinity identity when `body.user` is absent. If AI Gateway REST dynamic-route metadata is observability-only and not forwarded, the router uses a provider-scoped fallback (`ai-gateway/provider-default`) so dynamic-route calls still reach a cache-local llama.cpp node. An optional metadata `session` value overrides the session id; otherwise the user value is reused as the session id. The router sanitizes delimiter/newline characters, then the existing direct-affinity path HMAC-hashes user/session values before writing D1/DO state. Explicit `body.user` still wins when present.
 
-**Verification:** The metadata-affinity router test asserts Gateway metadata produces a valid forwarded llama.cpp `user` value and that raw metadata is absent from durable direct-session records. <!-- @impl: packages/router-worker/src/router.ts::gatewayMetadataDirectSession -->
+**Verification:** The metadata-affinity router test asserts Gateway metadata produces a valid forwarded llama.cpp `user` value and that raw metadata is absent from durable direct-session records. <!-- @impl: packages/router-worker/src/inference.ts::gatewayMetadataDirectSession -->
 
 **Implements:** [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-SEC-001](../../sdd/spec/security.md)
 

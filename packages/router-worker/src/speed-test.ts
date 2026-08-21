@@ -30,7 +30,13 @@ interface SpeedTestMeasurement {
   readonly usage: Record<string, unknown> | null
   readonly upstreamTimings: Record<string, unknown> | null
 }
-export async function runSpeedTest(deps: SpeedTestDeps, body: SpeedTestBody | undefined, requestHeaders: Headers, requestId: string, now: number): Promise<Response> {
+/**
+ * `persist` is false for a read-only console viewer: the measurement still runs and is
+ * returned to the caller, but it does not overwrite the stored per-profile record every
+ * mesh card reads. A viewer may look; only an admin or an automation key may change what
+ * everyone else sees.
+ */
+export async function runSpeedTest(deps: SpeedTestDeps, body: SpeedTestBody | undefined, requestHeaders: Headers, requestId: string, now: number, persist: boolean): Promise<Response> {
   const model = cleanString(body?.model) ?? STABLE_PUBLIC_MODEL
   const promptTokens = boundedInt(body?.promptTokens, 64, 8192, 2048)
   const maxTokens = boundedInt(body?.maxTokens, 16, 512, 160)
@@ -59,9 +65,11 @@ export async function runSpeedTest(deps: SpeedTestDeps, body: SpeedTestBody | un
   // profile's latest measurement — duplicated profiles share an upstreamModel, so
   // the id is the only collision-free key (a gateway-route run credits the profile
   // it resolved to).
-  const speedProfile = await deps.store.getProfileByPublicModel(routablePublicModel(model))
-  const priorSpeedTests = await deps.store.getConfig<Record<string, LastSpeedTestSummary>>(LAST_SPEED_TESTS_CONFIG_KEY) ?? {}
-  await deps.store.putConfig(LAST_SPEED_TESTS_CONFIG_KEY, { ...priorSpeedTests, [speedProfile?.id ?? model]: speedTestSummary(result, now, requestId) })
+  if (persist) {
+    const speedProfile = await deps.store.getProfileByPublicModel(routablePublicModel(model))
+    const priorSpeedTests = await deps.store.getConfig<Record<string, LastSpeedTestSummary>>(LAST_SPEED_TESTS_CONFIG_KEY) ?? {}
+    await deps.store.putConfig(LAST_SPEED_TESTS_CONFIG_KEY, { ...priorSpeedTests, [speedProfile?.id ?? model]: speedTestSummary(result, now, requestId) })
+  }
   return json(result, 200, requestId)
 }
 // The newest entry doubles as the single lastSpeedTest status field; a record stored
@@ -109,6 +117,15 @@ function speedTestPrompt(targetTokens: number, nonce: string): string {
   const prefix = `Speed test nonce ${nonce}. `
   return (prefix + unit.repeat(Math.max(1, Math.ceil(approxChars / unit.length)))).slice(0, approxChars) + '\nReturn a concise numbered list.'
 }
+/**
+ * A speed test is bounded work, so the read is bounded too. Without a ceiling a node that
+ * streams slowly, or never closes, pins the request until the platform subrequest timeout:
+ * `maxTokens` caps generation upstream but nothing caps the wait here. On expiry the reader
+ * is cancelled and the partial measurement is returned, which is still a useful answer.
+ */
+const SPEED_TEST_DEADLINE_MS = 120_000
+const SPEED_TEST_MAX_OUTPUT_CHARS = 2_000_000
+
 async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: number, fallbackPromptTokens: number): Promise<SpeedTestMeasurement> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
@@ -120,6 +137,11 @@ async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: n
   let usage: Record<string, unknown> | undefined
   let upstreamTimings: Record<string, unknown> | undefined
   while (true) {
+    if (Date.now() - startedAt > SPEED_TEST_DEADLINE_MS || outputChars > SPEED_TEST_MAX_OUTPUT_CHARS) {
+      await reader.cancel().catch(() => undefined)
+      completedAt = Date.now()
+      break
+    }
     const chunk = await reader.read()
     completedAt = Date.now()
     if (chunk.done) break

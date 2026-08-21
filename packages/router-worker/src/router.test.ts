@@ -3607,6 +3607,27 @@ describe('Access-first setup and host gating contracts', () => {
     expect(write.status).toBe(401)
   })
 
+  it('REQ-RTR-001 REQ-SEC-010 refuses every admin-gated route to a verified read-only user', async () => {
+    // The uncredentialed sweep cannot catch under-gating: a route declared `admin` whose
+    // handler only calls requireUser answers 401 without a credential and passes. This
+    // drives the case that separates them, a verified user-role session with same-origin
+    // evidence so the CSRF gate is not what refuses it.
+    const { router, key } = await roleRouter(roleConfig({ adminGroups: ['admins'], userGroups: ['viewers'] }), ['viewers'])
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
+    const headers = { 'cf-access-jwt-assertion': jwt, origin: `https://${HOST}` }
+
+    const served: string[] = []
+    for (const route of ROUTES) {
+      if (route.gate !== 'admin' && route.gate !== 'keyAdmin') continue
+      const pathname = samplePath(route.path)
+      const response = await router(new Request(`https://${HOST}${pathname}`, { method: route.method, headers }))
+      if (response.status < 400) served.push(`${route.method} ${pathname} gate=${route.gate} answered ${response.status}`)
+    }
+
+    expect(served).toEqual([])
+    expect(ROUTES.filter((route) => route.gate === 'admin' || route.gate === 'keyAdmin')).toHaveLength(34)
+  })
+
   it('REQ-SEC-010 grants admin when a caller matches both admin and user groups', async () => {
     const { router, key } = await roleRouter(roleConfig({ adminGroups: ['admins'], userGroups: ['viewers'] }), ['admins', 'viewers'])
     const jwt = await signAccessJwt(key, accessPayload({ email: 'both@example.com' }))

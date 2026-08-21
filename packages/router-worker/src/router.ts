@@ -1136,13 +1136,15 @@ async function handlePlaygroundSpeedTest(request: Request, deps: RouterDeps, req
   const viewer = await requireUser(request, deps, now)
   if (!viewer) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readOptionalObject<SpeedTestBody>(request)
-  return await runSpeedTest(deps, body, request.headers, requestId, now)
+  // A read-only viewer gets its own measurement back but does not overwrite the stored
+  // per-profile record the whole console reads.
+  return await runSpeedTest(deps, body, request.headers, requestId, now, viewer.role === 'admin')
 }
 
 async function handleApiSpeedTest(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await requireAutomation(request, deps, now))) return json({ error: 'unauthorized' }, 401, requestId)
   const body = await readOptionalObject<SpeedTestBody>(request)
-  return await runSpeedTest(deps, body, request.headers, requestId, now)
+  return await runSpeedTest(deps, body, request.headers, requestId, now, true)
 }
 
 

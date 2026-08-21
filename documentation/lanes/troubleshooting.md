@@ -237,7 +237,7 @@ srv  llama_server: exiting due to model loading error
 | Surface | Specification | Source |
 |---|---|---|
 | Scheduler miss responses | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS`, `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
-| Forwarding failure responses | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/router.ts::runInference` <!-- @impl: packages/router-worker/src/router.ts::runInference --> |
+| Forwarding failure responses | [observability.md](../../sdd/spec/observability.md) | `packages/router-worker/src/inference.ts::runInference` <!-- @impl: packages/router-worker/src/inference.ts::runInference --> |
 | Update checksum staging | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/update.go::StageUpdate` <!-- @impl: packages/node-agent/internal/agent/update.go::StageUpdate --> |
 | MeshLLM install failures | [node-agent.md](../../sdd/spec/node-agent.md) | `packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM` <!-- @impl: packages/node-agent/internal/agent/meshllm_install.go::EnsureMeshLLM --> |
 | Mesh state and rotation | [security.md](../../sdd/spec/security.md) | `packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS` <!-- @impl: packages/router-worker/src/mesh-state.ts::MESH_STATE_ANCHORS --> |
