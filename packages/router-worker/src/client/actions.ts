@@ -360,7 +360,11 @@ export const CLIENT_ACTIONS = `\
       const meshllm = byId(config.runtimeVersion.meshllmSelectId);
       const llamacpp = byId(config.runtimeVersion.llamacppSelectId);
       const vllm = byId(config.runtimeVersion.vllmSelectId);
-      await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '', vllm: vllm ? vllm.value : '' }) });
+      // The vllm key rides only when a version is actually selected: an empty
+      // select (list response without vllm) must mean "leave as-is", not a 400.
+      const versionsBody = { meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '' };
+      if (vllm && vllm.value) versionsBody.vllm = vllm.value;
+      await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify(versionsBody) });
       setOutput(out, 'Runtime versions saved.');
   });
   bindAction('settings-save', async ({ action, button, prefix, out }) => {

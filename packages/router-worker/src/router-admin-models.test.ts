@@ -122,7 +122,7 @@ describe('model configuration and naming contracts', () => {
       headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
       body: JSON.stringify({ modelRef: 'org/model', mode: 'single', runtime: 'vllm' })
     }))
-    expect(add.status).toBe(200)
+    expect(add.status).toBe(201)
     const profileId = (await add.json() as { profileId: string }).profileId
     const added = (await store.listProfiles()).find((profile) => profile.id === profileId)!
     // A new vllm profile arrives inactive, HF-repo-sourced, with Auto context and
