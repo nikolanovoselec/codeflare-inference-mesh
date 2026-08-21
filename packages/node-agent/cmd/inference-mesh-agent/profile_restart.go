@@ -54,7 +54,7 @@ func (s *serviceLoop) finishProfileRestart(ctx context.Context, cfg agent.Config
 		provisionMeshPeerFirewall(ctx, s.cmdRunner, s.goos, s.warpIface, profile)
 	}
 	manager := s.currentManager()
-	if hasProfile && manager != nil && manager.Runtime() != profile.Runtime {
+	if hasProfile && manager != nil && effectiveRuntimeKind(manager.Runtime()) != effectiveRuntimeKind(profile.Runtime) {
 		if err := waitForDrain(ctx, s.activeRequests, manager, s.drainTimeout); err != nil && ctx.Err() != nil {
 			manager.SetFailure(err)
 			return
@@ -129,7 +129,7 @@ func (s *serviceLoop) foldUpdateError(current string) string {
 	return current
 }
 
-func beginRuntimeProfileRestart(cfg agent.Config, manager meshRuntime, loadState *runtimeLoadState, restartMu *sync.Mutex, restartPending *bool) (agent.Config, bool) {
+func beginRuntimeProfileRestart(cfg agent.Config, manager agent.RuntimeManager, loadState *runtimeLoadState, restartMu *sync.Mutex, restartPending *bool) (agent.Config, bool) {
 	nextProfile := selectedProfileKey(cfg)
 	runtimeState := manager.State()
 	// upForTarget blocks a restart while the runtime is already up for the profile we still
@@ -168,7 +168,7 @@ func finishRestart(mu *sync.Mutex, pending *bool) {
 	*pending = false
 }
 
-func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, manager meshRuntime, activeRequests *agent.ActiveCounter, drainTimeout time.Duration, restartState string) (string, error) {
+func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, manager agent.RuntimeManager, activeRequests *agent.ActiveCounter, drainTimeout time.Duration, restartState string) (string, error) {
 	profile, ok := agent.SelectedProfile(cfg)
 	if !ok {
 		return "", nil
@@ -184,15 +184,33 @@ func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, man
 	// Start a new accounting generation before relaunch; old handler completions
 	// remain bound to the previous generation.
 	activeRequests.Reset()
-	if profile.Runtime == "llamacpp" {
-		if direct, ok := manager.(*agent.LlamaCppManager); ok {
-			binaryPath, backend, installError := llamaCppBinaryPath(cfg)
-			if err := direct.RestartWithLlamaInput(ctx, llamaCppInput(profile, binaryPath, cfg.DataDir, backend)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
-				return installError, err
-			}
-			return installError, nil
+	return specForRuntime(profile.Runtime).restart(ctx, cfg, profile, manager)
+}
+
+// restartLlamaCppRuntime re-renders the llama.cpp input against the current
+// config and restarts in place. A live manager that is not the concrete
+// llama.cpp manager (mid-switch, test fakes) falls through to the mesh restart
+// tail: its seam asserts still apply, and a manager matching neither restart
+// seam fails closed there.
+func restartLlamaCppRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, manager agent.RuntimeManager) (string, error) {
+	if direct, ok := manager.(*agent.LlamaCppManager); ok {
+		binaryPath, backend, installError := llamaCppBinaryPath(cfg)
+		if err := direct.RestartWithLlamaInput(ctx, llamaCppInput(profile, binaryPath, cfg.DataDir, backend)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+			return installError, err
 		}
+		return installError, nil
 	}
+	return restartMeshRuntime(ctx, cfg, profile, manager)
+}
+
+// meshInputRestarter is the render-input restart seam for managers that are not
+// the concrete MeshLLM manager (test fakes); the concrete manager instead
+// re-resolves its pinned binary before restarting.
+type meshInputRestarter interface {
+	RestartWithInput(ctx context.Context, in agent.MeshLLMRenderInput, contextWindow int) error
+}
+
+func restartMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, manager agent.RuntimeManager) (string, error) {
 	if mesh, ok := manager.(*agent.MeshLLMManager); ok {
 		binaryPath, installErr := agent.EnsureMeshLLMVersion(cfg.DataDir, cfg.MeshLLMFlavor, cfg.MeshLLMAllowUnpinned, cfg.RuntimeVersions.MeshLLM, agent.WithMeshLLMRepository(cfg.RuntimeVersions.MeshLLMRepository))
 		installError := ""
@@ -204,8 +222,13 @@ func restartRuntimeForSelectedProfile(ctx context.Context, cfg agent.Config, man
 		}
 		return installError, nil
 	}
-	if err := manager.RestartWithInput(ctx, meshRenderInput(profile, cfg), profile.ContextWindow); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
-		return "", err
+	if restarter, ok := manager.(meshInputRestarter); ok {
+		if err := restarter.RestartWithInput(ctx, meshRenderInput(profile, cfg), profile.ContextWindow); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+			return "", err
+		}
+		return "", nil
 	}
-	return "", nil
+	// Fail closed: a manager satisfying neither restart seam must surface as a
+	// failed restart, never as a silent success the reconciler marks ready.
+	return "", fmt.Errorf("no restart path for runtime kind %q", manager.Runtime())
 }

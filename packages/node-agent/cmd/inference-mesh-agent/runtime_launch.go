@@ -22,7 +22,7 @@ import (
 // manager (ineligible, dashboard "external") instead of killing the service —
 // heartbeats keep flowing either way. The starter is injected so tests can prove a
 // blocking start never delays the heartbeat loop.
-func launchInitialRuntime(ctx context.Context, loop *serviceLoop, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap, start func(context.Context, agent.Config, agent.ModelProfile, *agent.MeshBootstrap) (meshRuntime, string, error)) {
+func launchInitialRuntime(ctx context.Context, loop *serviceLoop, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap, start func(context.Context, agent.Config, agent.ModelProfile, *agent.MeshBootstrap) (agent.RuntimeManager, string, error)) {
 	go func() {
 		started, installError, err := start(ctx, cfg, profile, bootstrap)
 		if err != nil {
@@ -36,15 +36,52 @@ func launchInitialRuntime(ctx context.Context, loop *serviceLoop, cfg agent.Conf
 	}()
 }
 
-func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (meshRuntime, string, error) {
-	if profile.Runtime == "llamacpp" {
-		binaryPath, backend, installError := llamaCppBinaryPath(cfg)
-		manager := agent.NewLlamaCppManager(llamaCppInput(profile, binaryPath, cfg.DataDir, backend))
-		if err := manager.Start(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
-			return nil, installError, err
-		}
-		return manager, installError, nil
+// runtimeSpec is one managed runtime's launch recipes: how to provision and
+// start a manager for a profile, and how to restart the live manager in place.
+// These are the only per-kind sites that cannot ask an existing manager what it
+// supports; every other per-kind behavior hangs off interface asserts on the
+// live manager (agent.MeshCoordinator and friends).
+type runtimeSpec struct {
+	start   func(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (agent.RuntimeManager, string, error)
+	restart func(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, manager agent.RuntimeManager) (string, error)
+}
+
+// runtimeSpecs is initialised here once and never mutated; heartbeat, restart,
+// and launch goroutines read it concurrently through specForRuntime.
+var runtimeSpecs = map[string]runtimeSpec{
+	"meshllm":  {start: startMeshRuntimeManager, restart: restartMeshRuntime},
+	"llamacpp": {start: startLlamaCppRuntime, restart: restartLlamaCppRuntime},
+}
+
+// effectiveRuntimeKind resolves a profile's runtime kind the way launch dispatch
+// does: unknown or legacy values run as mesh-llm, matching the historical
+// else-branch. Guards that separate mesh from non-mesh behavior key on this,
+// never on the raw profile string.
+func effectiveRuntimeKind(kind string) string {
+	if _, ok := runtimeSpecs[kind]; ok {
+		return kind
 	}
+	return "meshllm"
+}
+
+func specForRuntime(kind string) runtimeSpec {
+	return runtimeSpecs[effectiveRuntimeKind(kind)]
+}
+
+func startRuntimeForProfile(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (agent.RuntimeManager, string, error) {
+	return specForRuntime(profile.Runtime).start(ctx, cfg, profile, bootstrap)
+}
+
+func startLlamaCppRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, _ *agent.MeshBootstrap) (agent.RuntimeManager, string, error) {
+	binaryPath, backend, installError := llamaCppBinaryPath(cfg)
+	manager := agent.NewLlamaCppManager(llamaCppInput(profile, binaryPath, cfg.DataDir, backend))
+	if err := manager.Start(ctx); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
+		return nil, installError, err
+	}
+	return manager, installError, nil
+}
+
+func startMeshRuntimeManager(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, bootstrap *agent.MeshBootstrap) (agent.RuntimeManager, string, error) {
 	return startMeshRuntime(ctx, cfg, profile, bootstrap)
 }
 
@@ -66,11 +103,6 @@ func startMeshRuntime(ctx context.Context, cfg agent.Config, profile agent.Model
 	return manager, installError, nil
 }
 
-// provisionMeshPeerFirewall best-effort opens the profile's iroh UDP bind-port for
-// inbound WARP traffic, so a default-deny host firewall cannot drop the QUIC
-// mesh-peer handshake and leave a multi-node mesh stuck at zero peers. It mirrors the
-// TCP data-plane rule opened at startup, is scoped to the active profile's port (which
-// moves with the selected model), and is likewise never fatal. REQ-NODE-010.
 func llamaCppInput(profile agent.ModelProfile, binaryPath string, dataDir string, backend string) agent.LlamaCppInput {
 	return agent.LlamaCppInput{ProfileID: profile.ID, ProfileVersion: profile.Version, UpstreamModel: profile.UpstreamModel, Settings: profile.LlamaCpp, BinaryPath: binaryPath, Backend: backend, DataDir: dataDir}
 }
@@ -105,8 +137,16 @@ func managedLlamaCppBackend(dataDir string, binaryPath string) string {
 	return "unknown"
 }
 
+// provisionMeshPeerFirewall best-effort opens the profile's iroh UDP bind-port for
+// inbound WARP traffic, so a default-deny host firewall cannot drop the QUIC
+// mesh-peer handshake and leave a multi-node mesh stuck at zero peers. It mirrors the
+// TCP data-plane rule opened at startup, is scoped to the active profile's port (which
+// moves with the selected model), and is likewise never fatal. REQ-NODE-010.
 func provisionMeshPeerFirewall(ctx context.Context, run agent.CommandRunner, goos string, iface string, profile agent.ModelProfile) {
-	if profile.Runtime == "llamacpp" {
+	// Only mesh-llm profiles carry a mesh peer port; keying on the resolved mesh
+	// kind (not "anything but llamacpp") keeps a future non-mesh kind out of the
+	// mesh path while legacy empty-runtime profiles still run as mesh.
+	if effectiveRuntimeKind(profile.Runtime) != "meshllm" {
 		return
 	}
 	port := profile.MeshLLM.BindPort

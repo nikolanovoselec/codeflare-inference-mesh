@@ -49,6 +49,49 @@ func TestREQRUN010RestartLatchReleasedWhenRuntimeHangs(t *testing.T) {
 	}
 }
 
+func TestREQRUN010UnmanagedManagerKindRestartsInPlaceForMeshProfile(t *testing.T) {
+	// A live manager reporting an unmanaged runtime kind resolves to the mesh kind,
+	// exactly like an unknown profile runtime does at launch: the reconciler restarts
+	// it in place instead of treating the unknown string as a cross-kind switch and
+	// tearing the runtime down to relaunch from scratch. REQ-RUN-010.
+	counter := &agent.ActiveCounter{}
+	manager := &fakeKindRuntime{fakeMeshRuntime: newFakeMeshRuntime(counter), kind: "legacy-kind"}
+	profile := agent.ModelProfile{ID: "kind-profile", UpstreamModel: "kind-upstream", Version: 1, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "kind-upstream", BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "kind-upstream", ActiveProfileIDs: []string{"kind-profile"}, Profiles: []agent.ModelProfile{profile}}
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+
+	loop.finishProfileRestart(context.Background(), cfg, "starting")
+
+	if got := loop.currentManager(); got != agent.RuntimeManager(manager) {
+		t.Fatal("in-place restart must keep the live manager; a kind-resolved match is not a runtime switch")
+	}
+	if manager.restartCount() != 1 {
+		t.Fatalf("expected one in-place restart, got %d", manager.restartCount())
+	}
+}
+
+func TestREQRUN010ManagerWithoutRestartSeamFailsClosed(t *testing.T) {
+	// A manager satisfying neither restart seam must surface a failed restart —
+	// never a silent success the reconciler then marks ready. REQ-RUN-010.
+	counter := &agent.ActiveCounter{}
+	manager := &fakeSeamlessRuntime{fakeMeshRuntime: newFakeMeshRuntime(counter)}
+	profile := agent.ModelProfile{ID: "seamless-profile", UpstreamModel: "seamless-upstream", Version: 1, Runtime: "meshllm", MeshLLM: agent.MeshLLMSettings{ModelRef: "seamless-upstream", BindPort: 4300}}
+	cfg := agent.Config{RuntimeModel: "seamless-upstream", ActiveProfileIDs: []string{"seamless-profile"}, Profiles: []agent.ModelProfile{profile}}
+
+	if _, err := restartMeshRuntime(context.Background(), cfg, profile, manager); err == nil {
+		t.Fatal("restartMeshRuntime must error for a manager satisfying neither restart seam")
+	}
+
+	loop := newLoopForTest(t, cfg, counter, manager, &fakeUpdater{}, nil)
+	loop.finishProfileRestart(context.Background(), cfg, "starting")
+	if got := manager.State(); got != "failed" {
+		t.Fatalf("expected failed state after restart without a seam, got %q", got)
+	}
+	if manager.LastError() == "" {
+		t.Fatal("expected the restart failure to surface as the runtime's last error")
+	}
+}
+
 func TestREQRUN010ProfileRestartContinuesAfterStaleDrainCounter(t *testing.T) {
 	// A stale proxy counter from an aborted/hung request must not strand a model deploy as
 	// "failed" before the new runtime can even start loading the selected model. The drain

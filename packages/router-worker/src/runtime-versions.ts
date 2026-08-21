@@ -1,5 +1,5 @@
 import { InvalidJsonBodyError } from './errors'
-import type { Store } from './types'
+import type { RuntimeKind, Store } from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const CACHE_TTL_MS = 10 * 60 * 1000
@@ -70,9 +70,9 @@ const SOURCES = {
     desiredKey: 'desired_llamacpp_version',
     defaultVersion: DEFAULT_LLAMACPP_VERSION
   }
-} as const
-
-type RuntimeKind = keyof typeof SOURCES
+  // Exhaustiveness against the types.ts RuntimeKind union: adding a kind there
+  // fails compilation here until its source registry entry exists.
+} as const satisfies Record<RuntimeKind, { repository: string; cacheKey: string; desiredKey: string; defaultVersion: string }>
 
 export interface RuntimeBinaryVersions {
   readonly meshllm: string

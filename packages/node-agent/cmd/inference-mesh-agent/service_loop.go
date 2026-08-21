@@ -16,8 +16,6 @@ import (
 	"github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent/internal/agent"
 )
 
-// meshRuntime is what the service loop needs from the MeshLLM manager; tests
-// substitute a fake.
 type runtimeTargetFunc func() string
 
 func (f runtimeTargetFunc) TargetURL() string { return f() }
@@ -30,23 +28,11 @@ type meshRuntimeBudgetReporter interface {
 	MaxVramGb() float64
 }
 
-type meshRuntime interface {
-	agent.RuntimeController
-	Runtime() string
-	TargetURL() string
-	PollStatus(ctx context.Context) (agent.MeshLLMStatus, bool)
-	ApplyBootstrap(bootstrap *agent.MeshBootstrap)
-	NeedsRestart(bootstrap *agent.MeshBootstrap) bool
-	CurrentToken() string
-	CurrentMeshID() string
-	ReadyModels() []string
-	APIReady() bool
-	State() string
-	LastError() string
-	RuntimeErrorDetail() string
-	SetState(state string)
-	SetFailure(err error)
-	RestartWithInput(ctx context.Context, in agent.MeshLLMRenderInput, contextWindow int) error
+// runtimeThroughputPoller is the per-tick throughput surface direct runtimes
+// expose; the heartbeat collect asserts for it on non-mesh managers.
+type runtimeThroughputPoller interface {
+	PollThroughput(ctx context.Context)
+	Metrics() agent.NodeMetrics
 }
 
 // agentUpdater is the self-update seam; the real implementation is
@@ -66,7 +52,7 @@ type serviceLoop struct {
 	// every consumer (dashboard, proxy, controls, shutdown) must go through
 	// currentManager()/setManager — a startup-captured copy goes stale and reports
 	// runtimeState=stopped while the live runtime serves traffic. REQ-OBS-008.
-	manager   meshRuntime
+	manager   agent.RuntimeManager
 	managerMu sync.RWMutex
 	loadState *runtimeLoadState
 	telemetry      *runtimeTelemetry
@@ -122,7 +108,7 @@ func (s *serviceLoop) currentConfig() agent.Config {
 	return *s.cfg
 }
 
-func (s *serviceLoop) currentManager() meshRuntime {
+func (s *serviceLoop) currentManager() agent.RuntimeManager {
 	s.managerMu.RLock()
 	defer s.managerMu.RUnlock()
 	return s.manager
@@ -131,7 +117,7 @@ func (s *serviceLoop) currentManager() meshRuntime {
 // managerSnapshot reads the manager and its install error under one lock
 // acquisition, so a concurrent setManager can never pair a new manager with a
 // stale install error inside a single status read.
-func (s *serviceLoop) managerSnapshot() (meshRuntime, string) {
+func (s *serviceLoop) managerSnapshot() (agent.RuntimeManager, string) {
 	s.managerMu.RLock()
 	defer s.managerMu.RUnlock()
 	return s.manager, s.installError
@@ -139,7 +125,7 @@ func (s *serviceLoop) managerSnapshot() (meshRuntime, string) {
 
 // setManager swaps in a replacement runtime manager (and the install error from its
 // launch) so dashboard, proxy, controls, and shutdown all follow the switch.
-func (s *serviceLoop) setManager(manager meshRuntime, installError string) {
+func (s *serviceLoop) setManager(manager agent.RuntimeManager, installError string) {
 	// Start request accounting for the replacement runtime. Any old handler keeps
 	// its prior generation, so a late completion cannot alter this count
 	// (REQ-NODE-015).

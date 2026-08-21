@@ -19,7 +19,12 @@ export interface TokenRecord {
   readonly expiresAt?: number
 }
 
-export type RuntimeKind = 'meshllm' | 'llamacpp'
+// The single source of runtime-kind truth: validators, dispatch, and the
+// versions registry all derive from these two consts.
+export const RUNTIME_KINDS = ['meshllm', 'llamacpp'] as const
+export type RuntimeKind = (typeof RUNTIME_KINDS)[number]
+/** Runtimes dispatched per-node with session affinity, not via mesh entry selection. */
+export const DIRECT_RUNTIMES: ReadonlySet<RuntimeKind> = new Set(['llamacpp'])
 export type ModelSourceMode = 'meshllm-ref' | 'llamacpp-hf'
 
 export interface MeshLLMProfileSettings {

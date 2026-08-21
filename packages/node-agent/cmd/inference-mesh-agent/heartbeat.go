@@ -20,15 +20,8 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 	manager, installError := s.managerSnapshot()
 	metrics := runtimeMetrics(manager, s.loadState, current, s.activeRequests.Value(), installError)
 	if manager != nil {
-		if manager.Runtime() == "llamacpp" {
-			if direct, ok := manager.(*agent.LlamaCppManager); ok {
-				// Live throughput rides the same tick: counter deltas since the
-				// previous heartbeat become this heartbeat's tok/s. REQ-OBS-009.
-				direct.PollThroughput(ctx)
-				metrics = agent.MergeRuntimeMetrics(metrics, direct.Metrics())
-			}
-		} else {
-			status, consoleReady := manager.PollStatus(ctx)
+		if coordinator, ok := manager.(agent.MeshCoordinator); ok {
+			status, consoleReady := coordinator.PollStatus(ctx)
 			profile, _ := agent.SelectedProfile(current)
 			metrics = applyMeshStatusMetrics(metrics, profile, status, consoleReady, manager.APIReady(), manager.ReadyModels())
 			if budget, ok := manager.(meshRuntimeBudgetReporter); ok {
@@ -45,8 +38,13 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 					}
 				}
 			}
-			identity.MeshID = manager.CurrentMeshID()
-			identity.MeshToken = manager.CurrentToken()
+			identity.MeshID = coordinator.CurrentMeshID()
+			identity.MeshToken = coordinator.CurrentToken()
+		} else if direct, ok := manager.(runtimeThroughputPoller); ok {
+			// Live throughput rides the same tick: counter deltas since the
+			// previous heartbeat become this heartbeat's tok/s. REQ-OBS-009.
+			direct.PollThroughput(ctx)
+			metrics = agent.MergeRuntimeMetrics(metrics, direct.Metrics())
 		}
 		if detail := manager.RuntimeErrorDetail(); detail != "" {
 			metrics.RuntimeDetail = detail
@@ -125,7 +123,10 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 	}
 	s.stateMu.Unlock()
 	if manager := s.currentManager(); manager != nil {
-		manager.ApplyBootstrap(response.MeshBootstrap)
+		coordinator, isMesh := manager.(agent.MeshCoordinator)
+		if isMesh {
+			coordinator.ApplyBootstrap(response.MeshBootstrap)
+		}
 		if reactivated {
 			// Taint cleared: relaunch the selected profile even though the desired profiles are
 			// unchanged (ApplyDesiredProfiles reports no restart for an unchanged set). REQ-NODE-011.
@@ -157,7 +158,7 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 			// node reports the stuck waiting state on consecutive heartbeats, relaunch once for this
 			// bootstrap/profile key using the same path as Force Reload. REQ-RUN-005.
 			go s.finishProfileRestart(ctx, next, "starting")
-		} else if manager.NeedsRestart(response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
+		} else if isMesh && coordinator.NeedsRestart(response.MeshBootstrap) && beginRestart(&s.restartMu, &s.restartPending) {
 			// Mesh bootstrap changes and readiness self-heal also relaunch from the current selected
 			// profile config, so a restart cannot preserve stale render inputs.
 			go s.finishProfileRestart(ctx, next, "starting")
@@ -167,14 +168,15 @@ func (s *serviceLoop) handleResponse(ctx context.Context, response agent.Heartbe
 }
 
 // runtimeKindMismatch reports whether the running manager's kind disagrees with the
-// selected profile's runtime. Only the two managed kinds participate: a nil manager is
-// external mode, and an unknown/legacy profile runtime must never flap the runtime.
-func runtimeKindMismatch(manager meshRuntime, profile agent.ModelProfile) bool {
-	if profile.Runtime != "meshllm" && profile.Runtime != "llamacpp" {
+// selected profile's runtime. Only managed kinds (runtimeSpecs members) participate:
+// a nil manager is external mode, and an unknown/legacy profile runtime must never
+// flap the runtime.
+func runtimeKindMismatch(manager agent.RuntimeManager, profile agent.ModelProfile) bool {
+	if _, ok := runtimeSpecs[profile.Runtime]; !ok {
 		return false
 	}
 	kind := manager.Runtime()
-	if kind != "meshllm" && kind != "llamacpp" {
+	if _, ok := runtimeSpecs[kind]; !ok {
 		return false
 	}
 	return kind != profile.Runtime

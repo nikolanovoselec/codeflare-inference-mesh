@@ -1,4 +1,5 @@
 import { nodeMeshId, profileMeshId } from './profiles'
+import { DIRECT_RUNTIMES } from './types'
 import type { EntrySelection, EntrySelectionRequest, ModelProfile, NodeRecord, RouterEnv, Scheduler, Store } from './types'
 
 const HEARTBEAT_TTL_MS = 45_000
@@ -49,12 +50,12 @@ export function isEligible(node: NodeRecord, profile: ModelProfile, now: number,
 }
 
 export function isDirectEligible(node: NodeRecord, profile: ModelProfile, publicModel: string, now: number, env: Pick<RouterEnv, 'MESH_ALLOWED_CIDRS' | 'MESH_ALLOWED_PORTS'> = {}): boolean {
-  if (profile.runtime !== 'llamacpp') return false
+  if (!DIRECT_RUNTIMES.has(profile.runtime)) return false
   if (nodeMeshId(node) !== profileMeshId(profile)) return false
   if (node.status !== 'online') return false
   if (node.deactivated === true) return false
   if (now - node.lastSeenAt > HEARTBEAT_TTL_MS) return false
-  if (node.runtime !== 'llamacpp') return false
+  if (node.runtime !== profile.runtime) return false
   if (!node.publicModels.includes(publicModel)) return false
   if (!node.activeProfileIds.includes(profile.id)) return false
   const runtimeState = node.metrics?.runtimeState

@@ -8,6 +8,7 @@
  */
 import { listMeshes, meshAliasFor } from './meshes'
 import { buildCustomProfile, llamaCppQuantError, parseLlamaCppModelRef, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
+import { RUNTIME_KINDS } from './types'
 import type { LlamaCppProfileSettings, ModelProfile, NodeRecord, RuntimeKind, Store } from './types'
 
 /** The slice of the router's dependencies these resolvers use. RouterDeps satisfies it. */
@@ -24,7 +25,7 @@ export function resolveMaxVram(value: number | undefined): number | undefined | 
 
 export function resolveRuntime(value: unknown): RuntimeKind | 'invalid_runtime' {
   if (value === undefined || value === null || value === '') return 'meshllm'
-  return value === 'meshllm' || value === 'llamacpp' ? value : 'invalid_runtime'
+  return (RUNTIME_KINDS as readonly unknown[]).includes(value) ? (value as RuntimeKind) : 'invalid_runtime'
 }
 
 // A model's own callable alias sits alongside its mesh's stable alias. Editing it must

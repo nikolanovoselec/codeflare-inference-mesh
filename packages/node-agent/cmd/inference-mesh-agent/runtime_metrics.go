@@ -32,7 +32,7 @@ func (t *runtimeTelemetry) Snapshot(base agent.NodeMetrics) agent.NodeMetrics {
 // loaded model and profile bookkeeping, and the last runtime error. An
 // install failure replaces the generic dependency-missing message with the
 // install error detail.
-func runtimeMetrics(manager meshRuntime, loadState *runtimeLoadState, cfg agent.Config, active int, installError string) agent.NodeMetrics {
+func runtimeMetrics(manager agent.RuntimeManager, loadState *runtimeLoadState, cfg agent.Config, active int, installError string) agent.NodeMetrics {
 	state := "external"
 	lastError := ""
 	runtimeKind := "external"
