@@ -1,12 +1,13 @@
-import { accessJwtSource, extractAccessJwt, fetchIdentityGroups, verifyAccessRequest } from './access'
 import { CloudflareAccessClient, type AccessProvisionRequest, type AccessProvisionResult } from './access-provisioning'
 import { adminUiHtml, type AdminUiState } from './admin-ui'
 import { consoleMovedHtml } from './admin-ui-views'
 import { desiredAgentVersion, handleAgentVersionSelect, handleAgentVersionsList } from './agent-versions'
-import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed, verifyToken } from './auth'
+import { approvedNodeHeaders, bearerToken, createTokenRecord, generateBearerToken, hashToken, redactSecrets, verifyPlainOrHashed } from './auth'
+import { authenticateAnyStoredToken, authenticateKind, authenticateTokenByNode, recordBreakGlassEntry, requireAdmin, requireAutomation, requireKeyAdmin, requireUser, resolveHostGate } from './auth-gates'
 import { CloudflareGatewayClient, type CustomDomainProvisionRequest, type CustomDomainProvisionResult, type GatewayProvisionStatus, type GatewayRecord, type GatewaySyncRequest, type GatewaySyncResult, type RouteRecord, type ZoneRecord } from './cloudflare-api'
 import { decideDirectSession, directSessionKey, type DirectSessionDecision, type DirectSessionDecisionRequest } from './direct-affinity'
 import { InvalidJsonBodyError } from './errors'
+import { html, json, parseObject, rateLimited, readJson, readOptionalObject, responseMetadataHeaders } from './http'
 import { installerCommand, installScript, SETUP_TOKEN_PLACEHOLDER, validateCustomDomain, type InstallerPlatform } from './installers'
 import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth, removeNodeMeshTokens } from './mesh-state'
 import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName, type MeshRecord } from './meshes'
@@ -15,11 +16,10 @@ import { isRateLimited } from './rate-limit'
 import { matchRoute, type Route } from './routes'
 import { activeMeshllmRepository, desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
-import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
+import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, advancePhase, breakGlassActive, setupPhase } from './setup-state'
 import { singleActiveActivation } from './store'
-import type { ClaimRequest, CredentialKind, HeartbeatRequest, LastSpeedTestSummary, LlamaCppProfileSettings, ModelProfile, NodeRecord, RouterEnv, RuntimeKind, Scheduler, Store, TokenRecord } from './types'
+import type { ClaimRequest, HeartbeatRequest, LastSpeedTestSummary, LlamaCppProfileSettings, ModelProfile, NodeRecord, RouterEnv, RuntimeKind, Scheduler, Store, StoredCustomDomain } from './types'
 
-const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024
 const SETUP_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 const LAST_SPEED_TEST_CONFIG_KEY = 'last_speed_test'
@@ -1865,10 +1865,6 @@ interface GatewaySettings {
   readonly workerUrl?: string
 }
 
-interface StoredCustomDomain extends CustomDomainProvisionResult {
-  readonly valid?: boolean
-}
-
 function gatewaySettings(input: { env: Partial<RouterEnv>; body?: Partial<GatewaySettings>; stored?: Partial<GatewaySettings> }): GatewaySettings {
   const source = { ...input.stored, ...input.body }
   return {
@@ -2080,125 +2076,6 @@ async function handleGatewayProvisionStatus(request: Request, deps: RouterDeps, 
   if (!client.provisionStatus) return json({ error: 'cloudflare_runtime_config_missing' }, 503, requestId)
   const status = await client.provisionStatus(accountId, gatewayId, defaults.routeName, defaults.providerName)
   return json({ gatewayId, ...status }, 200, requestId)
-}
-
-interface HostGate {
-  readonly locked: boolean
-  readonly hostname: string
-  readonly recovery: boolean
-}
-
-/** REQ-ADM-014: after completion, only the custom domain serves the console and machine routes. */
-async function resolveHostGate(deps: RouterDeps, url: URL): Promise<HostGate> {
-  const phase = await setupPhase(deps.store)
-  if (phase !== 'complete') return { locked: false, hostname: '', recovery: false }
-  const domain = await deps.store.getConfig<StoredCustomDomain>('custom_domain')
-  if (domain?.status !== 'provisioned' || url.hostname === domain.hostname) return { locked: false, hostname: '', recovery: false }
-  return { locked: true, hostname: domain.hostname, recovery: await breakGlassActive(deps.store, deps.env) }
-}
-
-/** REQ-ADM-013: audit recovery entry once per reopen-secret value. */
-async function recordBreakGlassEntry(deps: RouterDeps, requestId: string, now: number): Promise<void> {
-  if (!deps.env.SETUP_REOPEN) return
-  const digest = await hashToken(deps.env.SETUP_REOPEN)
-  if ((await deps.store.getConfig<string>(SETUP_REOPEN_SEEN_KEY)) === digest) return
-  await deps.store.putConfig(SETUP_REOPEN_SEEN_KEY, digest)
-  await deps.store.appendAudit({ id: requestId, type: 'break_glass_entered', at: now, actor: 'recovery', detail: {} })
-}
-
-type ConsoleRole = 'admin' | 'user'
-
-interface RoleVerdict {
-  readonly role: ConsoleRole
-  readonly actor: string
-}
-
-/**
- * REQ-SEC-009 / REQ-SEC-010: resolve the caller's console role. During bootstrap
- * (no Access config) or break-glass the bearer bootstrap token is admin. Once
- * Access is configured, identity comes from the verified Access JWT plus a live
- * group lookup: an admin group/email match is admin (admin wins over user);
- * otherwise a user group/email match — or any verified identity when no user set
- * is configured — is a read-only user; anyone else is refused.
- */
-async function resolveRole(request: Request, deps: RouterDeps, now: number): Promise<RoleVerdict | undefined> {
-  const access = await accessConfig(deps.store)
-  if (!access) {
-    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? { role: 'admin', actor: 'admin' } : undefined
-  }
-  const verdict = await verifyAccessRequest(request, { teamDomain: access.teamDomain, audience: access.audience }, now, deps.jwksFetcher ?? fetch)
-  if (verdict.outcome === 'absent' && await breakGlassActive(deps.store, deps.env)) {
-    return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? { role: 'admin', actor: 'admin' } : undefined
-  }
-  if (verdict.outcome !== 'verified') return undefined
-  const email = verdict.email
-  // Configured emails are lowercased at capture; match the JWT claim case-insensitively
-  // so a mixed-case IdP email never locks out the admin it names.
-  const emailKey = email.toLowerCase()
-  const adminEmails = access.adminEmails ?? []
-  const adminGroups = access.adminGroups ?? []
-  const userEmails = access.userEmails ?? []
-  const userGroups = access.userGroups ?? []
-  const groups = await fetchIdentityGroups(request, access.teamDomain, deps.identityFetcher ?? deps.jwksFetcher ?? fetch)
-  const inAny = (names: readonly string[]) => names.length > 0 && names.some((name) => groups.includes(name))
-  if (adminEmails.includes(emailKey) || inAny(adminGroups)) return { role: 'admin', actor: email }
-  const usersOpen = userEmails.length === 0 && userGroups.length === 0
-  if (usersOpen || userEmails.includes(emailKey) || inAny(userGroups)) return { role: 'user', actor: email }
-  return undefined
-}
-
-/** Admin-only gate: config writes require the admin role. */
-async function requireAdmin(request: Request, deps: RouterDeps, now: number): Promise<string | undefined> {
-  if (isMutatingMethod(request.method) && usesAccessJwt(request) && !hasSameOriginSignal(request)) return undefined
-  const verdict = await resolveRole(request, deps, now)
-  return verdict?.role === 'admin' ? verdict.actor : undefined
-}
-
-/** Reader gate: any verified console role (admin or user) may read status + use the playground. */
-async function requireUser(request: Request, deps: RouterDeps, now: number): Promise<RoleVerdict | undefined> {
-  if (isMutatingMethod(request.method) && usesAccessJwt(request) && !hasSameOriginSignal(request)) return undefined
-  return await resolveRole(request, deps, now)
-}
-
-function usesAccessJwt(request: Request): boolean {
-  return accessJwtSource(request) !== null
-}
-
-function isMutatingMethod(method: string): boolean {
-  return !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
-}
-
-function hasSameOriginSignal(request: Request): boolean {
-  const requestOrigin = new URL(request.url).origin
-  const origin = request.headers.get('origin')
-  if (origin) return origin === requestOrigin
-  const referer = request.headers.get('referer')
-  if (referer) {
-    try {
-      return new URL(referer).origin === requestOrigin
-    } catch {
-      return false
-    }
-  }
-  const fetchSite = request.headers.get('sec-fetch-site')
-  return fetchSite === 'same-origin' || fetchSite === 'none'
-}
-
-/**
- * Machine gate for the `/api/v1` control plane. Authenticates a scoped, revocable
- * automation key presented as a bearer token — no Cloudflare Access session — so
- * fleet managers and MDM can orchestrate the mesh programmatically. Returns the
- * matched token record, or undefined when the key is missing, unknown, revoked, or expired.
- */
-async function requireAutomation(request: Request, deps: RouterDeps, now: number): Promise<TokenRecord | undefined> {
-  return await authenticateAnyStoredToken(request, deps.store, 'automation', now)
-}
-
-async function requireKeyAdmin(request: Request, deps: RouterDeps, now: number): Promise<string | undefined> {
-  const actor = await requireAdmin(request, deps, now)
-  if (actor) return actor
-  if ((await accessConfig(deps.store)) && extractAccessJwt(request)) return undefined
-  return (await authenticateKind(request, deps, 'admin', now, deps.env.ADMIN_TOKEN)) ? 'admin-api' : undefined
 }
 
 async function handleApiKeyCreate(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
@@ -2676,89 +2553,6 @@ async function handleApiEvents(request: Request, deps: RouterDeps, url: URL, req
   const last = events.length > 0 ? events[events.length - 1]! : undefined
   const nextCursor = events.length === limit && last ? `${last.at}:${last.id}` : null
   return json({ events, nextCursor }, 200, requestId)
-}
-
-async function authenticateKind(request: Request, deps: RouterDeps, kind: CredentialKind, now: number, envSecret?: string): Promise<boolean> {
-  const presented = bearerToken(request)
-  if (await verifyPlainOrHashed(envSecret, presented)) return true
-  return Boolean(await authenticateAnyStoredToken(request, deps.store, kind, now))
-}
-
-async function authenticateAnyStoredToken(request: Request, store: Store, kind: CredentialKind, now: number): Promise<TokenRecord | undefined> {
-  const presented = bearerToken(request)
-  const tokens = await store.listTokens(kind)
-  for (const token of tokens) {
-    if (await verifyToken(presented, token, now)) return token
-  }
-  return undefined
-}
-
-async function authenticateTokenByNode(request: Request, store: Store, kind: CredentialKind, nodeId: string, now: number): Promise<TokenRecord | undefined> {
-  const presented = bearerToken(request)
-  const tokens = await store.listTokens(kind)
-  for (const token of tokens) {
-    if (token.nodeId === nodeId && await verifyToken(presented, token, now)) return token
-  }
-  return undefined
-}
-
-function json(body: unknown, status: number, requestId: string): Response {
-  return Response.json(body, { status, headers: { ...JSON_HEADERS, 'x-inference-mesh-request-id': requestId } })
-}
-
-function rateLimited(requestId: string): Response {
-  return Response.json({ error: 'rate_limited', requestId }, { status: 429, headers: { ...JSON_HEADERS, 'x-inference-mesh-request-id': requestId, 'retry-after': '60' } })
-}
-
-function html(body: string, requestId: string): Response {
-  return new Response(body, {
-    status: 200,
-    headers: {
-      'content-security-policy': "frame-ancestors 'none'",
-      'content-type': 'text/html; charset=utf-8',
-      'x-frame-options': 'DENY',
-      'x-inference-mesh-request-id': requestId
-    }
-  })
-}
-
-async function readJson<T>(request: Request): Promise<T> {
-  try {
-    return await request.json() as T
-  } catch {
-    throw new InvalidJsonBodyError()
-  }
-}
-
-async function readOptionalObject<T>(request: Request): Promise<T | undefined> {
-  const text = await request.text()
-  if (!text) return undefined
-  let value: unknown
-  try {
-    value = JSON.parse(text)
-  } catch {
-    // An absent body is fine (returns undefined above → the route uses its defaults), but a
-    // present-but-unparseable body is a client mistake: reject it as 400 invalid_json rather
-    // than silently discarding it and applying defaults the caller never intended.
-    throw new InvalidJsonBodyError()
-  }
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as T : undefined
-}
-
-function parseObject(text: string): Record<string, unknown> | undefined {
-  try {
-    const value = JSON.parse(text)
-    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function responseMetadataHeaders(upstream: Headers, requestId: string, nodeId: string): Headers {
-  const headers = new Headers(upstream)
-  headers.set('x-inference-mesh-request-id', requestId)
-  headers.set('x-inference-mesh-node', nodeId)
-  return headers
 }
 
 function validateClaim(body: ClaimRequest | undefined, env: Pick<RouterEnv, 'MESH_ALLOWED_CIDRS' | 'MESH_ALLOWED_PORTS'> = {}): string[] {

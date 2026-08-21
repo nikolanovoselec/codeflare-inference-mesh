@@ -8,6 +8,7 @@
     }
   },
   "ignoreDependencies": ["@cloudflare/workers-types"],
+  "ignoreExportsUsedInFile": { "interface": true, "type": true },
   "rules": {
     "classMembers": "off",
     "duplicates": "off",

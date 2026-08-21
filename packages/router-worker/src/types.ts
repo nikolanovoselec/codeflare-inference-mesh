@@ -1,3 +1,10 @@
+import type { CustomDomainProvisionResult } from './cloudflare-api'
+
+/** A custom-domain provisioning result as persisted under the `custom_domain` config key. */
+export interface StoredCustomDomain extends CustomDomainProvisionResult {
+  readonly valid?: boolean
+}
+
 export type CredentialKind = 'provider' | 'admin' | 'setup' | 'node' | 'upstream' | 'automation'
 
 export type NodeStatus = 'online' | 'offline' | 'draining' | 'revoked'
