@@ -38,7 +38,7 @@ interface SpeedTestMeasurement {
  * mesh card reads. A viewer may look; only an admin or an automation key may change what
  * everyone else sees.
  */
-export async function runSpeedTest(deps: SpeedTestDeps, body: SpeedTestBody | undefined, requestHeaders: Headers, requestId: string, now: number, persist: boolean): Promise<Response> {
+export async function runSpeedTest(deps: SpeedTestDeps, body: SpeedTestBody | undefined, requestHeaders: Headers, requestId: string, now: number, persist: boolean, deadlineMs: number = SPEED_TEST_DEADLINE_MS): Promise<Response> {
   const model = cleanString(body?.model) ?? STABLE_PUBLIC_MODEL
   const promptTokens = boundedInt(body?.promptTokens, 64, 8192, 2048)
   const maxTokens = boundedInt(body?.maxTokens, 16, 512, 160)
@@ -59,7 +59,7 @@ export async function runSpeedTest(deps: SpeedTestDeps, body: SpeedTestBody | un
   if (!upstream.ok || !upstream.body) {
     return new Response(upstream.body, { status: upstream.status, headers: upstream.headers })
   }
-  const measured = await measureSpeedStream(upstream.body, startedAt, promptTokens)
+  const measured = await measureSpeedStream(upstream.body, startedAt, promptTokens, deadlineMs)
   const nodeId = upstream.headers.get('x-inference-mesh-node') ?? upstream.headers.get('x-inference-mesh-session-node') ?? undefined
   const cacheTokens = timingNumber(measured.upstreamTimings ?? undefined, 'cache_n')
   const result = { model, ...(nodeId ? { nodeId } : {}), promptChars: prompt.length, requestedPromptTokens: promptTokens, requestedMaxTokens: maxTokens, ...(cacheTokens !== undefined ? { cacheTokens } : {}), ...measured }
@@ -70,6 +70,10 @@ export async function runSpeedTest(deps: SpeedTestDeps, body: SpeedTestBody | un
   // A timed-out run is a partial read whose token counts are estimated from whatever arrived,
   // so it must not land on the mesh cards as though it were a completed measurement. The
   // caller still receives it, with timedOut set, so the operator can see what happened.
+  //
+  // The output-ceiling exit is deliberately not treated the same way: it only trips after a
+  // very large generation, so the sample is complete enough to compare, and REQ-ADM-034 AC 3
+  // sanctions skipping storage for the deadline case alone.
   if (persist && !measured.timedOut) {
     const speedProfile = await deps.store.getProfileByPublicModel(routablePublicModel(model))
     const priorSpeedTests = await deps.store.getConfig<Record<string, LastSpeedTestSummary>>(LAST_SPEED_TESTS_CONFIG_KEY) ?? {}
