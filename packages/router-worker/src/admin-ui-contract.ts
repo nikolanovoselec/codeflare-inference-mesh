@@ -121,6 +121,29 @@ export const ADMIN_UI_DRAWER = {
   closeAction: 'drawer-close'
 } as const
 
+/**
+ * Node work state and mesh role, as stable tokens. The console renders a label, but the
+ * drawer row's `data-value` and the status cell's `data-mesh-role` carry the token, so a
+ * test asserts which state a node is in rather than how that state is worded. Rewording a
+ * label is then a change no test notices; misclassifying a node is one every test does.
+ */
+export const ADMIN_UI_WORK_STATE = {
+  servingSplitStage: 'serving-split-stage',
+  servingModel: 'serving-model',
+  installingRuntime: 'installing-runtime',
+  startingModel: 'starting-model',
+  needsAttention: 'needs-attention',
+  runtimeOnline: 'runtime-online'
+} as const
+
+export const ADMIN_UI_MESH_ROLE = {
+  attribute: 'data-mesh-role',
+  stageOwner: 'stage-owner',
+  noStageAssigned: 'no-stage-assigned',
+  servingPeer: 'serving-peer',
+  coordinator: 'coordinator'
+} as const
+
 /** Dashboard status polling: visibility-aware, live badge reflects freshness. */
 export const ADMIN_UI_POLLING = {
   intervalMs: 5000

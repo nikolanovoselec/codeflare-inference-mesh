@@ -2,6 +2,7 @@
   "$schema": "./node_modules/knip/schema.json",
   "tags": ["-specanchor"],
   "ignoreExportsUsedInFile": true,
+  "ignoreDependencies": ["@resvg/resvg-js"],
   "workspaces": {
     ".": {
       "entry": ["assets/*.mjs"],

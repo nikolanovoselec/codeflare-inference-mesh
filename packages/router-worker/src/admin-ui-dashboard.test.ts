@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ADMIN_UI_DRAWER, ADMIN_UI_MESHES, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_DRAWER, ADMIN_UI_MESH_ROLE, ADMIN_UI_MESHES, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, ADMIN_UI_WORK_STATE, adminUiHtml } from './admin-ui'
 import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
@@ -247,8 +247,8 @@ describe('dashboard overview contracts', () => {
     // while the node participates (REQ-OBS-011 AC7).
     const recentErr = drawerFields.find((node) => node.dataset.drawerField === 'runtime-detail')!
     expect(recentErr.dataset.tone).toBe('warn')
-    const drawerText = (name: string) => descendants(drawerFields.find((node) => node.dataset.drawerField === name)!).map((node) => node.textContent).join(' ')
-    expect(drawerText('work-state')).toContain('Serving model')
+    const workState = drawerFields.find((node) => node.dataset.drawerField === 'work-state')!
+    expect(workState.dataset.value).toBe(ADMIN_UI_WORK_STATE.servingModel)
   })
 
   it('REQ-OBS-007 surfaces split capacity shortfall instead of marking raw standby green', async () => {
@@ -588,7 +588,7 @@ describe('dashboard overview contracts', () => {
     const harness = await dashboardHarness({ status: statusFixture({ nodes, meshHealth }) })
     const row = tableRows(harness).find((candidate) => candidate.dataset.nodeRow === 'mac-100-96-0-14')!
     const statusCell = descendants(row).find((candidate) => candidate.dataset.cell === 'status')!
-    expect(statusCell.dataset.meshRole).toBe('Stage owner')
+    expect(statusCell.dataset.meshRole).toBe(ADMIN_UI_MESH_ROLE.stageOwner)
     // A stage owner reads as Serving (active work), never standby/API client; the role
     // detail rides the data attribute and the drawer, not the visible label.
     const statusChip = descendants(statusCell).find((node) => node.className === 'chip')!
@@ -596,9 +596,9 @@ describe('dashboard overview contracts', () => {
 
     await harness.clickAction('node-detail', { nodeId: 'mac-100-96-0-14' })
     let fields = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId))
-    const textOf = (name: string) => descendants(fields.find((node) => node.dataset.drawerField === name)!).map((node) => node.textContent).join(' ')
-    expect(textOf('work-state')).toContain('Serving split stage')
-    expect(textOf('mesh-role')).toContain('Stage owner')
+    const fieldOf = (name: string) => fields.find((node) => node.dataset.drawerField === name)!
+    expect(fieldOf('work-state').dataset.value).toBe(ADMIN_UI_WORK_STATE.servingSplitStage)
+    expect(fieldOf('mesh-role').dataset.value).toBe(ADMIN_UI_MESH_ROLE.stageOwner)
     const macVram = fields.find((node) => node.dataset.drawerField === 'vram')!
     expect(macVram.dataset.vramSource).toBe('none')
     expect(macVram.dataset.value).toBe('')
@@ -768,12 +768,11 @@ describe('dashboard overview contracts', () => {
     expect(err).toBeDefined()
     expect(err!.dataset.tone).toBe('danger')
     expect(textOf(err!)).toContain('cuda out of memory')
-    expect(textOf(field('work-state')!)).toContain('Starting model')
-    expect(textOf(field('mesh-role')!)).toContain('Stage owner')
+    expect(field('work-state')!.dataset.value).toBe(ADMIN_UI_WORK_STATE.startingModel)
+    expect(field('mesh-role')!.dataset.value).toBe(ADMIN_UI_MESH_ROLE.stageOwner)
     expect(field('peers')!.dataset.value).toBe('2')
     expect(field('stages')!.dataset.value).toBe('2')
     expect(field('reachability')!.dataset.value).toBe('api:down;console:ready')
-    expect(textOf(field('reachability')!)).toContain('down / ready')
     expect(textOf(field('runtime-install')!)).toContain('meshllm 0.72.2')
     expect(fields.some((node) => node.dataset.drawerField === 'meshllm')).toBe(false)
 

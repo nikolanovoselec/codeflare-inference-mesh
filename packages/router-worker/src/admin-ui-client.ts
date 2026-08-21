@@ -831,24 +831,35 @@ const CLIENT_RENDERERS = `  // --- renderers fed by /admin/status --------------
     if (info.installedVersion) return label + ' ' + info.installedVersion + (versionsMatch(info.installedVersion, desired) || !desired ? '' : ' → ' + desired);
     return label + ' pending ' + desired;
   };
-  function nodeMeshRoleLabel(metrics) {
+  // State first, copy second. The data attributes carry these tokens, so a test asserts
+  // which state a node is in rather than how the state is worded, and rewording a label
+  // never breaks a test. Unknown values fall through as their own token.
+  const MESH_ROLE_LABELS = { 'stage-owner': 'Stage owner', 'no-stage-assigned': 'No stage assigned', 'serving-peer': 'Serving peer', 'coordinator': 'Coordinator' };
+  const WORK_STATE_LABELS = { 'serving-split-stage': 'Serving split stage', 'serving-model': 'Serving model', 'installing-runtime': 'Installing runtime', 'starting-model': 'Starting model', 'needs-attention': 'Needs attention', 'runtime-online': 'Runtime online' };
+  function nodeMeshRoleToken(metrics) {
     if (!metrics) return '';
-    if ((metrics.stageCount || 0) > 0 && metrics.meshRole !== 'coordinator') return 'Stage owner';
+    if ((metrics.stageCount || 0) > 0 && metrics.meshRole !== 'coordinator') return 'stage-owner';
     if (!metrics.meshRole) return '';
-    if (metrics.meshRole === 'api-client') return 'No stage assigned';
-    if (metrics.meshRole === 'serving-peer') return 'Serving peer';
-    if (metrics.meshRole === 'coordinator') return 'Coordinator';
-    return humanizeKey(metrics.meshRole);
+    if (metrics.meshRole === 'api-client') return 'no-stage-assigned';
+    return metrics.meshRole;
+  }
+  function nodeMeshRoleLabel(metrics) {
+    const token = nodeMeshRoleToken(metrics);
+    return token ? (MESH_ROLE_LABELS[token] || humanizeKey(token)) : '';
+  }
+  function nodeWorkStateToken(metrics) {
+    if (!metrics) return '';
+    if ((metrics.stageCount || 0) > 0 && metrics.apiReady === true && metrics.consoleReady === true) return 'serving-split-stage';
+    if (Array.isArray(metrics.readyModels) && metrics.readyModels.length > 0) return 'serving-model';
+    if (metrics.runtimeState === 'downloading') return 'installing-runtime';
+    if (metrics.runtimeState === 'starting' || metrics.runtimeState === 'loading') return 'starting-model';
+    if (metrics.runtimeState === 'failed' || metrics.runtimeState === 'dependency-missing') return 'needs-attention';
+    if (metrics.apiReady === true || metrics.consoleReady === true) return 'runtime-online';
+    return metrics.runtimeState || '';
   }
   function nodeWorkState(metrics) {
-    if (!metrics) return '';
-    if ((metrics.stageCount || 0) > 0 && metrics.apiReady === true && metrics.consoleReady === true) return 'Serving split stage';
-    if (Array.isArray(metrics.readyModels) && metrics.readyModels.length > 0) return 'Serving model';
-    if (metrics.runtimeState === 'downloading') return 'Installing runtime';
-    if (metrics.runtimeState === 'starting' || metrics.runtimeState === 'loading') return 'Starting model';
-    if (metrics.runtimeState === 'failed' || metrics.runtimeState === 'dependency-missing') return 'Needs attention';
-    if (metrics.apiReady === true || metrics.consoleReady === true) return 'Runtime online';
-    return metrics.runtimeState ? humanizeKey(metrics.runtimeState) : '';
+    const token = nodeWorkStateToken(metrics);
+    return token ? (WORK_STATE_LABELS[token] || humanizeKey(token)) : '';
   }
   function nodeServingCapacity(node) {
     if (node.status !== 'online' || node.deactivated) return false;
@@ -975,7 +986,7 @@ const CLIENT_RENDERERS = `  // --- renderers fed by /admin/status --------------
       if (blocker && blocker.splitReadiness) statusCell.setAttribute('data-status-detail', splitReadinessReason(blocker.splitReadiness));
       else if (blocker) statusCell.setAttribute('data-status-detail', 'split-mesh-peer-discovery');
       else if (node.metrics && node.metrics.nodeState) statusCell.setAttribute('data-status-detail', node.metrics.nodeState);
-      if (node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-mesh-role', nodeMeshRoleLabel(node.metrics));
+      if (node.metrics && node.metrics.meshRole) statusCell.setAttribute('data-mesh-role', nodeMeshRoleToken(node.metrics));
       if (node.metrics && node.metrics.splitReadiness) annotateSplitReadiness(statusCell, node.metrics.splitReadiness);
       // The visible label is the fixed status vocabulary; role/work detail lives in the
       // drawer diagnostics and the cell's data attributes, never in the label.
@@ -1216,8 +1227,8 @@ const CLIENT_RENDERERS = `  // --- renderers fed by /admin/status --------------
       }
     }
     const workState = nodeWorkState(metrics);
-    if (workState) bodyEl.appendChild(drawerField('work-state', 'Work state', workState, workState));
-    if (!isDirectRuntime || metrics.meshRole || (metrics.stageCount || 0) > 0) bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', nodeMeshRoleLabel(metrics) || 'not reported'));
+    if (workState) bodyEl.appendChild(drawerField('work-state', 'Work state', workState, nodeWorkStateToken(metrics)));
+    if (!isDirectRuntime || metrics.meshRole || (metrics.stageCount || 0) > 0) bodyEl.appendChild(drawerField('mesh-role', 'Mesh role', nodeMeshRoleLabel(metrics) || 'not reported', nodeMeshRoleToken(metrics)));
     if (!isDirectRuntime || metrics.peerCount != null) bodyEl.appendChild(drawerField('peers', 'Peers', reportedText(metrics.peerCount), metrics.peerCount == null ? '' : String(metrics.peerCount)));
     const nodeStages = nodeStageAssignments(node);
     if (nodeStages.length) bodyEl.appendChild(drawerField('stage-ownership', 'Stage ownership', nodeStages.map((stage) => stageDetailText(stage, allStatusNodes(), true)).join('; '), nodeStages.map((stage) => stageDataValue(stage, allStatusNodes())).join('|')));
