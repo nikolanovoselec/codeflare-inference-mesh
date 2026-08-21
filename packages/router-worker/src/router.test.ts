@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ADMIN_UI_ACTIONS, ADMIN_UI_CONFIRM, ADMIN_UI_NAV, ADMIN_UI_RESPONSIVE, ADMIN_UI_SETUP_LOCKED_FEEDBACK, ADMIN_UI_VIEWS, ADMIN_UI_WIZARD } from './admin-ui'
-import { ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
+import { ADMIN_UI_CLIENT_FRAGMENTS, ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
 import { adminUiHarness, descendants, elementStub } from './admin-ui-harness'
 import { resetJwksCache } from './access'
 import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
@@ -828,23 +828,36 @@ describe('router worker behavioral contracts', () => {
     expect(() => required(undefined, 'credentialId', '/node/claim')).toThrow('route /node/claim declares a gate that does not resolve credentialId')
   })
 
-  it('REQ-ADM-007 assembles the console client script from its sections in order', () => {
-    // The script is concatenated from five template literals. A dropped or reordered
-    // section still yields a string, and the browser only fails at runtime, so assert
-    // the closure the page actually needs: one IIFE, every section present, in order.
+  it('REQ-ADM-007 assembles the console client script from its fragments in order', () => {
+    // The script is concatenated from per-topic fragments. A dropped, duplicated or
+    // reordered fragment still yields a string and only the browser would notice, so
+    // assert the closure the page actually needs.
     expect(ADMIN_UI_CLIENT_SCRIPT.startsWith("(() => {\n  'use strict';")).toBe(true)
     expect(ADMIN_UI_CLIENT_SCRIPT.endsWith('})();')).toBe(true)
+    // Interpolation is what let esbuild's __name helper leak into the page and crash it.
+    expect(ADMIN_UI_CLIENT_SCRIPT).not.toContain('${')
 
-    const markers = [
-      '// --- hero progressive enhancement',
-      '// --- view + section state',
-      '// --- renderers fed by /admin/status',
-      '// --- wizard data loaders',
-      '// --- boot'
-    ]
-    const offsets = markers.map((marker) => ADMIN_UI_CLIENT_SCRIPT.indexOf(marker))
-    expect(offsets.filter((offset) => offset < 0)).toEqual([])
-    expect(offsets).toEqual([...offsets].sort((left, right) => left - right))
+    expect(ADMIN_UI_CLIENT_FRAGMENTS.length).toBeGreaterThan(1)
+    let cursor = -1
+    for (const fragment of ADMIN_UI_CLIENT_FRAGMENTS) {
+      const at = ADMIN_UI_CLIENT_SCRIPT.indexOf(fragment)
+      expect(at).toBeGreaterThan(cursor)
+      expect(ADMIN_UI_CLIENT_SCRIPT.indexOf(fragment, at + 1)).toBe(-1)
+      cursor = at
+    }
+  })
+
+  it('REQ-ADM-007 dispatches every console action through the action table', () => {
+    // The console had one 418-line if-chain over action ids. Every action a button can
+    // carry now resolves through the table, so a bound id is what makes an action exist.
+    const bound = [...ADMIN_UI_CLIENT_SCRIPT.matchAll(/^ {2}bindAction\((?:'([^']+)'|([\w.]+)),/gm)].map((match) => match[1] ?? match[2])
+    expect(bound.length).toBeGreaterThan(30)
+    expect(new Set(bound).size).toBe(bound.length)
+    // The dispatcher resolves one handler and does nothing for an id it does not know,
+    // so no branch chain over action ids survives. (A lone `if (action === …)` is still
+    // fine where it special-cases one action's error copy rather than routing it.)
+    expect(ADMIN_UI_CLIENT_SCRIPT).toContain('const handler = ACTIONS[action];')
+    expect(ADMIN_UI_CLIENT_SCRIPT).not.toMatch(/else if \(action === /)
   })
 
   it('REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation', async () => {
