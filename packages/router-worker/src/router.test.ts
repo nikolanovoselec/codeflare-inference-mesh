@@ -7,7 +7,8 @@ import { createTokenRecord, hashToken, timingSafeEqualText } from './auth'
 import { CloudflareGatewayClient } from './cloudflare-api'
 import { installerPlan, SETUP_TOKEN_PLACEHOLDER } from './installers'
 import { buildCustomProfile, DEFAULT_MODEL_PROFILES, STABLE_PUBLIC_MODEL } from './profiles'
-import { createRouter } from './router'
+import { createRouter, ROUTES } from './router'
+import type { RouteGate } from './routes'
 import { isSafeMeshTarget, StoreScheduler } from './scheduler'
 import { accessJwksFetcher, accessTestKey, MemoryStore, nodeFixture, signAccessJwt } from './test-helpers'
 import type { LastSpeedTestSummary, ModelProfile, NodeRecord } from './types'
@@ -57,6 +58,31 @@ function routerFixture(overrides: Partial<Parameters<typeof createRouter>[0]> = 
 
 function bearer(token: string): HeadersInit {
   return { authorization: `Bearer ${token}` }
+}
+
+/** A concrete pathname for a route, substituting a sample id for each pattern segment. */
+function samplePath(path: string | RegExp): string {
+  if (typeof path === 'string') return path
+  return path.source.replace(/^\^/, '').replace(/\$$/, '').replace(/\[\^\/\]\+/g, 'sample-id').replace(/\\\//g, '/')
+}
+
+type RouteFamily = 'data' | 'node' | 'admin' | 'api' | 'public'
+
+function routeFamily(pathname: string): RouteFamily {
+  if (pathname.startsWith('/api/v1/')) return 'api'
+  if (pathname.startsWith('/admin')) return 'admin'
+  if (pathname.startsWith('/node/')) return 'node'
+  if (pathname.startsWith('/v1/')) return 'data'
+  return 'public'
+}
+
+/** Credential classes each route family is allowed to declare. */
+const FAMILY_GATES: Record<RouteFamily, readonly RouteGate[]> = {
+  data: ['provider'],
+  node: ['setup', 'node'],
+  admin: ['admin', 'user', 'bootstrapOrAdmin', 'recovery'],
+  api: ['automation', 'keyAdmin', 'adminOrAutomation'],
+  public: ['open']
 }
 
 // The 35B profiles left the shipped catalog (it is now the single smoke starter).
@@ -714,6 +740,33 @@ describe('router worker behavioral contracts', () => {
     expect((await router(new Request('https://router.test/v1/models', { headers: bearer('provider-secret') }))).status).toBe(200)
     expect((await router(new Request('https://router.test/admin/status', { headers: bearer('provider-secret') }))).status).toBe(401)
     expect((await router(new Request('https://router.test/missing'))).status).toBe(404)
+  })
+
+  it('REQ-RTR-001 REQ-SEC-001 refuses every gated route without a credential and keeps each gate in its route family', async () => {
+    // RouteGateMatrixTestAnchor
+    const { router, store } = routerFixture()
+    // /admin/setup is open only while the deployment is unclaimed; claim it so its gate applies.
+    await store.putToken(await createTokenRecord('admin', 'admin-secret', 1_700_000_000_000))
+
+    const misfiled: string[] = []
+    const unguarded: string[] = []
+    for (const route of ROUTES) {
+      const pathname = samplePath(route.path)
+      if (!FAMILY_GATES[routeFamily(pathname)].includes(route.gate)) {
+        misfiled.push(`${route.method} ${pathname} declares ${route.gate}`)
+      }
+      const status = (await router(new Request(`https://router.test${pathname}`, { method: route.method }))).status
+      const refused = status === 401
+      if (route.gate === 'open' ? refused : !refused) {
+        unguarded.push(`${route.method} ${pathname} gate=${route.gate} answered ${status}`)
+      }
+    }
+
+    expect(misfiled).toEqual([])
+    expect(unguarded).toEqual([])
+    // Guards the sweep itself: an empty or truncated table would pass both checks vacuously.
+    expect(ROUTES).toHaveLength(79)
+    expect(new Set(ROUTES.map((route) => route.gate)).size).toBe(11)
   })
 
   it('REQ-GWY-002 REQ-SEC-002 generates distinct bearer tokens, stores only verifiers, and stages setup rotation', async () => {

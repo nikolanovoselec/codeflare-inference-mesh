@@ -12,6 +12,7 @@ import { applyHeartbeatMeshState, handleMeshRotate, meshBootstrapFor, meshHealth
 import { createMesh, deleteMesh, listMeshes, meshAliasFor, validateMeshName, type MeshRecord } from './meshes'
 import { buildCustomProfile, buildDuplicateProfile, DEFAULT_MODEL_PROFILES, llamaCppQuantError, nodeMeshId, parseLlamaCppModelRef, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
 import { isRateLimited } from './rate-limit'
+import { matchRoute, type Route } from './routes'
 import { activeMeshllmRepository, desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 import { eligibleDirectNodes, isSafeMeshTarget, meshUrl } from './scheduler'
 import { ACCESS_CONFIG_KEY, SETUP_REOPEN_CONSUMED_KEY, SETUP_REOPEN_SEEN_KEY, accessConfig, advancePhase, breakGlassActive, setupPhase } from './setup-state'
@@ -72,86 +73,9 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
         }
       }
       if ((request.method === 'GET' || request.method === 'HEAD') && (url.pathname === '/' || url.pathname === '/admin')) return html(adminUiHtml(url.origin, await adminUiState(deps, false)), id)
-      if (request.method === 'GET' && url.pathname === '/health') return json({ ok: true, service: 'inference-mesh-router' }, 200, id)
-      if (request.method === 'GET' && url.pathname === '/v1/models') return await handleModels(request, deps, id, now())
-      if (request.method === 'POST' && url.pathname === '/v1/chat/completions') return await handleChat(request, deps, id, now())
-      if (request.method === 'POST' && url.pathname === '/node/claim') return await handleNodeClaim(request, deps, id, now())
-      if (request.method === 'POST' && url.pathname === '/node/heartbeat') return await handleNodeHeartbeat(request, deps, id, now())
-      if (request.method === 'POST' && url.pathname === '/node/unregister') return await handleNodeUnregister(request, deps, id, now())
-      if (url.pathname === '/admin/setup' && request.method === 'POST') return await handleFirstSetup(request, deps, id, now())
-      if (url.pathname === '/admin/recovery/reset' && request.method === 'POST') return await handleAdminRecovery(request, deps, id, now())
-      if (url.pathname === '/install.sh' && request.method === 'GET') return handleInstallScript(deps, url.searchParams.get('platform') === 'macos' ? 'macos' : 'linux')
-      if (url.pathname === '/install.ps1' && request.method === 'GET') return handleInstallScript(deps, 'windows')
-      if (url.pathname === '/admin/login' && request.method === 'POST') return await handleAdminLogin(request, deps, id, now())
-      if (url.pathname === '/admin/status' && request.method === 'GET') return await handleAdminStatus(request, deps, id, now())
-      if (url.pathname === '/admin/setup-tokens' && request.method === 'POST') return await handleSetupToken(request, deps, id, now())
-      if (url.pathname.startsWith('/admin/installers/') && request.method === 'GET') return await handleInstaller(request, deps, url, id, now())
-      if (url.pathname === '/admin/cloudflare/gateway/sync' && request.method === 'POST') return await handleGatewaySync(request, deps, id, now())
-      if (url.pathname === '/admin/custom-domain/validate' && request.method === 'POST') return await handleCustomDomain(request, deps, id, now(), false)
-      if (url.pathname === '/admin/setup/domain' && request.method === 'POST') return await handleCustomDomain(request, deps, id, now(), true)
-      if (url.pathname === '/admin/setup/access' && request.method === 'POST') return await handleSetupAccess(request, deps, id, now())
-      if (url.pathname === '/admin/setup/complete' && request.method === 'POST') return await handleSetupComplete(request, deps, id, now())
-      if (url.pathname === '/admin/cloudflare/zones' && request.method === 'GET') return await handleZones(request, deps, id, now())
-      if (url.pathname === '/admin/cloudflare/gateway/options' && request.method === 'GET') return await handleGatewayOptions(request, deps, url, id, now())
-      if (url.pathname === '/admin/cloudflare/gateway/provision-status' && request.method === 'GET') return await handleGatewayProvisionStatus(request, deps, url, id, now())
-      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/revoke$/) && request.method === 'POST') return await handleNodeRevoke(request, deps, url, id, now())
-      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/deactivate$/) && request.method === 'POST') return await handleNodeDeactivate(request, deps, url, id, now())
-      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/activate$/) && request.method === 'POST') return await handleNodeActivate(request, deps, url, id, now())
-      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/reload$/) && request.method === 'POST') return await handleNodeReload(request, deps, url, id, now())
-      if (url.pathname.match(/^\/admin\/nodes\/[^/]+\/config$/) && request.method === 'POST') return await handleNodeConfig(request, deps, url, id, now())
-      if (url.pathname === '/admin/meshes' && request.method === 'GET') return await handleMeshList(request, deps, id, now())
-      if (url.pathname === '/admin/meshes' && request.method === 'POST') return await handleMeshCreate(request, deps, id, now())
-      if (url.pathname.match(/^\/admin\/meshes\/[^/]+$/) && request.method === 'DELETE') return await handleMeshDelete(request, deps, url, id, now())
-      if (url.pathname === '/admin/profiles/rollout' && request.method === 'POST') return await handleProfileRollout(request, deps, id, now())
-      if (url.pathname === '/admin/profiles/activate' && request.method === 'POST') return await handleProfileActivate(request, deps, id, now())
-      if (url.pathname === '/admin/profiles/add' && request.method === 'POST') return await handleProfileAdd(request, deps, id, now())
-      if (url.pathname === '/admin/profiles/config' && request.method === 'POST') return await handleProfileConfig(request, deps, id, now())
-      if (url.pathname === '/admin/profiles/delete' && request.method === 'POST') return await handleProfileDelete(request, deps, id, now())
-      if (url.pathname === '/admin/profiles/duplicate' && request.method === 'POST') return await handleProfileDuplicate(request, deps, id, now())
-      if (url.pathname === '/admin/settings' && request.method === 'POST') return await handleAdminSettings(request, deps, id, now())
-      if (url.pathname === '/admin/runtime-versions' && request.method === 'GET') return await handleAdminRuntimeVersions(request, deps, id, now())
-      if (url.pathname === '/admin/runtime-versions' && request.method === 'POST') return await handleAdminRuntimeVersionSelect(request, deps, id, now())
-      if (url.pathname === '/admin/mesh/rotate' && request.method === 'POST') return await handleAdminMeshRotate(request, deps, id, now())
-      if (url.pathname === '/admin/agent-versions' && request.method === 'GET') return await handleAdminAgentVersions(request, deps, id, now())
-      if (url.pathname === '/admin/agent-version' && request.method === 'POST') return await handleAdminAgentVersionSelect(request, deps, id, now())
-      if (url.pathname === '/admin/playground/chat' && request.method === 'POST') return await handlePlaygroundChat(request, deps, id, now())
-      if (url.pathname === '/admin/playground/direct-chat' && request.method === 'POST') return await handlePlaygroundDirect(request, deps, id, now())
-      if (url.pathname === '/admin/playground/speed-test' && request.method === 'POST') return await handlePlaygroundSpeedTest(request, deps, id, now())
-      if (url.pathname === '/admin/whoami' && request.method === 'GET') return await handleWhoami(request, deps, id, now())
-      if (url.pathname === '/api/v1/keys' && request.method === 'POST') return await handleApiKeyCreate(request, deps, id, now())
-      if (url.pathname === '/api/v1/keys' && request.method === 'GET') return await handleApiKeyList(request, deps, id, now())
-      if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+\/rotate$/) && request.method === 'POST') return await handleApiKeyRotate(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/keys\/[^/]+$/) && request.method === 'DELETE') return await handleApiKeyRevoke(request, deps, url, id, now())
-      if (url.pathname === '/api/v1/status' && request.method === 'GET') return await handleApiStatus(request, deps, id, now())
-      if (url.pathname === '/api/v1/speed-test' && request.method === 'POST') return await handleApiSpeedTest(request, deps, id, now())
-      if (url.pathname === '/api/v1/gateway/sync' && request.method === 'POST') return await handleApiGatewaySync(request, deps, id, now())
-      if (url.pathname === '/api/v1/enrollment-tokens' && request.method === 'POST') return await handleApiEnrollmentToken(request, deps, id, now())
-      if (url.pathname === '/api/v1/nodes' && request.method === 'GET') return await handleApiNodeList(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'GET') return await handleApiNodeGet(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/reconfigure$/) && request.method === 'POST') return await handleApiNodeReconfigure(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/deactivate$/) && request.method === 'POST') return await handleApiNodeDeactivate(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/activate$/) && request.method === 'POST') return await handleApiNodeActivate(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+\/reload$/) && request.method === 'POST') return await handleApiNodeReload(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/nodes\/[^/]+$/) && request.method === 'DELETE') return await handleApiNodeDecommission(request, deps, url, id, now())
-      if (url.pathname === '/api/v1/models' && request.method === 'GET') return await handleApiModelList(request, deps, id, now())
-      if (url.pathname === '/api/v1/models' && request.method === 'POST') return await handleApiModelAdd(request, deps, id, now())
-      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/enable$/) && request.method === 'POST') return await handleApiModelEnable(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/disable$/) && request.method === 'POST') return await handleApiModelDisable(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+\/duplicate$/) && request.method === 'POST') return await handleApiModelDuplicate(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'DELETE') return await handleApiModelDelete(request, deps, url, id, now())
-      if (url.pathname.match(/^\/api\/v1\/models\/[^/]+$/) && request.method === 'POST') return await handleApiModelConfigure(request, deps, url, id, now())
-      if (url.pathname === '/api/v1/agent-versions' && request.method === 'GET') return await handleApiAgentVersions(request, deps, id, now())
-      if (url.pathname === '/api/v1/agent-version' && request.method === 'PUT') return await handleApiAgentVersionSet(request, deps, id, now())
-      if (url.pathname === '/api/v1/mesh/rotate' && request.method === 'POST') return await handleApiMeshRotate(request, deps, id, now())
-      if (url.pathname === '/api/v1/settings' && request.method === 'GET') return await handleApiSettingsGet(request, deps, id, now())
-      if (url.pathname === '/api/v1/settings' && request.method === 'PUT') return await handleApiSettingsSet(request, deps, id, now())
-      if (url.pathname === '/api/v1/runtime-versions' && request.method === 'GET') return await handleApiRuntimeVersions(request, deps, id, now())
-      if (url.pathname === '/api/v1/runtime-versions' && request.method === 'PUT') return await handleApiRuntimeVersionSet(request, deps, id, now())
-      if (url.pathname === '/api/v1/meshes' && request.method === 'GET') return await handleApiMeshList(request, deps, id, now())
-      if (url.pathname === '/api/v1/meshes' && request.method === 'POST') return await handleApiMeshCreate(request, deps, id, now())
-      if (url.pathname.match(/^\/api\/v1\/meshes\/[^/]+$/) && request.method === 'DELETE') return await handleApiMeshDelete(request, deps, url, id, now())
-      if (url.pathname === '/api/v1/events' && request.method === 'GET') return await handleApiEvents(request, deps, url, id, now())
-      return json({ error: 'not_found', requestId: id }, 404, id)
+      const route = matchRoute(ROUTES, request.method, url.pathname)
+      if (!route) return json({ error: 'not_found', requestId: id }, 404, id)
+      return await route.handler({ request, deps, url, requestId: id, now: now() })
     } catch (error) {
       // A malformed request BODY (readJson) is client error, not a router fault: answer 400
       // invalid_json (matching the chat endpoint's contract) instead of a 500. Scoped to the
@@ -162,6 +86,110 @@ export function createRouter(deps: RouterDeps): (request: Request) => Promise<Re
     }
   }
 }
+
+/** Everything a handler needs from the request, assembled once per dispatch. */
+interface RouteContext {
+  readonly request: Request
+  readonly deps: RouterDeps
+  readonly url: URL
+  readonly requestId: string
+  readonly now: number
+}
+
+/**
+ * The router's full surface, in precedence order. First match wins, so this list
+ * must stay ordered exactly as the `if` chain it replaced.
+ *
+ * `gate` names the credential class each handler enforces. The handler still
+ * performs the check; the declaration exists so the auth matrix is readable in
+ * one place and provable in one test. `router.test.ts` drives every non-open
+ * route with no credential and asserts 401, so a handler that silently loses its
+ * gate fails the suite rather than shipping an open endpoint.
+ *
+ * `/` and `/admin` are not listed: they are served before dispatch because the
+ * custom-domain host gate rewrites them to a moved or recovery page first.
+ */
+export const ROUTES: readonly Route<RouteContext>[] = [
+  { method: 'GET', path: '/health', gate: 'open', handler: async (c) => json({ ok: true, service: 'inference-mesh-router' }, 200, c.requestId) },
+  { method: 'GET', path: '/v1/models', gate: 'provider', handler: (c) => handleModels(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/v1/chat/completions', gate: 'provider', handler: (c) => handleChat(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/node/claim', gate: 'setup', handler: (c) => handleNodeClaim(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/node/heartbeat', gate: 'node', handler: (c) => handleNodeHeartbeat(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/node/unregister', gate: 'node', handler: (c) => handleNodeUnregister(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/setup', gate: 'bootstrapOrAdmin', handler: (c) => handleFirstSetup(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/recovery/reset', gate: 'recovery', handler: (c) => handleAdminRecovery(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/install.sh', gate: 'open', handler: async (c) => handleInstallScript(c.deps, c.url.searchParams.get('platform') === 'macos' ? 'macos' : 'linux') },
+  { method: 'GET', path: '/install.ps1', gate: 'open', handler: async (c) => handleInstallScript(c.deps, 'windows') },
+  { method: 'POST', path: '/admin/login', gate: 'admin', handler: (c) => handleAdminLogin(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/status', gate: 'user', handler: (c) => handleAdminStatus(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/setup-tokens', gate: 'admin', handler: (c) => handleSetupToken(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: /^\/admin\/installers\//, gate: 'admin', handler: (c) => handleInstaller(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/cloudflare/gateway/sync', gate: 'admin', handler: (c) => handleGatewaySync(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/custom-domain/validate', gate: 'admin', handler: (c) => handleCustomDomain(c.request, c.deps, c.requestId, c.now, false) },
+  { method: 'POST', path: '/admin/setup/domain', gate: 'admin', handler: (c) => handleCustomDomain(c.request, c.deps, c.requestId, c.now, true) },
+  { method: 'POST', path: '/admin/setup/access', gate: 'admin', handler: (c) => handleSetupAccess(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/setup/complete', gate: 'admin', handler: (c) => handleSetupComplete(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/cloudflare/zones', gate: 'admin', handler: (c) => handleZones(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/cloudflare/gateway/options', gate: 'admin', handler: (c) => handleGatewayOptions(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/cloudflare/gateway/provision-status', gate: 'admin', handler: (c) => handleGatewayProvisionStatus(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/revoke$/, gate: 'admin', handler: (c) => handleNodeRevoke(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/deactivate$/, gate: 'admin', handler: (c) => handleNodeDeactivate(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/activate$/, gate: 'admin', handler: (c) => handleNodeActivate(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/reload$/, gate: 'admin', handler: (c) => handleNodeReload(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/admin\/nodes\/[^/]+\/config$/, gate: 'admin', handler: (c) => handleNodeConfig(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/meshes', gate: 'user', handler: (c) => handleMeshList(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/meshes', gate: 'admin', handler: (c) => handleMeshCreate(c.request, c.deps, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/admin\/meshes\/[^/]+$/, gate: 'admin', handler: (c) => handleMeshDelete(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/profiles/rollout', gate: 'admin', handler: (c) => handleProfileRollout(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/profiles/activate', gate: 'admin', handler: (c) => handleProfileActivate(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/profiles/add', gate: 'admin', handler: (c) => handleProfileAdd(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/profiles/config', gate: 'admin', handler: (c) => handleProfileConfig(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/profiles/delete', gate: 'admin', handler: (c) => handleProfileDelete(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/profiles/duplicate', gate: 'admin', handler: (c) => handleProfileDuplicate(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/settings', gate: 'admin', handler: (c) => handleAdminSettings(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/runtime-versions', gate: 'admin', handler: (c) => handleAdminRuntimeVersions(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/runtime-versions', gate: 'admin', handler: (c) => handleAdminRuntimeVersionSelect(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/mesh/rotate', gate: 'admin', handler: (c) => handleAdminMeshRotate(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/agent-versions', gate: 'admin', handler: (c) => handleAdminAgentVersions(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/agent-version', gate: 'admin', handler: (c) => handleAdminAgentVersionSelect(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/playground/chat', gate: 'user', handler: (c) => handlePlaygroundChat(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/playground/direct-chat', gate: 'user', handler: (c) => handlePlaygroundDirect(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/admin/playground/speed-test', gate: 'user', handler: (c) => handlePlaygroundSpeedTest(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/admin/whoami', gate: 'user', handler: (c) => handleWhoami(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/api/v1/keys', gate: 'keyAdmin', handler: (c) => handleApiKeyCreate(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/keys', gate: 'keyAdmin', handler: (c) => handleApiKeyList(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/keys\/[^/]+\/rotate$/, gate: 'keyAdmin', handler: (c) => handleApiKeyRotate(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/api\/v1\/keys\/[^/]+$/, gate: 'keyAdmin', handler: (c) => handleApiKeyRevoke(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/status', gate: 'automation', handler: (c) => handleApiStatus(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/api/v1/speed-test', gate: 'automation', handler: (c) => handleApiSpeedTest(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/api/v1/gateway/sync', gate: 'automation', handler: (c) => handleApiGatewaySync(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/api/v1/enrollment-tokens', gate: 'adminOrAutomation', handler: (c) => handleApiEnrollmentToken(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/nodes', gate: 'automation', handler: (c) => handleApiNodeList(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'GET', path: /^\/api\/v1\/nodes\/[^/]+$/, gate: 'automation', handler: (c) => handleApiNodeGet(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/reconfigure$/, gate: 'automation', handler: (c) => handleApiNodeReconfigure(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/deactivate$/, gate: 'automation', handler: (c) => handleApiNodeDeactivate(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/activate$/, gate: 'automation', handler: (c) => handleApiNodeActivate(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/nodes\/[^/]+\/reload$/, gate: 'automation', handler: (c) => handleApiNodeReload(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/api\/v1\/nodes\/[^/]+$/, gate: 'automation', handler: (c) => handleApiNodeDecommission(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/models', gate: 'automation', handler: (c) => handleApiModelList(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/api/v1/models', gate: 'automation', handler: (c) => handleApiModelAdd(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/enable$/, gate: 'automation', handler: (c) => handleApiModelEnable(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/disable$/, gate: 'automation', handler: (c) => handleApiModelDisable(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+\/duplicate$/, gate: 'automation', handler: (c) => handleApiModelDuplicate(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/api\/v1\/models\/[^/]+$/, gate: 'automation', handler: (c) => handleApiModelDelete(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'POST', path: /^\/api\/v1\/models\/[^/]+$/, gate: 'automation', handler: (c) => handleApiModelConfigure(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/agent-versions', gate: 'automation', handler: (c) => handleApiAgentVersions(c.request, c.deps, c.requestId, c.now) },
+  { method: 'PUT', path: '/api/v1/agent-version', gate: 'automation', handler: (c) => handleApiAgentVersionSet(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/api/v1/mesh/rotate', gate: 'automation', handler: (c) => handleApiMeshRotate(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/settings', gate: 'automation', handler: (c) => handleApiSettingsGet(c.request, c.deps, c.requestId, c.now) },
+  { method: 'PUT', path: '/api/v1/settings', gate: 'automation', handler: (c) => handleApiSettingsSet(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/runtime-versions', gate: 'automation', handler: (c) => handleApiRuntimeVersions(c.request, c.deps, c.requestId, c.now) },
+  { method: 'PUT', path: '/api/v1/runtime-versions', gate: 'automation', handler: (c) => handleApiRuntimeVersionSet(c.request, c.deps, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/meshes', gate: 'automation', handler: (c) => handleApiMeshList(c.request, c.deps, c.requestId, c.now) },
+  { method: 'POST', path: '/api/v1/meshes', gate: 'automation', handler: (c) => handleApiMeshCreate(c.request, c.deps, c.requestId, c.now) },
+  { method: 'DELETE', path: /^\/api\/v1\/meshes\/[^/]+$/, gate: 'automation', handler: (c) => handleApiMeshDelete(c.request, c.deps, c.url, c.requestId, c.now) },
+  { method: 'GET', path: '/api/v1/events', gate: 'automation', handler: (c) => handleApiEvents(c.request, c.deps, c.url, c.requestId, c.now) }
+]
 
 async function handleModels(request: Request, deps: RouterDeps, requestId: string, now: number): Promise<Response> {
   if (!(await authenticateKind(request, deps, 'provider', now, deps.env.ROUTER_PROVIDER_TOKEN))) return json({ error: 'unauthorized' }, 401, requestId)

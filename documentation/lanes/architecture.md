@@ -21,6 +21,7 @@ Codeflare Inference Mesh exposes private local inference nodes through one Cloud
 | Component | Responsibility | Source | Implements |
 | --- | --- | --- | --- |
 | Router Worker | HTTP entry point, auth gates, setup/admin UI, Gateway provider endpoints. | `packages/router-worker/src/` | [REQ-RTR-001](../../sdd/spec/router-worker.md), [REQ-RTR-002](../../sdd/spec/router-worker.md) |
+| Route table | Ordered list of every route with its method, path, and required credential class; first match wins. | `packages/router-worker/src/routes.ts` | [REQ-RTR-001](../../sdd/spec/router-worker.md) |
 | RegistryDO | Durable Object entry point for mesh seed election only; the inference request path is stateless. | `packages/router-worker/src/durable.ts` | [REQ-RUN-008](../../sdd/spec/runtime-profiles.md) |
 | Entry-node selection | Stateless per-request selection of an eligible node from D1; applies no reservation or capacity gate. | `packages/router-worker/src/scheduler.ts` | [REQ-SCH-002](../../sdd/spec/state-scheduling.md), [REQ-SCH-003](../../sdd/spec/state-scheduling.md) |
 | D1 migrations | Durable schema for config, nodes, direct-session affinity, profiles, and audit. | `packages/router-worker/migrations/` | [REQ-SCH-001](../../sdd/spec/state-scheduling.md) |
@@ -104,6 +105,7 @@ Only the Worker is public. Node listeners are reachable through Mesh and still r
 | Surface | Specification | Source |
 |---|---|---|
 | Router Worker | [router-worker.md](../../sdd/spec/router-worker.md) | `packages/router-worker/src/router.ts::ROUTER_ANCHORS` <!-- @impl: packages/router-worker/src/router.ts::ROUTER_ANCHORS --> |
+| Route table | [router-worker.md](../../sdd/spec/router-worker.md) | `packages/router-worker/src/routes.ts::RouteGate` <!-- @impl: packages/router-worker/src/routes.ts::RouteGate --> |
 | Admin UI | [setup-admin.md](../../sdd/spec/setup-admin.md) | `packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS` <!-- @impl: packages/router-worker/src/admin-ui.ts::ADMIN_UI_ANCHORS --> |
 | Scheduler | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS` <!-- @impl: packages/router-worker/src/scheduler.ts::SCHEDULER_ANCHORS --> |
 | D1 store | [state-scheduling.md](../../sdd/spec/state-scheduling.md) | `packages/router-worker/src/store.ts::STORE_ANCHORS` <!-- @impl: packages/router-worker/src/store.ts::STORE_ANCHORS --> |
