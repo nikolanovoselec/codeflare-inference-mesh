@@ -437,12 +437,13 @@ export function configureLlamaCppProfile(existing: ModelProfile, profiles: reado
     if (!Array.isArray(resolved)) return resolved as { error: string; status: number }
     publicAliases = resolved
   }
-  const { meshllm: _meshllm, ...withoutMesh } = existing
+  const { meshllm: _meshllm, vllm: _vllm, ...withoutOthers } = existing
   void _meshllm
+  void _vllm
   return {
     settings,
     profile: {
-      ...withoutMesh,
+      ...withoutOthers,
       displayName,
       publicAliases,
       upstreamModel: settings.alias,
@@ -510,7 +511,7 @@ function resolveVllmSettings(existing: VllmProfileSettings, value: unknown): { s
     else return { error: 'invalid_quantization' }
   }
   if (body.bindPort !== undefined) {
-    if (typeof body.bindPort !== 'number' || !Number.isInteger(body.bindPort) || body.bindPort < 1) return { error: 'invalid_bindPort' }
+    if (typeof body.bindPort !== 'number' || !Number.isInteger(body.bindPort) || body.bindPort < 1 || body.bindPort > 65535) return { error: 'invalid_bindPort' }
     next.bindPort = body.bindPort
   }
   if (typeof next.bindPort === 'number' && RESERVED_NODE_PORTS.has(next.bindPort)) return { error: 'bind_port_conflict' }

@@ -209,7 +209,7 @@ func restartLlamaCppRuntime(ctx context.Context, cfg agent.Config, profile agent
 // tail, whose fail-closed ending covers managers matching no restart seam.
 func restartVllmRuntime(ctx context.Context, cfg agent.Config, profile agent.ModelProfile, manager agent.RuntimeManager) (string, error) {
 	if direct, ok := manager.(*agent.VllmManager); ok {
-		binaryPath, installError := vllmBinaryPath(cfg)
+		binaryPath, installError := vllmBinaryPath(ctx, cfg)
 		if err := direct.RestartWithVllmInput(ctx, vllmInput(profile, binaryPath, cfg.DataDir)); err != nil && !errors.Is(err, agent.ErrRuntimeDependencyMissing) {
 			return installError, err
 		}

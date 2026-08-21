@@ -193,7 +193,7 @@ export async function handleApiStatus(request: Request, deps: RouterDeps, reques
 }
 
 /** Machine-facing node projection: identity, state, and metrics — never token verifiers or internal ports. */
-export function toApiNode(node: NodeRecord, runtimeVersions?: { readonly meshllm: string; readonly llamacpp: string }) {
+export function toApiNode(node: NodeRecord, runtimeVersions?: { readonly meshllm: string; readonly llamacpp: string; readonly vllm: string }) {
   return {
     id: node.id,
     displayName: node.displayName,

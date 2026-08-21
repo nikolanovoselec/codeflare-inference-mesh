@@ -194,7 +194,7 @@ Direct vLLM profiles use these settings:
 | --- | --- | --- | --- |
 | Context window | `--max-model-len` | Auto (`0`) | Auto omits the flag so vLLM derives the length from the model config. Pin a value (`>= 4096`) to cap the KV budget; larger reserves more KV memory. |
 | Max concurrent sequences | `--max-num-seqs` | Auto | Cap on requests the continuous batcher runs at once. Auto lets vLLM plan it from available KV memory. |
-| GPU memory utilization | `--gpu-memory-utilization` | Auto (`0.92`) | Fraction in (0, 1] of VRAM the engine may claim. Lower it when the GPU is shared with other workloads. |
+| GPU memory utilization | `--gpu-memory-utilization` | Auto (flag omitted; vLLM's default applies) | Fraction in (0, 1] of VRAM the engine may claim. Lower it when the GPU is shared with other workloads. |
 | Compute dtype | `--dtype` | Auto | Follows the checkpoint. `half` is required on pre-Ampere GPUs (compute capability below 8.0) for bf16 checkpoints. |
 | Quantization method | `--quantization` | Auto-detect | Override for the checkpoint's quantization method (`awq`, `gptq`, `fp8`, …); vLLM detects it from the checkpoint when unset. |
 | Bind port | `--port` | derived per profile | The node-local vLLM API port; reserved mesh/proxy ports are rejected. The host is always `127.0.0.1`. |

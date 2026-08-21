@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -87,21 +89,38 @@ func TestREQRUN010CrashedVllmRuntimeIsNotHotRelaunched(t *testing.T) {
 	}
 }
 
-func TestREQOBS003RuntimeMetricsStampsVllmVersion(t *testing.T) {
-	counter := &agent.ActiveCounter{}
-	manager := &fakeKindRuntime{fakeMeshRuntime: newFakeMeshRuntime(counter), kind: "vllm"}
-	manager.SetState("ready")
+func TestREQOBS003VllmVersionReportsInstalledNotDesired(t *testing.T) {
+	// The console's desired-vs-installed comparison is only meaningful when the
+	// reported version comes from the completed-install marker, never echoed
+	// back from the desired config. REQ-OBS-003.
+	dataDir := t.TempDir()
+	versionDir := filepath.Join(dataDir, "runtimes", "vllm", "0.27.1")
+	if err := os.MkdirAll(versionDir, 0o700); err != nil {
+		t.Fatalf("create version dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(versionDir, ".install-complete"), []byte("0.27.1\n"), 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	if err := os.Symlink(versionDir, filepath.Join(dataDir, "runtimes", "vllm", "current")); err != nil {
+		t.Fatalf("symlink current: %v", err)
+	}
+	manager := agent.NewVllmManager(vllmInput(vllmTestProfile("obs-check"), "/missing/vllm", dataDir))
+	if got := manager.Metrics().VllmVersion; got != "0.27.1" {
+		t.Fatalf("manager must report the marker-installed version, got %q", got)
+	}
+	// With 0.28.0 desired and 0.27.1 installed the heartbeat must still carry
+	// the installed version, so the two can actually disagree mid-upgrade.
 	loadState := &runtimeLoadState{}
-	metrics := runtimeMetrics(manager, loadState, agent.Config{}, 0, "")
-	if metrics.VllmVersion != agent.VllmPinnedVersion {
-		t.Fatalf("an unset desired version must stamp the pin, got %q", metrics.VllmVersion)
+	desired := runtimeMetrics(manager, loadState, agent.Config{RuntimeVersions: agent.RuntimeBinaryVersions{Vllm: "0.28.0"}}, 0, "")
+	if desired.VllmVersion != "" {
+		t.Fatalf("runtimeMetrics must not echo the desired vllm version, got %q", desired.VllmVersion)
 	}
-	pinned := runtimeMetrics(manager, loadState, agent.Config{RuntimeVersions: agent.RuntimeBinaryVersions{Vllm: "0.28.0"}}, 0, "")
-	if pinned.VllmVersion != "0.28.0" {
-		t.Fatalf("a desired version must stamp through, got %q", pinned.VllmVersion)
+	if desired.MeshLLMVersion != "" || desired.LlamaCppVersion != "" {
+		t.Fatalf("a vllm runtime must not stamp sibling runtime versions, got %+v", desired)
 	}
-	if pinned.MeshLLMVersion != "" || pinned.LlamaCppVersion != "" {
-		t.Fatalf("a vllm runtime must not stamp sibling runtime versions, got %+v", pinned)
+	merged := agent.MergeRuntimeMetrics(desired, manager.Metrics())
+	if merged.VllmVersion != "0.27.1" {
+		t.Fatalf("heartbeat merge must carry the installed version, got %q", merged.VllmVersion)
 	}
 }
 

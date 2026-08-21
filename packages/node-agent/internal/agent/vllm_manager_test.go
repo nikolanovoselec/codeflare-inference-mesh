@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -150,9 +151,10 @@ func TestREQRUN022VllmReadinessTreatsConnectionRefusedAsLoading(t *testing.T) {
 	manager.SetState("starting")
 	proc := newFakeMeshProcess(&eventLog{})
 	manager.proc = proc
+	exit := make(chan error, 1)
 	done := make(chan struct{})
 	go func() {
-		manager.awaitReadiness(proc)
+		manager.awaitReadiness(proc, exit)
 		close(done)
 	}()
 
@@ -210,9 +212,10 @@ func TestREQRUN022VllmReadinessDeadlineFailsClosed(t *testing.T) {
 	manager.SetState("starting")
 	proc := newFakeMeshProcess(&eventLog{})
 	manager.proc = proc
+	exit := make(chan error, 1)
 	done := make(chan struct{})
 	go func() {
-		manager.awaitReadiness(proc)
+		manager.awaitReadiness(proc, exit)
 		close(done)
 	}()
 	select {
@@ -225,6 +228,51 @@ func TestREQRUN022VllmReadinessDeadlineFailsClosed(t *testing.T) {
 	}
 	if !strings.Contains(manager.LastError(), "readiness") {
 		t.Fatalf("failure must name the readiness deadline, got %q", manager.LastError())
+	}
+}
+
+func TestREQRUN022VllmExitBeforeReadinessFailsRuntime(t *testing.T) {
+	// An engine crash during load exits the whole vLLM process. The readiness
+	// loop must fail the runtime on that exit immediately — not let the crash
+	// masquerade as a slow model download until the flat deadline. REQ-RUN-022.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	manager := NewVllmManager(VllmInput{
+		UpstreamModel: "org/model",
+		Settings:      VllmSettings{HfRepo: "org/model", BindPort: port},
+	})
+	manager.pollInterval = 5 * time.Millisecond
+	manager.readinessTimeout = time.Hour // only the exit may fail the runtime here
+	manager.SetState("starting")
+	proc := newFakeMeshProcess(&eventLog{})
+	manager.proc = proc
+	exit := make(chan error, 1)
+	exit <- errors.New("engine OOM")
+	finished := make(chan struct{})
+	go func() {
+		manager.awaitReadiness(proc, exit)
+		close(finished)
+	}()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("readiness loop never returned after the process exit")
+	}
+	if got := manager.State(); got != "failed" {
+		t.Fatalf("an exit before readiness must fail the runtime, got %q", got)
+	}
+	if !strings.Contains(manager.LastError(), "exited before readiness") {
+		t.Fatalf("failure must name the pre-readiness exit, got %q", manager.LastError())
+	}
+	select {
+	case <-exit:
+	default:
+		t.Fatal("the exit result must be re-buffered for the stop path")
 	}
 }
 
@@ -346,7 +394,7 @@ func TestREQOBS009VllmLiveThroughputFromCounterDeltas(t *testing.T) {
 	}
 }
 
-func TestREQRUN010VllmInflightCountsRunningAndWaiting(t *testing.T) {
+func TestREQRUN022VllmInflightCountsRunningAndWaiting(t *testing.T) {
 	// Drain-before-restart waits on the runtime's own outstanding work; for vLLM
 	// that is the running plus queued requests from its scheduler gauges. An
 	// unreachable runtime contributes no backpressure. REQ-RUN-010.

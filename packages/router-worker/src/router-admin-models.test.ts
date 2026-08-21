@@ -161,6 +161,7 @@ describe('model configuration and naming contracts', () => {
     expect((await configure({ vllm: { dtype: 'q4' } })).status).toBe(400)
     expect((await configure({ vllm: { bindPort: 9337 } })).status).toBe(400)
     expect((await configure({ vllm: { bindPort: 3131 } })).status).toBe(400)
+    expect((await configure({ vllm: { bindPort: 70000 } })).status).toBe(400)
     expect((await configure({ vllm: { contextWindow: 2048 } })).status).toBe(400)
     expect((await configure({ vllm: { contextWindow: 0 } })).status).toBe(200)
 
@@ -172,6 +173,43 @@ describe('model configuration and naming contracts', () => {
       body: JSON.stringify({ modelRef: 'org/model:Q4_K_M', mode: 'single', runtime: 'vllm' })
     }))
     expect(quantRef.status).toBe(400)
+  })
+
+
+  it('REQ-RUN-021 converts a profile between llama.cpp and vLLM on the requested runtime', async () => {
+    const { router, store } = routerFixture()
+    const add = await router(new Request('https://router.test/admin/profiles/add', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ modelRef: 'unsloth/model-GGUF:Q4_K_M', mode: 'single', runtime: 'llamacpp' })
+    }))
+    expect(add.status).toBe(201)
+    const profileId = (await add.json() as { profileId: string }).profileId
+
+    const configure = (body: Record<string, unknown>) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ profileId, ...body })
+    }))
+
+    // llamacpp -> vllm: the requested runtime picks the arm, not the stored one,
+    // and the old llama.cpp source block does not survive the conversion.
+    expect((await configure({ runtime: 'vllm', modelRef: 'org/safetensors-model' })).status).toBe(200)
+    const converted = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(converted.runtime).toBe('vllm')
+    expect(converted.sourceMode).toBe('vllm-hf')
+    expect(converted.vllm).toMatchObject({ hfRepo: 'org/safetensors-model' })
+    expect(converted.llamacpp).toBeUndefined()
+    expect(converted.upstreamModel).toBe('org/safetensors-model')
+
+    // vllm -> llamacpp: the reverse conversion re-derives the llama.cpp source
+    // and drops the stale vllm block.
+    expect((await configure({ runtime: 'llamacpp', modelRef: 'unsloth/model-GGUF:Q4_K_M' })).status).toBe(200)
+    const back = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+    expect(back.runtime).toBe('llamacpp')
+    expect(back.sourceMode).toBe('llamacpp-hf')
+    expect(back.llamacpp).toMatchObject({ hfRepo: 'unsloth/model-GGUF' })
+    expect(back.vllm).toBeUndefined()
   })
 
 

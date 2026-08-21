@@ -7,10 +7,18 @@ import (
 	"context"
 	"os/exec"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/nikolanovoselec/codeflare-inference-mesh/packages/node-agent/internal/agent"
 )
+
+// defaultCudaProbe caches the nvidia-smi lookup for the process lifetime: CUDA
+// presence does not change between ticks, and a per-tick PATH walk is waste.
+var defaultCudaProbe = sync.OnceValue(func() bool {
+	_, err := exec.LookPath("nvidia-smi")
+	return err == nil
+})
 
 // collect runs the once-per-tick MeshLLM poll and assembles the heartbeat
 // metrics and identity: mesh id and invite token are resent every tick.
@@ -29,10 +37,7 @@ func (s *serviceLoop) collect(ctx context.Context, current agent.Config) (agent.
 	}
 	probe := s.cudaProbe
 	if probe == nil {
-		probe = func() bool {
-			_, err := exec.LookPath("nvidia-smi")
-			return err == nil
-		}
+		probe = defaultCudaProbe
 	}
 	cudaAvailable := probe()
 	metrics.Platform = capabilityGoos

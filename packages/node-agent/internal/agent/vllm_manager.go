@@ -29,6 +29,10 @@ type VllmInput struct {
 	Settings       VllmSettings
 	BinaryPath     string
 	DataDir        string
+	// InstalledVersion is the verified install the launch actually uses (from
+	// the completion marker), not the router's desired selection; telemetry
+	// reports it so desired-vs-installed can disagree. REQ-OBS-012.
+	InstalledVersion string
 }
 
 type VllmManager struct {
@@ -146,7 +150,7 @@ func (m *VllmManager) Start(ctx context.Context) error {
 	m.done = make(chan error, 1)
 	done := m.done
 	go func() { done <- proc.Wait() }()
-	go m.awaitReadiness(proc)
+	go m.awaitReadiness(proc, done)
 	m.mu.Unlock()
 	return nil
 }
@@ -189,8 +193,14 @@ func (m *VllmManager) Stop(ctx context.Context) error {
 	proc := m.proc
 	done := m.done
 	cancel := m.cancel
-	if proc == nil || done == nil {
+	if proc == nil {
 		m.state = "stopped"
+		m.mu.Unlock()
+		return nil
+	}
+	if done == nil {
+		// A concurrent Stop owns this process's shutdown; report nothing rather
+		// than claim "stopped" while the child is still terminating.
 		m.mu.Unlock()
 		return nil
 	}
@@ -259,7 +269,7 @@ func (m *VllmManager) finishStop(proc meshProcess, cancel context.CancelFunc, st
 // its socket before loading weights but does not listen until the engine is up,
 // so connection-refused means still-loading — only the flat deadline fails the
 // runtime. REQ-RUN-022.
-func (m *VllmManager) awaitReadiness(proc meshProcess) {
+func (m *VllmManager) awaitReadiness(proc meshProcess, done chan error) {
 	// The render input is swapped under m.mu on restart; capture the model this
 	// lifecycle is waiting for once, instead of racing the swap on every poll.
 	m.mu.Lock()
@@ -271,6 +281,18 @@ func (m *VllmManager) awaitReadiness(proc meshProcess) {
 	defer ticker.Stop()
 	for {
 		select {
+		case err := <-done:
+			// The child exited before readiness: mark failure now instead of
+			// letting the crash masquerade as a slow model download until the
+			// flat deadline. Re-buffer the exit result for Stop's consumer.
+			done <- err
+			m.mu.Lock()
+			if m.proc == proc && m.state == "starting" {
+				m.state = "failed"
+				m.lastError = "vllm exited before readiness"
+			}
+			m.mu.Unlock()
+			return
 		case <-deadline.C:
 			// Only the goroutine still owning the live process may fail it: a
 			// restart orphans this loop, and the replacement runtime must not be
@@ -342,6 +364,7 @@ func (m *VllmManager) Metrics() NodeMetrics {
 	return NodeMetrics{
 		RuntimeKind:               "vllm",
 		RuntimeState:              m.state,
+		VllmVersion:               m.input.InstalledVersion,
 		LoadedModel:               m.input.UpstreamModel,
 		LoadedProfileID:           m.input.ProfileID,
 		LoadedProfileVersion:      m.input.ProfileVersion,

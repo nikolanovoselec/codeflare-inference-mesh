@@ -275,8 +275,14 @@ func (m *LlamaCppManager) Stop(ctx context.Context) error {
 	proc := m.proc
 	done := m.done
 	cancel := m.cancel
-	if proc == nil || done == nil {
+	if proc == nil {
 		m.state = "stopped"
+		m.mu.Unlock()
+		return nil
+	}
+	if done == nil {
+		// A concurrent Stop owns this process's shutdown; report nothing rather
+		// than claim "stopped" while the child is still terminating.
 		m.mu.Unlock()
 		return nil
 	}

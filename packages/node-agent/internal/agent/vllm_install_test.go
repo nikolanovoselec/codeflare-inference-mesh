@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -39,7 +40,7 @@ type fakeVllmRunner struct {
 
 // run records each uv invocation and materialises the venv binary the way a
 // real `uv venv` would, so the completion probe has a file to point at.
-func (f *fakeVllmRunner) run(uvPath string, args ...string) error {
+func (f *fakeVllmRunner) run(_ context.Context, uvPath string, args ...string) error {
 	f.calls = append(f.calls, append([]string{uvPath}, args...))
 	joined := strings.Join(args, " ")
 	if strings.HasPrefix(joined, "venv") {
@@ -83,7 +84,7 @@ func seedManagedUv(t *testing.T, dataDir string) string {
 func TestREQNODE017EnsureVllmFailsClosedOffLinux(t *testing.T) {
 	dataDir := t.TempDir()
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	_, err := EnsureVllm(dataDir, "",
+	_, err := EnsureVllm(context.Background(), dataDir, "",
 		WithVllmPlatform("darwin"),
 		WithVllmCudaProbe(func() bool { return true }),
 		WithVllmRunner(runner.run))
@@ -101,7 +102,7 @@ func TestREQNODE017EnsureVllmFailsClosedOffLinux(t *testing.T) {
 func TestREQNODE017EnsureVllmFailsClosedWithoutCuda(t *testing.T) {
 	dataDir := t.TempDir()
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	_, err := EnsureVllm(dataDir, "",
+	_, err := EnsureVllm(context.Background(), dataDir, "",
 		WithVllmPlatform("linux"),
 		WithVllmCudaProbe(func() bool { return false }),
 		WithVllmRunner(runner.run))
@@ -122,7 +123,7 @@ func TestREQNODE017EnsureVllmRefusesLowDisk(t *testing.T) {
 	runner := &fakeVllmRunner{dataDir: dataDir}
 	opts := vllmTestOptions(dataDir, runner, "0.27.1")
 	opts = append(opts, WithVllmDiskFree(func(path string) (uint64, error) { return 5 << 30, nil }))
-	_, err := EnsureVllm(dataDir, "", opts...)
+	_, err := EnsureVllm(context.Background(), dataDir, "", opts...)
 	if !errors.Is(err, ErrRuntimeDependencyMissing) {
 		t.Fatalf("error = %v, want ErrRuntimeDependencyMissing", err)
 	}
@@ -140,7 +141,7 @@ func TestREQNODE017EnsureVllmRefusesWhenDiskProbeFails(t *testing.T) {
 	runner := &fakeVllmRunner{dataDir: dataDir}
 	opts := vllmTestOptions(dataDir, runner, "0.27.1")
 	opts = append(opts, WithVllmDiskFree(func(path string) (uint64, error) { return 0, errors.New("statfs unavailable") }))
-	_, err := EnsureVllm(dataDir, "", opts...)
+	_, err := EnsureVllm(context.Background(), dataDir, "", opts...)
 	if !errors.Is(err, ErrRuntimeDependencyMissing) {
 		t.Fatalf("error = %v, want ErrRuntimeDependencyMissing", err)
 	}
@@ -164,7 +165,7 @@ func TestREQNODE017EnsureVllmRedownloadsUvOnStaleStamp(t *testing.T) {
 	}
 	runner := &fakeVllmRunner{dataDir: dataDir}
 	var downloads []string
-	_, err := EnsureVllm(dataDir, "",
+	_, err := EnsureVllm(context.Background(), dataDir, "",
 		WithVllmPlatform("linux"),
 		WithVllmCudaProbe(func() bool { return true }),
 		WithVllmDiskFree(func(path string) (uint64, error) { return 64 << 30, nil }),
@@ -212,7 +213,7 @@ func TestREQNODE017EnsureVllmRejectsUvChecksumMismatch(t *testing.T) {
 	// the embedded pin must never be installed or executed. REQ-NODE-017 / REQ-SEC-013.
 	dataDir := t.TempDir()
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	_, err := EnsureVllm(dataDir, "",
+	_, err := EnsureVllm(context.Background(), dataDir, "",
 		WithVllmPlatform("linux"),
 		WithVllmCudaProbe(func() bool { return true }),
 		WithVllmDiskFree(func(path string) (uint64, error) { return 64 << 30, nil }),
@@ -233,7 +234,7 @@ func TestREQNODE017EnsureVllmInstallsVenvAndWritesMarker(t *testing.T) {
 	dataDir := t.TempDir()
 	uvPath := seedManagedUv(t, dataDir)
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	path, err := EnsureVllm(dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...)
+	path, err := EnsureVllm(context.Background(), dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...)
 	if err != nil {
 		t.Fatalf("EnsureVllm returned error: %v", err)
 	}
@@ -288,7 +289,7 @@ func TestREQNODE017EnsureVllmReinstallsWhenMarkerAbsent(t *testing.T) {
 		t.Fatalf("write stale file: %v", err)
 	}
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	if _, err := EnsureVllm(dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
+	if _, err := EnsureVllm(context.Background(), dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
 		t.Fatalf("EnsureVllm returned error: %v", err)
 	}
 	if len(runner.calls) == 0 {
@@ -310,7 +311,7 @@ func TestREQNODE017EnsureVllmReinstallsOnMarkerVersionMismatch(t *testing.T) {
 		t.Fatalf("write mismatched marker: %v", err)
 	}
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	if _, err := EnsureVllm(dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
+	if _, err := EnsureVllm(context.Background(), dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
 		t.Fatalf("EnsureVllm returned error: %v", err)
 	}
 	if len(runner.calls) == 0 {
@@ -322,11 +323,11 @@ func TestREQNODE017EnsureVllmSkipsReinstallWhenMarkerValid(t *testing.T) {
 	dataDir := t.TempDir()
 	seedManagedUv(t, dataDir)
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	if _, err := EnsureVllm(dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
+	if _, err := EnsureVllm(context.Background(), dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
 		t.Fatalf("first EnsureVllm returned error: %v", err)
 	}
 	again := &fakeVllmRunner{dataDir: dataDir}
-	path, err := EnsureVllm(dataDir, "0.27.1", vllmTestOptions(dataDir, again, "0.27.1")...)
+	path, err := EnsureVllm(context.Background(), dataDir, "0.27.1", vllmTestOptions(dataDir, again, "0.27.1")...)
 	if err != nil {
 		t.Fatalf("second EnsureVllm returned error: %v", err)
 	}
@@ -345,7 +346,7 @@ func TestREQNODE017EnsureVllmKeepsCurrentUntilNewInstallCompletes(t *testing.T) 
 	dataDir := t.TempDir()
 	seedManagedUv(t, dataDir)
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	if _, err := EnsureVllm(dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
+	if _, err := EnsureVllm(context.Background(), dataDir, "0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
 		t.Fatalf("baseline install returned error: %v", err)
 	}
 	oldVersionDir := filepath.Join(dataDir, "runtimes", "vllm", "0.27.1")
@@ -353,7 +354,7 @@ func TestREQNODE017EnsureVllmKeepsCurrentUntilNewInstallCompletes(t *testing.T) 
 
 	// Failed upgrade: the probe never succeeds, so current must keep pointing at 0.27.1.
 	failing := &fakeVllmRunner{dataDir: dataDir}
-	if _, err := EnsureVllm(dataDir, "0.28.0", vllmTestOptions(dataDir, failing, "")...); err == nil {
+	if _, err := EnsureVllm(context.Background(), dataDir, "0.28.0", vllmTestOptions(dataDir, failing, "")...); err == nil {
 		t.Fatal("an upgrade whose version probe fails must surface an error")
 	}
 	target, err := os.Readlink(currentLink)
@@ -369,7 +370,7 @@ func TestREQNODE017EnsureVllmKeepsCurrentUntilNewInstallCompletes(t *testing.T) 
 
 	// Successful upgrade: current swaps to 0.28.0 and the old venv stays for rollback.
 	upgrading := &fakeVllmRunner{dataDir: dataDir}
-	if _, err := EnsureVllm(dataDir, "0.28.0", vllmTestOptions(dataDir, upgrading, "0.28.0")...); err != nil {
+	if _, err := EnsureVllm(context.Background(), dataDir, "0.28.0", vllmTestOptions(dataDir, upgrading, "0.28.0")...); err != nil {
 		t.Fatalf("upgrade returned error: %v", err)
 	}
 	target, err = os.Readlink(currentLink)
@@ -391,7 +392,7 @@ func TestREQNODE017EnsureVllmStripsTagPrefixForPipPin(t *testing.T) {
 	dataDir := t.TempDir()
 	seedManagedUv(t, dataDir)
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	if _, err := EnsureVllm(dataDir, "v0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
+	if _, err := EnsureVllm(context.Background(), dataDir, "v0.27.1", vllmTestOptions(dataDir, runner, "0.27.1")...); err != nil {
 		t.Fatalf("EnsureVllm returned error: %v", err)
 	}
 	for _, call := range runner.joinedCalls() {
@@ -409,7 +410,7 @@ func TestREQNODE017EnsureVllmDefaultsToPinnedVersion(t *testing.T) {
 	dataDir := t.TempDir()
 	seedManagedUv(t, dataDir)
 	runner := &fakeVllmRunner{dataDir: dataDir}
-	if _, err := EnsureVllm(dataDir, "", vllmTestOptions(dataDir, runner, VllmPinnedVersion)...); err != nil {
+	if _, err := EnsureVllm(context.Background(), dataDir, "", vllmTestOptions(dataDir, runner, VllmPinnedVersion)...); err != nil {
 		t.Fatalf("EnsureVllm returned error: %v", err)
 	}
 	wantSpec := "vllm==" + VllmPinnedVersion

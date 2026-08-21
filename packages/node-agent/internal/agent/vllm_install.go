@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -52,13 +53,19 @@ func UvAssetFor(goos, goarch string) (UvAsset, error) {
 // before the model weights land in the HF cache on the same volume.
 const vllmMinFreeBytes = 15 << 30
 
+// vllmInstallTimeout bounds the whole venv build. The pip step pulls multi-GB
+// CUDA torch wheels, so the bound is generous — its job is to stop a stalled
+// index or hung download from wedging the launch path forever, not to race a
+// slow link.
+const vllmInstallTimeout = 45 * time.Minute
+
 type vllmInstallOptions struct {
 	goos         string
 	goarch       string
 	cudaProbe    func() bool
 	diskFree     func(path string) (uint64, error)
 	uvDownload   func(assetURL string) ([]byte, error)
-	runner       func(uvPath string, args ...string) error
+	runner       func(ctx context.Context, uvPath string, args ...string) error
 	versionProbe func(vllmBinary string) (string, error)
 }
 
@@ -80,7 +87,7 @@ func WithVllmUvDownload(download func(assetURL string) ([]byte, error)) VllmInst
 	return func(o *vllmInstallOptions) { o.uvDownload = download }
 }
 
-func WithVllmRunner(runner func(uvPath string, args ...string) error) VllmInstallOption {
+func WithVllmRunner(runner func(ctx context.Context, uvPath string, args ...string) error) VllmInstallOption {
 	return func(o *vllmInstallOptions) { o.runner = runner }
 }
 
@@ -110,11 +117,15 @@ func vllmInstallDefaults() vllmInstallOptions {
 // by a version-stamped marker after the venv's own `vllm --version` succeeds.
 // A version switch stages the new venv beside the old one and swaps the
 // current symlink only once the new marker lands (CON-REL-001 discipline). REQ-NODE-017.
-func EnsureVllm(dataDir string, version string, opts ...VllmInstallOption) (string, error) {
+func EnsureVllm(ctx context.Context, dataDir string, version string, opts ...VllmInstallOption) (string, error) {
 	options := vllmInstallDefaults()
 	for _, opt := range opts {
 		opt(&options)
 	}
+	// The install dies with the agent and with this bound, so a hung wheel
+	// download can never wedge the launch path indefinitely.
+	ctx, cancelInstall := context.WithTimeout(ctx, vllmInstallTimeout)
+	defer cancelInstall()
 	if options.goos != "linux" || !options.cudaProbe() {
 		return "", fmt.Errorf("%w: vLLM requires Linux + NVIDIA CUDA", ErrRuntimeDependencyMissing)
 	}
@@ -149,19 +160,26 @@ func EnsureVllm(dataDir string, version string, opts ...VllmInstallOption) (stri
 	}
 
 	// A venv without a matching marker is a partial install: delete and rebuild.
+	// The rebuild happens in place, not staged-and-renamed: a Python venv bakes
+	// absolute paths into its scripts, so it must be built at its final path.
+	// The unlaunchable window this opens only exists while the marker is
+	// already invalid (the env was never verified complete), a running process
+	// keeps its open file handles, and the flow either completes or fails
+	// closed to dependency-missing. Version *upgrades* stage beside the old
+	// venv and swap `current` only after the new marker lands.
 	if err := os.RemoveAll(versionDir); err != nil {
 		return "", fmt.Errorf("clear stale vllm venv: %w", err)
 	}
 	if err := os.MkdirAll(versionDir, 0o700); err != nil {
 		return "", fmt.Errorf("create vllm version dir: %w", err)
 	}
-	if err := options.runner(uvPath, "venv", venvDir, "--python", "3.12", "--seed"); err != nil {
+	if err := options.runner(ctx, uvPath, "venv", venvDir, "--python", "3.12", "--seed"); err != nil {
 		return "", fmt.Errorf("create vllm venv: %w", err)
 	}
 	// --torch-backend=auto lets uv match the torch wheel index to the installed
 	// driver, so a too-old CUDA driver fails at install with a readable error
 	// instead of a cryptic import error at launch.
-	if err := options.runner(uvPath, "pip", "install", "--python", filepath.Join(venvDir, "bin", "python"), "vllm=="+pipVersion, "--torch-backend=auto"); err != nil {
+	if err := options.runner(ctx, uvPath, "pip", "install", "--python", filepath.Join(venvDir, "bin", "python"), "vllm=="+pipVersion, "--torch-backend=auto"); err != nil {
 		return "", fmt.Errorf("install vllm==%s: %w", pipVersion, err)
 	}
 	venvBinary := filepath.Join(venvDir, "bin", "vllm")
@@ -261,10 +279,22 @@ func downloadUvAsset(assetURL string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// InstalledVllmVersion reads the completed install the current symlink points
+// at, or empty when no verified venv exists. This is the *installed* version —
+// distinct from the router's desired selection — so the console's
+// desired-vs-installed comparison can actually disagree. REQ-OBS-012 discipline.
+func InstalledVllmVersion(dataDir string) string {
+	marker, err := os.ReadFile(filepath.Join(dataDir, "runtimes", "vllm", "current", ".install-complete"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(marker))
+}
+
 // runUvCommand runs one uv step, folding the tail of its combined output into
 // the error so install failures reach the console as something actionable.
-func runUvCommand(uvPath string, args ...string) error {
-	cmd := exec.Command(uvPath, args...)
+func runUvCommand(ctx context.Context, uvPath string, args ...string) error {
+	cmd := exec.CommandContext(ctx, uvPath, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		detail := strings.TrimSpace(string(out))

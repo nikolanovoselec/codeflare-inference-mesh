@@ -252,11 +252,14 @@ export const CLIENT_ACTIONS = `\
   };
   const vllmTunables = () => {
     const gpuMemRaw = readInput('model-edit-vllm-gpu-mem');
+    // A typo'd fraction must reach the router as-is and be rejected there: NaN
+    // serialises to JSON null, which the router reads as "clear the setting".
+    const gpuMem = Number(gpuMemRaw);
     const dtypeRaw = readInput('model-edit-vllm-dtype');
     const quantRaw = readInput('model-edit-vllm-quant');
     return {
       maxNumSeqs: numberOrNull('model-edit-vllm-max-num-seqs'),
-      gpuMemoryUtilization: gpuMemRaw === '' ? null : Number(gpuMemRaw),
+      gpuMemoryUtilization: gpuMemRaw === '' ? null : (Number.isFinite(gpuMem) ? gpuMem : gpuMemRaw),
       dtype: dtypeRaw === '' ? null : dtypeRaw,
       quantization: quantRaw === '' ? null : quantRaw
     };

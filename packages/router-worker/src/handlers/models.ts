@@ -47,9 +47,13 @@ export async function handleProfileConfig(request: Request, deps: RouterDeps, re
   const existing = reassignment.profile
   const runtime = resolveRuntime(body.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
-  if (body.llamacpp !== undefined && runtime !== 'llamacpp' && existing.runtime !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
-  if (body.vllm !== undefined && runtime !== 'vllm' && existing.runtime !== 'vllm') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
-  if (runtime === 'llamacpp' || existing.runtime === 'llamacpp') {
+  // The dispatch target is the runtime the profile is being configured *into*:
+  // the requested kind when one rides the body, else the stored kind. Keying on
+  // either-side matches sent a llamacpp→vllm conversion into the llamacpp arm.
+  const target = body.runtime === undefined || body.runtime === null || body.runtime === '' ? existing.runtime : runtime
+  if (body.llamacpp !== undefined && target !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  if (body.vllm !== undefined && target !== 'vllm') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  if (target === 'llamacpp') {
     const direct = configureLlamaCppProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
     await deps.store.setProfile(direct.profile)
@@ -57,7 +61,7 @@ export async function handleProfileConfig(request: Request, deps: RouterDeps, re
     await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
     return json({ ok: true, profileId: direct.profile.id, contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, displayName: direct.profile.displayName, callableNames: direct.profile.publicAliases, runtime: 'llamacpp', model: toApiModel(direct.profile) }, 200, requestId)
   }
-  if (runtime === 'vllm' || existing.runtime === 'vllm') {
+  if (target === 'vllm') {
     const direct = configureVllmProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
     await deps.store.setProfile(direct.profile)
@@ -283,9 +287,13 @@ export async function handleApiModelConfigure(request: Request, deps: RouterDeps
   const existing = reassignment.profile
   const runtime = resolveRuntime(body.runtime)
   if (runtime === 'invalid_runtime') return json({ error: 'invalid_runtime', requestId }, 400, requestId)
-  if (body.llamacpp !== undefined && runtime !== 'llamacpp' && existing.runtime !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
-  if (body.vllm !== undefined && runtime !== 'vllm' && existing.runtime !== 'vllm') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
-  if (runtime === 'llamacpp' || existing.runtime === 'llamacpp') {
+  // The dispatch target is the runtime the profile is being configured *into*:
+  // the requested kind when one rides the body, else the stored kind. Keying on
+  // either-side matches sent a llamacpp→vllm conversion into the llamacpp arm.
+  const target = body.runtime === undefined || body.runtime === null || body.runtime === '' ? existing.runtime : runtime
+  if (body.llamacpp !== undefined && target !== 'llamacpp') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  if (body.vllm !== undefined && target !== 'vllm') return json({ error: 'invalid_model_config', requestId }, 400, requestId)
+  if (target === 'llamacpp') {
     const direct = configureLlamaCppProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
     await deps.store.setProfile(direct.profile)
@@ -293,7 +301,7 @@ export async function handleApiModelConfigure(request: Request, deps: RouterDeps
     await deps.store.appendAudit({ id: requestId, type: 'profile_configured', at: now, actor: actor, target: direct.profile.id, detail: { contextWindow: direct.settings.contextWindow, modelRef: direct.settings.modelRef, runtime: 'llamacpp' } })
     return json({ ok: true, model: toApiModel(direct.profile) }, 200, requestId)
   }
-  if (runtime === 'vllm' || existing.runtime === 'vllm') {
+  if (target === 'vllm') {
     const direct = configureVllmProfile(existing, profiles, body)
     if ('error' in direct) return json({ error: direct.error, requestId }, direct.status, requestId)
     await deps.store.setProfile(direct.profile)

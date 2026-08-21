@@ -338,7 +338,7 @@ This domain covers credential separation, route-level auth, header filtering, to
 
 **Priority:** P1
 
-**Dependencies:** [REQ-SEC-004](#req-sec-004-runtime-api-exposure), [REQ-NODE-003](node-agent.md#req-node-003-upstream-proxy), [REQ-RUN-022](runtime-profiles.md#req-run-022-direct-vllm-launch-rendering)
+**Dependencies:** [REQ-SEC-004](#req-sec-004-runtime-api-exposure), [REQ-NODE-003](node-agent.md#req-node-003-upstream-proxy)
 
 **Verification:** Automated test
 
