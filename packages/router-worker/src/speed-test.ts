@@ -122,11 +122,38 @@ function speedTestPrompt(targetTokens: number, nonce: string): string {
  * streams slowly, or never closes, pins the request until the platform subrequest timeout:
  * `maxTokens` caps generation upstream but nothing caps the wait here. On expiry the reader
  * is cancelled and the partial measurement is returned, which is still a useful answer.
+ *
+ * The deadline has to race the read, not sit above it. A silent upstream never returns from
+ * `reader.read()`, so a check between chunks is unreachable in exactly the case it exists to
+ * bound. The size cap is different: it can only be exceeded by a chunk that already arrived,
+ * so checking it between reads is enough.
  */
 const SPEED_TEST_DEADLINE_MS = 120_000
 const SPEED_TEST_MAX_OUTPUT_CHARS = 2_000_000
 
-async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: number, fallbackPromptTokens: number): Promise<SpeedTestMeasurement> {
+type StreamChunk = ReadableStreamReadResult<Uint8Array> | 'deadline'
+
+/**
+ * Resolves with the next chunk, or `'deadline'` if the wait outlives the budget. The timer is
+ * cleared when the read wins, so a normal stream does not leave one pending timer per chunk.
+ */
+function readWithinDeadline(reader: ReadableStreamDefaultReader<Uint8Array>, deadlineAt: number): Promise<StreamChunk> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expiry = new Promise<StreamChunk>((resolve) => {
+    timer = setTimeout(() => resolve('deadline'), Math.max(0, deadlineAt - Date.now()))
+  })
+  return Promise.race<StreamChunk>([reader.read(), expiry]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer)
+  })
+}
+
+export async function measureSpeedStream(
+  body: ReadableStream<Uint8Array>,
+  startedAt: number,
+  fallbackPromptTokens: number,
+  deadlineMs: number = SPEED_TEST_DEADLINE_MS,
+  maxOutputChars: number = SPEED_TEST_MAX_OUTPUT_CHARS
+): Promise<SpeedTestMeasurement> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
   let buffered = ''
@@ -136,14 +163,19 @@ async function measureSpeedStream(body: ReadableStream<Uint8Array>, startedAt: n
   let chunks = 0
   let usage: Record<string, unknown> | undefined
   let upstreamTimings: Record<string, unknown> | undefined
+  const deadlineAt = Date.now() + deadlineMs
   while (true) {
-    if (Date.now() - startedAt > SPEED_TEST_DEADLINE_MS || outputChars > SPEED_TEST_MAX_OUTPUT_CHARS) {
+    if (outputChars > maxOutputChars) {
       await reader.cancel().catch(() => undefined)
       completedAt = Date.now()
       break
     }
-    const chunk = await reader.read()
+    const chunk = await readWithinDeadline(reader, deadlineAt)
     completedAt = Date.now()
+    if (chunk === 'deadline') {
+      await reader.cancel().catch(() => undefined)
+      break
+    }
     if (chunk.done) break
     buffered += decoder.decode(chunk.value, { stream: true })
     const lines = buffered.split('\n')

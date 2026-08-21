@@ -3568,6 +3568,41 @@ describe('Access-first setup and host gating contracts', () => {
     expect(await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')).toBeUndefined()
   })
 
+  it('REQ-ADM-034 REQ-SEC-010 measures a read-only viewer speed test without overwriting the stored summary', async () => {
+    resetJwksCache()
+    const key = await accessTestKey('key-1')
+    const store = new MemoryStore()
+    await store.putConfig('access_config', roleConfig({ adminGroups: ['admins'], userGroups: ['viewers'] }))
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hi"}}],"usage":{"prompt_tokens":8,"completion_tokens":1}}\n\n'))
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+        controller.close()
+      }
+    })
+    const mesh = {
+      fetch: async () => new Response(stream, { headers: { 'content-type': 'text/event-stream' } }),
+      connect() { throw new Error('connect is not used by speed-test forwarding') }
+    } as Fetcher
+    const { router } = routerFixture({ store, mesh, jwksFetcher: accessJwksFetcher([key.jwk]), identityFetcher: identityGroupsFetcher(['viewers']) })
+    const jwt = await signAccessJwt(key, accessPayload({ email: 'viewer@example.com' }))
+
+    const response = await router(new Request(`https://${HOST}/admin/playground/speed-test`, {
+      method: 'POST',
+      headers: { 'cf-access-jwt-assertion': jwt, origin: `https://${HOST}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh', promptTokens: 64, maxTokens: 16 })
+    }))
+
+    // The viewer gets its own measurement back...
+    expect(response.status).toBe(200)
+    expect((await response.json() as { tokens: { completion: number } }).tokens.completion).toBe(1)
+    // ...but the shared per-profile record every mesh card reads is untouched. An admin run
+    // of the same route does persist it, asserted by the REQ-ADM-034 measurement test.
+    expect(await store.getConfig<Record<string, LastSpeedTestSummary>>('last_speed_tests')).toBeUndefined()
+  })
+
   function roleConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return { teamDomain: TEAM, audience: AUD, appId: 'app-1', bypassAppId: 'app-2', adminEmails: [], adminGroups: [], userEmails: [], userGroups: [], usersOpen: false, ...overrides }
   }
@@ -3621,10 +3656,14 @@ describe('Access-first setup and host gating contracts', () => {
       if (route.gate !== 'admin' && route.gate !== 'keyAdmin') continue
       const pathname = samplePath(route.path)
       const response = await router(new Request(`https://${HOST}${pathname}`, { method: route.method, headers }))
-      if (response.status < 400) served.push(`${route.method} ${pathname} gate=${route.gate} answered ${response.status}`)
+      // Require the refusal to be the gate's. Accepting any 4xx would let a route that 404s
+      // on the synthesized id, or 400s on a missing body, pass without ever authorizing.
+      if (![401, 403].includes(response.status)) served.push(`${route.method} ${pathname} gate=${route.gate} answered ${response.status}`)
     }
 
     expect(served).toEqual([])
+    // Non-vacuity guard: an empty or filtered-away table would satisfy the loop above.
+    // Update this count when routes are added; do not delete it.
     expect(ROUTES.filter((route) => route.gate === 'admin' || route.gate === 'keyAdmin')).toHaveLength(34)
   })
 

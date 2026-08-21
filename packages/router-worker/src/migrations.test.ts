@@ -23,7 +23,7 @@ describe('migrations', () => {
   // Replays the declared DDL rather than executing it: there is no SQLite harness in this
   // package, so this asserts the migration corpus, not a live schema. It still fails if
   // 0004 is dropped, or if a migration reintroduces either retired table.
-  it('REQ-SCH-001 applies the migration sequence to exactly the durable tables, with no session-lease or reservation schema', () => {
+  it('REQ-SCH-001 declares exactly the durable tables across the migration corpus, with no session-lease or reservation schema', () => {
     expect([...tablesAfterMigrations()].sort()).toEqual([
       'audit_events',
       'direct_sessions',

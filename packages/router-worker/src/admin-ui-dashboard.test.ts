@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ADMIN_UI_DRAWER, ADMIN_UI_MESH_ROLE, ADMIN_UI_MESHES, ADMIN_UI_NODES_TABLE, ADMIN_UI_PLAYGROUND, ADMIN_UI_POLLING, ADMIN_UI_RUNTIME_VERSION, ADMIN_UI_TOKS_TRACE, ADMIN_UI_TOPOLOGY, ADMIN_UI_WORK_STATE, adminUiHtml } from './admin-ui'
+import { ADMIN_UI_CLIENT_SCRIPT } from './admin-ui-client'
 import { adminUiCss } from './admin-ui-css'
 import { adminUiHarness, descendants, type AdminUiHarness, type StubElement } from './admin-ui-harness'
 
@@ -100,11 +101,15 @@ describe('dashboard overview contracts', () => {
     delete (globalThis as { matchMedia?: unknown }).matchMedia
   })
 
-  it('REQ-OBS-011 REQ-ADM-015 pins the node work-state and mesh-role token vocabulary', () => {
-    // The console emits these tokens as literals inside its script and cannot import the
-    // contract, so the literal values are the agreement between the two. Pinning them
-    // makes a renamed token a visible contract change rather than a silent one; the
-    // rendering tests above prove the console actually emits them.
+  it('REQ-OBS-011 REQ-ADM-015 keeps the console script emitting the contract work-state and mesh-role tokens', () => {
+    // The console cannot import the contract: it is a template literal that emits these
+    // tokens as its own string literals. Pinning the constants alone would stay green if
+    // the script drifted, so assert the served script actually contains each value, then
+    // pin the values so a rename is a visible contract change rather than a silent one.
+    for (const token of [...Object.values(ADMIN_UI_WORK_STATE), ...Object.values(ADMIN_UI_MESH_ROLE)]) {
+      expect(ADMIN_UI_CLIENT_SCRIPT).toContain(`'${token}'`)
+    }
+
     expect(ADMIN_UI_WORK_STATE).toEqual({
       servingSplitStage: 'serving-split-stage',
       servingModel: 'serving-model',

@@ -251,7 +251,7 @@ POST /admin/playground/direct-chat
 
 ### POST /admin/playground/speed-test
 
-Runs a bounded synthetic prompt through the router's direct scheduling path, returns timing measurements for prompt ingestion and generation, and stores the result keyed by the resolved profile id so each model keeps its own latest Speed Test summary (rendered on its Overview mesh card). This bypasses AI Gateway so the result isolates Worker → node-agent → runtime behavior. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
+Runs a bounded synthetic prompt through the router's direct scheduling path and returns timing measurements for prompt ingestion and generation. When the caller holds the admin role, or calls the automation-keyed `POST /api/v1/speed-test` variant, the result is stored keyed by the resolved profile id so each model keeps its own latest Speed Test summary (rendered on its Overview mesh card); a read-only viewer receives the same measurement without updating the stored summary. This bypasses AI Gateway so the result isolates Worker → node-agent → runtime behavior. The synthetic prompt starts with a per-request nonce so raw ingestion is not dominated by prompt-cache reuse.
 
 ```http
 POST /admin/playground/speed-test
