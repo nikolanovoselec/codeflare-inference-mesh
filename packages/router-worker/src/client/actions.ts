@@ -265,24 +265,29 @@ export const CLIENT_ACTIONS = `\
     };
   };
   const samplingSettings = () => {
-    // Blank clears a parameter back to the mode preset (null removes the key);
+    // Only fields actually rendered ride the payload: readInput returns '' for
+    // a missing element too, and absent must never read as "clear this
+    // override". Blank clears back to the mode preset (null removes the key);
     // a typo'd number must reach the router as-is and be rejected there.
-    const numeric = (id) => {
+    const block = {};
+    const numeric = (id, key) => {
+      if (!byId(id)) return;
       const raw = readInput(id);
-      if (raw === '') return null;
+      if (raw === '') { block[key] = null; return; }
       const parsed = Number(raw);
-      return Number.isFinite(parsed) ? parsed : raw;
+      block[key] = Number.isFinite(parsed) ? parsed : raw;
     };
-    const modeRaw = readInput('model-edit-sampling-mode');
-    return {
-      mode: modeRaw === '' ? null : modeRaw,
-      temperature: numeric('model-edit-sampling-temperature'),
-      topP: numeric('model-edit-sampling-top-p'),
-      topK: numeric('model-edit-sampling-top-k'),
-      minP: numeric('model-edit-sampling-min-p'),
-      presencePenalty: numeric('model-edit-sampling-presence-penalty'),
-      repetitionPenalty: numeric('model-edit-sampling-repetition-penalty')
-    };
+    if (byId('model-edit-sampling-mode')) {
+      const modeRaw = readInput('model-edit-sampling-mode');
+      block.mode = modeRaw === '' ? null : modeRaw;
+    }
+    numeric('model-edit-sampling-temperature', 'temperature');
+    numeric('model-edit-sampling-top-p', 'topP');
+    numeric('model-edit-sampling-top-k', 'topK');
+    numeric('model-edit-sampling-min-p', 'minP');
+    numeric('model-edit-sampling-presence-penalty', 'presencePenalty');
+    numeric('model-edit-sampling-repetition-penalty', 'repetitionPenalty');
+    return block;
   };
   const modelSavePayload = (button) => {
     const runtime = button.dataset.runtime || 'meshllm';

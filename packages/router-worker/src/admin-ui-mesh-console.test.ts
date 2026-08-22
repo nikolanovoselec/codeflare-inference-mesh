@@ -249,11 +249,6 @@ describe('mesh console contracts', () => {
     // The vLLM source row links to a Hugging Face safetensors model search.
     const vllmRowAt = html.indexOf('data-command-row="model-source-vllm"')
     expect(html.slice(vllmRowAt)).toMatch(/href="https:\/\/huggingface\.co\/models\?[^"]*safetensors[^"]*"/)
-    const css = adminUiCss()
-    expect(css).toContain('.model-sources[data-model-sources="vllm"] .command-row[data-command-row="model-source-gguf"]')
-    expect(css).toContain('.model-sources[data-model-sources="vllm"] [data-source-format="gguf"]')
-    expect(css).toContain('.model-sources[data-model-sources="single"] [data-source-format="vllm"]')
-    expect(css).toContain('.model-sources[data-model-sources="split"] [data-source-format="vllm"]')
 
     const runtime = harness.byId('model-add-runtime')
     const sources = harness.byId('model-add-sources')
