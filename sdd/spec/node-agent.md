@@ -440,9 +440,7 @@ This domain covers the local cross-platform service that registers nodes, proxie
 
 6. The `current` symlink swaps to a new version only after its install completes, so a failed upgrade leaves the previously working environment launchable. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::swapVllmCurrent --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmKeepsCurrentUntilNewInstallCompletes) -->
 
-7. The launched runtime's model and engine caches are pinned beneath the agent data directory and its process resolves binaries through the version venv, so disk accounting and cleanup cover vLLM downloads. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::vllmRuntimeEnvFor --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQNODE017VllmLaunchEnvPinsCachesUnderDataDir) -->
-
-8. A desired version that is not a plain release token (letters, digits, dots, hyphens, underscores) is refused as `dependency-missing` before any filesystem change, so a router-supplied string never reaches the version directory path. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::EnsureVllm --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmRejectsMalformedVersion) -->
+7. A desired version that is not a plain release token (letters, digits, dots, hyphens, underscores) is refused as `dependency-missing` before any filesystem change, so a router-supplied string never reaches the version directory path. <!-- @impl: packages/node-agent/internal/agent/vllm_install.go::EnsureVllm --> <!-- @test: packages/node-agent/internal/agent/vllm_install_test.go (TestREQNODE017EnsureVllmRejectsMalformedVersion) -->
 
 **Constraints:** [CON-REL-001](constraints.md#con-rel-001-release-artifacts-are-verifiable), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 

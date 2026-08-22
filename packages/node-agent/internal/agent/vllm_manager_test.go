@@ -84,7 +84,7 @@ func TestREQSEC013VllmRenderArgsAlwaysBindsLoopback(t *testing.T) {
 	}
 }
 
-func TestREQNODE017VllmLaunchEnvPinsCachesUnderDataDir(t *testing.T) {
+func TestREQRUN022VllmLaunchEnvPinsCachesUnderDataDir(t *testing.T) {
 	env := vllmRuntimeEnvFor(
 		[]string{"PATH=/usr/bin", "HF_HOME=/root/.cache/huggingface"},
 		"/var/lib/inference-mesh/runtimes/vllm/current/venv/bin/vllm",
