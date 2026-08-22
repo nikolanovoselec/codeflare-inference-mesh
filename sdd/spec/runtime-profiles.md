@@ -595,7 +595,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Acceptance Criteria:**
 
-1. `POST /admin/profiles/duplicate` creates a switched-off copy in the source's mesh with the same model reference, runtime, context, and tunables; a `(copy)` display name and derived unique call name; and its own id, bind port, version, and rollout. <!-- @impl: packages/router-worker/src/handlers/models.ts::duplicateProfileCore --> <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router-meshes.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
+1. `POST /admin/profiles/duplicate` creates a switched-off copy in the source's mesh with the same model reference, runtime, context, and tunables; a `(copy)` display name and derived unique call name; and its own id, bind port, version, and rollout. <!-- @impl: packages/router-worker/src/handlers/models.ts::duplicateProfileCore --> <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router-meshes.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) --> <!-- @test: packages/router-worker/src/router-api-models.test.ts (REQ-API-005 REQ-RUN-017 duplicates a vLLM model with its settings on a fresh bind port) -->
 
 2. Duplicating an unknown profile returns status 404; repeated duplicates of the same source coexist under successive derived names. <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router-meshes.test.ts (REQ-RUN-017 duplicates a profile as an inactive same-mesh copy with a derived call name) -->
 

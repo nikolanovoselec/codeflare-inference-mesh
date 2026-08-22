@@ -165,6 +165,28 @@ describe('control-plane API: fleet status, settings, versions and body handling'
     expect((await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ llamacpp: { cacheReuse: -1 } }) }))).status).toBe(400)
   })
 
+  it('REQ-API-005 REQ-RUN-021 configures direct vLLM settings over the automation API', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const headers = { ...bearer(key.token), 'content-type': 'application/json' }
+    const add = await apiAddModel(router, key.token, 'Qwen/Qwen3.8-27B-FP8', 'single', 'vllm')
+    const profileId = (await add.json() as { model: { id: string } }).model.id
+
+    const ok = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ contextWindow: 32768, vllm: { maxNumSeqs: 8, gpuMemoryUtilization: 0.85, dtype: 'bfloat16' } }) }))
+    const body = await ok.json() as { model: { runtime: string; vllm?: { contextWindow: number; maxNumSeqs?: number; gpuMemoryUtilization?: number; dtype?: string } } }
+    const stored = (await store.listProfiles()).find((profile) => profile.id === profileId)!
+
+    expect(ok.status).toBe(200)
+    expect(body.model.runtime).toBe('vllm')
+    expect(body.model.vllm).toMatchObject({ contextWindow: 32768, maxNumSeqs: 8, gpuMemoryUtilization: 0.85, dtype: 'bfloat16' })
+    expect(stored.vllm).toMatchObject({ contextWindow: 32768, maxNumSeqs: 8, gpuMemoryUtilization: 0.85, dtype: 'bfloat16' })
+    // null clears a tunable back to vLLM's own model-derived default.
+    const cleared = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ vllm: { maxNumSeqs: null } }) }))
+    expect(cleared.status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.vllm?.maxNumSeqs).toBeUndefined()
+    expect((await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ vllm: { gpuMemoryUtilization: 1.5 } }) }))).status).toBe(400)
+  })
+
   it('REQ-API-010 lists available agent versions to an automation caller', async () => {
     const { router } = routerFixture({ releasesFetcher: githubReleasesFetcher(['v1.2.0', 'v1.1.0']) })
     const key = await mintKey(router)
