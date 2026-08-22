@@ -66,6 +66,62 @@ describe('control-plane API: model catalogue and configuration', () => {
     expect((await store.listProfiles()).some((profile) => profile.runtime === 'llamacpp')).toBe(false)
   })
 
+  it('REQ-API-007 adds a direct vLLM single model as an inactive projection', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiAddModel(router, key.token, 'Qwen/Qwen3.8-27B-FP8', 'single', 'vllm')
+    expect(res.status).toBe(201)
+    const body = await res.json() as { model: { id: string; runtime: string; tunables: unknown; modelRef: string; vllm?: { hfRepo: string; bindPort: number; contextWindow: number } } }
+    const created = (await store.listProfiles()).find((profile) => profile.id === body.model.id)
+
+    expect(body.model.runtime).toBe('vllm')
+    expect(body.model.tunables).toBeNull()
+    expect(body.model.modelRef).toBe('Qwen/Qwen3.8-27B-FP8')
+    // Tunables start unset so vLLM's model-derived defaults rule; context 0 = Auto.
+    expect(body.model.vllm).toMatchObject({ hfRepo: 'Qwen/Qwen3.8-27B-FP8', contextWindow: 0 })
+    expect(created).toMatchObject({ runtime: 'vllm', sourceMode: 'vllm-hf', active: false })
+  })
+
+  it('REQ-API-007 rejects direct vLLM split model onboarding', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const res = await apiAddModel(router, key.token, 'Qwen/Qwen3.8-27B-FP8', 'split', 'vllm')
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'split_requires_meshllm' })
+    expect((await store.listProfiles()).some((profile) => profile.runtime === 'vllm')).toBe(false)
+  })
+
+  it('REQ-API-007 REQ-RUN-021 refuses a :quant reference for a vLLM model at creation', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    // A :quant tag names a GGUF file vLLM does not load in-tree: refused at the
+    // automation door exactly as at the console add path.
+    const res = await apiAddModel(router, key.token, 'unsloth/Qwen3.8-27B-GGUF:UD-Q3_K_XL', 'single', 'vllm')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'invalid_model_ref' })
+    expect((await store.listProfiles()).some((profile) => profile.runtime === 'vllm')).toBe(false)
+  })
+
+  it('REQ-API-005 REQ-RUN-017 duplicates a vLLM model with its settings on a fresh bind port', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const add = await apiAddModel(router, key.token, 'Qwen/Qwen3.8-27B-FP8', 'single', 'vllm')
+    const source = (await add.json() as { model: { id: string; vllm: { bindPort: number } } }).model
+
+    const res = await router(new Request(`https://router.test/api/v1/models/${source.id}/duplicate`, { method: 'POST', headers: bearer(key.token) }))
+    expect(res.status).toBe(201)
+    const body = await res.json() as { model: { id: string; runtime: string; active: boolean; vllm?: { hfRepo: string; bindPort: number } } }
+    expect(body.model.id).not.toBe(source.id)
+    expect(body.model.runtime).toBe('vllm')
+    expect(body.model.active).toBe(false)
+    expect(body.model.vllm?.hfRepo).toBe('Qwen/Qwen3.8-27B-FP8')
+    // The copy must never share the source's node port, or both runtimes would
+    // collide when scheduled onto the same machine.
+    expect(body.model.vllm?.bindPort).toBeGreaterThan(source.vllm.bindPort)
+    expect((await store.listProfiles()).find((profile) => profile.id === body.model.id)?.runtime).toBe('vllm')
+  })
+
   it('REQ-RUN-013 refuses a quant tag that resolves no file at creation', async () => {
     const { router, store } = routerFixture()
     const key = await mintKey(router)

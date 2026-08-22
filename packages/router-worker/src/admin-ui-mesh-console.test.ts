@@ -129,6 +129,47 @@ describe('mesh console contracts', () => {
     expect(harness.byId(ADMIN_UI_DRAWER.containerId).hidden, 'drawer closes so the refreshed list shows the copy').toBe(true)
   })
 
+  it('REQ-RUN-023 model drawer edits sampling for every runtime and saves the block', async () => {
+    const profiles = [
+      { id: 'custom-live', displayName: 'Live', publicAliases: ['codeflare-mesh', 'live'], active: true, rolloutPercent: 100, contextWindow: 32768, runtime: 'meshllm', meshllm: { split: false, modelRef: 'unsloth/x' }, sampling: { temperature: 0.55 } },
+      { id: 'custom-v', displayName: 'V', publicAliases: ['codeflare-mesh', 'v'], active: false, rolloutPercent: 0, contextWindow: 0, runtime: 'vllm', vllm: { hfRepo: 'org/m', bindPort: 4310, contextWindow: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }), respond: (path, init) => {
+      if (path === '/admin/profiles/config' && (init?.method || 'GET') === 'POST') return Response.json({ ok: true })
+      return undefined
+    } })
+    await harness.clickAction('model-detail', { profileId: 'custom-live' })
+    // The stored override pre-fills its field; blank fields follow the mode preset.
+    expect(harness.byId('model-edit-sampling-temperature').value).toBe('0.55')
+    harness.byId('model-edit-sampling-top-k').value = '40'
+    await harness.clickAction('model-save', { profileId: 'custom-live', runtime: 'meshllm', out: 'model-edit-output' })
+    await harness.flush(5)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
+    const sent = JSON.parse(String(call?.init?.body)) as { sampling: Record<string, unknown> }
+    // Values ride as numbers; blanks ride as null so the router clears them.
+    expect(sent.sampling).toMatchObject({ temperature: 0.55, topK: 40, mode: null, minP: null })
+
+    // The sampling section is runtime-agnostic: the vLLM drawer carries it too.
+    await harness.clickAction('model-detail', { profileId: 'custom-v' })
+    const modeSelect = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((el) => el.id === 'model-edit-sampling-mode')
+    expect(modeSelect).toBeDefined()
+  })
+
+  it('REQ-RUN-023 a save with no sampling fields rendered omits every sampling key', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      if (path === '/admin/profiles/config' && (init?.method || 'GET') === 'POST') return Response.json({ ok: true })
+      return undefined
+    } })
+    // No drawer is open, so none of the sampling inputs exist. An absent field
+    // must never post null — null clears a stored override — so the block
+    // arrives empty and the router leaves stored sampling untouched.
+    await harness.clickAction('model-save', { profileId: 'custom-live', runtime: 'meshllm', out: 'model-edit-output' })
+    await harness.flush(5)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
+    expect(call).toBeDefined()
+    expect(JSON.parse(String(call!.init!.body)).sampling).toEqual({})
+  })
+
   it('REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons', async () => {
     const harness = await dashboardHarness()
     const html = harness.html
@@ -210,6 +251,45 @@ describe('mesh console contracts', () => {
     mode.value = 'single'
     await harness.change(mode)
     expect(sources.dataset.modelSources).toBe('single')
+  })
+
+  it('REQ-ADM-025 switches model guidance to plain-repo format when the vLLM runtime is selected', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    // Both format exemplars and the vLLM source row are present in markup, tagged
+    // for CSS switching — guidance is never gated on a JS reveal.
+    expect(html).toContain('data-source-format="gguf"')
+    expect(html).toContain('data-source-format="vllm"')
+    expect(html).toContain('data-command-row="model-source-vllm"')
+    // The vLLM source row links to a Hugging Face safetensors model search.
+    const vllmRowAt = html.indexOf('data-command-row="model-source-vllm"')
+    expect(html.slice(vllmRowAt)).toMatch(/href="https:\/\/huggingface\.co\/models\?[^"]*safetensors[^"]*"/)
+
+    const runtime = harness.byId('model-add-runtime')
+    const sources = harness.byId('model-add-sources')
+    const ref = harness.byId('model-add-ref')
+    runtime.dataset.modelAddRuntime = 'true'
+    runtime.value = 'vllm'
+    await harness.change(runtime)
+    expect(sources.dataset.modelSources).toBe('vllm')
+    // The example must match what the server accepts for vLLM: a plain repo id,
+    // never a :quant suffix — that suffix is exactly what invalid_model_ref rejects.
+    expect(ref.placeholder).toMatch(/^e\.g\. [\w.-]+\/[\w.-]+$/)
+    runtime.value = 'llamacpp'
+    await harness.change(runtime)
+    expect(sources.dataset.modelSources).toBe('single')
+    expect(ref.placeholder).toMatch(/:[\w.-]+$/)
+
+    // Split serving wins over the runtime context: the mode change forces the
+    // runtime back to meshllm and the panel to the split sources.
+    runtime.value = 'vllm'
+    await harness.change(runtime)
+    const mode = harness.byId('model-add-mode')
+    mode.dataset.modelAddMode = 'true'
+    mode.value = 'split'
+    await harness.change(mode)
+    expect(sources.dataset.modelSources).toBe('split')
+    expect(runtime.value).toBe('meshllm')
   })
 
   it('REQ-ADM-038 the models list shows each profile mesh without opening the drawer', async () => {

@@ -264,6 +264,31 @@ export const CLIENT_ACTIONS = `\
       quantization: quantRaw === '' ? null : quantRaw
     };
   };
+  const samplingSettings = () => {
+    // Only fields actually rendered ride the payload: readInput returns '' for
+    // a missing element too, and absent must never read as "clear this
+    // override". Blank clears back to the mode preset (null removes the key);
+    // a typo'd number must reach the router as-is and be rejected there.
+    const block = {};
+    const numeric = (id, key) => {
+      if (!byId(id)) return;
+      const raw = readInput(id);
+      if (raw === '') { block[key] = null; return; }
+      const parsed = Number(raw);
+      block[key] = Number.isFinite(parsed) ? parsed : raw;
+    };
+    if (byId('model-edit-sampling-mode')) {
+      const modeRaw = readInput('model-edit-sampling-mode');
+      block.mode = modeRaw === '' ? null : modeRaw;
+    }
+    numeric('model-edit-sampling-temperature', 'temperature');
+    numeric('model-edit-sampling-top-p', 'topP');
+    numeric('model-edit-sampling-top-k', 'topK');
+    numeric('model-edit-sampling-min-p', 'minP');
+    numeric('model-edit-sampling-presence-penalty', 'presencePenalty');
+    numeric('model-edit-sampling-repetition-penalty', 'repetitionPenalty');
+    return block;
+  };
   const modelSavePayload = (button) => {
     const runtime = button.dataset.runtime || 'meshllm';
     const payload = { profileId: button.dataset.profileId || '', runtime: runtime };
@@ -289,6 +314,8 @@ export const CLIENT_ACTIONS = `\
     if (runtime === 'llamacpp') payload.llamacpp = llamaCppTunables();
     else if (runtime === 'vllm') payload.vllm = vllmTunables();
     else Object.assign(payload, meshllmTunables());
+    // Sampling rides every runtime's save: the block is profile-level.
+    payload.sampling = samplingSettings();
     return payload;
   };
   const saveModelFromDrawer = async ({ button, out }) => {

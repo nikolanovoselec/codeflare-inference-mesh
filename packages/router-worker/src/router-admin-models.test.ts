@@ -58,6 +58,25 @@ describe('model configuration and naming contracts', () => {
 
 
 
+  it('REQ-RUN-023 configures sampling through the console profile-config path for a mesh profile', async () => {
+    const { router, store } = routerFixture()
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    const configure = (body: unknown) => router(new Request('https://router.test/admin/profiles/config', {
+      method: 'POST',
+      headers: { ...bearer('admin-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    }))
+    const smoke = async () => (await store.listProfiles()).find((profile) => profile.id === 'mesh-smoke-qwen25-1.5b')!
+
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', sampling: { presencePenalty: 0.5, topK: 40 } })).status).toBe(200)
+    expect((await smoke()).sampling).toEqual({ presencePenalty: 0.5, topK: 40 })
+    // A null block clears every override; invalid modes are rejected without a write.
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', sampling: null })).status).toBe(200)
+    expect('sampling' in await smoke()).toBe(false)
+    expect((await configure({ profileId: 'mesh-smoke-qwen25-1.5b', sampling: { mode: 'wild' } })).status).toBe(400)
+    expect('sampling' in await smoke()).toBe(false)
+  })
+
   it('REQ-ADM-021 configures direct llama.cpp settings through the admin profile config path', async () => {
     const { router, store } = routerFixture()
     const add = await router(new Request('https://router.test/admin/profiles/add', {

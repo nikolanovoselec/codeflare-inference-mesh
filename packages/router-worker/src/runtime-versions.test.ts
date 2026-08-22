@@ -155,19 +155,19 @@ describe('runtime binary version management', () => {
       scheduler: new StoreScheduler(store),
       mesh: { fetch: async () => Response.json({}) } as unknown as Fetcher,
       env: {},
-      releasesFetcher: releasesFetcher(['v0.73.0', 'b9900'])
+      releasesFetcher: releasesFetcher(['v0.73.0', 'b9900', 'v0.28.0'])
     })
 
     const listed = await router(new Request('https://router.test/api/v1/runtime-versions', { headers: bearer('auto-secret') }))
     const updated = await router(new Request('https://router.test/api/v1/runtime-versions', {
       method: 'PUT',
       headers: { ...bearer('auto-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
+      body: JSON.stringify({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: 'v0.28.0' })
     }))
 
     expect(listed.status).toBe(200)
     expect(updated.status).toBe(200)
-    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: DEFAULT_VLLM_VERSION })
+    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: 'v0.28.0' })
     expect(store.audit.find((event) => event.type === 'runtime_versions_selected')?.actor).toMatch(/^automation:/)
   })
 })

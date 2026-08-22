@@ -4,7 +4,7 @@
  * These were the header of one 5891-line test file; they live here so each suite can
  * be read on its own and none of them is redefined per file.
  */
-import type { ModelProfile } from './types'
+import type { ModelProfile, RuntimeKind } from './types'
 import type { RouteGate } from './routes'
 import { ADMIN_UI_ACTIONS, ADMIN_UI_CONFIRM, ADMIN_UI_NAV, ADMIN_UI_RESPONSIVE, ADMIN_UI_SETUP_LOCKED_FEEDBACK, ADMIN_UI_VIEWS, ADMIN_UI_WIZARD } from './admin-ui'
 import { MemoryStore } from './test-helpers'
@@ -209,7 +209,7 @@ export async function mintKey(router: (request: Request) => Promise<Response>): 
   return await res.json() as { id: string; token: string; createdAt: number }
 }
 
-export const apiAddModel = (router: (request: Request) => Promise<Response>, token: string | undefined, modelRef: string, mode: string, runtime?: 'meshllm' | 'llamacpp') =>
+export const apiAddModel = (router: (request: Request) => Promise<Response>, token: string | undefined, modelRef: string, mode: string, runtime?: RuntimeKind) =>
   router(new Request('https://router.test/api/v1/models', {
     method: 'POST',
     headers: { ...(token ? bearer(token) : {}), 'content-type': 'application/json' },

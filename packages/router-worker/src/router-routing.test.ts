@@ -306,6 +306,60 @@ describe('router route, scheduling and gateway contracts', () => {
   })
 
 
+  it('REQ-RUN-023 injects the profile sampling defaults into forwarded requests the caller left unset', async () => {
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture) })
+    await store.seedDefaultProfiles(DEFAULT_MODEL_PROFILES)
+    await store.upsertNode(nodeFixture())
+    const chat = (body: Record<string, unknown>) => router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'codeflare-mesh', messages: [{ role: 'user', content: 'hello' }], ...body })
+    }))
+
+    // The smoke profile carries no reasoning setting, so the instruct preset applies.
+    await (await chat({})).text()
+    const injected = await capture.request!.json() as Record<string, unknown>
+    expect(injected).toMatchObject({ temperature: 0.7, top_p: 0.8, top_k: 20, min_p: 0, presence_penalty: 1.5, repetition_penalty: 1.0 })
+
+    // A caller-set parameter is never overridden; the rest still fill in.
+    await (await chat({ temperature: 0.1 })).text()
+    const partial = await capture.request!.json() as Record<string, unknown>
+    expect(partial.temperature).toBe(0.1)
+    expect(partial.top_k).toBe(20)
+  })
+
+  it('REQ-RUN-023 direct llama.cpp requests carry repeat_penalty and stored sampling overrides', async () => {
+    const capture: { request?: Request } = {}
+    const { router, store } = routerFixture({ mesh: makeMesh(capture), env: { SESSION_AFFINITY_KEY: 'affinity-secret' } })
+    const built = buildCustomProfile({ modelRef: 'unsloth/Code-Model-GGUF:Q4_K_M', split: false, runtime: 'llamacpp', existing: [] })
+    // The stored temperature override beats the preset; everything else follows
+    // the thinking preset the default reasoning-enabled llama.cpp profile derives.
+    const direct = { ...built, sampling: { temperature: 0.55 }, active: true, rolloutPercent: 100, version: 2 }
+    await store.setProfile(direct)
+    await store.upsertNode(nodeFixture({
+      runtime: 'llamacpp',
+      activeProfileIds: [direct.id],
+      publicModels: [...direct.publicAliases],
+      runtimeModel: direct.upstreamModel,
+      metrics: { runtimeState: 'ready', runtimeKind: 'llamacpp', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] }
+    }))
+    const callable = direct.publicAliases.find((alias) => alias !== 'codeflare-mesh') ?? direct.publicAliases[0]!
+
+    const response = await router(new Request('https://router.test/v1/chat/completions', {
+      method: 'POST',
+      headers: { ...bearer('provider-secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ model: callable, user: 'user:dev|session:one', messages: [{ role: 'user', content: 'hi' }] })
+    }))
+    await response.text()
+    const forwarded = await capture.request!.json() as Record<string, unknown>
+
+    expect(response.status).toBe(200)
+    expect(forwarded).toMatchObject({ temperature: 0.55, top_p: 0.95, top_k: 20, min_p: 0, presence_penalty: 0, repeat_penalty: 1.0 })
+    // llama.cpp reads repeat_penalty; the generic spelling must not ride along.
+    expect(forwarded).not.toHaveProperty('repetition_penalty')
+  })
+
   it('REQ-RUN-021 dispatches a vllm profile direct with session affinity and the node credential boundary', async () => {
     // A vllm profile rides the same direct path as llama.cpp: session-affine node
     // choice, body.model rewritten to the upstream model, and the provider token
