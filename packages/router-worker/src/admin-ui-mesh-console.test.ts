@@ -166,7 +166,8 @@ describe('mesh console contracts', () => {
     await harness.clickAction('model-save', { profileId: 'custom-live', runtime: 'meshllm', out: 'model-edit-output' })
     await harness.flush(5)
     const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
-    expect(JSON.parse(String(call?.init?.body)).sampling).toEqual({})
+    expect(call).toBeDefined()
+    expect(JSON.parse(String(call!.init!.body)).sampling).toEqual({})
   })
 
   it('REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons', async () => {
