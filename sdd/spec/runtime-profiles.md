@@ -517,7 +517,9 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 4. The drain gate counts a direct vLLM runtime's in-flight work as its running plus waiting engine requests, so a profile switch drains the continuous-batch queue depth, not just active decodes. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::Inflight --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmInflightCountsRunningAndWaiting) -->
 
-5. The launched runtime's model and engine caches are pinned beneath the agent data directory and its process resolves binaries through the version venv, so disk accounting and cleanup cover vLLM downloads. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::vllmRuntimeEnvFor --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmLaunchEnvPinsCachesUnderDataDir) -->
+5. The launched runtime's model and engine caches are pinned beneath the agent data directory, so disk accounting and cleanup cover vLLM downloads. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::vllmRuntimeEnvFor --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmLaunchEnvPinsCachesUnderDataDir) -->
+
+6. The launched runtime's process resolves binaries through the version venv. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::vllmRuntimeEnvFor --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmLaunchEnvPinsCachesUnderDataDir) -->
 
 **Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
