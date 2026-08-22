@@ -8,7 +8,8 @@
  */
 import { listMeshes, meshAliasFor } from './meshes'
 import { buildCustomProfile, llamaCppQuantError, parseLlamaCppModelRef, profileMeshId, slugify, STABLE_PUBLIC_MODEL } from './profiles'
-import type { LlamaCppProfileSettings, ModelProfile, NodeRecord, RuntimeKind, Store } from './types'
+import { RUNTIME_KINDS } from './types'
+import type { LlamaCppProfileSettings, ModelProfile, NodeRecord, RuntimeKind, Store, VllmProfileSettings } from './types'
 
 /** The slice of the router's dependencies these resolvers use. RouterDeps satisfies it. */
 export interface ProfileConfigDeps {
@@ -22,9 +23,20 @@ export function resolveMaxVram(value: number | undefined): number | undefined | 
   return value
 }
 
+// A blank runtime selection (absent / null / "") shares one vocabulary between
+// the two resolvers below so their defaulting rules cannot drift apart.
+const isBlankRuntime = (value: unknown): boolean => value === undefined || value === null || value === ''
+
 export function resolveRuntime(value: unknown): RuntimeKind | 'invalid_runtime' {
-  if (value === undefined || value === null || value === '') return 'meshllm'
-  return value === 'meshllm' || value === 'llamacpp' ? value : 'invalid_runtime'
+  if (isBlankRuntime(value)) return 'meshllm'
+  return (RUNTIME_KINDS as readonly unknown[]).includes(value) ? (value as RuntimeKind) : 'invalid_runtime'
+}
+
+// resolveTargetRuntime resolves the runtime a config request is aimed at: the
+// requested kind when the body names one, else the profile's stored kind.
+export function resolveTargetRuntime(value: unknown, existing: RuntimeKind): RuntimeKind | 'invalid_runtime' {
+  if (isBlankRuntime(value)) return existing
+  return resolveRuntime(value)
 }
 
 // A model's own callable alias sits alongside its mesh's stable alias. Editing it must
@@ -141,7 +153,7 @@ function resolveLlamaCppSettings(existing: LlamaCppProfileSettings, value: unkno
   ]) {
     if (err) return { error: err }
   }
-  if (typeof next.bindPort === 'number' && (next.bindPort === 9337 || next.bindPort === 3131)) return { error: 'bind_port_conflict' }
+  if (typeof next.bindPort === 'number' && RESERVED_NODE_PORTS.has(next.bindPort)) return { error: 'bind_port_conflict' }
   if (body.cachePrompt !== undefined) {
     if (typeof body.cachePrompt !== 'boolean') return { error: 'invalid_cachePrompt' }
     next.cachePrompt = body.cachePrompt
@@ -309,7 +321,7 @@ function resolvePrefixCache(existing: PrefixCacheBlock | undefined, value: unkno
 // cache type, or a boolean sets it; null / 0 / "" clears it back to Auto by removing
 // the key (never assigning undefined, which JSON.stringify would silently strip from
 // the stored blob). An invalid value yields an error code the caller returns as 400.
-export type ModelConfigBody = { profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string; runtime?: unknown; llamacpp?: unknown; meshId?: unknown } & MeshllmTunablesBody
+export type ModelConfigBody = { profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string; runtime?: unknown; llamacpp?: unknown; vllm?: unknown; sampling?: unknown; meshId?: unknown } & MeshllmTunablesBody
 
 export function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, body: MeshllmTunablesBody): { meshllm: NonNullable<ModelProfile['meshllm']> } | { error: string } {
   const next: Record<string, unknown> = { ...existing }
@@ -436,12 +448,13 @@ export function configureLlamaCppProfile(existing: ModelProfile, profiles: reado
     if (!Array.isArray(resolved)) return resolved as { error: string; status: number }
     publicAliases = resolved
   }
-  const { meshllm: _meshllm, ...withoutMesh } = existing
+  const { meshllm: _meshllm, vllm: _vllm, ...withoutOthers } = existing
   void _meshllm
+  void _vllm
   return {
     settings,
     profile: {
-      ...withoutMesh,
+      ...withoutOthers,
       displayName,
       publicAliases,
       upstreamModel: settings.alias,
@@ -449,6 +462,134 @@ export function configureLlamaCppProfile(existing: ModelProfile, profiles: reado
       contextWindow,
       runtime: 'llamacpp',
       llamacpp: settings,
+      version: existing.version + 1
+    }
+  }
+}
+
+// Ports the node agent reserves for the managed mesh runtime (inference 9337,
+// console 3131): a direct profile bound there would collide with mesh-llm.
+// Shared by every direct-runtime resolver so the reservation stays one edit.
+const RESERVED_NODE_PORTS: ReadonlySet<number> = new Set([9337, 3131])
+
+// vLLM dtype vocabulary (`--dtype`); quantization stays an open string because
+// vLLM's method registry is wide and auto-detected from the checkpoint anyway.
+const VLLM_DTYPES = new Set(['auto', 'half', 'float16', 'bfloat16', 'float', 'float32'])
+
+interface VllmConfigBody {
+  readonly contextWindow?: unknown
+  readonly maxNumSeqs?: unknown
+  readonly gpuMemoryUtilization?: unknown
+  readonly dtype?: unknown
+  readonly quantization?: unknown
+  readonly bindPort?: unknown
+  readonly hfRepo?: unknown
+}
+
+// resolveVllmSettings layers a vllm tunables update onto the existing settings,
+// house convention: a present valid value sets a field, null / 0 / "" clears it
+// back to vLLM's own default by removing the key (never assigning undefined,
+// which JSON.stringify would silently strip), an absent field is preserved.
+function resolveVllmSettings(existing: VllmProfileSettings, value: unknown): { settings: VllmProfileSettings } | { error: string } {
+  if (value === undefined) return { settings: existing }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return { error: 'invalid_vllm' }
+  const body = value as VllmConfigBody
+  const next: { -readonly [K in keyof VllmProfileSettings]?: VllmProfileSettings[K] } = { ...existing }
+  // contextWindow 0 = Auto (vLLM derives max-model-len from the model config);
+  // a fixed value keeps the same 4096 sanity floor as the other runtimes.
+  if (body.contextWindow !== undefined) {
+    if (typeof body.contextWindow !== 'number' || !Number.isInteger(body.contextWindow) || (body.contextWindow !== 0 && body.contextWindow < 4096)) return { error: 'invalid_contextWindow' }
+    next.contextWindow = body.contextWindow
+  }
+  if (body.maxNumSeqs !== undefined) {
+    if (body.maxNumSeqs === null || body.maxNumSeqs === 0) delete next.maxNumSeqs
+    else if (typeof body.maxNumSeqs === 'number' && Number.isInteger(body.maxNumSeqs) && body.maxNumSeqs >= 1) next.maxNumSeqs = body.maxNumSeqs
+    else return { error: 'invalid_maxNumSeqs' }
+  }
+  if (body.gpuMemoryUtilization !== undefined) {
+    if (body.gpuMemoryUtilization === null || body.gpuMemoryUtilization === 0) delete next.gpuMemoryUtilization
+    else if (typeof body.gpuMemoryUtilization === 'number' && Number.isFinite(body.gpuMemoryUtilization) && body.gpuMemoryUtilization > 0 && body.gpuMemoryUtilization <= 1) next.gpuMemoryUtilization = body.gpuMemoryUtilization
+    else return { error: 'invalid_gpuMemoryUtilization' }
+  }
+  if (body.dtype !== undefined) {
+    if (body.dtype === null || body.dtype === '') delete next.dtype
+    else if (typeof body.dtype === 'string' && VLLM_DTYPES.has(body.dtype)) next.dtype = body.dtype
+    else return { error: 'invalid_dtype' }
+  }
+  if (body.quantization !== undefined) {
+    if (body.quantization === null || body.quantization === '') delete next.quantization
+    else if (typeof body.quantization === 'string' && body.quantization.trim().length > 0) next.quantization = body.quantization.trim()
+    else return { error: 'invalid_quantization' }
+  }
+  if (body.bindPort !== undefined) {
+    if (typeof body.bindPort !== 'number' || !Number.isInteger(body.bindPort) || body.bindPort < 1 || body.bindPort > 65535) return { error: 'invalid_bindPort' }
+    next.bindPort = body.bindPort
+  }
+  if (typeof next.bindPort === 'number' && RESERVED_NODE_PORTS.has(next.bindPort)) return { error: 'bind_port_conflict' }
+  if (body.hfRepo !== undefined) {
+    if (body.hfRepo === null || body.hfRepo === '') delete next.hfRepo
+    else if (typeof body.hfRepo === 'string') next.hfRepo = body.hfRepo.trim()
+    else return { error: 'invalid_hfRepo' }
+  }
+  if (typeof next.hfRepo !== 'string' || next.hfRepo.length === 0) return { error: 'invalid_hfRepo' }
+  return { settings: next as VllmProfileSettings }
+}
+
+export function configureVllmProfile(existing: ModelProfile, profiles: readonly ModelProfile[], body: ModelConfigBody): { profile: ModelProfile; settings: VllmProfileSettings } | { error: string; status: number } {
+  if (existing.meshllm?.split) return { error: 'split_requires_meshllm', status: 400 }
+  const storedRef = existing.vllm?.hfRepo ?? existing.meshllm?.modelRef ?? existing.upstreamModel
+  const modelRef = body.modelRef !== undefined ? (typeof body.modelRef === 'string' ? body.modelRef.trim() : '') : storedRef
+  if (!modelRef) return { error: 'invalid_model_ref', status: 400 }
+  // A vLLM reference is a bare HF safetensors repo: llama-style :quant file
+  // tags name GGUF files vLLM does not load in-tree (REQ-RUN-021).
+  const parsedRef = parseLlamaCppModelRef(modelRef)
+  if (parsedRef.quant !== undefined) return { error: 'invalid_model_ref', status: 400 }
+  const generated = buildCustomProfile({ modelRef, split: false, runtime: 'vllm', existing: profiles }).vllm!
+  const existingDirect = existing.runtime === 'vllm' ? existing.vllm : undefined
+  const baseSource = existingDirect ?? generated
+  const refChanged = body.modelRef !== undefined && modelRef !== storedRef
+  const base: VllmProfileSettings = {
+    ...baseSource,
+    ...(refChanged ? { hfRepo: generated.hfRepo } : {}),
+    bindPort: baseSource.bindPort ?? generated.bindPort,
+    contextWindow: baseSource.contextWindow ?? generated.contextWindow
+  }
+  const settingsResult = resolveVllmSettings(base, body.vllm)
+  if ('error' in settingsResult) return { error: settingsResult.error, status: 400 }
+  let settings = settingsResult.settings
+  const contextWindow = body.contextWindow ?? settings.contextWindow
+  if (!Number.isInteger(contextWindow) || (contextWindow !== 0 && contextWindow < 4096)) return { error: 'invalid_context_window', status: 400 }
+  settings = { ...settings, contextWindow }
+  // The launch source must always reconstruct from the reference: the agent
+  // reads only hfRepo, so a drifted repo means the console shows one model and
+  // the node launches another.
+  if (settings.hfRepo !== parsedRef.hfRepo) return { error: 'model_source_mismatch', status: 400 }
+  let displayName = existing.displayName
+  if (body.name !== undefined) {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) return { error: 'invalid_display_name', status: 400 }
+    displayName = name
+  }
+  let publicAliases = existing.publicAliases
+  if (body.callName !== undefined) {
+    const resolved = resolveCallNameAliases(existing, body.callName, profiles)
+    if (!Array.isArray(resolved)) return resolved as { error: string; status: number }
+    publicAliases = resolved
+  }
+  const { meshllm: _meshllm, llamacpp: _llamacpp, ...withoutOthers } = existing
+  void _meshllm
+  void _llamacpp
+  return {
+    settings,
+    profile: {
+      ...withoutOthers,
+      displayName,
+      publicAliases,
+      upstreamModel: settings.hfRepo,
+      sourceMode: 'vllm-hf',
+      contextWindow,
+      runtime: 'vllm',
+      vllm: settings,
       version: existing.version + 1
     }
   }

@@ -24,6 +24,40 @@ This ledger records binding technical choices for the first implementation. It i
 | [AD-016](#ad-016-direct-llamacpp-cache-local-runtime) | Accepted | Support direct llama.cpp only for single-node cache-local profiles while MeshLLM remains the split-serving runtime. | [REQ-RUN-013](../../sdd/spec/runtime-profiles.md#req-run-013-direct-llamacpp-custom-profiles), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity), [REQ-NODE-013](../../sdd/spec/node-agent.md#req-node-013-runtime-binary-bootstrap) |
 | [AD-017](#ad-017-operator-defined-meshes-with-per-mesh-gateway-routes) | Accepted | Group nodes and models into operator-named meshes; each mesh's active model answers its own stable route alias, membership is router authority, and mesh deletion never depends on gateway availability. | [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership), [REQ-RUN-001](../../sdd/spec/runtime-profiles.md#req-run-001-stable-public-model), [REQ-RUN-009](../../sdd/spec/runtime-profiles.md#req-run-009-profile-seeding-and-activation-exclusivity) |
 | [AD-018](#ad-018-seed-once-single-starter-model-catalog) | Accepted | Ship exactly one starter model seeded exactly once behind a config marker; any switched-off model, including the starter, is deletable and only the active model is protected. | [REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-012](../../sdd/spec/runtime-profiles.md#req-run-012-model-removal), [REQ-API-008](../../sdd/spec/control-plane-api.md#req-api-008-programmatic-model-deletion) |
+| [AD-019](#ad-019-third-runtime-seam-with-capability-gated-vllm) | Accepted | Adds vLLM as a third direct runtime behind a shared `RuntimeManager` spec-table seam, capability-gated to observed Linux+CUDA hosts and always loopback-bound. | [REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles), [REQ-RUN-022](../../sdd/spec/runtime-profiles.md#req-run-022-direct-vllm-launch-rendering), [REQ-NODE-017](../../sdd/spec/node-agent.md#req-node-017-vllm-runtime-bootstrap), [REQ-SEC-013](../../sdd/spec/security.md#req-sec-013-vllm-api-exposure), [REQ-SCH-003](../../sdd/spec/state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses) |
+| [AD-020](#ad-020-sampling-defaults-injected-at-the-router-data-plane) | Accepted | Per-profile sampling defaults are injected into forwarded chat completions at the router instead of being rendered into runtime launch arguments. | [REQ-RUN-023](../../sdd/spec/runtime-profiles.md#req-run-023-sampling-parameter-defaults) |
+
+## AD-020: Sampling defaults injected at the router data plane
+
+**Status:** Accepted
+
+**Context:** Every profile needs tuned sampling defaults (temperature, top-p, top-k, min-p, presence penalty, repetition penalty) that hold even when the caller sets nothing, across three runtimes with different launch mechanisms: llama-server takes sampling CLI flags, vLLM reads a generation config, and mesh-llm has its own launch input. <!-- @impl: packages/router-worker/src/sampling.ts::withSamplingDefaults --> <!-- @impl: packages/router-worker/src/inference.ts::forwardInference -->
+
+**Decision:** Resolve the effective values at the router and inject them into each forwarded `/v1/chat/completions` body for parameters the caller left unset. Every inference path — mesh and direct — converges in one forwarding function, and all three runtimes read sampling parameters from the request, so a single validated site wires all of them; only the repetition penalty is renamed per runtime (`repeat_penalty` for llama.cpp, `repetition_penalty` otherwise).
+
+**Alternatives considered:** Rendering the defaults into each runtime's launch arguments (three renderers, a node-protocol schema extension, and restart-to-apply semantics); injecting only for runtimes lacking launch flags.
+
+**Rationale:** One implementation point instead of three, edits take effect on the next request without relaunching the engine, and caller-supplied values are trivially preserved because injection sees the actual request.
+
+**Consequences:** The engines' own generation-config defaults never apply on mesh-routed traffic — the profile's preset always wins over engine defaults for unset parameters. Requests that bypass the router (a node's local API) do not receive the defaults.
+
+**Related requirements:** [REQ-RUN-023](../../sdd/spec/runtime-profiles.md#req-run-023-sampling-parameter-defaults)
+
+## AD-019: Third runtime seam with capability-gated vLLM
+
+**Status:** Accepted
+
+**Context:** Serving Hugging Face safetensors models (tensor-parallel-capable engines, high-throughput continuous batching) does not fit llama.cpp's GGUF-only loader, and the agent's runtime handling was meshllm/llamacpp special-cased in five call sites. A third runtime forced the seam question: keep branching or extract. <!-- @impl: packages/node-agent/internal/agent/runtime_manager.go::RuntimeManager --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_launch.go::startVllmRuntime -->
+
+**Decision:** Extract the runtime seam first as a behavior-preserving refactor — a per-kind `{start, restart}` spec table behind the `RuntimeManager` interface, with mesh-only members behind `MeshCoordinator` asserts — then add vLLM as the third entry. vLLM is direct-only (single node, session affinity, never mesh state), gated fail-closed to nodes whose heartbeats observed `platform: linux` and `cudaAvailable: true`, provisioned as a pinned per-version virtual environment built by a checksum-verified `uv` (not a prebuilt binary — vLLM is a Python distribution), and always rendered with `--host 127.0.0.1` because its OpenAI server has no authentication of its own. A crashed runtime for the still-selected profile stays failed rather than hot-relaunching; recovery is a profile or version re-key.
+
+**Alternatives considered:** Branching a third special case through the existing call sites; shipping prebuilt vLLM archives like mesh-llm; a Docker-based vLLM runtime; capability gating by profile configuration instead of observed telemetry.
+
+**Rationale:** The spec table makes the third runtime an entry, not a rewrite, and proves the seam with a real consumer. Observed-capability gating keeps scheduling honest for heterogeneous fleets (old agents fail closed instead of being scheduled and crashing), and the uv-built venv keeps the install pinned and verifiable without owning torch/CUDA packaging.
+
+**Consequences:** A router rollback to a pre-vLLM build repatriates stored vLLM profiles to meshllm on their next save (normalization's unknown-runtime fallback), so rollback across that boundary is documented as lossy for vLLM profiles. The ~15 GB CUDA-torch footprint requires a disk preflight, and first launches download full safetensors weights under a deliberately long readiness deadline.
+
+**Related requirements:** [REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles), [REQ-RUN-022](../../sdd/spec/runtime-profiles.md#req-run-022-direct-vllm-launch-rendering), [REQ-RUN-024](../../sdd/spec/runtime-profiles.md#req-run-024-managed-vllm-node-lifecycle), [REQ-RUN-025](../../sdd/spec/runtime-profiles.md#req-run-025-console-vllm-surface), [REQ-NODE-017](../../sdd/spec/node-agent.md#req-node-017-vllm-runtime-bootstrap), [REQ-SEC-013](../../sdd/spec/security.md#req-sec-013-vllm-api-exposure), [REQ-SCH-003](../../sdd/spec/state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses)
 
 ## AD-018: Seed-once single-starter model catalog
 

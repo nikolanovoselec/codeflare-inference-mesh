@@ -229,6 +229,36 @@ describe('D1 store behavioral contracts', () => {
     expect(nodeMeshId({ ...nodeFixture({}), meshId: 'development' })).toBe('development')
   })
 
+  it('REQ-RUN-021 round-trips a stored vllm profile without meshllm repatriation', async () => {
+    // The unknown-runtime fallback rewrites profiles to meshllm on read; a stored
+    // vllm profile crossing it would be silently converted into a mesh profile —
+    // the data-loss path a router rollback after vllm profiles exist would take.
+    // The vllm normalize arm must run before that fallback. REQ-RUN-021.
+    const vllmProfile: ModelProfile = {
+      id: 'custom-org-model-vllm',
+      displayName: 'Direct vLLM',
+      publicAliases: ['codeflare-mesh', 'org-model'],
+      upstreamModel: 'org/model',
+      sourceMode: 'vllm-hf',
+      contextWindow: 32768,
+      runtime: 'vllm',
+      vllm: { hfRepo: 'org/model', bindPort: 4400, contextWindow: 32768 },
+      version: 1,
+      rolloutPercent: 100,
+      active: true,
+      meshId: 'default'
+    }
+    const db = new FakeD1Database()
+    await new D1Store(db as unknown as D1Database, () => 1_700_000_000_000).setProfile(vllmProfile)
+
+    const read = (await new D1Store(db as unknown as D1Database, () => 1_700_000_000_010).listProfiles())[0]!
+    expect(read.runtime).toBe('vllm')
+    expect(read.sourceMode).toBe('vllm-hf')
+    expect(read.vllm).toMatchObject({ hfRepo: 'org/model', bindPort: 4400, contextWindow: 32768 })
+    expect(read.meshllm).toBeUndefined()
+    expect((await new D1Store(db as unknown as D1Database, () => 1_700_000_000_020).getProfileByPublicModel('org-model'))?.runtime).toBe('vllm')
+  })
+
   it('REQ-RUN-002 ships only the starter profile and seeds it exactly once', async () => {
     expect(DEFAULT_MODEL_PROFILES.map((profile) => profile.id)).toEqual(['mesh-smoke-qwen25-1.5b'])
 

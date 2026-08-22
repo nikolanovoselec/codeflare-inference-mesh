@@ -32,6 +32,13 @@ type NodeMetrics struct {
 	ConsoleReady              bool                    `json:"consoleReady,omitempty"`
 	MeshLLMVersion            string   `json:"meshllmVersion,omitempty"`
 	LlamaCppVersion           string   `json:"llamacppVersion,omitempty"`
+	VllmVersion               string   `json:"vllmVersion,omitempty"`
+	// Observed host capabilities (REQ-NODE-016 / REQ-OBS-014): reported only when
+	// actually probed, so the scheduler's capability gate can fail closed on
+	// absence. CudaAvailable is a pointer because an observed false is a real
+	// answer and must render, while an unprobed field must render absent.
+	Platform      string `json:"platform,omitempty"`
+	CudaAvailable *bool  `json:"cudaAvailable,omitempty"`
 	// LlamaCppBackend is the backend family the release archive actually
 	// installs (vulkan on a Linux NVIDIA box, not the requested nvidia), so
 	// the console can show what the node really runs (REQ-NODE-013).
@@ -181,6 +188,16 @@ func MergeRuntimeMetrics(base NodeMetrics, extra NodeMetrics) NodeMetrics {
 	}
 	if extra.LlamaCppVersion != "" {
 		merged.LlamaCppVersion = extra.LlamaCppVersion
+	}
+	if extra.VllmVersion != "" {
+		merged.VllmVersion = extra.VllmVersion
+	}
+	if extra.Platform != "" {
+		merged.Platform = extra.Platform
+	}
+	if extra.CudaAvailable != nil {
+		observed := *extra.CudaAvailable
+		merged.CudaAvailable = &observed
 	}
 	if extra.LlamaCppBackend != "" {
 		merged.LlamaCppBackend = extra.LlamaCppBackend

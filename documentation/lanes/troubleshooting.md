@@ -17,6 +17,7 @@
 - [Peer count stays at one](#peer-count-stays-at-one)
 - [Model never appears in ready models](#model-never-appears-in-ready-models)
 - [Direct llama.cpp model fails to load (`failed to load model`)](#direct-llamacpp-model-fails-to-load-failed-to-load-model)
+- [vLLM model never schedules or reports dependency-missing](#vllm-model-never-schedules-or-reports-dependency-missing)
 - [Requests fail briefly after mesh rotation](#requests-fail-briefly-after-mesh-rotation)
 - [Admin status shows mesh_state_key_missing](#admin-status-shows-mesh_state_key_missing)
 - [Dashboard shows "The router hit a temporary error"](#dashboard-shows-the-router-hit-a-temporary-error)
@@ -167,6 +168,14 @@ srv  llama_server: exiting due to model loading error
 3. Wait for the node to download, load, and report `ready` again; the profile returns to serving and the `no_healthy_node` clears.
 
 ([REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity)) ([REQ-RUN-015](../../sdd/spec/runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering))
+
+## vLLM model never schedules or reports dependency-missing
+
+**Symptom:** A vLLM profile is active but the gateway returns `503 no_healthy_node`, or the node shows `dependency-missing` even though the machine has a GPU.
+
+**Cause:** One of three fail-closed gates. (1) The scheduler selects a node for vLLM work only when its heartbeat reports observed `platform: "linux"` and `cudaAvailable: true` — a Windows/macOS machine, a Linux machine without a working `nvidia-smi`, or an agent too old to probe capabilities is never selected. (2) The agent refuses to install vLLM on a non-Linux or CUDA-less host, or when the data directory has less than ~15 GB free for the CUDA-torch environment — both surface as `dependency-missing` naming the cause. (3) A `uv` toolchain download whose SHA-256 does not match the embedded pin is refused.
+
+**Fix:** Confirm the node runs Linux with a working `nvidia-smi`, update the agent to a capability-reporting release, free disk space under the agent data directory, then restart the agent service. A first vLLM launch also downloads the full safetensors model before serving; the readiness window is deliberately long, so a `starting` state during a large download is normal, not a failure. ([REQ-SCH-003](../../sdd/spec/state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses)) ([REQ-NODE-017](../../sdd/spec/node-agent.md#req-node-017-vllm-runtime-bootstrap)) ([REQ-RUN-022](../../sdd/spec/runtime-profiles.md#req-run-022-direct-vllm-launch-rendering))
 
 ## Requests fail briefly after mesh rotation
 

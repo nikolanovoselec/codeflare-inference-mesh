@@ -275,10 +275,16 @@ func (m *LlamaCppManager) Stop(ctx context.Context) error {
 	proc := m.proc
 	done := m.done
 	cancel := m.cancel
-	if proc == nil || done == nil {
+	if proc == nil {
 		m.state = "stopped"
 		m.mu.Unlock()
 		return nil
+	}
+	if done == nil {
+		// A concurrent Stop owns this process's shutdown; fail loudly so a
+		// restart cannot swap input and report success without relaunching.
+		m.mu.Unlock()
+		return ErrStopInProgress
 	}
 	m.done = nil
 	m.state = "stopping"
@@ -324,22 +330,6 @@ func (m *LlamaCppManager) RestartWithLlamaInput(ctx context.Context, in LlamaCpp
 	return m.Start(ctx)
 }
 
-func (m *LlamaCppManager) RestartWithInput(ctx context.Context, _ MeshLLMRenderInput, _ int) error {
-	return m.Restart(ctx)
-}
-
-func (m *LlamaCppManager) PollStatus(_ context.Context) (MeshLLMStatus, bool) {
-	return MeshLLMStatus{}, m.APIReady()
-}
-
-func (m *LlamaCppManager) ApplyBootstrap(_ *MeshBootstrap) {}
-
-func (m *LlamaCppManager) NeedsRestart(_ *MeshBootstrap) bool { return false }
-
-func (m *LlamaCppManager) CurrentToken() string { return "" }
-
-func (m *LlamaCppManager) CurrentMeshID() string { return "" }
-
 func (m *LlamaCppManager) finishStop(proc meshProcess, cancel context.CancelFunc, state string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -356,6 +346,11 @@ func (m *LlamaCppManager) finishStop(proc meshProcess, cancel context.CancelFunc
 }
 
 func (m *LlamaCppManager) awaitReadiness(proc meshProcess) {
+	// The render input is swapped under m.mu on restart; capture the model this
+	// lifecycle is waiting for once, instead of racing the swap on every poll.
+	m.mu.Lock()
+	upstream := m.input.UpstreamModel
+	m.mu.Unlock()
 	deadline := time.NewTimer(m.readinessTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(m.pollInterval)
@@ -363,11 +358,19 @@ func (m *LlamaCppManager) awaitReadiness(proc meshProcess) {
 	for {
 		select {
 		case <-deadline.C:
-			m.SetFailure(fmt.Errorf("llama.cpp readiness timed out"))
+			// Only the goroutine still owning the live process may fail it: a
+			// restart orphans this loop, and the replacement runtime must not be
+			// marked failed by its predecessor's deadline.
+			m.mu.Lock()
+			if m.proc == proc {
+				m.state = "failed"
+				m.lastError = "llama.cpp readiness timed out"
+			}
+			m.mu.Unlock()
 			return
 		case <-ticker.C:
 			models, ok := m.pollModels(context.Background())
-			if ok && containsString(models, m.input.UpstreamModel) {
+			if ok && containsString(models, upstream) {
 				m.mu.Lock()
 				if m.proc == proc {
 					m.state = "ready"
@@ -574,7 +577,9 @@ func (m *LlamaCppManager) APIReady() bool {
 	return m.apiReady
 }
 
-func (m *LlamaCppManager) Inflight() int { return 0 }
+// Inflight is llama-server's drain contribution: it exposes no inflight-request
+// surface of its own, so only the agent proxy counter gates a drain.
+func (m *LlamaCppManager) Inflight(_ context.Context) int { return 0 }
 
 func containsString(values []string, target string) bool {
 	for _, value := range values {

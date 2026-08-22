@@ -113,6 +113,8 @@ For integration rollback, restore the safe code onto the selected integration br
 
 Model profile rollback switches the public alias back to a previously ready profile. Node update rollback selects the previous verified release tag from the agent-version dropdown; nodes converge to it automatically through the same checksum-verified self-update flow (downgrade is version inequality, not ordering). ([REQ-RUN-004](../../sdd/spec/runtime-profiles.md)) ([REQ-NODE-005](../../sdd/spec/node-agent.md)) ([REQ-NODE-009](../../sdd/spec/node-agent.md)) ([REQ-ADM-008](../../sdd/spec/setup-admin.md))
 
+**Router rollback across the vLLM boundary loses vLLM profiles.** Profile normalization repatriates any profile whose runtime a router build does not recognize back to `meshllm`, stripping its runtime block. A Worker rolled back to a pre-vLLM build therefore rewrites stored vLLM profiles into meshllm profiles on the next save, and rolling forward again does not restore them. Before rolling the router back across that boundary, delete or note the vLLM profiles and expect to re-create them after the roll-forward. Node agents are unaffected: an agent that never learns runtime `vllm` simply refuses the kind fail-closed. ([REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles))
+
 ## CI verification policy
 
 GitHub Actions is authoritative for full suites, builds, lint, type-checks, deploy dry-runs, and release packaging. Avoid expensive full local runs in the constrained container; when the operator explicitly accepts the risk, use only targeted touched-package checks to catch syntax or contract failures before pushing. ([REQ-REL-001](../../sdd/spec/release-ci.md))

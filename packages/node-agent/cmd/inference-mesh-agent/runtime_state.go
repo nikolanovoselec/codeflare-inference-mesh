@@ -84,6 +84,7 @@ func profileKey(profile agent.ModelProfile) string {
 		ContextWindow int
 		MeshLLM       agent.MeshLLMSettings
 		LlamaCpp      agent.LlamaCppSettings
+		Vllm          agent.VllmSettings
 	}{
 		Runtime:       profile.Runtime,
 		ID:            profile.ID,
@@ -92,6 +93,7 @@ func profileKey(profile agent.ModelProfile) string {
 		ContextWindow: profile.ContextWindow,
 		MeshLLM:       profile.MeshLLM,
 		LlamaCpp:      profile.LlamaCpp,
+		Vllm:          profile.Vllm,
 	}
 	encoded, err := json.Marshal(launch)
 	if err != nil {
@@ -100,18 +102,18 @@ func profileKey(profile agent.ModelProfile) string {
 	return string(encoded)
 }
 
-func waitForDrain(ctx context.Context, activeRequests *agent.ActiveCounter, manager meshRuntime, timeout time.Duration) error {
+func waitForDrain(ctx context.Context, activeRequests *agent.ActiveCounter, manager agent.RuntimeManager, timeout time.Duration) error {
 	deadline, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-	// Drain both the local proxy counter and the MeshLLM console's own
-	// inflight_requests. The proxy counter releases a request once it has
-	// relayed the upstream response, but MeshLLM can still be generating for a
-	// request the proxy already let go; waiting on the console count too keeps a
-	// restart or SIGTERM from landing mid-inference. The proxy check short
-	// circuits the console poll while local traffic is still in flight.
-	for activeRequests.Value() > 0 || meshLLMInflight(deadline, manager) > 0 {
+	// Drain both the local proxy counter and the runtime's own in-flight count.
+	// The proxy counter releases a request once it has relayed the upstream
+	// response, but the runtime can still be generating for a request the proxy
+	// already let go; waiting on the runtime's count too keeps a restart or
+	// SIGTERM from landing mid-inference. The proxy check short circuits the
+	// runtime poll while local traffic is still in flight.
+	for activeRequests.Value() > 0 || runtimeInflight(deadline, manager) > 0 {
 		select {
 		case <-deadline.Done():
 			return deadline.Err()
@@ -121,19 +123,14 @@ func waitForDrain(ctx context.Context, activeRequests *agent.ActiveCounter, mana
 	return nil
 }
 
-// meshLLMInflight reports the MeshLLM console's current inflight_requests, or 0
-// when the runtime is absent or its console is unreachable. An unobservable
-// console contributes no backpressure so drain still completes on the proxy
-// counter and the outer timeout.
-func meshLLMInflight(ctx context.Context, manager meshRuntime) int {
+// runtimeInflight reports the runtime's own in-flight request count, or 0 when
+// the runtime is absent. An unobservable runtime contributes no backpressure so
+// drain still completes on the proxy counter and the outer timeout.
+func runtimeInflight(ctx context.Context, manager agent.RuntimeManager) int {
 	if manager == nil {
 		return 0
 	}
-	status, reachable := manager.PollStatus(ctx)
-	if !reachable {
-		return 0
-	}
-	return status.InflightRequests
+	return manager.Inflight(ctx)
 }
 
 func shutdownServer(server *http.Server) {

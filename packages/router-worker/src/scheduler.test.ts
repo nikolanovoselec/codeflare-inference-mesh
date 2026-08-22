@@ -44,6 +44,34 @@ describe('scheduler entry-node selection', () => {
     const directNode = nodeFixture({ runtime: 'llamacpp', publicModels: ['codeflare-mesh-development', 'direct-a'], activeProfileIds: ['direct-a'], metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [direct.upstreamModel] } })
     expect(isDirectEligible({ ...directNode, meshId: 'development' }, direct, 'direct-a', NOW)).toBe(true)
     expect(isDirectEligible(directNode, direct, 'direct-a', NOW)).toBe(false)
+    // The node/profile runtime-equality guard: a node running a different runtime
+    // kind never serves a direct profile, even when otherwise eligible.
+    expect(isDirectEligible({ ...directNode, meshId: 'development', runtime: 'meshllm' }, direct, 'direct-a', NOW)).toBe(false)
+  })
+
+  it('REQ-SCH-003 vllm eligibility fails closed without observed linux CUDA capability', () => {
+    // vLLM runs only on Linux + NVIDIA CUDA. Old agents report no capability
+    // fields at all, so absence must mean ineligible — never assumed-capable.
+    const { meshllm: _smokeMesh, ...smokeBase } = SMOKE
+    void _smokeMesh
+    const vllm: ModelProfile = { ...smokeBase, id: 'vllm-a', runtime: 'vllm', publicAliases: ['codeflare-mesh', 'vllm-a'], upstreamModel: 'org/model', sourceMode: 'vllm-hf', vllm: { hfRepo: 'org/model', bindPort: 4400, contextWindow: 0 } }
+    const vllmNode = (capability: Partial<NodeMetrics>) => nodeFixture({
+      runtime: 'vllm',
+      publicModels: ['codeflare-mesh', 'vllm-a'],
+      activeProfileIds: ['vllm-a'],
+      metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: ['org/model'], ...capability }
+    })
+    expect(isDirectEligible(vllmNode({ platform: 'linux', cudaAvailable: true }), vllm, 'vllm-a', NOW)).toBe(true)
+    expect(isDirectEligible(vllmNode({}), vllm, 'vllm-a', NOW)).toBe(false)
+    expect(isDirectEligible(vllmNode({ platform: 'linux' }), vllm, 'vllm-a', NOW)).toBe(false)
+    expect(isDirectEligible(vllmNode({ platform: 'linux', cudaAvailable: false }), vllm, 'vllm-a', NOW)).toBe(false)
+    expect(isDirectEligible(vllmNode({ platform: 'darwin', cudaAvailable: true }), vllm, 'vllm-a', NOW)).toBe(false)
+
+    // The capability gate is vllm-only: a llamacpp profile stays eligible on a
+    // node that reports no capability fields.
+    const llama: ModelProfile = { ...smokeBase, id: 'direct-b', runtime: 'llamacpp', publicAliases: ['codeflare-mesh', 'direct-b'], llamacpp: { modelRef: 'unsloth/x:Q4', hfRepo: 'unsloth/x', bindPort: 4330, contextWindow: 8192, parallel: -1, cachePrompt: true, cacheReuse: 256, alias: 'unsloth/x:Q4' } }
+    const llamaNode = nodeFixture({ runtime: 'llamacpp', publicModels: ['codeflare-mesh', 'direct-b'], activeProfileIds: ['direct-b'], metrics: { runtimeState: 'ready', activeRequests: 0, apiReady: true, readyModels: [llama.upstreamModel] } })
+    expect(isDirectEligible(llamaNode, llama, 'direct-b', NOW)).toBe(true)
   })
 
   it('REQ-SCH-002 selectNode picks the least-loaded ready node by active requests', () => {

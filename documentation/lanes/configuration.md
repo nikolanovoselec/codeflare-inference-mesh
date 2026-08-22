@@ -125,6 +125,8 @@ For direct llama.cpp, `DetectLlamaCppBackend` selects the requested managed back
 
 Direct llama.cpp model downloads use `<dataDir>/.cache/huggingface`, keeping cache storage under the agent data directory for disk accounting and cleanup. Existing blobs elsewhere are not moved automatically. ([REQ-NODE-013](../../sdd/spec/node-agent.md#req-node-013-runtime-binary-bootstrap))
 
+Direct vLLM needs no agent config keys: the runtime installs into `<dataDir>/runtimes/vllm/<version>/venv` via a pinned, checksum-verified `uv` toolchain, and its model and engine caches are pinned to `<dataDir>/.cache/huggingface` and `<dataDir>/.cache/vllm`. Provisioning refuses hosts that are not Linux + NVIDIA CUDA and data directories without roughly 15 GB free before downloading anything. ([REQ-NODE-017](../../sdd/spec/node-agent.md#req-node-017-vllm-runtime-bootstrap))
+
 `nostrRelays` sets the Nostr rendezvous relays `mesh-llm` uses to discover peers over the WARP overlay; leaving it empty uses `mesh-llm`'s built-in public relay defaults, and it is the hook for pointing the fleet at a private relay. Relays exchange peer identity and WARP Mesh IP only, never inference; the encrypted iroh data transport stays pinned to the WARP overlay ([security.md](security.md)). `capacity` is reported on every heartbeat but is advisory only: entry-node selection applies no capacity gate, since `mesh-llm` owns concurrency across the mesh. ([REQ-SEC-004](../../sdd/spec/security.md)) ([REQ-SCH-002](../../sdd/spec/state-scheduling.md))
 
 Legacy config loads persist a generated `dashboardToken` before dashboard controls are served. ([REQ-SEC-005](../../sdd/spec/security.md)) <!-- @impl: packages/node-agent/internal/agent/config.go::LoadConfig -->
@@ -139,9 +141,9 @@ The router calls `seedDefaultProfiles(DEFAULT_MODEL_PROFILES)` at request entry.
 
 ## Model runtime tunables
 
-Each model carries runtime-specific tunables, edited from the model's Manage drawer (Advanced runtime) or over `POST /admin/profiles/config` / `POST /api/v1/models/{id}`. MeshLLM values are rendered into the node's per-profile `meshllm-<profileId>.toml` under their MeshLLM subtables; a value left blank (Auto / unset) is omitted so MeshLLM auto-plans it. Direct llama.cpp values are rendered into `llama-server` flags and carry a per-profile context window for cache-local coding sessions. ([REQ-RUN-015](../../sdd/spec/runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering)) ([REQ-RUN-019](../../sdd/spec/runtime-profiles.md#req-run-019-direct-projector-control)) ([REQ-RUN-020](../../sdd/spec/runtime-profiles.md#req-run-020-automation-projector-control))
+Each model carries runtime-specific tunables, edited from the model's Manage drawer (Advanced runtime) or over `POST /admin/profiles/config` / `POST /api/v1/models/{id}`. MeshLLM values are rendered into the node's per-profile `meshllm-<profileId>.toml` under their MeshLLM subtables; a value left blank (Auto / unset) is omitted so MeshLLM auto-plans it. Direct llama.cpp values are rendered into `llama-server` flags and carry a per-profile context window for cache-local coding sessions. Direct vLLM values are rendered into `vllm serve` flags with unset tunables omitted so the engine's model-derived defaults rule. ([REQ-RUN-015](../../sdd/spec/runtime-profiles.md#req-run-015-direct-llamacpp-launch-rendering)) ([REQ-RUN-019](../../sdd/spec/runtime-profiles.md#req-run-019-direct-projector-control)) ([REQ-RUN-020](../../sdd/spec/runtime-profiles.md#req-run-020-automation-projector-control)) ([REQ-RUN-022](../../sdd/spec/runtime-profiles.md#req-run-022-direct-vllm-launch-rendering))
 
-Runtime binary versions are selected separately from Settings or `PUT /api/v1/runtime-versions`; the router stores desired MeshLLM and llama.cpp versions and nodes download/install those releases on heartbeat. New custom models are created with the defaults below. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-011](../../sdd/spec/runtime-profiles.md#req-run-011-custom-model-onboarding), [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration), [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility))
+Runtime binary versions are selected separately from Settings or `PUT /api/v1/runtime-versions`; the router stores desired MeshLLM, llama.cpp, and vLLM versions and nodes download/install those releases on heartbeat (vLLM tags are GitHub-shaped, e.g. `v0.27.1`; the agent strips the leading `v` for its pip pin). New custom models are created with the defaults below. ([REQ-RUN-002](../../sdd/spec/runtime-profiles.md#req-run-002-default-model-profiles), [REQ-RUN-003](../../sdd/spec/runtime-profiles.md#req-run-003-managed-meshllm-runtime), [REQ-RUN-011](../../sdd/spec/runtime-profiles.md#req-run-011-custom-model-onboarding), [REQ-ADM-021](../../sdd/spec/setup-admin.md#req-adm-021-model-serving-configuration), [REQ-ADM-033](../../sdd/spec/setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility))
 
 | Setting | MeshLLM config key | Default | What it is / does |
 | --- | --- | --- | --- |
@@ -183,6 +185,19 @@ Direct llama.cpp profiles use these settings:
 | Multimodal projector | `--no-mmproj` when off | Auto/on | Keeps llama.cpp projector auto-loading by default. Set off for text workloads that should not reserve projector VRAM. |
 | Reasoning | `--reasoning`, `--reasoning-format`, `--reasoning-budget` | On, `deepseek`, budget `8192` | Thinking-mode controls for reasoning-capable chat templates. The reasoning budget is part of the generation cap; higher budgets can delay the final answer. |
 | Bind port | `--port` | derived per profile | The node-local llama.cpp API port; reserved mesh/proxy ports are rejected. |
+
+Direct vLLM defaults leave every tunable unset so the engine plans from the model and GPU; the model reference is a bare Hugging Face safetensors repository (no `:quant` file tag — vLLM does not load GGUF files in-tree). The server always binds `127.0.0.1`; only the port is profile-controlled. ([REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles)) ([REQ-SEC-013](../../sdd/spec/security.md#req-sec-013-vllm-api-exposure))
+
+Direct vLLM profiles use these settings:
+
+| Setting | vllm serve flag | Default | What it is / does |
+| --- | --- | --- | --- |
+| Context window | `--max-model-len` | Auto (`0`) | Auto omits the flag so vLLM derives the length from the model config. Pin a value (`>= 4096`) to cap the KV budget; larger reserves more KV memory. |
+| Max concurrent sequences | `--max-num-seqs` | Auto | Cap on requests the continuous batcher runs at once. Auto lets vLLM plan it from available KV memory. |
+| GPU memory utilization | `--gpu-memory-utilization` | Auto (flag omitted; vLLM's default applies) | Fraction in (0, 1] of VRAM the engine may claim. Lower it when the GPU is shared with other workloads. |
+| Compute dtype | `--dtype` | Auto | Follows the checkpoint. `half` is required on pre-Ampere GPUs (compute capability below 8.0) for bf16 checkpoints. |
+| Quantization method | `--quantization` | Auto-detect | Override for the checkpoint's quantization method (`awq`, `gptq`, `fp8`, …); vLLM detects it from the checkpoint when unset. |
+| Bind port | `--port` | derived per profile | The node-local vLLM API port; reserved mesh/proxy ports are rejected. The host is always `127.0.0.1`. |
 
 ## GitHub secrets
 

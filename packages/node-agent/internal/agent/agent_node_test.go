@@ -399,7 +399,7 @@ func TestREQNODE004DashboardReportsMeshLLMRuntimePanel(t *testing.T) {
 		if !strings.Contains(body, "data-runtime-panel") {
 			t.Fatalf("dashboard must render a MeshLLM runtime panel section")
 		}
-		for _, field := range []string{"meshllm-version", "runtime-state", "mesh-id", "peer-count", "ready-models", "split-enabled", "stage-count", "api-port", "console-port", "api-ready", "console-ready", "tokens-per-second", "last-error"} {
+		for _, field := range []string{"meshllm-version", "vllm-version", "runtime-state", "mesh-id", "peer-count", "ready-models", "split-enabled", "stage-count", "api-port", "console-port", "api-ready", "console-ready", "tokens-per-second", "last-error"} {
 			if !strings.Contains(body, `data-field="`+field+`"`) {
 				t.Fatalf("runtime panel is missing the %s field marker", field)
 			}
@@ -469,6 +469,28 @@ func TestREQNODE004DashboardRuntimeControlsUseController(t *testing.T) {
 		}
 		if controller.starts != 1 || controller.stops != 1 || controller.restarts != 1 {
 			t.Fatalf("runtime controls not routed: %#v", controller)
+		}
+	})
+}
+
+func TestREQNODE004DashboardStopDuringConcurrentStopReportsOk(t *testing.T) {
+	t.Run("REQ-NODE-004", func(t *testing.T) {
+		// An explicit operator stop that finds a stop already running has got
+		// what it asked for; only restart paths treat the sentinel as failure.
+		controller := &stopBusyController{}
+		handler := DashboardHandler(func() DashboardStatus {
+			return DashboardStatus{Config: Config{DashboardAddress: "127.0.0.1:17777", DashboardToken: "dashboard-token"}, Metrics: RuntimeMetrics("ready", "codeflare-mesh", 0), RuntimeState: "ready", Version: "test"}
+		}, controller)
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:17777/api/runtime/stop", nil)
+		req.Header.Set("origin", "http://127.0.0.1:17777")
+		req.Header.Set("x-inference-mesh-dashboard-token", "dashboard-token")
+		handler.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("an explicit stop during an in-flight stop must report ok, got %d", resp.Code)
+		}
+		if controller.stops != 1 {
+			t.Fatalf("stop control must still reach the controller, got %d", controller.stops)
 		}
 	})
 }

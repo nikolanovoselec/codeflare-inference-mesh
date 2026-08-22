@@ -32,7 +32,7 @@ func (t *runtimeTelemetry) Snapshot(base agent.NodeMetrics) agent.NodeMetrics {
 // loaded model and profile bookkeeping, and the last runtime error. An
 // install failure replaces the generic dependency-missing message with the
 // install error detail.
-func runtimeMetrics(manager meshRuntime, loadState *runtimeLoadState, cfg agent.Config, active int, installError string) agent.NodeMetrics {
+func runtimeMetrics(manager agent.RuntimeManager, loadState *runtimeLoadState, cfg agent.Config, active int, installError string) agent.NodeMetrics {
 	state := "external"
 	lastError := ""
 	runtimeKind := "external"
@@ -70,6 +70,9 @@ func runtimeMetrics(manager meshRuntime, loadState *runtimeLoadState, cfg agent.
 				metrics.LlamaCppBackend = direct.Metrics().LlamaCppBackend
 			}
 		}
+		// vllm deliberately has no arm here: the manager reports the *installed*
+		// version from the completion marker, so echoing the desired config back
+		// would make the console's desired-vs-installed comparison a tautology.
 	}
 	if loaded {
 		metrics.LoadedProfileID = profile.ID

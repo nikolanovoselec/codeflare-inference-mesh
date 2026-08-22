@@ -125,6 +125,15 @@ func (f *fakeMeshRuntime) PollStatus(context.Context) (agent.MeshLLMStatus, bool
 	return f.status, f.consoleOK
 }
 
+func (f *fakeMeshRuntime) Inflight(context.Context) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.consoleOK {
+		return 0
+	}
+	return f.status.InflightRequests
+}
+
 func (f *fakeMeshRuntime) ApplyBootstrap(bootstrap *agent.MeshBootstrap) {
 	if bootstrap == nil {
 		return
@@ -196,6 +205,31 @@ func (f *fakeMeshRuntime) SetFailure(err error) {
 	f.lastError = err.Error()
 }
 
+// fakeKindRuntime reports an arbitrary runtime kind over the mesh fake, for
+// exercising how the reconciler resolves unmanaged kind strings.
+type fakeKindRuntime struct {
+	*fakeMeshRuntime
+	kind string
+}
+
+func (f *fakeKindRuntime) Runtime() string { return f.kind }
+
+// stopBusyRuntime simulates a manager whose shutdown is already owned by a
+// concurrent Stop: the cross-runtime switch must not start a replacement.
+type stopBusyRuntime struct{ *fakeMeshRuntime }
+
+func (f *stopBusyRuntime) Stop(context.Context) error {
+	f.record("stop")
+	return agent.ErrStopInProgress
+}
+
+// fakeSeamlessRuntime hides the embedded fake's RestartWithInput behind an
+// incompatible signature, yielding a RuntimeManager that satisfies neither
+// restart seam (not *agent.MeshLLMManager, not meshInputRestarter).
+type fakeSeamlessRuntime struct{ *fakeMeshRuntime }
+
+func (f *fakeSeamlessRuntime) RestartWithInput() {}
+
 type fakeUpdater struct {
 	mu      sync.Mutex
 	applied bool
@@ -261,7 +295,7 @@ func (f *routerFixture) request(index int) agent.HeartbeatRequest {
 	return f.requests[index]
 }
 
-func newLoopForTest(t *testing.T, cfg agent.Config, counter *agent.ActiveCounter, manager meshRuntime, updater agentUpdater, exit func()) *serviceLoop {
+func newLoopForTest(t *testing.T, cfg agent.Config, counter *agent.ActiveCounter, manager agent.RuntimeManager, updater agentUpdater, exit func()) *serviceLoop {
 	t.Helper()
 	cfgCopy := cfg
 	if exit == nil {

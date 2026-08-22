@@ -10,10 +10,11 @@
 [![Codeflare](https://img.shields.io/badge/part_of-Codeflare-ff5c3c)](https://github.com/nikolanovoselec/codeflare)
 [![Runtime](https://img.shields.io/badge/runtime-mesh--llm-1f6feb)](https://github.com/Mesh-LLM/mesh-llm)
 [![Direct Engine](https://img.shields.io/badge/direct-llama.cpp-8250df)](https://github.com/ggml-org/llama.cpp)
+[![Direct Engine](https://img.shields.io/badge/direct-vLLM-f59f00)](https://github.com/vllm-project/vllm)
 
 **Turn the idle machines you already own into a private, cache-aware inference fabric for open LLMs.**
 
-Codeflare Inference Mesh is the self-hosted inference layer of the **[Codeflare](https://codeflare.ch)** family ([GitHub](https://github.com/nikolanovoselec/codeflare)), the agentic engine. It pools the idle GPUs and CPUs already sitting in your fleet into one private fabric and serves open models on it through two runtimes: [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) for multi-machine split models, and direct [llama.cpp](https://github.com/ggml-org/llama.cpp) for cache-local single-node serving. It is the inference engine behind your agentic coding and operations agents, autonomous execution agents, internal chatbots, and anything else in the organization that needs low-latency private inference without shipping prompts to a hosted model by default.
+Codeflare Inference Mesh is the self-hosted inference layer of the **[Codeflare](https://codeflare.ch)** family ([GitHub](https://github.com/nikolanovoselec/codeflare)), the agentic engine. It pools the idle GPUs and CPUs already sitting in your fleet into one private fabric and serves open models on it through three runtimes: [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) for multi-machine split models, direct [llama.cpp](https://github.com/ggml-org/llama.cpp) for cache-local single-node GGUF serving, and direct [vLLM](https://github.com/vllm-project/vllm) for CUDA-native single-node serving of Hugging Face safetensors models. It is the inference engine behind your agentic coding and operations agents, autonomous execution agents, internal chatbots, and anything else in the organization that needs low-latency private inference without shipping prompts to a hosted model by default.
 
 <p align="center">
   <img src="assets/operator-console-overview.png" alt="Codeflare Inference Mesh operator console showing available machines, known VRAM, last speed test, custom domain status, and node health." width="100%">
@@ -44,6 +45,7 @@ flowchart LR
         nodeB["Node agent<br/>worker"]
         meshllm["mesh-llm<br/>split runtime"]
         llama["llama.cpp<br/>direct runtime"]
+        vllm["vLLM<br/>direct runtime"]
     end
     provider["External provider<br/>OpenAI · Anthropic · ..."]
 
@@ -53,6 +55,7 @@ flowchart LR
     router -->|Workers VPC over Mesh IP| nodeA
     nodeA --> meshllm
     nodeA --> llama
+    nodeA --> vllm
     nodeA <-->|iroh QUIC, direct over WARP| nodeB
     nodeB --> meshllm
     nodeA -.->|rendezvous metadata| nostr
@@ -62,8 +65,9 @@ flowchart LR
 
 - Clients call one private model alias called `codeflare-mesh`, and the Gateway route stays fixed as nodes come and go.
 - The Worker is the only public inference surface. It takes Gateway traffic, resolves the active profile from D1, and forwards over Workers VPC to private Mesh IPs on Cloudflare WARP.
-- Model profiles choose the runtime. `meshllm` profiles use stateless entry-node selection because mesh-llm owns dispatch inside the runtime mesh; `llamacpp` profiles use session affinity so follow-up requests for the same coding session return to the same node and keep prefix cache hot.
-- Each node runs one Go agent. It installs and supervises the selected, checksum-verified runtime binaries, reports GPU/runtime/mesh health on every heartbeat, and proxies only the OpenAI-compatible inference path to the local runtime.
+- Model profiles choose the runtime. `meshllm` profiles use stateless entry-node selection because mesh-llm owns dispatch inside the runtime mesh.
+- Direct profiles (`llamacpp` and `vllm`) use session affinity so follow-up requests for the same coding session return to the same node and keep prefix cache hot.
+- Each node runs one Go agent. It installs and supervises the selected, checksum-verified runtimes, reports GPU/runtime/mesh health on every heartbeat, and proxies only the OpenAI-compatible inference path to the local runtime.
 - Nodes serving a mesh-llm profile form a private runtime mesh. The router elects a seed and hands out encrypted join material through authenticated heartbeats; mesh secrets are encrypted at rest and rotate on one click.
 
 ## Runtime modes
@@ -72,7 +76,11 @@ flowchart LR
 
 **Direct llama.cpp mode** is for non-layered models that fit on a single node and need predictable coding-session cache reuse. The node agent launches `llama-server` directly with profile-owned context, parallel lanes, KV cache type, prompt cache, cache reuse, flash-attention, batch, GPU-layer, max-output, and reasoning settings. The router requires a stable session component, preferably `body.user` formatted as `user:<id>|session:<id>`, hashes it with `SESSION_AFFINITY_KEY`, stores only HMAC-derived keys in D1, and uses `SessionAffinityDO` to pin that session to a healthy llama.cpp node until failover is required.
 
-Layered models always use mesh-llm. Non-layered custom models can run either through mesh-llm or direct llama.cpp, so operators can choose between split-capable mesh behavior and single-node cache-local behavior per model.
+**Direct vLLM mode** is for Hugging Face safetensors models on Linux nodes with NVIDIA CUDA GPUs. The node agent bootstraps a pinned vLLM virtual environment through a checksum-verified [uv](https://github.com/astral-sh/uv), then serves the configured repository on a loopback-only OpenAI-compatible server with profile-owned context window, concurrent-sequence, GPU-memory-utilization, dtype, and quantization settings. Scheduling is capability-gated: the router dispatches vLLM profiles only to nodes reporting Linux with CUDA available, and the same direct-session affinity as llama.cpp keeps a session on its warm node.
+
+Every profile also carries OpenAI-style sampling defaults. Unless the caller sets its own values, the router injects a thinking-mode or instruct-mode preset — temperature, top-p, top-k, min-p, presence penalty, and repetition penalty — into each request across all three runtimes, and operators can override any parameter per model from the console drawer or the admin API.
+
+Layered models always use mesh-llm. Non-layered custom models can run through mesh-llm, direct llama.cpp (GGUF), or direct vLLM (safetensors on CUDA nodes), so operators can choose between split-capable mesh behavior and single-node serving per model.
 
 <p align="center">
   <img src="assets/operator-console-models.png" alt="Codeflare Inference Mesh model list showing split MeshLLM and direct llama.cpp runtime profiles with deploy and manage controls." width="100%">
@@ -88,13 +96,13 @@ Cloudflare Mesh is the backbone for connectivity, routing, inference guardrails,
 
 ## What it runs
 
-The fabric serves open models, not a fixed menu. mesh-llm profiles can run regular GGUF model references and published layer packages, splitting a model across several nodes when one machine is not enough. Direct llama.cpp profiles run Hugging Face GGUF models through `llama-server` when the model fits on one node and the priority is maximum prefix-cache reuse for long agentic coding sessions. Operators publish whichever model is active under the stable alias `codeflare-mesh`; the fabric rewrites the request to the concrete upstream model only after the Gateway route has stayed stable.
+The fabric serves open models, not a fixed menu. mesh-llm profiles can run regular GGUF model references and published layer packages, splitting a model across several nodes when one machine is not enough. Direct llama.cpp profiles run Hugging Face GGUF models through `llama-server` when the model fits on one node and the priority is maximum prefix-cache reuse for long agentic coding sessions. Direct vLLM profiles serve Hugging Face safetensors repositories, full-precision or pre-quantized (FP8, AWQ, GPTQ), on CUDA-equipped Linux nodes when GPU-native throughput matters most. Operators publish whichever model is active under the stable alias `codeflare-mesh`; the fabric rewrites the request to the concrete upstream model only after the Gateway route has stayed stable.
 
 ## Quickstart
 
 1. Fork this repository and add the required deploy secrets in GitHub Actions.
 2. Run the Deploy workflow, `integration` first, then `production`.
-3. Enroll your nodes in Cloudflare One / WARP. The agent pulls the runtime it needs, `mesh-llm` for mesh profiles or `llama-server` for direct llama.cpp profiles, so there is no separate server to stand up.
+3. Enroll your nodes in Cloudflare One / WARP. The agent pulls the runtime each profile needs — `mesh-llm` for mesh, `llama-server` for direct llama.cpp, a pinned vLLM environment for direct vLLM — with no separate server to stand up.
 4. Open the deployed origin and follow the setup wizard through custom domain, Access, Gateway, and your first node.
 
 The steps below link to the private operations reference for exact secrets, token scopes, and bindings, then cover the public node runbook.

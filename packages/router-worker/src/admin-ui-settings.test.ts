@@ -92,6 +92,28 @@ describe('settings, API keys and version control contracts', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
   })
 
+  it('REQ-RUN-025 renders and saves the vllm runtime version control from Settings', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      const method = (init && init.method) || 'GET'
+      if (path === '/admin/runtime-versions' && method === 'GET') return Response.json({
+        meshllm: { tags: ['v0.73.0'], desired: 'v0.73.0', stale: false },
+        llamacpp: { tags: ['b9912'], desired: 'b9912', stale: false },
+        vllm: { tags: ['v0.27.1', 'v0.27.0'], desired: 'v0.27.1', stale: false }
+      })
+      if (path === '/admin/runtime-versions' && method === 'POST') return Response.json({ ok: true, desired: { meshllm: 'v0.73.0', llamacpp: 'b9912', vllm: 'v0.27.0' } })
+      return undefined
+    } })
+
+    expect(harness.byId(ADMIN_UI_RUNTIME_VERSION.vllmSelectId).value).toBe('v0.27.1')
+    harness.byId(ADMIN_UI_RUNTIME_VERSION.vllmSelectId).value = 'v0.27.0'
+    await harness.clickAction('runtime-versions-set', { out: 'runtime-version-output' })
+    await harness.flush(3)
+
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/runtime-versions' && entry.init?.method === 'POST')
+    expect(call, 'saving runtime versions posts the vllm selection too').toBeDefined()
+    expect(JSON.parse(String(call?.init?.body))).toMatchObject({ vllm: 'v0.27.0' })
+  })
+
   it('REQ-NODE-014 renders the MeshLLM binary source selector and switches source on change', async () => {
     const harness = await dashboardHarness({ respond: (path, init) => {
       const method = (init && init.method) || 'GET'

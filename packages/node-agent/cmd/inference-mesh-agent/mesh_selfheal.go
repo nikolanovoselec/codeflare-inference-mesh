@@ -12,7 +12,7 @@ import (
 
 func (s *serviceLoop) meshWaitSelfHeal(cfg agent.Config, bootstrap *agent.MeshBootstrap) bool {
 	profile, ok := agent.SelectedProfile(cfg)
-	if !ok || profile.Runtime == "llamacpp" || !profile.MeshLLM.Split || bootstrap == nil {
+	if !ok || effectiveRuntimeKind(profile.Runtime) != "meshllm" || !profile.MeshLLM.Split || bootstrap == nil {
 		s.resetMeshWaitSelfHeal()
 		return false
 	}

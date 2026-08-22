@@ -38,7 +38,7 @@ export const CLIENT_DRAWERS = `\
     const bodyEl = openDrawer(nodeDisplayName(node));
     if (!bodyEl) return;
     const metrics = node.metrics || {};
-    const isDirectRuntime = node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp';
+    const isDirectRuntime = node.runtime === 'llamacpp' || metrics.runtimeKind === 'llamacpp' || node.runtime === 'vllm' || metrics.runtimeKind === 'vllm';
     const vram = nodeVramInfo(node);
     const vramValue = vram.totalMiB <= 0 ? 'not reported' : fmtVramTelemetry(node);
     bodyEl.appendChild(drawerField('status', 'Status', nodeStatusText(node)));
@@ -133,6 +133,7 @@ export const CLIENT_DRAWERS = `\
       const backend = metrics.llamacppBackend ? ' · ' + metrics.llamacppBackend : '';
       bodyEl.appendChild(drawerField('llamacpp', 'llama.cpp', metrics.llamacppVersion + backend, metrics.llamacppVersion + backend));
     }
+    if (metrics.vllmVersion) bodyEl.appendChild(drawerField('vllm', 'vLLM', metrics.vllmVersion, metrics.vllmVersion));
     if (isDirectRuntime) {
       bodyEl.appendChild(drawerField('direct-context', 'Direct context tokens', reportedText(metrics.ctxSize), metrics.ctxSize != null ? String(metrics.ctxSize) : ''));
       // parallel -1 = Auto: the configured value is not a slot count, so only the
@@ -301,10 +302,10 @@ export const CLIENT_DRAWERS = `\
     const pillRow = document.createElement('div');
     pillRow.className = 'model-name-row';
     pillRow.setAttribute('data-drawer-pills', profile.id);
-    pillRow.append(...profilePills(profile, profile.runtime === 'llamacpp', Boolean(profile.meshllm && profile.meshllm.split)));
+    pillRow.append(...profilePills(profile, profile.runtime === 'llamacpp' || profile.runtime === 'vllm', Boolean(profile.meshllm && profile.meshllm.split)));
     bodyEl.appendChild(pillRow);
     bodyEl.appendChild(drawerField('active', 'Status', profile.active ? 'On' : 'Off'));
-    bodyEl.appendChild(drawerField('runtime', 'Runtime', profile.runtime === 'llamacpp' ? 'llama.cpp' : 'meshllm', profile.runtime || 'meshllm'));
+    bodyEl.appendChild(drawerField('runtime', 'Runtime', profile.runtime === 'llamacpp' ? 'llama.cpp' : (profile.runtime === 'vllm' ? 'vLLM' : 'meshllm'), profile.runtime || 'meshllm'));
     // Editable settings, saved through the validated profile-config endpoint. Name is
     // the human label; call name is this model's own public alias. Apps can always
     // also reach whichever model is on through the shared codeflare-mesh name. Only a
@@ -333,19 +334,23 @@ export const CLIENT_DRAWERS = `\
     bodyEl.appendChild(callRow);
     const meshllm = profile.meshllm || {};
     const llamacpp = profile.llamacpp || {};
+    const vllm = profile.vllm || {};
     const isDirect = profile.runtime === 'llamacpp';
+    const isVllm = profile.runtime === 'vllm';
+    const blockCtx = isDirect ? llamacpp.contextWindow : (isVllm ? vllm.contextWindow : 0);
+    const effectiveCtx = blockCtx || profile.contextWindow;
     const ctxRow = document.createElement('label');
     ctxRow.className = 'drawer-row';
     ctxRow.textContent = 'Context window (tokens)';
     const ctxInput = document.createElement('input');
     ctxInput.id = 'model-edit-context';
     ctxInput.type = 'number';
-    ctxInput.min = isDirect ? '4096' : '0';
+    ctxInput.min = isDirect || isVllm ? '4096' : '0';
     ctxInput.placeholder = 'Auto';
-    // 0 = Auto, shown as a blank field: mesh-llm sizes the context to the GPU.
-    ctxInput.value = (isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) ? String(isDirect ? (llamacpp.contextWindow || profile.contextWindow) : profile.contextWindow) : '';
+    // 0 = Auto, shown as a blank field: the runtime sizes the context itself.
+    ctxInput.value = effectiveCtx ? String(effectiveCtx) : '';
     ctxRow.appendChild(ctxInput);
-    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Blank = Auto (llama.cpp loads the native model context). Pin a number (4096 or higher) to cap it; larger uses more GPU memory.' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.'));
+    ctxRow.appendChild(drawerHint(isDirect ? 'Max tokens kept in llama.cpp context. Blank = Auto (llama.cpp loads the native model context). Pin a number (4096 or higher) to cap it; larger uses more GPU memory.' : (isVllm ? 'Max tokens kept in vLLM context (--max-model-len). Blank = Auto (vLLM derives it from the model). Pin a number (4096 or higher) to cap it; larger reserves more KV memory.' : 'Max tokens kept in context. Blank = Auto (mesh-llm sizes it to the GPU). Pin a number (e.g. 262144) to fix it; larger uses more GPU memory and may leave room for fewer lanes.')));
     bodyEl.appendChild(ctxRow);
     const modelRow = document.createElement('label');
     modelRow.className = 'drawer-row';
@@ -353,7 +358,7 @@ export const CLIENT_DRAWERS = `\
     const modelInput = document.createElement('input');
     modelInput.id = 'model-edit-model';
     modelInput.type = 'text';
-    modelInput.value = (profile.llamacpp && profile.llamacpp.modelRef) || (profile.meshllm && profile.meshllm.modelRef) || '';
+    modelInput.value = (profile.llamacpp && profile.llamacpp.modelRef) || (profile.vllm && profile.vllm.hfRepo) || (profile.meshllm && profile.meshllm.modelRef) || '';
     modelRow.appendChild(modelInput);
     bodyEl.appendChild(modelRow);
     // What the node actually launches, derived from the reference above: the agent
@@ -364,6 +369,7 @@ export const CLIENT_DRAWERS = `\
       const source = (llamacpp.hfRepo || '') + quantPart + (llamacpp.hfFile ? ' · ' + llamacpp.hfFile : '');
       bodyEl.appendChild(drawerField('model-source', 'Launch source', source, source));
     }
+    if (isVllm) bodyEl.appendChild(drawerField('model-source', 'Launch source', vllm.hfRepo || '', vllm.hfRepo || ''));
     const vramRow = document.createElement('label');
     vramRow.className = 'drawer-row';
     vramRow.textContent = 'Max VRAM for this model (GB, 0 = no limit)';
@@ -375,7 +381,7 @@ export const CLIENT_DRAWERS = `\
     // Empty when there is no cap (unset or zero); a positive value is the GB ceiling.
     vramInput.value = profile.meshllm && profile.meshllm.maxVramGb ? String(profile.meshllm.maxVramGb) : '';
     vramRow.appendChild(vramInput);
-    if (!isDirect) bodyEl.appendChild(vramRow);
+    if (!isDirect && !isVllm) bodyEl.appendChild(vramRow);
     // Mesh assignment: which machine group serves this model (REQ-RUN-016). Moving it
     // swaps its stable alias and deploys it switched off in the new mesh.
     const modelMeshRow = document.createElement('label');
@@ -442,6 +448,30 @@ export const CLIENT_DRAWERS = `\
       bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-llama-reasoning-format', label: 'Reasoning format', value: reasoning.format || '', placeholder: 'deepseek', hint: 'llama.cpp --reasoning-format. Use the format expected by the model template.' }));
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-llama-reasoning-budget', label: 'Reasoning budget', value: reasoning.budget, placeholder: '8192', hint: 'llama.cpp --reasoning-budget. Part of the output budget; higher values allow longer thinking and can delay the final answer.' }));
     }
+    if (isVllm) {
+      // vLLM's model-derived defaults are good; every tunable is Auto-clearable
+      // (blank saves null, which removes the flag so the engine decides). REQ-RUN-025.
+      bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-vllm-max-num-seqs', label: 'Max concurrent sequences', value: vllm.maxNumSeqs, placeholder: 'Auto', hint: 'vLLM --max-num-seqs. Caps how many requests the continuous batcher runs at once. Blank = Auto (vLLM plans it from KV memory).' }));
+      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-vllm-gpu-mem', label: 'GPU memory utilization', value: vllm.gpuMemoryUtilization != null ? String(vllm.gpuMemoryUtilization) : '', placeholder: 'Auto', hint: 'vLLM --gpu-memory-utilization, a fraction between 0 and 1 of VRAM the engine may claim. Blank = Auto (flag omitted; vLLM’s default applies). Lower it when the GPU is shared.' }));
+      bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-vllm-dtype', label: 'Compute dtype', value: vllm.dtype || '', options: [{ value: '', label: 'Auto' }, { value: 'auto', label: 'auto' }, { value: 'half', label: 'half' }, { value: 'float16', label: 'float16' }, { value: 'bfloat16', label: 'bfloat16' }, { value: 'float', label: 'float' }, { value: 'float32', label: 'float32' }], hint: 'vLLM --dtype. Auto follows the checkpoint; half is required on pre-Ampere GPUs (compute capability below 8.0) for bf16 checkpoints.' }));
+      bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-vllm-quant', label: 'Quantization method', value: vllm.quantization || '', placeholder: 'Auto-detect', hint: 'vLLM --quantization override (awq, gptq, fp8, …). Blank = Auto (vLLM detects the method from the checkpoint).' }));
+    }
+    // Sampling defaults apply to every runtime: blank fields follow the mode
+    // preset, and the router injects the effective values into requests that do
+    // not set them themselves (REQ-RUN-023).
+    const samplingHead = document.createElement('div');
+    samplingHead.className = 'drawer-subhead';
+    samplingHead.textContent = 'Sampling';
+    bodyEl.appendChild(samplingHead);
+    const sampling = profile.sampling || {};
+    const samplingText = (key) => sampling[key] != null ? String(sampling[key]) : '';
+    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-sampling-mode', label: 'Sampling mode', value: sampling.mode || '', options: [{ value: '', label: 'Auto (follows reasoning)' }, { value: 'thinking', label: 'Thinking' }, { value: 'instruct', label: 'Instruct' }], hint: 'Which preset fills blank parameters below. Auto picks Thinking when the model reasons, Instruct otherwise. Thinking preset: temperature 1.0, top-p 0.95, top-k 20, min-p 0, presence penalty 0, repetition penalty 1.0. Instruct preset: temperature 0.7, top-p 0.8, top-k 20, min-p 0, presence penalty 1.5, repetition penalty 1.0.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-temperature', label: 'Temperature', value: samplingText('temperature'), placeholder: 'Preset', hint: 'Sampling randomness, 0-2. Blank follows the mode preset; requests that set their own temperature always win.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-top-p', label: 'Top-p', value: samplingText('topP'), placeholder: 'Preset', hint: 'Nucleus sampling mass, above 0 up to 1. Blank follows the mode preset.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-top-k', label: 'Top-k', value: samplingText('topK'), placeholder: 'Preset', hint: 'Candidate pool size, whole number; 0 disables the cutoff. Blank follows the mode preset.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-min-p', label: 'Min-p', value: samplingText('minP'), placeholder: 'Preset', hint: 'Minimum token probability relative to the best candidate, 0-1. Blank follows the mode preset.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-presence-penalty', label: 'Presence penalty', value: samplingText('presencePenalty'), placeholder: 'Preset', hint: 'Penalizes tokens already present, -2 to 2. Blank follows the mode preset.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-repetition-penalty', label: 'Repetition penalty', value: samplingText('repetitionPenalty'), placeholder: 'Preset', hint: 'Scales repeated-token probability, above 0 up to 2. Sent as repeat_penalty to llama.cpp and repetition_penalty to the other runtimes. Blank follows the mode preset.' }));
     const save = document.createElement('button');
     save.type = 'button';
     save.className = 'btn btn-primary';

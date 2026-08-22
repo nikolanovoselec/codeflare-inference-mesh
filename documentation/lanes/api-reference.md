@@ -74,7 +74,9 @@ POST /v1/chat/completions
 
 **Origin check:** n/a
 
-**Request body:** JSON chat completion body with a public model alias. AI Gateway dynamic-route calls may arrive as `model: "dynamic/codeflare-mesh"`; the router strips the `dynamic/` prefix before profile selection and forwards the active profile's upstream model to the node. MeshLLM profiles need only `model` and messages. Direct llama.cpp profiles also use a session identity so the router can pin the coding session to one cache-local node without storing raw ids: callers may send OpenAI `user` in the grammar `user:<id>|session:<id>`, include metadata visible to the router (`cf-aig-metadata` if forwarded, or a JSON `metadata` body object) with `user` and optional `session` values, or rely on the provider-scoped fallback `ai-gateway/provider-default` when AI Gateway REST dynamic-route log metadata is observability-only and not forwarded.
+**Request body:** JSON chat completion body with a public model alias. AI Gateway dynamic-route calls may arrive as `model: "dynamic/codeflare-mesh"`; the router strips the `dynamic/` prefix before profile selection and forwards the active profile's upstream model to the node. MeshLLM profiles need only `model` and messages. Direct profiles (llama.cpp and vLLM) also use a session identity so the router can pin the coding session to one cache-local node without storing raw ids: callers may send OpenAI `user` in the grammar `user:<id>|session:<id>`, include metadata visible to the router (`cf-aig-metadata` if forwarded, or a JSON `metadata` body object) with `user` and optional `session` values, or rely on the provider-scoped fallback `ai-gateway/provider-default` when AI Gateway REST dynamic-route log metadata is observability-only and not forwarded.
+
+Sampling parameters the caller leaves unset (`temperature`, `top_p`, `top_k`, `min_p`, `presence_penalty`, and the repetition penalty) are filled from the profile's sampling defaults before forwarding; a caller-supplied value is never overridden. The repetition penalty is forwarded under the serving runtime's name — `repeat_penalty` to llama.cpp nodes, `repetition_penalty` to mesh-llm and vLLM — and either caller spelling suppresses the injection. <!-- @impl: packages/router-worker/src/sampling.ts::withSamplingDefaults --> ([REQ-RUN-023](../../sdd/spec/runtime-profiles.md#req-run-023-sampling-parameter-defaults))
 
 **Response**
 
@@ -128,7 +130,7 @@ POST /node/heartbeat
 
 **Origin check:** n/a
 
-**Request body:** JSON heartbeat body with node status, Mesh address, capacity, active profiles, `runtime: "meshllm"`, `agentVersion`, the node's current `meshId` and `meshToken` (its own invite token, resent on every heartbeat), and metrics.
+**Request body:** JSON heartbeat body with node status, Mesh address, capacity, active profiles, `runtime` (`"meshllm"`, `"llamacpp"`, or `"vllm"`), `agentVersion`, the node's current `meshId` and `meshToken` (its own invite token, resent on every heartbeat), and metrics.
 
 **Response**
 
@@ -154,6 +156,9 @@ POST /node/heartbeat
 - `gpuName`, `gpuMemoryUsedMiB`, and `gpuMemoryTotalMiB` from trusted GPU telemetry. MeshLLM may report rated capacity without used memory; the node agent fills missing used memory from the host GPU tool when available so node projections can render used/total VRAM without using split planner capacity.
 - `peerCount`, `splitEnabled`, `stageCount`, `stageAssignments[]` (`stageId`, `stageIndex`, `nodeId`, `layerStart`, `layerEnd`, `state`, optional backend/device fields), `apiReady`, `consoleReady`, `meshllmVersion`, and `meshMaxVramGb` (the launched MeshLLM `--max-vram` budget).
 - `llamacppBackend` — verified managed backend family; `unknown` for a custom or host binary whose build is not verified by the installer.
+- `vllmVersion` — the installed vLLM version (read from the node's completion marker, so it can disagree with the desired selection mid-upgrade) when the node runs a direct vLLM profile.
+- `platform` and `cudaAvailable` — observed host OS and NVIDIA CUDA probe results; absent when the agent has not probed. ([REQ-NODE-016](../../sdd/spec/node-agent.md#req-node-016-direct-runtime-backend-identity))
+- The scheduler's vLLM capability gate fails closed on absent capabilities, so an observed `false` is a real answer distinct from "not reported". ([REQ-SCH-003](../../sdd/spec/state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses))
 - `multimodal` — true when the current direct model cannot use llama.cpp's cross-divergence reuse optimization; ordinary text prefix caching remains separate.
 - `splitReadiness` for split profiles when MeshLLM reports diagnostics: `verdict`, `capacityAdvice` (`requiredBytes`, `aggregateCapacityBytes`, `shortfallBytes`, `eligibleNodeCount`), `participants[]`, `blockers[]`, and `recommendations[]`. Aggregated status adds `routerNodeId`/`displayName` to participants when `meshNodeId` can be matched, so operators see machine names instead of MeshLLM hashes. This distinguishes peer/download problems from planner capacity shortfalls.
 
@@ -502,7 +507,7 @@ GET /api/v1/status
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string }, "runtimeInstalls": RuntimeInstallStatus[], "lastSpeedTest"?: LastSpeedTestSummary, "lastSpeedTests"?: Record<string, LastSpeedTestSummary>, "agentVersion"?: string, "details"?: { "nodes": ApiNode[], "profiles": ApiModel[], "profileReadiness": ProfileReadiness[], "meshHealth": MeshHealthEntry[] } }`. |
+| `200` | Fleet snapshot. | `{ "generatedAt": number, "nodes": { "total": number, "online": number }, "models": { "total": number, "active": number }, "runtimeVersions": { "meshllm": string, "llamacpp": string, "vllm": string }, "runtimeInstalls": RuntimeInstallStatus[], "lastSpeedTest"?: LastSpeedTestSummary, "lastSpeedTests"?: Record<string, LastSpeedTestSummary>, "agentVersion"?: string, "details"?: { "nodes": ApiNode[], "profiles": ApiModel[], "profileReadiness": ProfileReadiness[], "meshHealth": MeshHealthEntry[] } }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Notes:** `lastSpeedTest`, when present, carries `{ at, requestId, model, nodeId?, requestedPromptTokens, requestedMaxTokens, promptTokens, completionTokens, promptTokensEstimated, completionTokensEstimated, promptTokensPerSecond, generationTokensPerSecond, timeToFirstTokenMs, generationMs, totalMs, cacheTokens? }`; `lastSpeedTests` maps each resolved profile id to its own latest summary of the same shape, and `lastSpeedTest` is the newest entry (a record stored before the per-model map existed surfaces as the seed entry). Add `?detail=full` or `?include=details` to include the same redacted operational details the console needs for automation: per-node runtime installs/metrics, profile readiness, profile metadata, mesh health, and stage/layer ownership. The detailed shape still excludes secrets.
@@ -574,7 +579,7 @@ GET /api/v1/nodes?status={status}&q={search}&limit={n}&cursor={id}
 
 `NodeProjection.metrics`, when present, includes the node's runtime metrics. GPU fields use MiB units: `gpuMemoryUsedMiB` is current trusted GPU memory in use when known, and `gpuMemoryTotalMiB` is trusted card/system GPU memory capacity when known. MeshLLM split-readiness participant capacity is never substituted for these fields.
 
-`NodeProjection.runtimeInstall` reports the node runtime binary state for automation and UI parity: `{ "runtime": "meshllm" | "llamacpp", "desiredVersion": string, "installedVersion": string | null, "state": "pending" | "installing" | "installed" | "failed", "error": string | null }`.
+`NodeProjection.runtimeInstall` reports the node runtime binary state for automation and UI parity: `{ "runtime": "meshllm" | "llamacpp" | "vllm", "desiredVersion": string, "installedVersion": string | null, "state": "pending" | "installing" | "installed" | "failed", "error": string | null }`.
 
 `NodeProjection.meshId` is the machine group the node serves; a newly claimed node joins the default mesh, and reassignment goes through `POST /api/v1/nodes/{id}/reconfigure`. ([REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership))
 
@@ -831,7 +836,7 @@ GET /api/v1/models
 | `200` | The models. | `{ "models": [ModelProjection] }` (schema below). |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
-A `ModelProjection` is `{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "modelRef": string, "split": boolean, "meshId": string, "maxVramGb": number, "tunables": { "parallel": number|null, "cacheTypeK": string|null, "cacheTypeV": string|null, "batch": number|null, "ubatch": number|null, "flashAttn": boolean|null, "maxOutputTokens": number|null, "reasoning": object|null, "prefixCache": object|null, "toolEmulation": boolean|null, "wireDtype": string|null, "prefillChunking": string|null, "prefillChunkSize": number|null } }`. `split` is `true` when the model serves as a layer package across several machines. `meshId` is the machine group the model is assigned to; the leading callable name is that mesh's stable alias. `contextWindow` `0` means Auto. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). Each `tunables` field is `null` when Auto (unset, MeshLLM auto-plans it).
+A `ModelProjection` is `{ "id": string, "displayName": string, "callableNames": string[], "active": boolean, "rolloutPercent": number, "contextWindow": number, "runtime": "meshllm" | "llamacpp" | "vllm", "modelRef": string, "split": boolean, "meshId": string, "maxVramGb": number, "tunables": { "parallel": number|null, "cacheTypeK": string|null, "cacheTypeV": string|null, "batch": number|null, "ubatch": number|null, "flashAttn": boolean|null, "maxOutputTokens": number|null, "reasoning": object|null, "prefixCache": object|null, "toolEmulation": boolean|null, "wireDtype": string|null, "prefillChunking": string|null, "prefillChunkSize": number|null }, "llamacpp"?: object, "vllm"?: object, "sampling"?: object }`. `split` is `true` when the model serves as a layer package across several machines. `meshId` is the machine group the model is assigned to; the leading callable name is that mesh's stable alias. `contextWindow` `0` means Auto. `maxVramGb` is the per-model GB VRAM budget (`0` = no cap). Each `tunables` field is `null` when Auto (unset, MeshLLM auto-plans it). Direct profiles carry their stored `llamacpp` or `vllm` settings block, and `sampling` is present when the model stores sampling overrides ([REQ-RUN-023](../../sdd/spec/runtime-profiles.md#req-run-023-sampling-parameter-defaults)).
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management)
 
@@ -847,14 +852,14 @@ POST /api/v1/models
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** `{ "modelRef": string, "mode"?: "single" | "split", "runtime"?: "meshllm" | "llamacpp", "name"?: string, "meshId"?: string }` — `modelRef` is required, trimmed, and non-empty; `mode` defaults to `single` (`split` builds a layer-package profile); `runtime` defaults to `meshllm`. Direct `llamacpp` profiles are single-machine only and ship with prompt caching/cache reuse enabled for coding-session affinity. `name` is an optional display name (defaults to the model-file segment). `meshId` is an optional existing mesh id (absent means the default mesh). The model id and own callable alias are derived from the reference.
+**Request body:** `{ "modelRef": string, "mode"?: "single" | "split", "runtime"?: "meshllm" | "llamacpp" | "vllm", "name"?: string, "meshId"?: string }` — `modelRef` is required, trimmed, and non-empty; `mode` defaults to `single` (`split` builds a layer-package profile); `runtime` defaults to `meshllm`. Direct `llamacpp` profiles are single-machine only and ship with prompt caching/cache reuse enabled for coding-session affinity. Direct `vllm` profiles are single-machine only, take a bare Hugging Face safetensors repository (`:quant` tags are rejected), and run only on Linux + NVIDIA CUDA nodes. `name` is an optional display name (defaults to the model-file segment). `meshId` is an optional existing mesh id (absent means the default mesh). The model id and own callable alias are derived from the reference.
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `201` | A new inactive model is created in its mesh carrying that mesh's stable callable name (`codeflare-mesh` for the default mesh); it reaches production only through `POST /api/v1/models/{id}/enable`. | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | `modelRef` is missing/blank, `runtime` is invalid, `runtime: "llamacpp"` was requested with `mode: "split"`, or `meshId` named no existing mesh. | `invalid_model_ref` / `invalid_runtime` / `split_requires_meshllm` / `unknown_mesh` error body. |
+| `400` | `modelRef` is missing/blank or carries a `:quant` tag with `runtime: "vllm"`, `runtime` is invalid, a direct runtime was requested with `mode: "split"`, or `meshId` named no existing mesh. | `invalid_model_ref` / `invalid_runtime` / `split_requires_meshllm` / `unknown_mesh` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `409` | The reference's derived id already exists. | `duplicate_profile` error body. |
 
@@ -862,7 +867,7 @@ POST /api/v1/models
 
 ### POST /api/v1/models/{id}
 
-Updates a model's context window, model reference, VRAM budget, display name, callable name, mesh assignment, and runtime-specific tunables.
+Updates a model's context window, model reference, VRAM budget, display name, callable name, mesh assignment, sampling defaults, and runtime-specific tunables.
 
 ```http
 POST /api/v1/models/{id}
@@ -872,7 +877,7 @@ POST /api/v1/models/{id}
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "meshId"?: string, "runtime"?: "meshllm" | "llamacpp", "llamacpp"?: { "parallel"?: number, "kvUnified"?: boolean | null, "gpuLayers"?: number | string | null, "cachePrompt"?: boolean, "cacheReuse"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number | null, "ubatch"?: number | null, "flashAttn"?: boolean | null, "mmproj"?: boolean | null, "maxOutputTokens"?: number | null, "reasoning"?: object | null, "bindPort"?: number, "hfRepo"?: string | null, "hfFile"?: string | null, "quant"?: string | null }, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "toolEmulation"?: boolean | null, "wireDtype"?: string | null, "prefillChunking"?: string | null, "prefillChunkSize"?: number | null, "reasoning"?: object }`.
+**Request body:** `{ "contextWindow"?: number, "modelRef"?: string, "maxVramGb"?: number, "name"?: string, "callName"?: string, "meshId"?: string, "runtime"?: "meshllm" | "llamacpp" | "vllm", "sampling"?: { "mode"?: "thinking" | "instruct" | null, "temperature"?: number | null, "topP"?: number | null, "topK"?: number | null, "minP"?: number | null, "presencePenalty"?: number | null, "repetitionPenalty"?: number | null } | null, "vllm"?: { "maxNumSeqs"?: number | null, "gpuMemoryUtilization"?: number | null, "dtype"?: string | null, "quantization"?: string | null, "contextWindow"?: number, "bindPort"?: number }, "llamacpp"?: { "parallel"?: number, "kvUnified"?: boolean | null, "gpuLayers"?: number | string | null, "cachePrompt"?: boolean, "cacheReuse"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number | null, "ubatch"?: number | null, "flashAttn"?: boolean | null, "mmproj"?: boolean | null, "maxOutputTokens"?: number | null, "reasoning"?: object | null, "bindPort"?: number, "hfRepo"?: string | null, "hfFile"?: string | null, "quant"?: string | null }, "parallel"?: number, "cacheTypeK"?: string, "cacheTypeV"?: string, "batch"?: number, "ubatch"?: number, "flashAttn"?: boolean, "maxOutputTokens"?: number, "toolEmulation"?: boolean | null, "wireDtype"?: string | null, "prefillChunking"?: string | null, "prefillChunkSize"?: number | null, "reasoning"?: object }`.
 
 Every field is optional; an omitted field is left unchanged.
 
@@ -883,6 +888,12 @@ MeshLLM context window must be a non-negative integer (`0` = Auto); direct llama
 For MeshLLM profiles, the tunables mirror `POST /admin/profiles/config`: `parallel`/`batch`/`ubatch`/`maxOutputTokens` are positive integers, `cacheTypeK`/`cacheTypeV` one of `f16`/`q8_0`/`q4_0`, `flashAttn` a boolean, `toolEmulation` a boolean forcing mesh-llm's server-side tool-call emulation (for templates whose native tool grammar mesh-llm cannot parse), `wireDtype`/`prefillChunking`/`prefillChunkSize` the staged-transport tunables (unset resolves to the WARP-optimized `q8` + `adaptive-ramp` defaults on split models), and `reasoning` a `{ enabled?, format?, budget? }` object (layered onto the existing block). A `null` / `0` / `""` value clears a tunable back to Auto.
 
 For direct llama.cpp profiles, send `runtime: "llamacpp"` and a `llamacpp` block. `parallel` is `-1` (Auto) or `>= 1`. `kvUnified` is boolean; `null` restores on, while `false` with Auto parallel is rejected. `gpuLayers` accepts `0`, a positive integer, `"auto"`, or `"all"`; `null` or `""` clears it. <!-- @impl: packages/router-worker/src/profile-config.ts::resolveLlamaCppSettings -->
+
+For direct vLLM profiles, send `runtime: "vllm"` and a `vllm` block: `maxNumSeqs` (integer `>= 1`; `null`/`0` clears to Auto), `gpuMemoryUtilization` (number in `(0, 1]`; `null`/`0` clears), `dtype` (`auto` \| `half` \| `float16` \| `bfloat16` \| `float` \| `float32`; `null`/`""` clears), `quantization` (non-empty method string; `null`/`""` clears to checkpoint auto-detect), `contextWindow` (`0` = Auto or `>= 4096`), and optional `bindPort` (reserved agent ports are rejected). The model reference is a bare Hugging Face repository and stays authoritative for the launch source. <!-- @impl: packages/router-worker/src/profile-config.ts::resolveVllmSettings --> ([REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles))
+
+An invalid `vllm` block answers `400` with `invalid_vllm`, `invalid_maxNumSeqs`, `invalid_gpuMemoryUtilization`, `invalid_dtype`, or `invalid_quantization`; the shared `invalid_contextWindow`, `invalid_bindPort`, and `invalid_hfRepo` tokens cover its numeric and source fields. Naming a `runtime` converts a direct profile between `llamacpp` and `vllm` (the stale source block is dropped); converting a direct profile back to `meshllm` is not supported and answers `invalid_model_config`. <!-- @impl: packages/router-worker/src/profile-config.ts::configureVllmProfile --> ([REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles))
+
+The profile-level `sampling` block applies to every runtime: `mode` (`thinking` \| `instruct`; `null`/`""` restores the reasoning-derived Auto), `temperature` (`0`–`2`), `topP` (above `0` up to `1`), `topK` (integer `>= 0`), `minP` (`0`–`1`), `presencePenalty` (`-2` to `2`), and `repetitionPenalty` (above `0` up to `2`). A `null` value clears one parameter back to the mode preset, a `null` block clears every override, and an invalid value answers `400` with `invalid_sampling`, `invalid_sampling_mode`, or the parameter's `invalid_sampling_<field>` token; unset parameters resolve from the mode preset and take effect per request at the data plane. <!-- @impl: packages/router-worker/src/sampling.ts::resolveSampling --> ([REQ-RUN-023](../../sdd/spec/runtime-profiles.md#req-run-023-sampling-parameter-defaults))
 
 `cachePrompt` is boolean and `cacheReuse` is an integer `>= 0`. `cacheTypeK` and `cacheTypeV` accept `f32`, `f16`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, or `q5_1`. `batch`, `ubatch`, and `maxOutputTokens` are positive integers; `null` or `0` clears these optional values. `flashAttn` is boolean and `null` clears it. <!-- @impl: packages/router-worker/src/profile-config.ts::resolveLlamaCppSettings -->
 
@@ -895,10 +906,12 @@ The launch source is carried by the `llamacpp` block's `hfRepo`, `quant`, and op
 | Status | Outcome | Body |
 | --- | --- | --- |
 | `200` | The updated model projection (`callableNames` reflects a changed call name). | `{ "ok": true, "model": ModelProjection }`. |
-| `400` | The context window, model reference, VRAM budget, display name, call name, mesh id, runtime, or runtime tunable was invalid — including a launch source that no longer reconstructs from the reference or a quant tag that resolves no file. | `invalid_context_window` / `invalid_model_ref` / `invalid_max_vram` / `invalid_display_name` / `invalid_call_name` / `unknown_mesh` / `invalid_runtime` / `invalid_parallel` / `invalid_batch` / `invalid_ubatch` / `invalid_maxOutputTokens` / `invalid_cacheTypeK` / `invalid_cacheTypeV` / `invalid_flash_attn` / `invalid_mmproj` / `invalid_kv_unified` / `kv_unified_auto_conflict` / `invalid_reasoning` / `invalid_llamacpp` / `invalid_hfRepo` / `invalid_cachePrompt` / `bind_port_conflict` / `invalid_quant_tag` / `model_source_mismatch` / `invalid_model_config` error body. |
+| `400` | The context window, model reference, VRAM budget, display name, call name, mesh id, runtime, or runtime tunable was invalid — including a launch source that no longer reconstructs from the reference or a quant tag that resolves no file. | One token from the `400` list below the table. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 | `404` | No model with that id exists. | `unknown_profile` error body. |
 | `409` | The call name is a reserved mesh stable alias (`codeflare-mesh` or a `codeflare-mesh-` prefix) or collides with another model. | `call_name_conflict` error body. |
+
+The `400` token is one of `invalid_context_window`, `invalid_model_ref`, `invalid_max_vram`, `invalid_display_name`, `invalid_call_name`, `unknown_mesh`, `invalid_runtime`, `invalid_parallel`, `invalid_batch`, `invalid_ubatch`, `invalid_maxOutputTokens`, `invalid_cacheTypeK`, `invalid_cacheTypeV`, `invalid_flash_attn`, `invalid_mmproj`, `invalid_kv_unified`, `kv_unified_auto_conflict`, `invalid_reasoning`, `invalid_llamacpp`, `invalid_contextWindow`, `invalid_bindPort`, `invalid_hfRepo`, `invalid_cachePrompt`, `bind_port_conflict`, `invalid_quant_tag`, `model_source_mismatch`, `invalid_model_config`, `invalid_sampling`, `invalid_sampling_mode`, or the failing parameter's `invalid_sampling_<field>`.
 
 **Implements:** [REQ-API-005](../../sdd/spec/control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-027](../../sdd/spec/setup-admin.md#req-adm-027-model-naming-and-rename), [REQ-RUN-018](../../sdd/spec/runtime-profiles.md#req-run-018-direct-launch-source-integrity), [REQ-RUN-020](../../sdd/spec/runtime-profiles.md#req-run-020-automation-projector-control), [REQ-SCH-006](../../sdd/spec/state-scheduling.md#req-sch-006-mesh-registry-and-membership)
 
@@ -1090,7 +1103,7 @@ GET /api/v1/runtime-versions
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Available runtime versions. | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
+| `200` | Available runtime versions. | `{ "meshllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string }, "llamacpp": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string }, "vllm": { "tags": string[], "fetchedAt"?: number, "stale": boolean, "desired": string, "error"?: string } }`. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management)
@@ -1107,15 +1120,15 @@ PUT /api/v1/runtime-versions
 
 **Origin check:** n/a (automation-key bearer path; Access-backed mutation guard does not apply).
 
-**Request body:** `{ "meshllm"?: string, "llamacpp"?: string }` — each provided value must be in the corresponding release-tag list; or `{ "meshllmSource": "official" | "fork" }` to switch the mesh-llm binary source (posted on its own).
+**Request body:** `{ "meshllm"?: string, "llamacpp"?: string, "vllm"?: string }` — each provided value must be in the corresponding release-tag list; or `{ "meshllmSource": "official" | "fork" }` to switch the mesh-llm binary source (posted on its own).
 
 **Response**
 
 | Status | Outcome | Body |
 | --- | --- | --- |
-| `200` | Desired runtime versions were stored and audited. | `{ "ok": true, "desired": { "meshllm": string, "llamacpp": string } }`. |
+| `200` | Desired runtime versions were stored and audited. | `{ "ok": true, "desired": { "meshllm": string, "llamacpp": string, "vllm": string } }`. |
 | `200` | A `meshllmSource` change was stored and audited as `runtime_source_selected`. | `{ "ok": true, "source": "official" \| "fork" }`. |
-| `400` | No version was provided, a version string was invalid, a tag is absent from the release-tag list, the source is unknown, or a `fork` source was requested with no fork configured. | `invalid_runtime_versions`, `invalid_meshllm_version`, `invalid_llamacpp_version`, `unknown_meshllm_version`, `unknown_llamacpp_version`, `invalid_meshllm_source`, or `meshllm_fork_unavailable` error body. |
+| `400` | No version was provided, a version string was invalid, a tag is absent from the release-tag list, the source is unknown, or a `fork` source was requested with no fork configured. | `invalid_runtime_versions`, `invalid_meshllm_version`, `invalid_llamacpp_version`, `invalid_vllm_version`, `unknown_meshllm_version`, `unknown_llamacpp_version`, `unknown_vllm_version`, `invalid_meshllm_source`, or `meshllm_fork_unavailable` error body. |
 | `401` | No valid automation key was presented. | `unauthorized` error body. |
 
 **Implements:** [REQ-API-010](../../sdd/spec/control-plane-api.md#req-api-010-programmatic-version-and-gateway-management), [REQ-NODE-014](../../sdd/spec/node-agent.md#req-node-014-configurable-runtime-release-source)

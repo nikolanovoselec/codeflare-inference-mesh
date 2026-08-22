@@ -3,7 +3,7 @@ import { createTokenRecord, hashToken } from './auth'
 import { createRouter } from './router'
 import { StoreScheduler } from './scheduler'
 import { MemoryStore, nodeFixture } from './test-helpers'
-import { activeMeshllmRepository, DEFAULT_LLAMACPP_VERSION, DEFAULT_MESHLLM_VERSION, desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
+import { activeMeshllmRepository, DEFAULT_LLAMACPP_VERSION, DEFAULT_MESHLLM_VERSION, DEFAULT_VLLM_VERSION, desiredRuntimeVersions, handleRuntimeVersionsList, handleRuntimeVersionsSelect } from './runtime-versions'
 
 interface RuntimeVersionsBody {
   readonly meshllm: { readonly tags: readonly string[]; readonly desired: string; readonly stale: boolean }
@@ -50,9 +50,20 @@ describe('runtime binary version management', () => {
     const body = await response.json() as { ok: boolean; desired: { meshllm: string; llamacpp: string } }
 
     expect(response.status).toBe(200)
-    expect(body).toEqual({ ok: true, desired: { meshllm: 'v0.73.0', llamacpp: 'b9900' } })
-    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
+    expect(body).toEqual({ ok: true, desired: { meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: DEFAULT_VLLM_VERSION } })
+    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: DEFAULT_VLLM_VERSION })
     expect(store.audit.find((event) => event.type === 'runtime_versions_selected')).toMatchObject({ actor: 'admin:test', detail: { meshllm: 'v0.73.0', llamacpp: 'b9900' } })
+  })
+
+  it('REQ-RUN-025 resolves the desired vllm version alongside its siblings', async () => {
+    // vllm joins the desired-versions wire contract: an unset config resolves to
+    // the pinned default, and a stored selection wins. The agent strips the tag's
+    // leading v for its pip pin, so tags stay GitHub-shaped here.
+    const store = new MemoryStore()
+    expect((await desiredRuntimeVersions(store)).vllm).toBe(DEFAULT_VLLM_VERSION)
+    await store.putConfig('desired_vllm_version', 'v0.28.0')
+    expect((await desiredRuntimeVersions(store)).vllm).toBe('v0.28.0')
+    expect((await desiredRuntimeVersions(store)).meshllm).toBe(DEFAULT_MESHLLM_VERSION)
   })
 
   it('REQ-ADM-033 rejects unknown runtime versions without changing stored desires', async () => {
@@ -62,7 +73,7 @@ describe('runtime binary version management', () => {
     const response = await handleRuntimeVersionsSelect(selectRequest({ meshllm: 'v9.9.9' }), store, releasesFetcher([]))
 
     expect(response.status).toBe(400)
-    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: DEFAULT_MESHLLM_VERSION, llamacpp: DEFAULT_LLAMACPP_VERSION })
+    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: DEFAULT_MESHLLM_VERSION, llamacpp: DEFAULT_LLAMACPP_VERSION, vllm: DEFAULT_VLLM_VERSION })
     expect(store.audit.some((event) => event.type === 'runtime_versions_selected')).toBe(false)
   })
 
@@ -87,7 +98,7 @@ describe('runtime binary version management', () => {
 
     expect(response.status).toBe(200)
     expect(body.ok).toBe(true)
-    expect(body.desiredRuntimeVersions).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
+    expect(body.desiredRuntimeVersions).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: DEFAULT_VLLM_VERSION })
   })
 
   it('REQ-NODE-014 defaults the active source to the fork when configured, upstream when not', async () => {
@@ -144,19 +155,19 @@ describe('runtime binary version management', () => {
       scheduler: new StoreScheduler(store),
       mesh: { fetch: async () => Response.json({}) } as unknown as Fetcher,
       env: {},
-      releasesFetcher: releasesFetcher(['v0.73.0', 'b9900'])
+      releasesFetcher: releasesFetcher(['v0.73.0', 'b9900', 'v0.28.0'])
     })
 
     const listed = await router(new Request('https://router.test/api/v1/runtime-versions', { headers: bearer('auto-secret') }))
     const updated = await router(new Request('https://router.test/api/v1/runtime-versions', {
       method: 'PUT',
       headers: { ...bearer('auto-secret'), 'content-type': 'application/json' },
-      body: JSON.stringify({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
+      body: JSON.stringify({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: 'v0.28.0' })
     }))
 
     expect(listed.status).toBe(200)
     expect(updated.status).toBe(200)
-    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900' })
+    expect(await desiredRuntimeVersions(store)).toEqual({ meshllm: 'v0.73.0', llamacpp: 'b9900', vllm: 'v0.28.0' })
     expect(store.audit.find((event) => event.type === 'runtime_versions_selected')?.actor).toMatch(/^automation:/)
   })
 })

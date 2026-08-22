@@ -114,11 +114,13 @@ function nodeDisplayStatus(node: NodeRecord): string {
   return 'Disconnected'
 }
 
-function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: string; readonly llamacpp: string }) {
+function runtimeBinaryStatus(node: NodeRecord, desired: { readonly meshllm: string; readonly llamacpp: string; readonly vllm: string }) {
   const metrics = node.metrics ?? { runtimeState: 'unknown', activeRequests: 0 }
-  const runtime = (metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp') ? 'llamacpp' : 'meshllm'
-  const desiredVersion = runtime === 'llamacpp' ? desired.llamacpp : desired.meshllm
-  const installedVersion = runtime === 'llamacpp' ? metrics.llamacppVersion : metrics.meshllmVersion
+  const runtime = (metrics.runtimeKind === 'llamacpp' || node.runtime === 'llamacpp')
+    ? 'llamacpp'
+    : (metrics.runtimeKind === 'vllm' || node.runtime === 'vllm') ? 'vllm' : 'meshllm'
+  const desiredVersion = desired[runtime]
+  const installedVersion = runtime === 'llamacpp' ? metrics.llamacppVersion : runtime === 'vllm' ? metrics.vllmVersion : metrics.meshllmVersion
   // An install failure is what the agent reports as dependency-missing (its installer
   // wraps every failure into that state). Startup stderr chatter on a runtime that has
   // not reported its version yet is not an install failure — that node stays pending.
@@ -191,7 +193,7 @@ export async function handleApiStatus(request: Request, deps: RouterDeps, reques
 }
 
 /** Machine-facing node projection: identity, state, and metrics — never token verifiers or internal ports. */
-export function toApiNode(node: NodeRecord, runtimeVersions?: { readonly meshllm: string; readonly llamacpp: string }) {
+export function toApiNode(node: NodeRecord, runtimeVersions?: { readonly meshllm: string; readonly llamacpp: string; readonly vllm: string }) {
   return {
     id: node.id,
     displayName: node.displayName,

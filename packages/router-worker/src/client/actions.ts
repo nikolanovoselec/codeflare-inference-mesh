@@ -250,6 +250,45 @@ export const CLIENT_ACTIONS = `\
       prefillChunkSize: numberOrNull('model-edit-prefill-chunk-size')
     };
   };
+  const vllmTunables = () => {
+    const gpuMemRaw = readInput('model-edit-vllm-gpu-mem');
+    // A typo'd fraction must reach the router as-is and be rejected there: NaN
+    // serialises to JSON null, which the router reads as "clear the setting".
+    const gpuMem = Number(gpuMemRaw);
+    const dtypeRaw = readInput('model-edit-vllm-dtype');
+    const quantRaw = readInput('model-edit-vllm-quant');
+    return {
+      maxNumSeqs: numberOrNull('model-edit-vllm-max-num-seqs'),
+      gpuMemoryUtilization: gpuMemRaw === '' ? null : (Number.isFinite(gpuMem) ? gpuMem : gpuMemRaw),
+      dtype: dtypeRaw === '' ? null : dtypeRaw,
+      quantization: quantRaw === '' ? null : quantRaw
+    };
+  };
+  const samplingSettings = () => {
+    // Only fields actually rendered ride the payload: readInput returns '' for
+    // a missing element too, and absent must never read as "clear this
+    // override". Blank clears back to the mode preset (null removes the key);
+    // a typo'd number must reach the router as-is and be rejected there.
+    const block = {};
+    const numeric = (id, key) => {
+      if (!byId(id)) return;
+      const raw = readInput(id);
+      if (raw === '') { block[key] = null; return; }
+      const parsed = Number(raw);
+      block[key] = Number.isFinite(parsed) ? parsed : raw;
+    };
+    if (byId('model-edit-sampling-mode')) {
+      const modeRaw = readInput('model-edit-sampling-mode');
+      block.mode = modeRaw === '' ? null : modeRaw;
+    }
+    numeric('model-edit-sampling-temperature', 'temperature');
+    numeric('model-edit-sampling-top-p', 'topP');
+    numeric('model-edit-sampling-top-k', 'topK');
+    numeric('model-edit-sampling-min-p', 'minP');
+    numeric('model-edit-sampling-presence-penalty', 'presencePenalty');
+    numeric('model-edit-sampling-repetition-penalty', 'repetitionPenalty');
+    return block;
+  };
   const modelSavePayload = (button) => {
     const runtime = button.dataset.runtime || 'meshllm';
     const payload = { profileId: button.dataset.profileId || '', runtime: runtime };
@@ -262,10 +301,10 @@ export const CLIENT_ACTIONS = `\
     payload.contextWindow = ctxRaw === '' ? 0 : Number(ctxRaw);
     const modelRaw = readInput('model-edit-model');
     if (modelRaw !== '') payload.modelRef = modelRaw;
-    // Empty means "leave as-is"; 0 explicitly clears the mesh-llm cap. Direct llama.cpp
-    // does not use this mesh-only VRAM budget.
+    // Empty means "leave as-is"; 0 explicitly clears the mesh-llm cap. Direct runtimes
+    // (llama.cpp, vLLM) do not use this mesh-only VRAM budget.
     const vramRaw = readInput('model-edit-vram');
-    if (runtime !== 'llamacpp' && vramRaw !== '') payload.maxVramGb = Number(vramRaw);
+    if (runtime !== 'llamacpp' && runtime !== 'vllm' && vramRaw !== '') payload.maxVramGb = Number(vramRaw);
     // Only send name / call name when the operator actually changed them, so saving
     // an unrelated setting never rewrites a default model's extra canonical aliases.
     const nameEl = byId('model-edit-name');
@@ -273,7 +312,10 @@ export const CLIENT_ACTIONS = `\
     if (nameEl && nameEl.value.trim() && nameEl.value !== nameEl.dataset.original) payload.name = nameEl.value.trim();
     if (callEl && callEl.value.trim() && callEl.value !== callEl.dataset.original) payload.callName = callEl.value.trim();
     if (runtime === 'llamacpp') payload.llamacpp = llamaCppTunables();
+    else if (runtime === 'vllm') payload.vllm = vllmTunables();
     else Object.assign(payload, meshllmTunables());
+    // Sampling rides every runtime's save: the block is profile-level.
+    payload.sampling = samplingSettings();
     return payload;
   };
   const saveModelFromDrawer = async ({ button, out }) => {
@@ -347,7 +389,12 @@ export const CLIENT_ACTIONS = `\
   bindAction('runtime-versions-set', async ({ action, button, prefix, out }) => {
       const meshllm = byId(config.runtimeVersion.meshllmSelectId);
       const llamacpp = byId(config.runtimeVersion.llamacppSelectId);
-      await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify({ meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '' }) });
+      const vllm = byId(config.runtimeVersion.vllmSelectId);
+      // The vllm key rides only when a version is actually selected: an empty
+      // select (list response without vllm) must mean "leave as-is", not a 400.
+      const versionsBody = { meshllm: meshllm ? meshllm.value : '', llamacpp: llamacpp ? llamacpp.value : '' };
+      if (vllm && vllm.value) versionsBody.vllm = vllm.value;
+      await request('/admin/runtime-versions', { method: 'POST', headers: headers(true), body: JSON.stringify(versionsBody) });
       setOutput(out, 'Runtime versions saved.');
   });
   bindAction('settings-save', async ({ action, button, prefix, out }) => {

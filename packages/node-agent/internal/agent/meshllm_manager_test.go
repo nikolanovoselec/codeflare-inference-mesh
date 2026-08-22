@@ -954,3 +954,15 @@ func TestREQOBS011MeshLLMReadyClearsStaleRuntimeError(t *testing.T) {
 		t.Fatalf("ready must clear the stale lastError, got %q", got)
 	}
 }
+
+func TestREQRUN010MeshStopDuringConcurrentStopFailsLoudly(t *testing.T) {
+	// A Stop that finds another Stop mid-shutdown must not report success: a
+	// restart would swap render input and "start" over the still-terminating
+	// process, never relaunching with the new argv. REQ-RUN-010.
+	manager := NewMeshLLMManager(MeshLLMRenderInput{}, 0, t.TempDir(), "/missing/mesh-llm")
+	manager.proc = newFakeMeshProcess(&eventLog{})
+	manager.done = nil
+	if err := manager.Stop(context.Background()); !errors.Is(err, ErrStopInProgress) {
+		t.Fatalf("Stop during a concurrent stop = %v, want ErrStopInProgress", err)
+	}
+}

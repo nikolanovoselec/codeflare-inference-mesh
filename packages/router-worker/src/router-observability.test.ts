@@ -152,7 +152,10 @@ describe('router observability, security and status contracts', () => {
       runtime: 'llamacpp',
       contextWindow: 131072,
       modelRef: 'unsloth/Qwen3-14B-GGUF:Q4_K_M',
-      llamacpp: { parallel: 2, kvUnified: true, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, mmproj: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } }
+      llamacpp: { parallel: 2, kvUnified: true, cacheReuse: 512, cachePrompt: false, gpuLayers: '99', cacheTypeK: 'q4_0', cacheTypeV: 'q4_0', batch: 8192, ubatch: 2048, flashAttn: true, mmproj: true, maxOutputTokens: 8192, reasoning: { enabled: true, format: 'deepseek', budget: 4096 } },
+      // Sampling rides every save (REQ-RUN-023); a blank field posts null,
+      // which clears any stored override back to the mode preset.
+      sampling: { mode: null, temperature: null, topP: null, topK: null, minP: null, presencePenalty: null, repetitionPenalty: null }
     })
 
     await harness.clickAction('node-detail', { nodeId: 'node-direct' })

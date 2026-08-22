@@ -10,6 +10,8 @@ import { approvedNodeHeaders } from './auth'
 import { decideDirectSession, directSessionKey, type DirectSessionDecision, type DirectSessionDecisionRequest } from './direct-affinity'
 import { json, responseMetadataHeaders } from './http'
 import { eligibleDirectNodes, meshUrl } from './scheduler'
+import { withSamplingDefaults } from './sampling'
+import { DIRECT_RUNTIMES } from './types'
 import type { ModelProfile, NodeRecord, RouterEnv, Scheduler, Store } from './types'
 
 /** The slice of the router's dependencies the data plane uses. RouterDeps satisfies it. */
@@ -29,7 +31,7 @@ export async function runInference(deps: InferenceDeps, input: { body: Record<st
   const profile = await deps.store.getProfileByPublicModel(publicModel)
   if (!profile) return json({ error: 'no-profile', requestId: input.requestId }, 404, input.requestId)
   const normalized = { ...input, body: { ...input.body, model: publicModel } }
-  if (profile.runtime === 'llamacpp') return runDirectLlamaCppInference(deps, { ...normalized, body: directSessionBody(normalized.body, input.requestHeaders) }, publicModel, profile)
+  if (DIRECT_RUNTIMES.has(profile.runtime)) return runDirectInference(deps, { ...normalized, body: directSessionBody(normalized.body, input.requestHeaders) }, publicModel, profile)
   return runMeshInference(deps, normalized)
 }
 export function routablePublicModel(model: string): string {
@@ -44,11 +46,11 @@ async function runMeshInference(deps: InferenceDeps, input: { body: Record<strin
   }
   return forwardInference(deps, input, selection.node, selection.profile)
 }
-async function runDirectLlamaCppInference(deps: InferenceDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }, publicModel: string, profile: ModelProfile): Promise<Response> {
+async function runDirectInference(deps: InferenceDeps, input: { body: Record<string, unknown>; requestHeaders: Headers; requestId: string; now: number }, publicModel: string, profile: ModelProfile): Promise<Response> {
   const session = parseDirectSession(input.body.user)
   if (!session) {
     await deps.store.appendAudit({ id: input.requestId, type: 'direct_session_rejected', at: input.now, actor: 'provider', target: profile.id, detail: { publicModel, reason: 'invalid_user' } })
-    return json({ error: 'session_required', message: 'llamacpp profiles require body.user formatted as user:<id>|session:<id>', requestId: input.requestId }, 400, input.requestId)
+    return json({ error: 'session_required', message: 'direct profiles require body.user formatted as user:<id>|session:<id>', requestId: input.requestId }, 400, input.requestId)
   }
   const secret = directAffinitySecret(deps.env)
   if (!secret) return json({ error: 'session_affinity_key_missing', requestId: input.requestId }, 503, input.requestId)
@@ -76,7 +78,9 @@ async function forwardInference(deps: InferenceDeps, input: { body: Record<strin
   const upstreamToken = await resolveUpstreamToken(deps)
   if (!upstreamToken) return json({ error: 'upstream_token_missing', requestId: input.requestId }, 503, input.requestId)
 
-  const rewritten = JSON.stringify({ ...input.body, model: profile.upstreamModel })
+  // The profile's effective sampling defaults ride every forwarded request the
+  // caller left unset (REQ-RUN-023) — the single wiring point for all runtimes.
+  const rewritten = JSON.stringify({ ...withSamplingDefaults(input.body, profile), model: profile.upstreamModel })
   let upstream: Response
   try {
     upstream = await deps.mesh.fetch(meshUrl(node, '/v1/chat/completions', deps.env), {

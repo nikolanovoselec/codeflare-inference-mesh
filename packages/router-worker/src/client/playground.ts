@@ -154,7 +154,7 @@ export const CLIENT_PLAYGROUND = `\
   // the DOM (structure), and the CSS tone tokens colour it (style). Both the models list and
   // the Manage drawer compose the same pills, so a vocabulary change is a single edit here.
   const PROFILE_PILLS = {
-    runtime: { llamacpp: { tone: 'red', label: 'llama.cpp' }, meshllm: { tone: 'green', label: 'meshllm' } },
+    runtime: { llamacpp: { tone: 'red', label: 'llama.cpp' }, meshllm: { tone: 'green', label: 'meshllm' }, vllm: { tone: 'teal', label: 'vLLM' } },
     mode: { split: { tone: 'orange', label: 'sharded model' }, single: { tone: 'blue', label: 'singular model' } },
     mesh: { tone: 'purple' }
   };
@@ -164,7 +164,7 @@ export const CLIENT_PLAYGROUND = `\
     return pill;
   }
   function profilePills(profile, direct, split) {
-    const runtime = direct ? 'llamacpp' : 'meshllm';
+    const runtime = PROFILE_PILLS.runtime[profile.runtime] ? profile.runtime : (direct ? 'llamacpp' : 'meshllm');
     const mode = split ? 'split' : 'single';
     const profileMesh = profile.meshId || 'default';
     return [
@@ -191,10 +191,10 @@ export const CLIENT_PLAYGROUND = `\
       const name = document.createElement('strong');
       name.setAttribute('data-model-name', profile.id);
       name.textContent = modelName(profile);
-      // Fixed pill vocabulary: provider (llama.cpp = red, meshllm = green), serving mode
-      // (singular = blue, sharded = orange), and mesh assignment (purple). Combinations
-      // read side by side — e.g. a singular model on meshllm is green + blue.
-      const direct = profile.runtime === 'llamacpp';
+      // Fixed pill vocabulary: provider (llama.cpp = red, meshllm = green, vLLM = teal),
+      // serving mode (singular = blue, sharded = orange), and mesh assignment (purple).
+      // Combinations read side by side — e.g. a singular model on meshllm is green + blue.
+      const direct = profile.runtime === 'llamacpp' || profile.runtime === 'vllm';
       const split = Boolean(profile.meshllm && profile.meshllm.split);
       nameRow.append(name, ...profilePills(profile, direct, split));
       const detail = document.createElement('small');

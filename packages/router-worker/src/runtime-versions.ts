@@ -1,5 +1,5 @@
 import { InvalidJsonBodyError } from './errors'
-import type { Store } from './types'
+import type { RuntimeKind, Store } from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' }
 const CACHE_TTL_MS = 10 * 60 * 1000
@@ -7,6 +7,8 @@ const GITHUB_USER_AGENT = 'codeflare-inference-mesh-router'
 
 export const DEFAULT_MESHLLM_VERSION = 'v0.72.2'
 export const DEFAULT_LLAMACPP_VERSION = 'b9912'
+// GitHub release tag; the agent strips the leading v for its pip pin.
+export const DEFAULT_VLLM_VERSION = 'v0.27.1'
 
 /** The `owner/repo` fork configured in MESHLLM_RELEASE_REPOSITORY (REQ-NODE-014):
  * a valid value makes an overlay-hardened fork *available* as a binary source;
@@ -69,14 +71,21 @@ const SOURCES = {
     cacheKey: 'llamacpp_versions_cache',
     desiredKey: 'desired_llamacpp_version',
     defaultVersion: DEFAULT_LLAMACPP_VERSION
+  },
+  vllm: {
+    repository: 'vllm-project/vllm',
+    cacheKey: 'vllm_versions_cache',
+    desiredKey: 'desired_vllm_version',
+    defaultVersion: DEFAULT_VLLM_VERSION
   }
-} as const
-
-type RuntimeKind = keyof typeof SOURCES
+  // Exhaustiveness against the types.ts RuntimeKind union: adding a kind there
+  // fails compilation here until its source registry entry exists.
+} as const satisfies Record<RuntimeKind, { repository: string; cacheKey: string; desiredKey: string; defaultVersion: string }>
 
 export interface RuntimeBinaryVersions {
   readonly meshllm: string
   readonly llamacpp: string
+  readonly vllm: string
 }
 
 interface RuntimeVersionsCache {
@@ -97,27 +106,30 @@ interface RuntimeVersionList {
 export async function desiredRuntimeVersions(store: Store): Promise<RuntimeBinaryVersions> {
   const meshllm = await store.getConfig<string>(SOURCES.meshllm.desiredKey)
   const llamacpp = await store.getConfig<string>(SOURCES.llamacpp.desiredKey)
+  const vllm = await store.getConfig<string>(SOURCES.vllm.desiredKey)
   return {
     meshllm: validVersionString(meshllm) ? meshllm : SOURCES.meshllm.defaultVersion,
-    llamacpp: validVersionString(llamacpp) ? llamacpp : SOURCES.llamacpp.defaultVersion
+    llamacpp: validVersionString(llamacpp) ? llamacpp : SOURCES.llamacpp.defaultVersion,
+    vllm: validVersionString(vllm) ? vllm : SOURCES.vllm.defaultVersion
   }
 }
 
 export async function handleRuntimeVersionsList(request: Request, store: Store, fetcher: typeof fetch = globalThis.fetch, env: MeshllmSourceEnv = {}): Promise<Response> {
   void request
   const overrides = { meshllm: await activeMeshllmRepository(env, store) }
-  const [meshllm, llamacpp, source] = await Promise.all([
+  const [meshllm, llamacpp, vllm, source] = await Promise.all([
     runtimeList('meshllm', store, fetcher, overrides),
     runtimeList('llamacpp', store, fetcher),
+    runtimeList('vllm', store, fetcher),
     meshllmReleaseSource(env, store)
   ])
-  return json({ meshllm: { ...meshllm, ...source }, llamacpp }, 200)
+  return json({ meshllm: { ...meshllm, ...source }, llamacpp, vllm }, 200)
 }
 
 export async function handleRuntimeVersionsSelect(request: Request, store: Store, fetcher: typeof fetch = globalThis.fetch, actor = 'admin', env: MeshllmSourceEnv = {}): Promise<Response> {
-  let body: { meshllm?: unknown; llamacpp?: unknown; meshllmSource?: unknown } | null
+  let body: { meshllm?: unknown; llamacpp?: unknown; vllm?: unknown; meshllmSource?: unknown } | null
   try {
-    body = await request.json() as { meshllm?: unknown; llamacpp?: unknown; meshllmSource?: unknown } | null
+    body = await request.json() as { meshllm?: unknown; llamacpp?: unknown; vllm?: unknown; meshllmSource?: unknown } | null
   } catch {
     throw new InvalidJsonBodyError()
   }
@@ -126,13 +138,15 @@ export async function handleRuntimeVersionsSelect(request: Request, store: Store
   if (body?.meshllmSource !== undefined) return await selectMeshllmSource(body.meshllmSource, store, env, actor)
   const meshllm = body?.meshllm
   const llamacpp = body?.llamacpp
+  const vllm = body?.vllm
   const overrides = { meshllm: await activeMeshllmRepository(env, store) }
   if (meshllm !== undefined && !validVersionString(meshllm)) return json({ error: 'invalid_meshllm_version' }, 400)
   if (llamacpp !== undefined && !validVersionString(llamacpp)) return json({ error: 'invalid_llamacpp_version' }, 400)
-  if (meshllm === undefined && llamacpp === undefined) return json({ error: 'invalid_runtime_versions' }, 400)
+  if (vllm !== undefined && !validVersionString(vllm)) return json({ error: 'invalid_vllm_version' }, 400)
+  if (meshllm === undefined && llamacpp === undefined && vllm === undefined) return json({ error: 'invalid_runtime_versions' }, 400)
 
   const now = Date.now()
-  const updates: { meshllm?: string; llamacpp?: string } = {}
+  const updates: { meshllm?: string; llamacpp?: string; vllm?: string } = {}
   if (typeof meshllm === 'string') {
     const tags = await currentTags('meshllm', store, fetcher, now, overrides)
     if (!tags.includes(meshllm)) return json({ error: 'unknown_meshllm_version', version: meshllm }, 400)
@@ -144,6 +158,12 @@ export async function handleRuntimeVersionsSelect(request: Request, store: Store
     if (!tags.includes(llamacpp)) return json({ error: 'unknown_llamacpp_version', version: llamacpp }, 400)
     await store.putConfig(SOURCES.llamacpp.desiredKey, llamacpp)
     updates.llamacpp = llamacpp
+  }
+  if (typeof vllm === 'string') {
+    const tags = await currentTags('vllm', store, fetcher, now)
+    if (!tags.includes(vllm)) return json({ error: 'unknown_vllm_version', version: vllm }, 400)
+    await store.putConfig(SOURCES.vllm.desiredKey, vllm)
+    updates.vllm = vllm
   }
   const desired = await desiredRuntimeVersions(store)
   await store.appendAudit({ id: crypto.randomUUID(), type: 'runtime_versions_selected', at: now, actor, detail: updates })
