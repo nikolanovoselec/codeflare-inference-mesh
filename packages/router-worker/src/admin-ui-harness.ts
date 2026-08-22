@@ -11,6 +11,7 @@ export interface StubElement {
   tagName: string
   textContent: string
   value: string
+  placeholder: string
   checked: boolean
   selected: boolean
   disabled: boolean
@@ -68,6 +69,7 @@ export function elementStub(overrides: Partial<StubElement> = {}): StubElement {
     textContent: '',
     nodeType: 1,
     value: '',
+    placeholder: '',
     checked: false,
     selected: false,
     disabled: false,

@@ -155,6 +155,20 @@ describe('mesh console contracts', () => {
     expect(modeSelect).toBeDefined()
   })
 
+  it('REQ-RUN-023 a save with no sampling fields rendered omits every sampling key', async () => {
+    const harness = await dashboardHarness({ respond: (path, init) => {
+      if (path === '/admin/profiles/config' && (init?.method || 'GET') === 'POST') return Response.json({ ok: true })
+      return undefined
+    } })
+    // No drawer is open, so none of the sampling inputs exist. An absent field
+    // must never post null — null clears a stored override — so the block
+    // arrives empty and the router leaves stored sampling untouched.
+    await harness.clickAction('model-save', { profileId: 'custom-live', runtime: 'meshllm', out: 'model-edit-output' })
+    await harness.flush(5)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
+    expect(JSON.parse(String(call?.init?.body)).sampling).toEqual({})
+  })
+
   it('REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons', async () => {
     const harness = await dashboardHarness()
     const html = harness.html

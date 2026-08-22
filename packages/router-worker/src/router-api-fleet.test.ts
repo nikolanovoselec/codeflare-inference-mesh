@@ -205,8 +205,7 @@ describe('control-plane API: fleet status, settings, versions and body handling'
     expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.sampling).toEqual({ mode: 'thinking' })
     expect((await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ sampling: { topP: 2 } }) }))).status).toBe(400)
 
-    // The llama.cpp arm carries the block through its profile rebuild too — the
-    // arm where the repeat_penalty mapping applies at the data plane.
+    // The llama.cpp arm carries the block through its profile rebuild too.
     const llamaAdd = await apiAddModel(router, key.token, 'unsloth/Qwen3-14B-GGUF:Q4_K_M', 'single', 'llamacpp')
     const llamaId = (await llamaAdd.json() as { model: { id: string } }).model.id
     const llamaOk = await router(new Request(`https://router.test/api/v1/models/${llamaId}`, { method: 'POST', headers, body: JSON.stringify({ sampling: { repetitionPenalty: 1.1 } }) }))
