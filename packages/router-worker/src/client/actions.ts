@@ -264,6 +264,26 @@ export const CLIENT_ACTIONS = `\
       quantization: quantRaw === '' ? null : quantRaw
     };
   };
+  const samplingSettings = () => {
+    // Blank clears a parameter back to the mode preset (null removes the key);
+    // a typo'd number must reach the router as-is and be rejected there.
+    const numeric = (id) => {
+      const raw = readInput(id);
+      if (raw === '') return null;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed : raw;
+    };
+    const modeRaw = readInput('model-edit-sampling-mode');
+    return {
+      mode: modeRaw === '' ? null : modeRaw,
+      temperature: numeric('model-edit-sampling-temperature'),
+      topP: numeric('model-edit-sampling-top-p'),
+      topK: numeric('model-edit-sampling-top-k'),
+      minP: numeric('model-edit-sampling-min-p'),
+      presencePenalty: numeric('model-edit-sampling-presence-penalty'),
+      repetitionPenalty: numeric('model-edit-sampling-repetition-penalty')
+    };
+  };
   const modelSavePayload = (button) => {
     const runtime = button.dataset.runtime || 'meshllm';
     const payload = { profileId: button.dataset.profileId || '', runtime: runtime };
@@ -289,6 +309,8 @@ export const CLIENT_ACTIONS = `\
     if (runtime === 'llamacpp') payload.llamacpp = llamaCppTunables();
     else if (runtime === 'vllm') payload.vllm = vllmTunables();
     else Object.assign(payload, meshllmTunables());
+    // Sampling rides every runtime's save: the block is profile-level.
+    payload.sampling = samplingSettings();
     return payload;
   };
   const saveModelFromDrawer = async ({ button, out }) => {

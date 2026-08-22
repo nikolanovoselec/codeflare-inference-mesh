@@ -529,6 +529,36 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 ---
 
+### REQ-RUN-023: Sampling parameter defaults
+
+**Intent:** Every model must serve with tuned sampling defaults — temperature, top-p, top-k, min-p, presence penalty, and repetition penalty — even when neither the caller nor the operator configured them, and operators must be able to override each parameter per model from the console or the automation API, with the values taking effect on all three runtimes.
+
+**Applies To:** Admin, Automation, Provider
+
+**Acceptance Criteria:**
+
+1. Each unset sampling parameter resolves from the profile's mode preset — thinking: temperature 1.0, top-p 0.95, top-k 20, min-p 0, presence penalty 0, repetition penalty 1.0; instruct: temperature 0.7, top-p 0.8, top-k 20, min-p 0, presence penalty 1.5, repetition penalty 1.0 — and a stored per-parameter override beats the preset field-wise. <!-- @impl: packages/router-worker/src/sampling.ts::SAMPLING_PRESETS --> <!-- @impl: packages/router-worker/src/sampling.ts::effectiveSampling --> <!-- @test: packages/router-worker/src/sampling.test.ts (REQ-RUN-023 resolves instruct for non-reasoning profiles and thinking for reasoning-enabled ones) --> <!-- @test: packages/router-worker/src/sampling.test.ts (REQ-RUN-023 stored overrides beat the preset field-wise) -->
+
+2. A profile without an explicit sampling mode derives it from its runtime's reasoning setting — thinking when reasoning is enabled, instruct otherwise, and always instruct for vLLM profiles, which carry no reasoning knob. <!-- @impl: packages/router-worker/src/sampling.ts::samplingMode --> <!-- @test: packages/router-worker/src/sampling.test.ts (REQ-RUN-023 resolves instruct for non-reasoning profiles and thinking for reasoning-enabled ones) -->
+
+3. The data plane injects the effective values into every forwarded chat completion for parameters the caller left unset — mesh and direct paths alike — and a caller-supplied value is never overridden; the repetition penalty rides the serving runtime's parameter name, `repeat_penalty` for llama.cpp and `repetition_penalty` for mesh-llm and vLLM, with either caller spelling respected. <!-- @impl: packages/router-worker/src/sampling.ts::withSamplingDefaults --> <!-- @impl: packages/router-worker/src/inference.ts::forwardInference --> <!-- @test: packages/router-worker/src/sampling.test.ts (REQ-RUN-023 injects only unset parameters and maps the repetition key per runtime) --> <!-- @test: packages/router-worker/src/router-routing.test.ts (REQ-RUN-023 injects the profile sampling defaults into forwarded requests the caller left unset) --> <!-- @test: packages/router-worker/src/router-routing.test.ts (REQ-RUN-023 direct llama.cpp requests carry repeat_penalty and stored sampling overrides) -->
+
+4. `POST /admin/profiles/config` and `POST /api/v1/models/{id}` accept a `sampling` block through one shared validation core: out-of-range values are rejected with a named `invalid_sampling_*` token and no write, `null` clears one parameter back to the preset, and a `null` block clears every override. <!-- @impl: packages/router-worker/src/sampling.ts::resolveSampling --> <!-- @impl: packages/router-worker/src/sampling.ts::applySamplingUpdate --> <!-- @test: packages/router-worker/src/sampling.test.ts (REQ-RUN-023 validates ranges, clears fields with null, and clears the block with a null value) --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-023 configures sampling through the console profile-config path for a mesh profile) --> <!-- @test: packages/router-worker/src/router-api-fleet.test.ts (REQ-RUN-023 REQ-API-005 configures sampling overrides over the automation API) -->
+
+5. The console model drawer carries a sampling section for every runtime — a mode selector plus the six parameters, blank meaning the preset — saved through the profile-config path, and model projections carry the stored block. <!-- @impl: packages/router-worker/src/client/drawers.ts::openModelDrawer --> <!-- @impl: packages/router-worker/src/client/actions.ts::modelSavePayload --> <!-- @impl: packages/router-worker/src/handlers/models.ts::toApiModel --> <!-- @test: packages/router-worker/src/admin-ui-mesh-console.test.ts (REQ-RUN-023 model drawer edits sampling for every runtime and saves the block) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-API-005](control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-021](setup-admin.md#req-adm-021-model-serving-configuration)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
 ### REQ-RUN-012: Model removal
 
 **Intent:** Operators must be able to remove any model they no longer serve — including the seed-once starter — so the catalog does not accumulate abandoned entries, while the one model currently answering a mesh's stable route stays protected.

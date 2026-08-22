@@ -129,6 +129,32 @@ describe('mesh console contracts', () => {
     expect(harness.byId(ADMIN_UI_DRAWER.containerId).hidden, 'drawer closes so the refreshed list shows the copy').toBe(true)
   })
 
+  it('REQ-RUN-023 model drawer edits sampling for every runtime and saves the block', async () => {
+    const profiles = [
+      { id: 'custom-live', displayName: 'Live', publicAliases: ['codeflare-mesh', 'live'], active: true, rolloutPercent: 100, contextWindow: 32768, runtime: 'meshllm', meshllm: { split: false, modelRef: 'unsloth/x' }, sampling: { temperature: 0.55 } },
+      { id: 'custom-v', displayName: 'V', publicAliases: ['codeflare-mesh', 'v'], active: false, rolloutPercent: 0, contextWindow: 0, runtime: 'vllm', vllm: { hfRepo: 'org/m', bindPort: 4310, contextWindow: 0 } }
+    ]
+    const harness = await dashboardHarness({ status: statusFixture({ profiles }), respond: (path, init) => {
+      if (path === '/admin/profiles/config' && (init?.method || 'GET') === 'POST') return Response.json({ ok: true })
+      return undefined
+    } })
+    await harness.clickAction('model-detail', { profileId: 'custom-live' })
+    // The stored override pre-fills its field; blank fields follow the mode preset.
+    expect(harness.byId('model-edit-sampling-temperature').value).toBe('0.55')
+    harness.byId('model-edit-sampling-top-k').value = '40'
+    await harness.clickAction('model-save', { profileId: 'custom-live', runtime: 'meshllm', out: 'model-edit-output' })
+    await harness.flush(5)
+    const call = harness.fetchCalls.find((entry) => entry.path === '/admin/profiles/config')
+    const sent = JSON.parse(String(call?.init?.body)) as { sampling: Record<string, unknown> }
+    // Values ride as numbers; blanks ride as null so the router clears them.
+    expect(sent.sampling).toMatchObject({ temperature: 0.55, topK: 40, mode: null, minP: null })
+
+    // The sampling section is runtime-agnostic: the vLLM drawer carries it too.
+    await harness.clickAction('model-detail', { profileId: 'custom-v' })
+    const modeSelect = descendants(harness.byId(ADMIN_UI_DRAWER.bodyId)).find((el) => el.id === 'model-edit-sampling-mode')
+    expect(modeSelect).toBeDefined()
+  })
+
   it('REQ-ADM-025 REQ-ADM-037 the add-model form and add-mesh input sit behind native disclosure buttons', async () => {
     const harness = await dashboardHarness()
     const html = harness.html

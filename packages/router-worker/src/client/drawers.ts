@@ -456,6 +456,22 @@ export const CLIENT_DRAWERS = `\
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-vllm-dtype', label: 'Compute dtype', value: vllm.dtype || '', options: [{ value: '', label: 'Auto' }, { value: 'auto', label: 'auto' }, { value: 'half', label: 'half' }, { value: 'float16', label: 'float16' }, { value: 'bfloat16', label: 'bfloat16' }, { value: 'float', label: 'float' }, { value: 'float32', label: 'float32' }], hint: 'vLLM --dtype. Auto follows the checkpoint; half is required on pre-Ampere GPUs (compute capability below 8.0) for bf16 checkpoints.' }));
       bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-vllm-quant', label: 'Quantization method', value: vllm.quantization || '', placeholder: 'Auto-detect', hint: 'vLLM --quantization override (awq, gptq, fp8, …). Blank = Auto (vLLM detects the method from the checkpoint).' }));
     }
+    // Sampling defaults apply to every runtime: blank fields follow the mode
+    // preset, and the router injects the effective values into requests that do
+    // not set them themselves (REQ-RUN-023).
+    const samplingHead = document.createElement('div');
+    samplingHead.className = 'drawer-subhead';
+    samplingHead.textContent = 'Sampling';
+    bodyEl.appendChild(samplingHead);
+    const sampling = profile.sampling || {};
+    const samplingText = (key) => sampling[key] != null ? String(sampling[key]) : '';
+    bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-sampling-mode', label: 'Sampling mode', value: sampling.mode || '', options: [{ value: '', label: 'Auto (follows reasoning)' }, { value: 'thinking', label: 'Thinking' }, { value: 'instruct', label: 'Instruct' }], hint: 'Which preset fills blank parameters below. Auto picks Thinking when the model reasons, Instruct otherwise. Thinking preset: temperature 1.0, top-p 0.95, top-k 20, min-p 0, presence penalty 0, repetition penalty 1.0. Instruct preset: temperature 0.7, top-p 0.8, top-k 20, min-p 0, presence penalty 1.5, repetition penalty 1.0.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-temperature', label: 'Temperature', value: samplingText('temperature'), placeholder: 'Preset', hint: 'Sampling randomness, 0-2. Blank follows the mode preset; requests that set their own temperature always win.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-top-p', label: 'Top-p', value: samplingText('topP'), placeholder: 'Preset', hint: 'Nucleus sampling mass, above 0 up to 1. Blank follows the mode preset.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-top-k', label: 'Top-k', value: samplingText('topK'), placeholder: 'Preset', hint: 'Candidate pool size, whole number; 0 disables the cutoff. Blank follows the mode preset.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-min-p', label: 'Min-p', value: samplingText('minP'), placeholder: 'Preset', hint: 'Minimum token probability relative to the best candidate, 0-1. Blank follows the mode preset.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-presence-penalty', label: 'Presence penalty', value: samplingText('presencePenalty'), placeholder: 'Preset', hint: 'Penalizes tokens already present, -2 to 2. Blank follows the mode preset.' }));
+    bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-sampling-repetition-penalty', label: 'Repetition penalty', value: samplingText('repetitionPenalty'), placeholder: 'Preset', hint: 'Scales repeated-token probability, above 0 up to 2. Sent as repeat_penalty to llama.cpp and repetition_penalty to the other runtimes. Blank follows the mode preset.' }));
     const save = document.createElement('button');
     save.type = 'button';
     save.className = 'btn btn-primary';

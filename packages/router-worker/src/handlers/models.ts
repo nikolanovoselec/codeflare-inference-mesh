@@ -1,6 +1,7 @@
 /** Model profiles: the catalogue, its rollout state, and per-profile configuration. */
 import { buildCustomProfile, buildDuplicateProfile, llamaCppQuantError, parseLlamaCppModelRef, profileMeshId } from '../profiles'
 import { configureLlamaCppProfile, configureVllmProfile, INVALID_MAX_VRAM, resolveCallNameAliases, resolveMaxVram, resolveMeshReassignment, resolveMeshllmTunables, resolveRuntime, resolveTargetRuntime, type ModelConfigBody } from '../profile-config'
+import { applySamplingUpdate } from '../sampling'
 import { json, readJson } from '../http'
 import { listMeshes } from '../meshes'
 import type { ModelProfile } from '../types'
@@ -44,7 +45,9 @@ export async function handleProfileConfig(request: Request, deps: RouterDeps, re
   if (!found) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   const reassignment = await resolveMeshReassignment(deps, found, body.meshId)
   if ('error' in reassignment) return json({ error: reassignment.error, requestId }, 400, requestId)
-  const existing = reassignment.profile
+  const sampled = applySamplingUpdate(reassignment.profile, body.sampling)
+  if ('error' in sampled) return json({ error: sampled.error, requestId }, 400, requestId)
+  const existing = sampled.profile
   // The dispatch target is the runtime the profile is being configured *into*:
   // the requested kind when one rides the body, else the stored kind. Keying on
   // either-side matches sent a llamacpp→vllm conversion into the llamacpp arm.
@@ -185,7 +188,8 @@ export function toApiModel(profile: ModelProfile) {
       prefillChunkSize: m.prefillChunkSize ?? null
     } : null,
     ...(l ? { llamacpp: l } : {}),
-    ...(v ? { vllm: v } : {})
+    ...(v ? { vllm: v } : {}),
+    ...(profile.sampling ? { sampling: profile.sampling } : {})
   }
 }
 
@@ -283,7 +287,9 @@ export async function handleApiModelConfigure(request: Request, deps: RouterDeps
   if (!found) return json({ error: 'unknown_profile', requestId }, 404, requestId)
   const reassignment = await resolveMeshReassignment(deps, found, body.meshId)
   if ('error' in reassignment) return json({ error: reassignment.error, requestId }, 400, requestId)
-  const existing = reassignment.profile
+  const sampled = applySamplingUpdate(reassignment.profile, body.sampling)
+  if ('error' in sampled) return json({ error: sampled.error, requestId }, 400, requestId)
+  const existing = sampled.profile
   // The dispatch target is the runtime the profile is being configured *into*:
   // the requested kind when one rides the body, else the stored kind. Keying on
   // either-side matches sent a llamacpp→vllm conversion into the llamacpp arm.

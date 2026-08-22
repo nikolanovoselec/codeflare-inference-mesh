@@ -321,7 +321,7 @@ function resolvePrefixCache(existing: PrefixCacheBlock | undefined, value: unkno
 // cache type, or a boolean sets it; null / 0 / "" clears it back to Auto by removing
 // the key (never assigning undefined, which JSON.stringify would silently strip from
 // the stored blob). An invalid value yields an error code the caller returns as 400.
-export type ModelConfigBody = { profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string; runtime?: unknown; llamacpp?: unknown; vllm?: unknown; meshId?: unknown } & MeshllmTunablesBody
+export type ModelConfigBody = { profileId?: string; contextWindow?: number; modelRef?: string; maxVramGb?: number; name?: string; callName?: string; runtime?: unknown; llamacpp?: unknown; vllm?: unknown; sampling?: unknown; meshId?: unknown } & MeshllmTunablesBody
 
 export function resolveMeshllmTunables(existing: NonNullable<ModelProfile['meshllm']>, body: MeshllmTunablesBody): { meshllm: NonNullable<ModelProfile['meshllm']> } | { error: string } {
   const next: Record<string, unknown> = { ...existing }

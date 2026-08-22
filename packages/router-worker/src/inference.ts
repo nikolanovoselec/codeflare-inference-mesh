@@ -10,6 +10,7 @@ import { approvedNodeHeaders } from './auth'
 import { decideDirectSession, directSessionKey, type DirectSessionDecision, type DirectSessionDecisionRequest } from './direct-affinity'
 import { json, responseMetadataHeaders } from './http'
 import { eligibleDirectNodes, meshUrl } from './scheduler'
+import { withSamplingDefaults } from './sampling'
 import { DIRECT_RUNTIMES } from './types'
 import type { ModelProfile, NodeRecord, RouterEnv, Scheduler, Store } from './types'
 
@@ -77,7 +78,9 @@ async function forwardInference(deps: InferenceDeps, input: { body: Record<strin
   const upstreamToken = await resolveUpstreamToken(deps)
   if (!upstreamToken) return json({ error: 'upstream_token_missing', requestId: input.requestId }, 503, input.requestId)
 
-  const rewritten = JSON.stringify({ ...input.body, model: profile.upstreamModel })
+  // The profile's effective sampling defaults ride every forwarded request the
+  // caller left unset (REQ-RUN-023) — the single wiring point for all runtimes.
+  const rewritten = JSON.stringify({ ...withSamplingDefaults(input.body, profile), model: profile.upstreamModel })
   let upstream: Response
   try {
     upstream = await deps.mesh.fetch(meshUrl(node, '/v1/chat/completions', deps.env), {

@@ -122,6 +122,21 @@ export interface VllmProfileSettings {
   readonly quantization?: string
 }
 
+/**
+ * Profile sampling overrides (REQ-RUN-023). Runtime-agnostic: any parameter
+ * left unset resolves from the mode preset, and the data plane injects the
+ * effective values into forwarded chat completions the caller left unset.
+ */
+export interface SamplingSettings {
+  readonly mode?: 'thinking' | 'instruct'
+  readonly temperature?: number
+  readonly topP?: number
+  readonly topK?: number
+  readonly minP?: number
+  readonly presencePenalty?: number
+  readonly repetitionPenalty?: number
+}
+
 export interface ModelProfile {
   readonly id: string
   readonly displayName: string
@@ -133,6 +148,7 @@ export interface ModelProfile {
   readonly meshllm?: MeshLLMProfileSettings
   readonly llamacpp?: LlamaCppProfileSettings
   readonly vllm?: VllmProfileSettings
+  readonly sampling?: SamplingSettings
   readonly version: number
   readonly rolloutPercent: number
   readonly active: boolean

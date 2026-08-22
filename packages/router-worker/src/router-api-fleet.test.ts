@@ -187,6 +187,25 @@ describe('control-plane API: fleet status, settings, versions and body handling'
     expect((await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ vllm: { gpuMemoryUtilization: 1.5 } }) }))).status).toBe(400)
   })
 
+  it('REQ-RUN-023 REQ-API-005 configures sampling overrides over the automation API', async () => {
+    const { router, store } = routerFixture()
+    const key = await mintKey(router)
+    const headers = { ...bearer(key.token), 'content-type': 'application/json' }
+    const add = await apiAddModel(router, key.token, 'Qwen/Qwen3.8-27B-FP8', 'single', 'vllm')
+    const profileId = (await add.json() as { model: { id: string } }).model.id
+
+    const ok = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ sampling: { mode: 'thinking', temperature: 1.2 } }) }))
+    const body = await ok.json() as { model: { sampling?: { mode?: string; temperature?: number } } }
+    expect(ok.status).toBe(200)
+    expect(body.model.sampling).toEqual({ mode: 'thinking', temperature: 1.2 })
+    expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.sampling).toEqual({ mode: 'thinking', temperature: 1.2 })
+    // null clears one override back to the preset; out-of-range values are rejected.
+    const cleared = await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ sampling: { temperature: null } }) }))
+    expect(cleared.status).toBe(200)
+    expect((await store.listProfiles()).find((profile) => profile.id === profileId)?.sampling).toEqual({ mode: 'thinking' })
+    expect((await router(new Request(`https://router.test/api/v1/models/${profileId}`, { method: 'POST', headers, body: JSON.stringify({ sampling: { topP: 2 } }) }))).status).toBe(400)
+  })
+
   it('REQ-API-010 lists available agent versions to an automation caller', async () => {
     const { router } = routerFixture({ releasesFetcher: githubReleasesFetcher(['v1.2.0', 'v1.1.0']) })
     const key = await mintKey(router)
