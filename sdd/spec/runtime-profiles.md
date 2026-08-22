@@ -475,19 +475,19 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 **Acceptance Criteria:**
 
-1. `POST /admin/profiles/add` and its automation twin with runtime `vllm` and serving mode `single` create an inactive direct profile with source mode `vllm-hf` whose reference is a bare Hugging Face repository; a llama-style `:quant` file tag is rejected with `400 invalid_model_ref`, and serving mode `split` with any non-MeshLLM runtime is rejected with `400 split_requires_meshllm`. <!-- @impl: packages/router-worker/src/handlers/models.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/handlers/models.ts::handleApiModelAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 adds and configures a direct vLLM profile through the admin paths) -->
+1. `POST /admin/profiles/add` and its automation twin with runtime `vllm` and serving mode `single` create an inactive direct profile with source mode `vllm-hf` whose reference is a bare Hugging Face repository. <!-- @impl: packages/router-worker/src/handlers/models.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/handlers/models.ts::handleApiModelAdd --> <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 adds and configures a direct vLLM profile through the admin paths) -->
 
-2. `POST /admin/profiles/config` and its automation twin accept a `vllm` settings block validating max concurrent sequences (integer ≥ 1, null clears to Auto), GPU memory utilization (a fraction in (0, 1], null clears), compute dtype against vLLM's dtype vocabulary, an open quantization-method string, context window (0 = Auto or ≥ 4096), and a bind port that never collides with the agent's reserved ports; invalid values return 400 without persisting. <!-- @impl: packages/router-worker/src/profile-config.ts::configureVllmProfile --> <!-- @impl: packages/router-worker/src/profile-config.ts::resolveVllmSettings --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 adds and configures a direct vLLM profile through the admin paths) -->
+2. A llama-style `:quant` file tag on a vLLM model reference is rejected with `400 invalid_model_ref` without creating or changing a profile. <!-- @impl: packages/router-worker/src/handlers/models.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/handlers/models.ts::handleApiModelAdd --> <!-- @test: packages/router-worker/src/router-api-models.test.ts (REQ-API-007 REQ-RUN-021 refuses a :quant reference for a vLLM model at creation) -->
 
-3. New-profile bind-port allocation scans every runtime's settings block — meshllm, llamacpp, and vllm — so profiles of different runtimes never collide on a node port. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 advances new bind ports past every runtime block including vllm) -->
+3. Serving mode `split` with any non-MeshLLM runtime is rejected with `400 split_requires_meshllm`. <!-- @impl: packages/router-worker/src/handlers/models.ts::handleProfileAdd --> <!-- @impl: packages/router-worker/src/handlers/models.ts::handleApiModelAdd --> <!-- @test: packages/router-worker/src/router-api-models.test.ts (REQ-API-007 rejects direct vLLM split model onboarding) -->
 
-4. A stored vLLM profile round-trips normalization unchanged: the vllm arm precedes the unknown-runtime fallback, so a router rollback boundary is the only path that could repatriate it to meshllm. <!-- @impl: packages/router-worker/src/profiles.ts::normalizeModelProfile --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-021 round-trips a stored vllm profile without meshllm repatriation) -->
+4. `POST /admin/profiles/config` and its automation twin validate a `vllm` block: max sequences integer ≥ 1, GPU memory fraction in (0, 1], dtype from vLLM's vocabulary, open quantization string, context window 0 (Auto) or ≥ 4096, bind port off the agent's reserved ports; invalid values return 400 without persisting. <!-- @impl: packages/router-worker/src/profile-config.ts::configureVllmProfile --> <!-- @impl: packages/router-worker/src/profile-config.ts::resolveVllmSettings --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 adds and configures a direct vLLM profile through the admin paths) -->
 
-5. A chat request for a vLLM profile dispatches direct to a pinned eligible node with session affinity, rewrites the public alias to the profile's Hugging Face repository, and crosses the Worker-to-node credential boundary with only the upstream token. <!-- @impl: packages/router-worker/src/inference.ts::runDirectInference --> <!-- @impl: packages/router-worker/src/scheduler.ts::isDirectEligible --> <!-- @test: packages/router-worker/src/router-routing.test.ts (REQ-RUN-021 dispatches a vllm profile direct with session affinity and the node credential boundary) -->
+5. New-profile bind-port allocation scans every runtime's settings block — meshllm, llamacpp, and vllm — so profiles of different runtimes never collide on a node port. <!-- @impl: packages/router-worker/src/profiles.ts::buildCustomProfile --> <!-- @impl: packages/router-worker/src/profiles.ts::buildDuplicateProfile --> <!-- @test: packages/router-worker/src/router-admin-models.test.ts (REQ-RUN-021 advances new bind ports past every runtime block including vllm) -->
 
-6. The node agent treats `vllm` as a managed runtime kind: the shared launch table starts and restarts it, kind reconciliation heals mismatches in both directions, and the launch profile key includes the vLLM settings so a saved configuration or version change re-keys and restarts the runtime. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_launch.go::startVllmRuntime --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/profile_restart.go::restartVllmRuntime --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_state.go::profileKey --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQRUN021VllmIsAManagedRuntimeKind) --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQRUN021ProfileKeyHashesVllmSettings) -->
+6. A stored vLLM profile round-trips normalization unchanged: the vllm arm precedes the unknown-runtime fallback, so a router rollback boundary is the only path that could repatriate it to meshllm. <!-- @impl: packages/router-worker/src/profiles.ts::normalizeModelProfile --> <!-- @test: packages/router-worker/src/store.test.ts (REQ-RUN-021 round-trips a stored vllm profile without meshllm repatriation) -->
 
-7. The console exposes the vLLM surface end to end: the model drawer loads and saves the four vLLM tunables and shows the launch source, the model card carries a `vllm` runtime pill, the node drawer reports the installed vLLM version, and Settings lists, defaults, and persists the desired vLLM release tag alongside its siblings. <!-- @impl: packages/router-worker/src/client/drawers.ts::openModelDrawer --> <!-- @impl: packages/router-worker/src/runtime-versions.ts::desiredRuntimeVersions --> <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsSelect --> <!-- @impl: packages/router-worker/src/admin-ui-views.ts::settingsSection --> <!-- @test: packages/router-worker/src/admin-ui-models.test.ts (REQ-RUN-021 loads and saves direct vLLM runtime tunables from the model drawer) --> <!-- @test: packages/router-worker/src/admin-ui-playground.test.ts (REQ-RUN-021 a vllm model card carries its runtime pill attribute) --> <!-- @test: packages/router-worker/src/admin-ui-nodes.test.ts (REQ-RUN-021 vllm node drawer reports the installed vllm version) --> <!-- @test: packages/router-worker/src/admin-ui-settings.test.ts (REQ-RUN-021 renders and saves the vllm runtime version control from Settings) --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-RUN-021 resolves the desired vllm version alongside its siblings) -->
+7. A chat request for a vLLM profile dispatches direct to a pinned eligible node with session affinity, rewrites the public alias to the profile's Hugging Face repository, and crosses the Worker-to-node credential boundary with only the upstream token. <!-- @impl: packages/router-worker/src/inference.ts::runDirectInference --> <!-- @impl: packages/router-worker/src/scheduler.ts::isDirectEligible --> <!-- @test: packages/router-worker/src/router-routing.test.ts (REQ-RUN-021 dispatches a vllm profile direct with session affinity and the node credential boundary) -->
 
 **Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases), [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
 
@@ -513,7 +513,7 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 
 2. Unset tunables are omitted from the argv entirely — Auto means vLLM's model-derived defaults rule, never a fabricated flag value. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::RenderVllmArgs --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmRenderArgsOmitsUnsetTunables) -->
 
-3. The manager reports runtime kind `vllm` and launches the installed venv binary; readiness polls the runtime's own `/v1/models` on the bound port, treats connection-refused as still loading under a generous first-load deadline (model download plus load), and fails closed with a readiness error when the deadline passes or the process exits before readiness. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::VllmManager --> <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::awaitReadiness --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmManagerIdentityAndTarget) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmReadinessTreatsConnectionRefusedAsLoading) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmReadinessDeadlineFailsClosed) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmExitBeforeReadinessFailsRuntime) -->
+3. The manager reports kind `vllm`, launches the installed venv binary, and polls the runtime's own `/v1/models` for readiness: connection-refused counts as still loading under a generous first-load deadline, and the deadline passing or the process exiting first fails closed. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::VllmManager --> <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::awaitReadiness --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmManagerIdentityAndTarget) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmReadinessTreatsConnectionRefusedAsLoading) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmReadinessDeadlineFailsClosed) --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmExitBeforeReadinessFailsRuntime) -->
 
 4. The drain gate counts a direct vLLM runtime's in-flight work as its running plus waiting engine requests, so a profile switch drains the continuous-batch queue depth, not just active decodes. <!-- @impl: packages/node-agent/internal/agent/vllm_manager.go::Inflight --> <!-- @test: packages/node-agent/internal/agent/vllm_manager_test.go (TestREQRUN022VllmInflightCountsRunningAndWaiting) -->
 
@@ -556,6 +556,60 @@ This domain covers stable aliases, concrete model profiles, profile rollout, man
 **Priority:** P2
 
 **Dependencies:** [REQ-RUN-011](#req-run-011-custom-model-onboarding), [REQ-API-005](control-plane-api.md#req-api-005-programmatic-model-management), [REQ-ADM-021](setup-admin.md#req-adm-021-model-serving-configuration)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-024: Managed vLLM node lifecycle
+
+**Intent:** The node agent must treat vLLM as a first-class managed runtime kind whose launch, replacement, and restart-on-change flow through the shared lifecycle machinery rather than vLLM-specific paths.
+
+**Applies To:** Node Agent
+
+**Acceptance Criteria:**
+
+1. Launch-kind resolution routes `vllm` to its own `{start, restart}` spec — never the legacy meshllm fallback, which would launch a mesh process and open its mesh-peer port — while unknown kinds still resolve to meshllm. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_launch.go::effectiveRuntimeKind --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_launch.go::startVllmRuntime --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQRUN024VllmIsAManagedRuntimeKind) -->
+
+2. Kind reconciliation flags a mismatch in both directions — a vLLM manager under a meshllm profile and a meshllm manager under a vLLM profile — so the reconciler replaces the wrong runtime. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/heartbeat.go::runtimeKindMismatch --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQRUN024VllmIsAManagedRuntimeKind) -->
+
+3. The launch profile key includes the vLLM settings, so a saved configuration or desired-version change re-keys the profile and restarts the runtime. <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/runtime_state.go::profileKey --> <!-- @impl: packages/node-agent/cmd/inference-mesh-agent/profile_restart.go::restartVllmRuntime --> <!-- @test: packages/node-agent/cmd/inference-mesh-agent/vllm_runtime_test.go (TestREQRUN024ProfileKeyHashesVllmSettings) -->
+
+**Constraints:** [CON-RUNTIME-001](constraints.md#con-runtime-001-runtime-boundaries)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-021](#req-run-021-direct-vllm-custom-profiles), [REQ-RUN-022](#req-run-022-direct-vllm-launch-rendering)
+
+**Verification:** Automated test
+
+**Status:** Implemented
+
+---
+
+### REQ-RUN-025: Console vLLM surface
+
+**Intent:** Operators must manage vLLM from the console with the same visibility and controls the other runtimes get: tunables in the model drawer, runtime identity on the card, installed version on the node, desired release in Settings.
+
+**Applies To:** Admin
+
+**Acceptance Criteria:**
+
+1. The model drawer loads and saves the four vLLM tunables and shows the launch source derived from the model reference. <!-- @impl: packages/router-worker/src/client/drawers.ts::openModelDrawer --> <!-- @test: packages/router-worker/src/admin-ui-models.test.ts (REQ-RUN-025 loads and saves direct vLLM runtime tunables from the model drawer) -->
+
+2. A vLLM model card carries a `vllm` runtime pill in its stable data attribute. <!-- @impl: packages/router-worker/src/client/playground.ts::profilePills --> <!-- @test: packages/router-worker/src/admin-ui-playground.test.ts (REQ-RUN-025 a vllm model card carries its runtime pill attribute) -->
+
+3. The node drawer reports the installed vLLM version when the node runs a direct vLLM profile. <!-- @impl: packages/router-worker/src/client/drawers.ts::openNodeDrawer --> <!-- @test: packages/router-worker/src/admin-ui-nodes.test.ts (REQ-RUN-025 vllm node drawer reports the installed vllm version) -->
+
+4. Settings lists, defaults, and persists the desired vLLM release tag alongside its sibling runtimes. <!-- @impl: packages/router-worker/src/runtime-versions.ts::desiredRuntimeVersions --> <!-- @impl: packages/router-worker/src/runtime-versions.ts::handleRuntimeVersionsSelect --> <!-- @impl: packages/router-worker/src/admin-ui-views.ts::settingsSection --> <!-- @test: packages/router-worker/src/admin-ui-settings.test.ts (REQ-RUN-025 renders and saves the vllm runtime version control from Settings) --> <!-- @test: packages/router-worker/src/runtime-versions.test.ts (REQ-RUN-025 resolves the desired vllm version alongside its siblings) -->
+
+**Constraints:** [CON-MODEL-001](constraints.md#con-model-001-stable-gateway-aliases)
+
+**Priority:** P2
+
+**Dependencies:** [REQ-RUN-021](#req-run-021-direct-vllm-custom-profiles), [REQ-ADM-033](setup-admin.md#req-adm-033-runtime-binary-version-and-install-visibility)
 
 **Verification:** Automated test
 

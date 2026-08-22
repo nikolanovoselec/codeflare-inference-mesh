@@ -422,7 +422,7 @@ describe('nodes table and node drawer contracts', () => {
     expect(fieldValue(field('direct-cache')!)).toBe('not reported · cross-divergence reuse unavailable for multimodal')
   })
 
-  it('REQ-RUN-021 vllm node drawer reports the installed vllm version', async () => {
+  it('REQ-RUN-025 vllm node drawer reports the installed vllm version', async () => {
     const nodes = [
       { id: 'vllm-node', status: 'online', runtime: 'vllm', metrics: {
         runtimeKind: 'vllm', runtimeState: 'ready', apiReady: true,

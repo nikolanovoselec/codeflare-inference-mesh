@@ -92,7 +92,7 @@ describe('settings, API keys and version control contracts', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ meshllm: 'v0.72.2', llamacpp: 'b9912' })
   })
 
-  it('REQ-RUN-021 renders and saves the vllm runtime version control from Settings', async () => {
+  it('REQ-RUN-025 renders and saves the vllm runtime version control from Settings', async () => {
     const harness = await dashboardHarness({ respond: (path, init) => {
       const method = (init && init.method) || 'GET'
       if (path === '/admin/runtime-versions' && method === 'GET') return Response.json({

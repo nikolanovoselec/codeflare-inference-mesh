@@ -51,6 +51,7 @@ type MeshCoordinator interface {
 var (
 	_ RuntimeManager  = (*MeshLLMManager)(nil)
 	_ RuntimeManager  = (*LlamaCppManager)(nil)
+	_ RuntimeManager  = (*VllmManager)(nil)
 	_ MeshCoordinator = (*MeshLLMManager)(nil)
 )
 

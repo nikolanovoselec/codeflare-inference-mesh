@@ -424,3 +424,18 @@ func TestREQNODE017EnsureVllmDefaultsToPinnedVersion(t *testing.T) {
 	}
 	t.Fatalf("no pip install step recorded: %v", runner.joinedCalls())
 }
+
+func TestREQNODE017EnsureVllmRejectsMalformedVersion(t *testing.T) {
+	dataDir := t.TempDir()
+	runner := &fakeVllmRunner{dataDir: dataDir}
+	_, err := EnsureVllm(context.Background(), dataDir, "v0.27.1/../../escape", vllmTestOptions(dataDir, runner, VllmPinnedVersion)...)
+	if !errors.Is(err, ErrRuntimeDependencyMissing) {
+		t.Fatalf("a malformed version must fail closed as dependency-missing, got %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("a malformed version must be refused before any uv invocation, got %v", runner.calls)
+	}
+	if _, statErr := os.Stat(filepath.Join(dataDir, "runtimes", "vllm")); !os.IsNotExist(statErr) {
+		t.Fatal("a malformed version must be refused before any filesystem change")
+	}
+}

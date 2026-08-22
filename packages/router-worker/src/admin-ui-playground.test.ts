@@ -411,7 +411,7 @@ describe('dashboard throughput trace and playground contracts', () => {
   })
 
 
-  it('REQ-RUN-021 a vllm model card carries its runtime pill attribute', async () => {
+  it('REQ-RUN-025 a vllm model card carries its runtime pill attribute', async () => {
     // The runtime pill is a fixed vocabulary contract (data-runtime); a vllm
     // profile must render its own value, not fall back to a sibling runtime's.
     const meshes = [{ id: 'default', name: 'Default', alias: 'codeflare-mesh', machineCount: 1, modelCount: 1 }]

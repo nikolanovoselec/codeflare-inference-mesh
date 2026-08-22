@@ -450,7 +450,7 @@ export const CLIENT_DRAWERS = `\
     }
     if (isVllm) {
       // vLLM's model-derived defaults are good; every tunable is Auto-clearable
-      // (blank saves null, which removes the flag so the engine decides). REQ-RUN-021.
+      // (blank saves null, which removes the flag so the engine decides). REQ-RUN-025.
       bodyEl.appendChild(meshTunableNumberRow({ id: 'model-edit-vllm-max-num-seqs', label: 'Max concurrent sequences', value: vllm.maxNumSeqs, placeholder: 'Auto', hint: 'vLLM --max-num-seqs. Caps how many requests the continuous batcher runs at once. Blank = Auto (vLLM plans it from KV memory).' }));
       bodyEl.appendChild(meshTunableRowText({ id: 'model-edit-vllm-gpu-mem', label: 'GPU memory utilization', value: vllm.gpuMemoryUtilization != null ? String(vllm.gpuMemoryUtilization) : '', placeholder: 'Auto', hint: 'vLLM --gpu-memory-utilization, a fraction between 0 and 1 of VRAM the engine may claim. Blank = Auto (flag omitted; vLLM’s default applies). Lower it when the GPU is shared.' }));
       bodyEl.appendChild(meshTunableSelectRow({ id: 'model-edit-vllm-dtype', label: 'Compute dtype', value: vllm.dtype || '', options: [{ value: '', label: 'Auto' }, { value: 'auto', label: 'auto' }, { value: 'half', label: 'half' }, { value: 'float16', label: 'float16' }, { value: 'bfloat16', label: 'bfloat16' }, { value: 'float', label: 'float' }, { value: 'float32', label: 'float32' }], hint: 'vLLM --dtype. Auto follows the checkpoint; half is required on pre-Ampere GPUs (compute capability below 8.0) for bf16 checkpoints.' }));

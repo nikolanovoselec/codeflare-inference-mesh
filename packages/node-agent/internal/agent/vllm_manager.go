@@ -1,7 +1,7 @@
 // VllmManager runs a single-node vLLM OpenAI server from the agent-managed
 // venv. It reuses the shared child-process plumbing (meshLauncher, runtimeLog)
 // and satisfies RuntimeManager; there is no mesh coordination — vLLM joins the
-// direct family beside llama.cpp. REQ-RUN-021 / REQ-RUN-022.
+// direct family beside llama.cpp. REQ-RUN-022 / REQ-RUN-024.
 package agent
 
 import (

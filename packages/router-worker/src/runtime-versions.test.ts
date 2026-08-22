@@ -55,7 +55,7 @@ describe('runtime binary version management', () => {
     expect(store.audit.find((event) => event.type === 'runtime_versions_selected')).toMatchObject({ actor: 'admin:test', detail: { meshllm: 'v0.73.0', llamacpp: 'b9900' } })
   })
 
-  it('REQ-RUN-021 resolves the desired vllm version alongside its siblings', async () => {
+  it('REQ-RUN-025 resolves the desired vllm version alongside its siblings', async () => {
     // vllm joins the desired-versions wire contract: an unset config resolves to
     // the pinned default, and a stored selection wins. The agent strips the tag's
     // leading v for its pip pin, so tags stay GitHub-shaped here.

@@ -1,5 +1,5 @@
 // The vllm runtime's dispatch, keying, telemetry stamping, and crash semantics
-// at the agent-command layer. REQ-RUN-021 / REQ-NODE-016.
+// at the agent-command layer. REQ-RUN-024 / REQ-NODE-016.
 package main
 
 import (
@@ -22,10 +22,10 @@ func vllmTestProfile(id string) agent.ModelProfile {
 	}
 }
 
-func TestREQRUN021VllmIsAManagedRuntimeKind(t *testing.T) {
+func TestREQRUN024VllmIsAManagedRuntimeKind(t *testing.T) {
 	// "vllm" must resolve to itself, not fall through the legacy default to
 	// mesh-llm: the fallback would launch a mesh process for a vLLM profile and
-	// open its mesh-peer firewall port. REQ-RUN-021 / REQ-SEC-013.
+	// open its mesh-peer firewall port. REQ-RUN-024 / REQ-SEC-013.
 	if got := effectiveRuntimeKind("vllm"); got != "vllm" {
 		t.Fatalf("effectiveRuntimeKind(vllm) = %q, want vllm", got)
 	}
@@ -43,7 +43,7 @@ func TestREQRUN021VllmIsAManagedRuntimeKind(t *testing.T) {
 	}
 }
 
-func TestREQRUN021ProfileKeyHashesVllmSettings(t *testing.T) {
+func TestREQRUN024ProfileKeyHashesVllmSettings(t *testing.T) {
 	// The profile key decides restart-on-change; a vllm tunable edit that does
 	// not alter the key would leave the runtime serving stale argv forever.
 	base := vllmTestProfile("key-check")

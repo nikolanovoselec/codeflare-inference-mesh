@@ -57,7 +57,7 @@ This ledger records binding technical choices for the first implementation. It i
 
 **Consequences:** A router rollback to a pre-vLLM build repatriates stored vLLM profiles to meshllm on their next save (normalization's unknown-runtime fallback), so rollback across that boundary is documented as lossy for vLLM profiles. The ~15 GB CUDA-torch footprint requires a disk preflight, and first launches download full safetensors weights under a deliberately long readiness deadline.
 
-**Related requirements:** [REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles), [REQ-RUN-022](../../sdd/spec/runtime-profiles.md#req-run-022-direct-vllm-launch-rendering), [REQ-NODE-017](../../sdd/spec/node-agent.md#req-node-017-vllm-runtime-bootstrap), [REQ-SEC-013](../../sdd/spec/security.md#req-sec-013-vllm-api-exposure), [REQ-SCH-003](../../sdd/spec/state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses)
+**Related requirements:** [REQ-RUN-021](../../sdd/spec/runtime-profiles.md#req-run-021-direct-vllm-custom-profiles), [REQ-RUN-022](../../sdd/spec/runtime-profiles.md#req-run-022-direct-vllm-launch-rendering), [REQ-RUN-024](../../sdd/spec/runtime-profiles.md#req-run-024-managed-vllm-node-lifecycle), [REQ-RUN-025](../../sdd/spec/runtime-profiles.md#req-run-025-console-vllm-surface), [REQ-NODE-017](../../sdd/spec/node-agent.md#req-node-017-vllm-runtime-bootstrap), [REQ-SEC-013](../../sdd/spec/security.md#req-sec-013-vllm-api-exposure), [REQ-SCH-003](../../sdd/spec/state-scheduling.md#req-sch-003-node-eligibility-and-scheduler-miss-responses)
 
 ## AD-018: Seed-once single-starter model catalog
 

@@ -122,7 +122,7 @@ describe('model drawer and model management contracts', () => {
   })
 
 
-  it('REQ-RUN-021 loads and saves direct vLLM runtime tunables from the model drawer', async () => {
+  it('REQ-RUN-025 loads and saves direct vLLM runtime tunables from the model drawer', async () => {
     const profiles = [
       { id: 'custom-vllm', displayName: 'Direct vLLM', publicAliases: ['codeflare-mesh', 'org-model'], upstreamModel: 'org/model', active: true, rolloutPercent: 100, contextWindow: 32768, runtime: 'vllm', vllm: { hfRepo: 'org/model', bindPort: 4400, contextWindow: 32768, maxNumSeqs: 8, gpuMemoryUtilization: 0.85, dtype: 'half', quantization: 'awq' } }
     ]

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -19,6 +20,11 @@ import (
 // sends an operator-selected version. It is the bare pip version; router-side
 // tags carry a leading v that EnsureVllm strips.
 const VllmPinnedVersion = "0.27.1"
+
+// vllmVersionPattern mirrors the router's release-tag validation
+// (runtime-versions.ts); it bounds the version string that names the
+// per-version install directory.
+var vllmVersionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // UvPinnedVersion is the only uv the agent installs. Re-pinning means updating
 // this tag and every checksum in uvAssets together, exactly like MeshLLMPinnedVersion.
@@ -134,6 +140,12 @@ func EnsureVllm(ctx context.Context, dataDir string, version string, opts ...Vll
 	if pipVersion == "" {
 		pipVersion = VllmPinnedVersion
 	}
+	// pipVersion becomes a path segment fed to os.RemoveAll below, so the agent
+	// enforces the release-token shape at its own trust boundary instead of
+	// relying on the router's validation of the same value.
+	if !vllmVersionPattern.MatchString(pipVersion) {
+		return "", fmt.Errorf("%w: invalid vllm version %q", ErrRuntimeDependencyMissing, pipVersion)
+	}
 	root := filepath.Join(dataDir, "runtimes", "vllm")
 	versionDir := filepath.Join(root, pipVersion)
 	venvDir := filepath.Join(versionDir, "venv")
@@ -162,11 +174,13 @@ func EnsureVllm(ctx context.Context, dataDir string, version string, opts ...Vll
 	// A venv without a matching marker is a partial install: delete and rebuild.
 	// The rebuild happens in place, not staged-and-renamed: a Python venv bakes
 	// absolute paths into its scripts, so it must be built at its final path.
-	// The unlaunchable window this opens only exists while the marker is
-	// already invalid (the env was never verified complete), a running process
-	// keeps its open file handles, and the flow either completes or fails
-	// closed to dependency-missing. Version *upgrades* stage beside the old
-	// venv and swap `current` only after the new marker lands.
+	// No manager-launched process can be serving from this directory — launch
+	// requires a valid marker, and a marker-valid dir short-circuits above —
+	// so the delete only hits an env that was never verified complete. (A
+	// process running here despite that would fail on its next lazy import;
+	// open file handles do not protect a Python venv.) Version *upgrades*
+	// stage beside the old venv and swap `current` only after the new marker
+	// lands.
 	if err := os.RemoveAll(versionDir); err != nil {
 		return "", fmt.Errorf("clear stale vllm venv: %w", err)
 	}
