@@ -69,6 +69,22 @@ export const CLIENT_EVENTS = `\
     const search = event.target.closest('[data-node-search]');
     if (search) applyNodeSearch(search.value);
   });
+  // Contextual model guidance: single serving shows GGUF files, split shows layer
+  // packages + the prepare guide, and the vLLM runtime shows plain-repository
+  // guidance (CSS keys off the dataset). The reference example follows the same
+  // context so the placeholder never demonstrates a format the server rejects.
+  // REQ-ADM-025.
+  function applyModelAddContext() {
+    const mode = byId('model-add-mode');
+    const runtime = byId('model-add-runtime');
+    const split = !!mode && mode.value === 'split';
+    const key = split ? 'split' : (runtime && runtime.value === 'vllm' ? 'vllm' : 'single');
+    const sources = byId('model-add-sources');
+    if (sources) sources.dataset.modelSources = key;
+    const ref = byId('model-add-ref');
+    if (ref) ref.placeholder = key === 'vllm' ? 'e.g. Qwen/Qwen3.8-27B-FP8' : 'e.g. unsloth/Qwen3-14B-GGUF:Q4_K_M';
+  }
+
   document.addEventListener('change', (event) => {
     const search = event.target.closest('[data-node-search]');
     if (search) { applyNodeSearch(search.value); return; }
@@ -91,12 +107,11 @@ export const CLIENT_EVENTS = `\
         addRuntime.disabled = split;
         if (split) addRuntime.value = 'meshllm';
       }
-      // Contextual model sources: single serving shows GGUF files, split shows
-      // layer packages + the prepare guide (CSS keys off this dataset). REQ-ADM-025.
-      const sources = byId('model-add-sources');
-      if (sources) sources.dataset.modelSources = split ? 'split' : 'single';
+      applyModelAddContext();
       return;
     }
+    const addRuntimeSelect = event.target.closest('[data-model-add-runtime]');
+    if (addRuntimeSelect) { applyModelAddContext(); return; }
     const topoSelect = event.target.closest('[data-topo-mesh-select]');
     if (topoSelect) {
       topologyMeshFilter = topoSelect.value || 'all';

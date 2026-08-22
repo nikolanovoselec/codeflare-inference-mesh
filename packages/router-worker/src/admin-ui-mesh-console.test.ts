@@ -212,6 +212,50 @@ describe('mesh console contracts', () => {
     expect(sources.dataset.modelSources).toBe('single')
   })
 
+  it('REQ-ADM-025 switches model guidance to plain-repo format when the vLLM runtime is selected', async () => {
+    const harness = await dashboardHarness()
+    const html = harness.html
+    // Both format exemplars and the vLLM source row are present in markup, tagged
+    // for CSS switching — guidance is never gated on a JS reveal.
+    expect(html).toContain('data-source-format="gguf"')
+    expect(html).toContain('data-source-format="vllm"')
+    expect(html).toContain('data-command-row="model-source-vllm"')
+    // The vLLM source row links to a Hugging Face safetensors model search.
+    const vllmRowAt = html.indexOf('data-command-row="model-source-vllm"')
+    expect(html.slice(vllmRowAt)).toMatch(/href="https:\/\/huggingface\.co\/models\?[^"]*safetensors[^"]*"/)
+    const css = adminUiCss()
+    expect(css).toContain('.model-sources[data-model-sources="vllm"] .command-row[data-command-row="model-source-gguf"]')
+    expect(css).toContain('.model-sources[data-model-sources="vllm"] [data-source-format="gguf"]')
+    expect(css).toContain('.model-sources[data-model-sources="single"] [data-source-format="vllm"]')
+    expect(css).toContain('.model-sources[data-model-sources="split"] [data-source-format="vllm"]')
+
+    const runtime = harness.byId('model-add-runtime')
+    const sources = harness.byId('model-add-sources')
+    const ref = harness.byId('model-add-ref')
+    runtime.dataset.modelAddRuntime = 'true'
+    runtime.value = 'vllm'
+    await harness.change(runtime)
+    expect(sources.dataset.modelSources).toBe('vllm')
+    // The example must match what the server accepts for vLLM: a plain repo id,
+    // never a :quant suffix — that suffix is exactly what invalid_model_ref rejects.
+    expect(ref.placeholder).toMatch(/^e\.g\. [\w.-]+\/[\w.-]+$/)
+    runtime.value = 'llamacpp'
+    await harness.change(runtime)
+    expect(sources.dataset.modelSources).toBe('single')
+    expect(ref.placeholder).toMatch(/:[\w.-]+$/)
+
+    // Split serving wins over the runtime context: the mode change forces the
+    // runtime back to meshllm and the panel to the split sources.
+    runtime.value = 'vllm'
+    await harness.change(runtime)
+    const mode = harness.byId('model-add-mode')
+    mode.dataset.modelAddMode = 'true'
+    mode.value = 'split'
+    await harness.change(mode)
+    expect(sources.dataset.modelSources).toBe('split')
+    expect(runtime.value).toBe('meshllm')
+  })
+
   it('REQ-ADM-038 the models list shows each profile mesh without opening the drawer', async () => {
     const profiles = [
       { id: 'model-default', displayName: 'Default Model', publicAliases: ['codeflare-mesh', 'main'], active: true, rolloutPercent: 100, meshllm: { split: false } },
