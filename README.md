@@ -102,7 +102,7 @@ The fabric serves open models, not a fixed menu. mesh-llm profiles can run regul
 
 1. Fork this repository and add the required deploy secrets in GitHub Actions.
 2. Run the Deploy workflow, `integration` first, then `production`.
-3. Enroll your nodes in Cloudflare One / WARP. The agent pulls the runtime it needs (`mesh-llm`, `llama-server`, or a pinned vLLM environment), so there is no separate server to stand up.
+3. Enroll your nodes in Cloudflare One / WARP. The agent pulls the runtime each profile needs — `mesh-llm` for mesh, `llama-server` for direct llama.cpp, a pinned vLLM environment for direct vLLM — with no separate server to stand up.
 4. Open the deployed origin and follow the setup wizard through custom domain, Access, Gateway, and your first node.
 
 The steps below link to the private operations reference for exact secrets, token scopes, and bindings, then cover the public node runbook.
