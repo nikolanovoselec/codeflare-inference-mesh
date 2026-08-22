@@ -65,7 +65,8 @@ flowchart LR
 
 - Clients call one private model alias called `codeflare-mesh`, and the Gateway route stays fixed as nodes come and go.
 - The Worker is the only public inference surface. It takes Gateway traffic, resolves the active profile from D1, and forwards over Workers VPC to private Mesh IPs on Cloudflare WARP.
-- Model profiles choose the runtime. `meshllm` profiles use stateless entry-node selection because mesh-llm owns dispatch inside the runtime mesh; direct profiles (`llamacpp` and `vllm`) use session affinity so follow-up requests for the same coding session return to the same node and keep prefix cache hot.
+- Model profiles choose the runtime. `meshllm` profiles use stateless entry-node selection because mesh-llm owns dispatch inside the runtime mesh.
+- Direct profiles (`llamacpp` and `vllm`) use session affinity so follow-up requests for the same coding session return to the same node and keep prefix cache hot.
 - Each node runs one Go agent. It installs and supervises the selected, checksum-verified runtimes, reports GPU/runtime/mesh health on every heartbeat, and proxies only the OpenAI-compatible inference path to the local runtime.
 - Nodes serving a mesh-llm profile form a private runtime mesh. The router elects a seed and hands out encrypted join material through authenticated heartbeats; mesh secrets are encrypted at rest and rotate on one click.
 
@@ -101,7 +102,7 @@ The fabric serves open models, not a fixed menu. mesh-llm profiles can run regul
 
 1. Fork this repository and add the required deploy secrets in GitHub Actions.
 2. Run the Deploy workflow, `integration` first, then `production`.
-3. Enroll your nodes in Cloudflare One / WARP. The agent pulls the runtime it needs — `mesh-llm` for mesh profiles, `llama-server` for direct llama.cpp profiles, or a pinned vLLM environment for direct vLLM profiles — so there is no separate server to stand up.
+3. Enroll your nodes in Cloudflare One / WARP. The agent pulls the runtime it needs (`mesh-llm`, `llama-server`, or a pinned vLLM environment), so there is no separate server to stand up.
 4. Open the deployed origin and follow the setup wizard through custom domain, Access, Gateway, and your first node.
 
 The steps below link to the private operations reference for exact secrets, token scopes, and bindings, then cover the public node runbook.
