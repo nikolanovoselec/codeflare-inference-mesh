@@ -26,22 +26,26 @@ Production deployment is automatic after a merged `main` push has green PR Check
 | Router | Lockfile install, behavioral tests, type-check, Wrangler types, dry-run deploy. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
 | Agent | Go tests, vet, race tests, and command build; Go dependency cache points at `packages/node-agent/go.mod`. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
 | Packaging | Build one archive, generate checksums, verify hash, run staged version command; Go dependency cache points at `packages/node-agent/go.mod`. | [REQ-REL-001](../../sdd/spec/release-ci.md) |
-| Security | Lockfile npm audit, Go vulnerability check, dependency review where available, weekly Dependabot pull requests for npm, Go modules, and GitHub Actions, pinned workflow actions, and least-privilege workflow tokens. | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
+| Security | Complete dependency-tree npm audit, Go vulnerability check, dependency review where available, weekly Dependabot version-update pull requests to `develop` for npm workspaces, Go modules, and GitHub Actions, pinned workflow actions, and least-privilege workflow tokens. | [REQ-REL-001](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
 | Fuzz | Bounded router and agent fuzz targets run for pull requests and post-merge `main` pushes. | [REQ-REL-004](../../sdd/spec/release-ci.md) |
 
 ## Deploy workflow
 
 | Step | Outcome | REQs |
 | --- | --- | --- |
-| Resolve target | Production comes from the green `main` merge SHA; integration uses the manually selected branch. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
+| Resolve target | A checkout-free, read-only job validates CI run metadata through GitHub API and exports the only allowed checkout SHA. Automatic production uses the successful main-push SHA; manual deploys use immutable dispatch `github.sha` after latest eligible exact-head CI succeeds, never a moving branch ref. | [REQ-REL-002](../../sdd/spec/release-ci.md) |
 | Check gates | Production waits for exact-head Security and Fuzz success after PR Checks succeeds. | [REQ-REL-002](../../sdd/spec/release-ci.md), [REQ-REL-004](../../sdd/spec/release-ci.md) |
 | Repeat checks | Critical router and agent checks pass after lockfile dependency install and before state changes. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | Prepare D1 | The production or integration database is created or resolved and migrations are applied. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
 | Set runtime secrets | The fail-closed mesh-state and session-affinity values come from the [private deployment matrix](https://github.com/nikolanovoselec/codeflare-inference-mesh-private); deployment stops when either is absent. | [REQ-SEC-006](../../sdd/spec/security.md), [REQ-SCH-004](../../sdd/spec/state-scheduling.md#req-sch-004-direct-session-affinity) |
 | Build artifacts | Agent archives for linux/amd64, linux/arm64, windows/amd64, and darwin/arm64 (darwin/amd64 is not built) embed the release tag via `-X main.version`; checksums, signature, and manifest exist; raw binaries are removed before release upload. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| Publish release | GitHub Release contains all installer/update assets. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
+| Publish release | GitHub Release contains all installer/update assets; its target and manifest commit match the validated checkout SHA. | [REQ-REL-003](../../sdd/spec/release-ci.md) |
 | Deploy Worker | Wrangler deploy publishes the production or integration router with `AGENT_RELEASE_TAG`; a bootstrap `WORKER_BASE_URL` is optional and validated only when explicitly supplied. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety), [REQ-REL-003](../../sdd/spec/release-ci.md) |
-| Summarize | Workflow summary lists ref, Worker, release tag, environment, and artifacts. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+| Summarize | Workflow summary lists the validated commit ref, Worker, release tag, environment, and artifacts. | [REQ-REL-005](../../sdd/spec/release-ci.md#req-rel-005-deploy-execution-safety) |
+
+Manual integration defaults to `integration`. Before dispatching Deploy on the reviewed branch, complete PR Checks at that exact head (a same-repository PR run or a manual `PR Checks` dispatch); CI on another commit or branch does not qualify. Main manual deploys accept main-push or manual CI at the exact SHA. Pending, failed, cancelled, or skipped latest eligible runs block deployment rather than falling back to an older success. If the branch advances, finish review and CI for the new head before dispatching again. No extra SHA setting is needed: the dispatch captures `github.sha`. Production source guards remain in place; both automatic and manual production require exact-head Security/Fuzz success. ([REQ-REL-002](../../sdd/spec/release-ci.md))
+
+Integration resolves its bootstrap origin from the existing explicit input, integration-specific value, or account workers.dev subdomain; it does **not** fall back to generic `WORKER_BASE_URL`, which may name production. For workers.dev bootstrap, use `https://codeflare-inference-mesh-router-integration.<account-subdomain>.workers.dev`. Integration has its own Worker, D1, Durable Objects, and Gateway names, but the existing Workers VPC `cf1:network` is shared: this is not network isolation. This workflow change does not change credentials, VPC bindings, policies, or production resource names. Deployment-value inventories remain owned by [private operations](https://github.com/nikolanovoselec/codeflare-inference-mesh-private). ([REQ-REL-005](../../sdd/spec/release-ci.md))
 
 ## Node prerequisites
 

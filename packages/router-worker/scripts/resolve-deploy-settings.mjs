@@ -8,10 +8,14 @@ const runNumber = process.env.GITHUB_RUN_NUMBER ?? ''
 const inputEnvironment = process.env.INPUT_ENVIRONMENT ?? 'integration'
 const inputVersionTag = process.env.INPUT_VERSION_TAG ?? ''
 const inputWorkerBaseUrl = process.env.INPUT_WORKER_BASE_URL ?? ''
-const workflowRunHeadSha = process.env.WORKFLOW_RUN_HEAD_SHA ?? ''
+const deploySha = process.env.DEPLOY_SHA ?? ''
 
 const targetEnv = eventName === 'workflow_run' ? 'production' : inputEnvironment
-const deployRef = eventName === 'workflow_run' ? workflowRunHeadSha : githubRef
+const deployRef = deploySha
+if (deployRef.length !== 40 || !/^[a-f0-9]{40}$/.test(deployRef)) {
+  console.error('Deploy settings require the validated full DEPLOY_SHA')
+  process.exit(1)
+}
 
 if (targetEnv === 'production' && githubRef !== 'refs/heads/main' && eventName !== 'workflow_run') {
   console.error(`Production deploys are only allowed from main. Got ref: ${githubRef}`)
@@ -47,7 +51,8 @@ function resolveWorkerBaseUrl(environment, workerName) {
   if (inputWorkerBaseUrl) return inputWorkerBaseUrl
   const envSpecific = environment === 'production' ? process.env.PRODUCTION_WORKER_BASE_URL : process.env.INTEGRATION_WORKER_BASE_URL
   if (envSpecific) return envSpecific
-  if (process.env.WORKER_BASE_URL) return process.env.WORKER_BASE_URL
+  // Never let integration inherit the generic production origin.
+  if (environment === 'production' && process.env.WORKER_BASE_URL) return process.env.WORKER_BASE_URL
   if (process.env.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN) return `https://${workerName}.${process.env.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN}.workers.dev`
   return ''
 }

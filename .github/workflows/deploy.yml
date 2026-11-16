@@ -31,8 +31,78 @@ permissions:
   contents: read
 
 jobs:
+  resolve:
+    name: Validate exact deploy source without checkout
+    permissions:
+      contents: read
+      actions: read
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run'
+       && github.event.workflow_run.conclusion == 'success'
+       && github.event.workflow_run.event == 'push'
+       && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Resolve validated deploy SHA
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          // Only API-validated provenance crosses into the write job.
+          const { execFileSync } = require('node:child_process')
+          const { readFileSync, appendFileSync } = require('node:fs')
+          const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'))
+          const repository = process.env.GITHUB_REPOSITORY
+          const workflowPath = '.github/workflows/ci.yml'
+          const api = (path, paginate = false) => JSON.parse(execFileSync('gh', ['api', ...(paginate ? ['--paginate', '--slurp'] : []), `repos/${repository}/${path}`], { encoding: 'utf8' }))
+          const requireValid = (ok, message) => { if (!ok) throw new Error(message) }
+          const fullSha = (sha) => typeof sha === 'string' && sha.length === 40 && /^[a-f0-9]{40}$/.test(sha)
+          requireValid(event.repository?.full_name === repository && Number.isSafeInteger(event.repository?.id) && event.repository.id > 0, 'Invalid event repository')
+          const ci = api('actions/workflows/ci.yml')
+          requireValid(ci.path === workflowPath && ci.name === 'PR Checks' && Number.isSafeInteger(ci.id) && ci.id > 0, 'Invalid CI workflow identity')
+          const sameRepository = (repo) => repo?.full_name === repository && repo.id === event.repository.id
+          const trustedRun = (run) => sameRepository(run.repository) && sameRepository(run.head_repository)
+            && run.workflow_id === ci.id && run.path === workflowPath && fullSha(run.head_sha)
+            && Number.isSafeInteger(run.id) && run.id > 0
+          let sha
+          if (process.env.GITHUB_EVENT_NAME === 'workflow_run') {
+            const trigger = event.workflow_run
+            requireValid(Number.isSafeInteger(trigger?.id) && trigger.id > 0, 'Invalid triggering run ID')
+            const run = api(`actions/runs/${trigger.id}`)
+            requireValid(trustedRun(run) && trustedRun(trigger), 'Untrusted triggering CI run')
+            requireValid(['id', 'run_attempt', 'workflow_id', 'path', 'head_sha', 'head_branch', 'event', 'status', 'conclusion'].every((key) => run[key] === trigger[key]), 'Run metadata disagrees with event')
+            requireValid(run.event === 'push' && run.head_branch === 'main' && run.status === 'completed' && run.conclusion === 'success', 'Production requires successful completed main push CI')
+            sha = run.head_sha
+          } else {
+            requireValid(process.env.GITHUB_EVENT_NAME === 'workflow_dispatch', 'Unsupported deploy event')
+            requireValid(['production', 'integration'].includes(process.env.INPUT_ENVIRONMENT), 'Invalid deploy environment')
+            requireValid(process.env.INPUT_ENVIRONMENT !== 'production' || process.env.GITHUB_REF === 'refs/heads/main', 'Manual production requires main')
+            sha = process.env.GITHUB_SHA
+            requireValid(fullSha(sha), 'Manual deploy requires immutable full SHA')
+            const branch = process.env.GITHUB_REF_NAME
+            requireValid(Boolean(branch), 'Missing selected ref name')
+            const pages = api(`actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=100`, true)
+            const runs = pages.flatMap((page) => page.workflow_runs)
+              .filter((run) => trustedRun(run) && run.head_sha === sha && run.head_branch === branch)
+              .filter((run) => run.event === 'workflow_dispatch' || (process.env.GITHUB_REF === 'refs/heads/main' ? run.event === 'push' : run.event === 'pull_request'))
+              .sort((a, b) => b.id - a.id)
+            requireValid(runs[0]?.status === 'completed' && runs[0]?.conclusion === 'success', 'Latest eligible exact-head CI must complete successfully; run PR Checks on the selected ref first')
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `sha=${sha}\n`)
+          NODE
+
   deploy:
     name: Deploy router and package agent
+    needs: [resolve]
+    env:
+      DEPLOY_SHA: ${{ needs.resolve.outputs.sha }}
     permissions:
       contents: write
       actions: read
@@ -69,7 +139,7 @@ jobs:
 
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ needs.resolve.outputs.sha }}
           persist-credentials: false
 
       - name: Resolve deploy settings
@@ -78,7 +148,6 @@ jobs:
           INPUT_ENVIRONMENT: ${{ inputs.environment }}
           INPUT_VERSION_TAG: ${{ inputs.version_tag }}
           INPUT_WORKER_BASE_URL: ${{ inputs.worker_base_url }}
-          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
           PRODUCTION_WORKER_BASE_URL: ${{ vars.PRODUCTION_WORKER_BASE_URL }}
           INTEGRATION_WORKER_BASE_URL: ${{ vars.INTEGRATION_WORKER_BASE_URL }}
@@ -94,10 +163,10 @@ jobs:
           cache-dependency-path: packages/node-agent/go.mod
 
       - name: Wait for production gates
-        if: github.event_name == 'workflow_run'
+        if: steps.settings.outputs.target_env == 'production'
         env:
           GH_TOKEN: ${{ github.token }}
-          GATE_SHA: ${{ github.event.workflow_run.head_sha }}
+          GATE_SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           set -euo pipefail
           for workflow in Security Fuzz; do
@@ -257,7 +326,7 @@ jobs:
           cd dist
           sha256sum *.tar.gz *.zip > checksums.txt
           sha256sum -c checksums.txt
-          node -e "const fs=require('fs'); const crypto=require('crypto'); const files=fs.readdirSync('.').filter((f)=>/\.(tar\.gz|zip)$/.test(f)); const artifacts=files.map((name)=>({name, sha256: crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')})); fs.writeFileSync('release-manifest.json', JSON.stringify({version:'${{ steps.settings.outputs.version_tag }}', channel:'${{ steps.settings.outputs.target_env }}', commit:process.env.GITHUB_SHA, publishedAt:new Date().toISOString(), artifacts}, null, 2)); fs.writeFileSync('release-notes.md', '# Inference Mesh Agent ${{ steps.settings.outputs.version_tag }}\n\nSee release-manifest.json and checksums.txt for artifact metadata.\n')"
+          node -e "const fs=require('fs'); const crypto=require('crypto'); const files=fs.readdirSync('.').filter((f)=>/\.(tar\.gz|zip)$/.test(f)); const artifacts=files.map((name)=>({name, sha256: crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex')})); fs.writeFileSync('release-manifest.json', JSON.stringify({version:'${{ steps.settings.outputs.version_tag }}', channel:'${{ steps.settings.outputs.target_env }}', commit:process.env.DEPLOY_SHA, publishedAt:new Date().toISOString(), artifacts}, null, 2)); fs.writeFileSync('release-notes.md', '# Inference Mesh Agent ${{ steps.settings.outputs.version_tag }}\n\nSee release-manifest.json and checksums.txt for artifact metadata.\n')"
 
       - name: Sign checksums when signing is configured
         working-directory: packages/node-agent/dist
@@ -280,7 +349,7 @@ jobs:
         run: |
           PRERELEASE=""
           if [ "${{ steps.settings.outputs.target_env }}" = "integration" ]; then PRERELEASE="--prerelease"; fi
-          gh release create "${{ steps.settings.outputs.version_tag }}" * --target "$GITHUB_SHA" --title "${{ steps.settings.outputs.version_tag }}" --notes-file release-notes.md $PRERELEASE
+          gh release create "${{ steps.settings.outputs.version_tag }}" * --target "$DEPLOY_SHA" --title "${{ steps.settings.outputs.version_tag }}" --notes-file release-notes.md $PRERELEASE
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
