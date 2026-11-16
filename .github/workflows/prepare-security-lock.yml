@@ -1,43 +1,76 @@
-name: Prepare security dependency lock
+# Replacement for .github/workflows/prepare-security-lock.yml on the helper branch.
+# Latest official stable release reverified via GitHub releases/latest: v5.6.0.
+# SHA256 matches BOTH the official release asset digest and scorecard_checksums.txt:
+# https://github.com/ossf/scorecard/releases/tag/v5.6.0
+# https://github.com/ossf/scorecard/releases/download/v5.6.0/scorecard_checksums.txt
+# Flags/examples: https://github.com/ossf/scorecard/blob/v5.6.0/README.md
+# --commit: https://github.com/ossf/scorecard/blob/v5.6.0/options/flags.go
+# Both requested checks explicitly register checker.CommitBased support:
+# https://github.com/ossf/scorecard/blob/v5.6.0/checks/dangerous_workflow.go
+# https://github.com/ossf/scorecard/blob/v5.6.0/checks/vulnerabilities.go
+# No checkout, dependency installation, project build/test, SARIF, or deployment.
+# This is exact-commit evidence only, NOT default-branch alert closure or merge approval.
+# Other policy findings remain OPEN; dependencies cannot resolve these:
+# /security/code-scanning/3: Branch-Protection (4): missing required approvers,
+# codeowners review, and last-push approval on main.
+# /security/code-scanning/39: Code-Review (0): 0/20 approved changesets.
+# /security/code-scanning/41: CII-Best-Practices (0): no badge effort detected.
+# Source: https://github.com/nikolanovoselec/codeflare-inference-mesh/security/code-scanning
+# Their observed instances reference main@7f8f914c245ee81db9ad9b6404ae339b4e9102ad.
+name: Exact-commit Scorecard probe
 on:
   push:
     branches: [ci/dependency-security-lock]
 permissions:
   contents: read
 jobs:
-  lock:
+  scorecard-probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-      - name: Generate the coherent patched workspace lock
-        run: |
-          npm install --package-lock-only --ignore-scripts --no-fund --no-audit
-          npm update vite postcss source-map-js nanoid smol-toml zod --package-lock-only --ignore-scripts --no-fund --no-audit
-      - name: Install and audit the complete dependency tree
+      - name: Download and verify official Scorecard CLI
+        shell: bash
         run: |
           set -euo pipefail
-          npm ci --no-fund --no-audit
-          npm audit --json | tee application-audit.json
-          npm ls --all --json > dependency-tree.json
-      - name: Check compiler and Workers type compatibility
-        run: npm run typecheck
-      - name: Check Wrangler types and dry-run compatibility
+          install -d "$RUNNER_TEMP/scorecard-probe"
+          cd "$RUNNER_TEMP/scorecard-probe"
+          curl --fail --silent --show-error --location \
+            --proto '=https' --proto-redir '=https' \
+            --output scorecard_5.6.0_linux_amd64.tar.gz \
+            https://github.com/ossf/scorecard/releases/download/v5.6.0/scorecard_5.6.0_linux_amd64.tar.gz
+          printf '%s  %s\n' \
+            '19bde07129450cb65a95c6e3b9f34e034341579e6f0e241546ec3ae6efb2dd9a' \
+            'scorecard_5.6.0_linux_amd64.tar.gz' | sha256sum --check --strict -
+          tar --extract --gzip --file scorecard_5.6.0_linux_amd64.tar.gz \
+            --no-same-owner scorecard
+      - name: Run only the two exact-commit checks
+        shell: bash
+        env:
+          GITHUB_AUTH_TOKEN: ${{ github.token }}
         run: |
-          npm run cf-types
-          npm run dry-run
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+          set -euo pipefail
+          "$RUNNER_TEMP/scorecard-probe/scorecard" \
+            --repo=github.com/nikolanovoselec/codeflare-inference-mesh \
+            --commit=e0aa7120c908067a7b002f24949b4dfc578a5963 \
+            --checks=Dangerous-Workflow,Vulnerabilities \
+            --format=json --show-details \
+            | tee "$RUNNER_TEMP/scorecard-probe/scorecard.json"
+      - name: Require real exact-target results and both scores 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --exit-status '
+            .repo.name == "github.com/nikolanovoselec/codeflare-inference-mesh"
+            and .repo.commit == "e0aa7120c908067a7b002f24949b4dfc578a5963"
+            and (.checks | length == 2)
+            and ([.checks[].name] | sort == ["Dangerous-Workflow", "Vulnerabilities"])
+            and all(.checks[]; .score == 10)
+          ' "$RUNNER_TEMP/scorecard-probe/scorecard.json"
+      - name: Preserve original CLI JSON even on failed checks
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: mesh-security-lock
-          path: |
-            package.json
-            packages/router-worker/package.json
-            package-lock.json
-            application-audit.json
-            dependency-tree.json
+          name: mesh-scorecard-e0aa7120c908
+          path: ${{ runner.temp }}/scorecard-probe/scorecard.json
           if-no-files-found: error
           retention-days: 1
