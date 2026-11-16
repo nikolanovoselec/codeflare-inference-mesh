@@ -51,7 +51,7 @@ jobs:
           set -euo pipefail
           "$RUNNER_TEMP/scorecard-probe/scorecard" \
             --repo=github.com/nikolanovoselec/codeflare-inference-mesh \
-            --commit=e0aa7120c908067a7b002f24949b4dfc578a5963 \
+            --commit=d9286ebd03a2d1c5a36f97613e2e2eb7eef48ad9 \
             --checks=Dangerous-Workflow,Vulnerabilities \
             --format=json --show-details \
             | tee "$RUNNER_TEMP/scorecard-probe/scorecard.json"
@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           jq --exit-status '
             .repo.name == "github.com/nikolanovoselec/codeflare-inference-mesh"
-            and .repo.commit == "e0aa7120c908067a7b002f24949b4dfc578a5963"
+            and .repo.commit == "d9286ebd03a2d1c5a36f97613e2e2eb7eef48ad9"
             and (.checks | length == 2)
             and ([.checks[].name] | sort == ["Dangerous-Workflow", "Vulnerabilities"])
             and all(.checks[]; .score == 10)
@@ -70,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: mesh-scorecard-e0aa7120c908
+          name: mesh-scorecard-d9286ebd03a2
           path: ${{ runner.temp }}/scorecard-probe/scorecard.json
           if-no-files-found: error
           retention-days: 1
