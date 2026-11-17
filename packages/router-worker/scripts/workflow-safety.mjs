@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 const versionRef = /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/
 const shaRef = /^[a-f0-9]{40}$/i
-const workflowRunHeadRef = '${{ github.event.workflow_run.head_sha || github.ref }}'
+const validatedHeadRef = '${{ needs.resolve.outputs.sha }}'
 
 function workflowFiles(workflowDir) {
   return readdirSync(workflowDir)
@@ -102,8 +102,8 @@ function stepBlocks(job) {
   return steps
 }
 
-function stepHasWorkflowRunHeadRef(stepLines) {
-  return stepLines.some((line) => new RegExp(`^\\s*ref\\s*:\\s*${escapeRegExp(workflowRunHeadRef)}\\s*$`).test(line))
+function stepHasValidatedHeadRef(stepLines) {
+  return stepLines.some((line) => new RegExp(`^\\s*ref\\s*:\\s*${escapeRegExp(validatedHeadRef)}\\s*$`).test(line))
 }
 
 function actionUses(lines) {
@@ -168,10 +168,22 @@ export function validateWorkflowSafety(workflowDir = '.github/workflows') {
       if (!file.endsWith('/deploy.yml') && !file.endsWith('\\deploy.yml')) {
         errors.push(`${file} uses workflow_run outside deploy workflow`)
       }
-      for (const job of jobBlocks(lines)) {
+      const jobs = jobBlocks(lines)
+      const resolver = jobs.find((job) => job.name === 'resolve')
+      // Intentional provenance wiring contract; resolver behavior is exercised by workflows.test.ts.
+      if (!resolver || checkoutSteps(resolver).length !== 0 ||
+          jobLevelField(resolver, 'permissions').trim() !== 'contents: read actions: read' ||
+          jobLevelField(resolver, 'environment') ||
+          jobLevelField(resolver, 'outputs').trim() !== 'sha: ${{ steps.source.outputs.sha }}') {
+        errors.push(`${file} requires a checkout-free read-only SHA resolver`)
+      }
+      for (const job of jobs) {
         if (!hasHardenedWorkflowRunJob(job)) errors.push(`${file} ${job.name} workflow_run job is missing push/repository guards`)
         for (const stepLines of checkoutSteps(job)) {
-          if (!stepHasWorkflowRunHeadRef(stepLines)) errors.push(`${file} ${job.name} workflow_run checkout is missing exact head_sha ref`)
+          if (!/^(?:\[resolve\]|- resolve|resolve)$/.test(jobLevelField(job, 'needs').trim()) || !stepHasValidatedHeadRef(stepLines) ||
+              !stepLines.some((line) => /^\s*persist-credentials\s*:\s*false\s*$/.test(line))) {
+            errors.push(`${file} ${job.name} workflow_run checkout requires the validated resolver SHA and no persisted credentials`)
+          }
         }
       }
     }

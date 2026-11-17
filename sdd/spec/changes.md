@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-11-16
+
+- Manual deployment now requires the latest eligible checks for the exact immutable commit; checkout and release metadata use that verified commit. Integration resolves only its own configured origin, never a generic production URL. ([REQ-REL-002](release-ci.md#req-rel-002-deploy-workflow-gating), [REQ-REL-003](release-ci.md#req-rel-003-node-agent-release-artifacts), [REQ-REL-005](release-ci.md#req-rel-005-deploy-execution-safety))
+
 ## 2026-08-22
 
 - The vLLM profile requirement now states one behaviour per criterion: [REQ-RUN-024](runtime-profiles.md#req-run-024-managed-vllm-node-lifecycle) carries the node lifecycle (launch-table membership, kind reconciliation, settings-keyed restart — former REQ-RUN-021 AC6) and [REQ-RUN-025](runtime-profiles.md#req-run-025-console-vllm-surface) the console surface (model drawer, runtime pill, node version, Settings release channel — former AC7), while [REQ-RUN-021](runtime-profiles.md#req-run-021-direct-vllm-custom-profiles) keeps the router surface with creation, `:quant` rejection, and split rejection split into separate criteria.

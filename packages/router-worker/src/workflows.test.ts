@@ -8,16 +8,17 @@ import YAML from 'yaml'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const ACTION_CHECKOUT = 'actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0'
-const ACTION_SETUP_NODE = 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e'
-const ACTION_SETUP_GO = 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16'
+const ACTION_SETUP_NODE = 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
+const ACTION_SETUP_GO = 'actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'
 const ACTION_UPLOAD_ARTIFACT = 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a'
 const ACTION_DEPENDENCY_REVIEW = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294'
-const ACTION_CODEQL_INIT = 'github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
-const ACTION_CODEQL_ANALYZE = 'github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
-const ACTION_CODEQL_UPLOAD_SARIF = 'github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e'
+const ACTION_CODEQL_INIT = 'github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066'
+const ACTION_CODEQL_ANALYZE = 'github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066'
+const ACTION_CODEQL_UPLOAD_SARIF = 'github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066'
 const ACTION_SCORECARD = 'ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a'
 
 type Step = {
+  readonly if?: string
   readonly name?: string
   readonly run?: string
   readonly uses?: string
@@ -30,6 +31,7 @@ type Job = {
   readonly if?: string
   readonly env?: Record<string, string>
   readonly permissions?: Record<string, string>
+  readonly outputs?: Record<string, string>
   readonly needs?: readonly string[]
   readonly 'timeout-minutes'?: number
   readonly environment?: string
@@ -99,15 +101,55 @@ function runShellBlockWithFiles(block: string, env: Record<string, string>, file
   }
 }
 
+const deployRepository = { id: 123, full_name: 'nikolanovoselec/codeflare-inference-mesh' }
+const deploySha = 'a'.repeat(40)
+const ciRun = {
+  id: 42, run_attempt: 1, workflow_id: 9, path: '.github/workflows/ci.yml',
+  repository: deployRepository, head_repository: deployRepository,
+  head_sha: deploySha, head_branch: 'main', event: 'push', status: 'completed', conclusion: 'success'
+}
+
+function runDeployResolver(options: {
+  eventName?: string
+  trigger?: Record<string, unknown>
+  apiRun?: Record<string, unknown>
+  ci?: Record<string, unknown>
+  runs?: readonly Record<string, unknown>[]
+  env?: Record<string, string>
+  apiFailure?: boolean
+  eventRepository?: Record<string, unknown>
+} = {}) {
+  const routes = {
+    [`repos/${deployRepository.full_name}/actions/workflows/ci.yml`]: { id: 9, name: 'PR Checks', path: '.github/workflows/ci.yml', ...options.ci },
+    [`repos/${deployRepository.full_name}/actions/runs/42`]: { ...ciRun, ...options.apiRun },
+    [`repos/${deployRepository.full_name}/actions/workflows/ci.yml/runs?head_sha=${deploySha}&per_page=100`]: [{ workflow_runs: options.runs ?? [ciRun] }]
+  }
+  return runShellBlockWithFiles(
+    stepByName(workflow('deploy.yml').jobs.resolve!, 'Resolve validated deploy SHA')!.run!,
+    { GITHUB_EVENT_NAME: options.eventName ?? 'workflow_run', GITHUB_REPOSITORY: deployRepository.full_name,
+      GITHUB_EVENT_PATH: 'event.json', GITHUB_OUTPUT: 'output.txt', GITHUB_SHA: deploySha,
+      GITHUB_REF: 'refs/heads/main', GITHUB_REF_NAME: 'main', INPUT_ENVIRONMENT: 'integration', ...options.env },
+    { 'event.json': JSON.stringify({ repository: options.eventRepository ?? deployRepository, workflow_run: { ...ciRun, ...options.trigger } }),
+      'api.json': JSON.stringify(routes) },
+    { gh: options.apiFailure ? '#!/bin/sh\nexit 1\n' : `#!/usr/bin/env node
+const fs = require('node:fs')
+const routes = JSON.parse(fs.readFileSync('api.json', 'utf8'))
+const response = routes[process.argv.at(-1)]
+if (response === undefined) process.exit(1)
+process.stdout.write(JSON.stringify(response))
+` }, ['output.txt']
+  )
+}
+
 describe('workflow contract values', () => {
   it('REQ-REL-001 opens dependency update pull requests for supported package ecosystems', () => {
-    const dependabot = YAML.parse(readFileSync(resolve(repoRoot, '.github/dependabot.yml'), 'utf8')) as { readonly version: number; readonly updates: readonly { readonly 'package-ecosystem': string; readonly directory: string; readonly schedule: { readonly interval: string }; readonly 'open-pull-requests-limit': number }[] }
+    const dependabot = YAML.parse(readFileSync(resolve(repoRoot, '.github/dependabot.yml'), 'utf8')) as { readonly version: number; readonly updates: readonly { readonly 'package-ecosystem': string; readonly directory: string; readonly 'target-branch': string; readonly schedule: { readonly interval: string }; readonly 'open-pull-requests-limit': number }[] }
 
     expect(dependabot.version).toBe(2)
-    expect(dependabot.updates.map((entry) => ({ ecosystem: entry['package-ecosystem'], directory: entry.directory, interval: entry.schedule.interval, limit: entry['open-pull-requests-limit'] }))).toEqual([
-      { ecosystem: 'npm', directory: '/', interval: 'weekly', limit: 5 },
-      { ecosystem: 'gomod', directory: '/packages/node-agent', interval: 'weekly', limit: 5 },
-      { ecosystem: 'github-actions', directory: '/', interval: 'weekly', limit: 5 }
+    expect(dependabot.updates.map((entry) => ({ ecosystem: entry['package-ecosystem'], directory: entry.directory, target: entry['target-branch'], interval: entry.schedule.interval, limit: entry['open-pull-requests-limit'] }))).toEqual([
+      { ecosystem: 'npm', directory: '/', target: 'develop', interval: 'weekly', limit: 5 },
+      { ecosystem: 'gomod', directory: '/packages/node-agent', target: 'develop', interval: 'weekly', limit: 5 },
+      { ecosystem: 'github-actions', directory: '/', target: 'develop', interval: 'weekly', limit: 5 }
     ])
   })
 
@@ -132,15 +174,15 @@ describe('workflow contract values', () => {
     // The gate blocks only for the results it explicitly asserts, so assert quality is one of them.
     expect(stepByName(ci.jobs.test!, 'Require required checks')?.run).toContain('test "${{ needs.quality.result }}" = "success"')
     expect(stepUses(ci.jobs.agent!)).toEqual(expect.arrayContaining([ACTION_CHECKOUT, ACTION_SETUP_GO]))
-    expect(ci.jobs.agent!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.6', 'cache-dependency-path': 'packages/node-agent/go.mod' })
-    expect(ci.jobs.packaging!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.6', 'cache-dependency-path': 'packages/node-agent/go.mod' })
-    expect(ci.jobs['vulnerability-checks']!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.6', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs.agent!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.11', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs.packaging!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.11', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(ci.jobs['vulnerability-checks']!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.11', 'cache-dependency-path': 'packages/node-agent/go.mod' })
     expect(ci.jobs['dependency-review']!.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' })
     expect(ci.jobs.agent!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Go test', 'Go vet', 'Go race tests', 'Build command']))
     expect(ci.jobs.packaging!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['Build staged binary', 'Create archive and checksums', 'Version command', ACTION_UPLOAD_ARTIFACT]))
     expect(stepUses(ci.jobs.packaging!)).toEqual(expect.arrayContaining([ACTION_UPLOAD_ARTIFACT]))
     expect(stepUses(ci.jobs['dependency-review']!)).toEqual(expect.arrayContaining([ACTION_DEPENDENCY_REVIEW]))
-    expect(stepByName(ci.jobs['vulnerability-checks']!, 'npm audit')?.run).toBe('npm ci && npm audit --audit-level=high --omit=dev')
+    expect(stepByName(ci.jobs['vulnerability-checks']!, 'npm audit')?.run).toBe('npm ci && npm audit --audit-level=high')
     expect(ci.jobs['vulnerability-checks']!.steps.map((step) => step.name ?? step.uses)).toEqual(expect.arrayContaining(['npm audit', 'Go vulnerability check']))
   })
 
@@ -158,8 +200,12 @@ describe('workflow contract values', () => {
     expect(deployJob.if).toBeDefined()
     expect(deploy.permissions).toEqual({ contents: 'read' })
     expect(deployJob.permissions).toEqual({ contents: 'write', actions: 'read' })
-    expect(deployJob.env).toBeUndefined()
-    expect(deployJob.steps.find((step) => step.uses === ACTION_CHECKOUT)?.with).toEqual({ ref: '${{ github.event.workflow_run.head_sha || github.ref }}', 'persist-credentials': false })
+    expect(deployJob.needs).toEqual(['resolve'])
+    expect(deployJob.env).toEqual({ DEPLOY_SHA: '${{ needs.resolve.outputs.sha }}' })
+    expect(deploy.jobs.resolve!.permissions).toEqual({ contents: 'read', actions: 'read' })
+    expect(deploy.jobs.resolve!.environment).toBeUndefined()
+    expect(stepUses(deploy.jobs.resolve!)).not.toContain(ACTION_CHECKOUT)
+    expect(deployJob.steps.find((step) => step.uses === ACTION_CHECKOUT)?.with).toEqual({ ref: '${{ needs.resolve.outputs.sha }}', 'persist-credentials': false })
     const stepNames = deployJob.steps.map((step) => step.name ?? step.uses ?? '')
     expect(stepNames.indexOf('Guard deploy source')).toBeLessThan(stepNames.indexOf(ACTION_CHECKOUT))
     const guardRun = stepByName(deployJob, 'Guard deploy source')!.run!
@@ -168,7 +214,7 @@ describe('workflow contract values', () => {
     expect(runShellBlock(guardRun, { ...guardEnv, EVENT_NAME: 'workflow_dispatch', INPUT_ENVIRONMENT: 'production', GITHUB_REF: 'refs/heads/feature' }).status).toBe(1)
     expect(runShellBlock(guardRun, { EVENT_NAME: 'workflow_run', INPUT_ENVIRONMENT: '', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_CONCLUSION: 'success', WORKFLOW_RUN_EVENT: 'push', WORKFLOW_RUN_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }).status).toBe(0)
     expect(runShellBlock(guardRun, { EVENT_NAME: 'workflow_run', INPUT_ENVIRONMENT: '', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_CONCLUSION: 'success', WORKFLOW_RUN_EVENT: 'pull_request', WORKFLOW_RUN_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh', EXPECTED_REPOSITORY: 'nikolanovoselec/codeflare-inference-mesh' }).status).toBe(1)
-    expect(deployJob.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.6', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(deployJob.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.11', 'cache-dependency-path': 'packages/node-agent/go.mod' })
     expect(stepByName(deployJob, 'Install router dependencies')?.run).toBe('npm ci')
     expect(stepNames.indexOf('Resolve deploy settings')).toBeGreaterThan(stepNames.indexOf(ACTION_CHECKOUT))
     expect(stepNames.indexOf('Publish GitHub Release')).toBeGreaterThan(-1)
@@ -179,24 +225,23 @@ describe('workflow contract values', () => {
         INPUT_ENVIRONMENT: '${{ inputs.environment }}',
         INPUT_VERSION_TAG: '${{ inputs.version_tag }}',
         INPUT_WORKER_BASE_URL: '${{ inputs.worker_base_url }}',
-        WORKFLOW_RUN_HEAD_SHA: '${{ github.event.workflow_run.head_sha }}',
         WORKER_BASE_URL: '${{ vars.WORKER_BASE_URL }}',
         PRODUCTION_WORKER_BASE_URL: '${{ vars.PRODUCTION_WORKER_BASE_URL }}',
         INTEGRATION_WORKER_BASE_URL: '${{ vars.INTEGRATION_WORKER_BASE_URL }}',
         CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: '${{ vars.CLOUDFLARE_WORKERS_DEV_SUBDOMAIN }}'
       }
     })
-    const integrationSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7' } })
-    const integrationSettingsWithBootstrapUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '7', CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: 'example-subdomain' } })
-    const productionSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_run', GITHUB_REF: 'refs/heads/main', WORKFLOW_RUN_HEAD_SHA: 'abc123', GITHUB_RUN_NUMBER: '8', PRODUCTION_WORKER_BASE_URL: 'https://router.example.com' } })
-    const rejectedProduction = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'production', GITHUB_RUN_NUMBER: '9', WORKER_BASE_URL: 'https://router.example.com' } })
-    const rejectedWorkerUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '10', WORKER_BASE_URL: 'https://router.example.com/path' } })
-    const rejectedShellUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', GITHUB_RUN_NUMBER: '11', WORKER_BASE_URL: 'https://$(id).example.com' } })
+    const integrationSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', DEPLOY_SHA: 'a'.repeat(40), GITHUB_RUN_NUMBER: '7' } })
+    const integrationSettingsWithBootstrapUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', DEPLOY_SHA: 'a'.repeat(40), GITHUB_RUN_NUMBER: '7', CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: 'example-subdomain' } })
+    const productionSettings = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_run', GITHUB_REF: 'refs/heads/main', DEPLOY_SHA: 'a'.repeat(40), GITHUB_RUN_NUMBER: '8', PRODUCTION_WORKER_BASE_URL: 'https://router.example.com' } })
+    const rejectedProduction = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'production', DEPLOY_SHA: 'a'.repeat(40), GITHUB_RUN_NUMBER: '9', WORKER_BASE_URL: 'https://router.example.com' } })
+    const rejectedWorkerUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', DEPLOY_SHA: 'a'.repeat(40), GITHUB_RUN_NUMBER: '10', INPUT_WORKER_BASE_URL: 'https://router.example.com/path' } })
+    const rejectedShellUrl = runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration', DEPLOY_SHA: 'a'.repeat(40), GITHUB_RUN_NUMBER: '11', INPUT_WORKER_BASE_URL: 'https://$(id).example.com' } })
     expect(integrationSettings.status).toBe(0)
-    expect(outputValues(integrationSettings.stdout)).toEqual({ target_env: 'integration', deploy_ref: 'refs/heads/feature', version_tag: 'v0.1.0-dev.7', worker_base_url: '', db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' })
+    expect(outputValues(integrationSettings.stdout)).toEqual({ target_env: 'integration', deploy_ref: 'a'.repeat(40), version_tag: 'v0.1.0-dev.7', worker_base_url: '', db_name: 'codeflare-inference-mesh-integration', worker_name: 'codeflare-inference-mesh-router-integration', wrangler_env: 'integration' })
     expect(outputValues(integrationSettingsWithBootstrapUrl.stdout)).toMatchObject({ worker_base_url: 'https://codeflare-inference-mesh-router-integration.example-subdomain.workers.dev' })
     expect(productionSettings.status).toBe(0)
-    expect(outputValues(productionSettings.stdout)).toMatchObject({ target_env: 'production', deploy_ref: 'abc123', version_tag: 'v0.1.8', worker_base_url: 'https://router.example.com', db_name: 'codeflare-inference-mesh' })
+    expect(outputValues(productionSettings.stdout)).toMatchObject({ target_env: 'production', deploy_ref: 'a'.repeat(40), version_tag: 'v0.1.8', worker_base_url: 'https://router.example.com', db_name: 'codeflare-inference-mesh' })
     expect(rejectedProduction.status).toBe(1)
     expect(rejectedWorkerUrl.status).toBe(1)
     expect(rejectedShellUrl.status).toBe(1)
@@ -207,6 +252,9 @@ describe('workflow contract values', () => {
       ]),
       env: { WORKFLOW_NAME: 'Security', GATE_SHA: 'abc', REQUIRED_EVENT: 'push', REQUIRED_BRANCH: 'main' }
     }).stdout.startsWith('failure')).toBe(true)
+    const gateStep = stepByName(deployJob, 'Wait for production gates')!
+    expect(gateStep.env?.GATE_SHA).toBe('${{ needs.resolve.outputs.sha }}')
+    expect(gateStep.if).toBe("steps.settings.outputs.target_env == 'production'")
     const d1Step = stepByName(deployJob, 'Resolve or create D1 database')!
     const d1Run = d1Step.run!
     expect(d1Step).toMatchObject({ 'working-directory': 'packages/router-worker', env: { CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}', AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', WORKER_BASE_URL: '${{ steps.settings.outputs.worker_base_url }}' } })
@@ -262,7 +310,7 @@ describe('workflow contract values', () => {
     const summaryExecution = runShellBlockWithFiles(
       summaryStep.run!
         .replaceAll('${{ steps.settings.outputs.target_env }}', 'integration')
-        .replaceAll('${{ steps.settings.outputs.deploy_ref }}', 'refs/heads/feature')
+        .replaceAll('${{ steps.settings.outputs.deploy_ref }}', 'a'.repeat(40))
         .replaceAll('${{ steps.settings.outputs.worker_name }}', 'codeflare-inference-mesh-router-integration')
         .replaceAll('${{ steps.settings.outputs.version_tag }}', 'v0.1.0-dev.7'),
       { GITHUB_STEP_SUMMARY: 'summary.md' },
@@ -277,7 +325,85 @@ describe('workflow contract values', () => {
       return key && value ? [[key, value]] : []
     }))
     expect(summaryExecution.result.status).toBe(0)
-    expect(summaryValues).toEqual({ Environment: 'integration', Ref: 'refs/heads/feature', Worker: 'codeflare-inference-mesh-router-integration', 'Release tag': 'v0.1.0-dev.7', Artifacts: 'inference-mesh-release-artifacts' })
+    expect(summaryValues).toEqual({ Environment: 'integration', Ref: 'a'.repeat(40), Worker: 'codeflare-inference-mesh-router-integration', 'Release tag': 'v0.1.0-dev.7', Artifacts: 'inference-mesh-release-artifacts' })
+  })
+
+  it('REQ-REL-002 resolves only API-validated successful same-repository main push CI', () => {
+    const accepted = runDeployResolver()
+    expect(accepted.result.status).toBe(0)
+    expect(outputValues(accepted.outputs['output.txt']!)).toEqual({ sha: deploySha })
+    const rejected: Parameters<typeof runDeployResolver>[0][] = [
+      { eventRepository: { ...deployRepository, full_name: 'attacker/repo' } },
+      { apiFailure: true }, { ci: { id: 10 } }, { ci: { name: 'Other' } }, { ci: { path: '.github/workflows/other.yml' } },
+      { trigger: { id: '42' } }, { trigger: { head_sha: 'b'.repeat(40) } },
+      { trigger: { run_attempt: 2 } }, { apiRun: { id: 43 } },
+      { apiRun: { repository: { ...deployRepository, full_name: 'attacker/repo' } } },
+      { apiRun: { head_repository: null } }, { apiRun: { repository: { ...deployRepository, id: 456 } } },
+      { apiRun: { head_repository: { id: 456, full_name: 'attacker/fork' } } },
+      ...[
+        { head_sha: 'abc123' }, { head_sha: deploySha + '\n' }, { head_branch: 'feature' }, { event: 'pull_request' },
+        { status: 'in_progress' }, { conclusion: 'failure' }, { conclusion: 'skipped' },
+        { workflow_id: 10 }, { path: '.github/workflows/other.yml' }
+      ].map((fields) => ({ trigger: fields, apiRun: fields }))
+    ]
+    for (const options of rejected) {
+      const result = runDeployResolver(options)
+      expect(result.result.status, JSON.stringify(options)).not.toBe(0)
+      expect(result.outputs['output.txt'], JSON.stringify(options)).toBe('')
+    }
+  })
+
+  it('REQ-REL-002 pins manual integration and production to immutable dispatch SHA with latest eligible exact-head CI', () => {
+    const featureRun = { ...ciRun, event: 'workflow_dispatch', head_branch: 'feature' }
+    const feature = { GITHUB_REF: 'refs/heads/feature', GITHUB_REF_NAME: 'feature' }
+    for (const event of ['workflow_dispatch', 'pull_request']) {
+      const result = runDeployResolver({ eventName: 'workflow_dispatch', env: feature, runs: [{ ...featureRun, event }] })
+      expect(result.result.status).toBe(0)
+      expect(outputValues(result.outputs['output.txt']!)).toEqual({ sha: deploySha })
+    }
+    for (const event of ['push', 'workflow_dispatch']) {
+      expect(runDeployResolver({ eventName: 'workflow_dispatch', env: { INPUT_ENVIRONMENT: 'production' }, runs: [{ ...ciRun, event }] }).result.status).toBe(0)
+    }
+    const latestSuccess = runDeployResolver({ eventName: 'workflow_dispatch', env: feature, runs: [
+      { ...featureRun, conclusion: 'failure' }, { ...featureRun, id: 43 },
+      { ...featureRun, id: 44, head_sha: 'b'.repeat(40), conclusion: 'failure' }
+    ] })
+    expect(latestSuccess.result.status).toBe(0)
+    expect(outputValues(latestSuccess.outputs['output.txt']!)).toEqual({ sha: deploySha })
+    const rejected: Parameters<typeof runDeployResolver>[0][] = [
+      { runs: [] }, { runs: [{ ...featureRun, head_sha: 'b'.repeat(40) }] },
+      { runs: [{ ...featureRun, head_branch: 'other' }] }, { runs: [{ ...featureRun, event: 'schedule' }] },
+      { runs: [{ ...featureRun, head_repository: { id: 456, full_name: 'attacker/fork' } }] },
+      { runs: [{ ...featureRun, repository: { ...deployRepository, id: 456 } }] },
+      { runs: [{ ...featureRun, workflow_id: 10 }] }, { runs: [{ ...featureRun, path: '.github/workflows/other.yml' }] },
+      { runs: [featureRun, { ...featureRun, id: 43, conclusion: 'failure' }] },
+      { runs: [featureRun, { ...featureRun, id: 43, status: 'in_progress' }] },
+      { runs: [{ ...featureRun, conclusion: 'skipped' }] },
+      { env: { ...feature, GITHUB_SHA: 'abc123' } },
+      { env: { ...feature, INPUT_ENVIRONMENT: 'production' } },
+      { env: { ...feature, INPUT_ENVIRONMENT: 'unknown' } }, { eventName: 'pull_request' }
+    ]
+    for (const options of rejected) {
+      const result = runDeployResolver({ eventName: 'workflow_dispatch', env: feature, runs: [featureRun], ...options })
+      expect(result.result.status, JSON.stringify(options)).not.toBe(0)
+      expect(result.outputs['output.txt'], JSON.stringify(options)).toBe('')
+    }
+  })
+
+  it('REQ-REL-005 keeps integration off the generic production origin and requires immutable deploy provenance', () => {
+    const env = { GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/feature', INPUT_ENVIRONMENT: 'integration',
+      DEPLOY_SHA: deploySha, GITHUB_SHA: 'b'.repeat(40), GITHUB_RUN_NUMBER: '7', WORKER_BASE_URL: 'https://production.example.com',
+      CLOUDFLARE_WORKERS_DEV_SUBDOMAIN: 'example-subdomain' }
+    const run = (overrides: Record<string, string>) => runScript('packages/router-worker/scripts/resolve-deploy-settings.mjs', { env: { ...env, ...overrides } })
+    expect(outputValues(run({}).stdout)).toMatchObject({ deploy_ref: deploySha, worker_base_url: 'https://codeflare-inference-mesh-router-integration.example-subdomain.workers.dev' })
+    expect(outputValues(run({ INTEGRATION_WORKER_BASE_URL: 'https://integration.example.com' }).stdout)).toHaveProperty('worker_base_url', 'https://integration.example.com')
+    expect(outputValues(run({ INPUT_WORKER_BASE_URL: 'https://manual-integration.example.com' }).stdout)).toHaveProperty('worker_base_url', 'https://manual-integration.example.com')
+    expect(outputValues(run({ INPUT_ENVIRONMENT: 'production', GITHUB_REF: 'refs/heads/main' }).stdout)).toMatchObject({ worker_base_url: 'https://production.example.com', deploy_ref: deploySha })
+    for (const DEPLOY_SHA of ['', 'main', 'abc123', deploySha + '\n', deploySha + '\nsha=evil']) {
+      const rejected = run({ DEPLOY_SHA })
+      expect(rejected.status).not.toBe(0)
+      expect(rejected.stdout).toBe('')
+    }
   })
 
   it('REQ-REL-005 extracts Wrangler D1 create IDs and fails closed when the ID is absent', () => {
@@ -315,7 +441,7 @@ describe('workflow contract values', () => {
       buildStep.run!
         .replaceAll('${{ steps.settings.outputs.version_tag }}', 'v0.1.0-dev.7')
         .replaceAll('${{ steps.settings.outputs.target_env }}', 'integration'),
-      { GITHUB_SHA: 'abc123' },
+      { GITHUB_SHA: 'b'.repeat(40), DEPLOY_SHA: 'a'.repeat(40) },
       {},
       {
         go: '#!/bin/sh\nout=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "-o" ]; then shift; out="$1"; fi; shift || true; done\nmkdir -p "$(dirname "$out")"\nprintf binary > "$out"\n',
@@ -332,7 +458,7 @@ describe('workflow contract values', () => {
     expect(buildExecution.outputs['dist/inference-mesh-agent-windows-amd64.zip']).toBe('archive')
     expect(buildExecution.outputs['dist/checksums.txt']).toContain('.tar.gz')
     const releaseManifest = JSON.parse(buildExecution.outputs['dist/release-manifest.json']!) as { version: string; channel: string; commit: string; artifacts: readonly { name: string }[] }
-    expect(releaseManifest).toMatchObject({ version: 'v0.1.0-dev.7', channel: 'integration', commit: 'abc123' })
+    expect(releaseManifest).toMatchObject({ version: 'v0.1.0-dev.7', channel: 'integration', commit: 'a'.repeat(40) })
     expect(releaseManifest.artifacts.map((artifact) => artifact.name).sort()).toEqual([
       'inference-mesh-agent-darwin-arm64.tar.gz',
       'inference-mesh-agent-linux-amd64.tar.gz',
@@ -345,6 +471,19 @@ describe('workflow contract values', () => {
     expect(skippedSign.status).toBe(0)
     expect(skippedSign.stdout).toContain('Cosign key not configured; skipping signature')
     expect(stepByName(deployJob, 'Publish GitHub Release')).toMatchObject({ 'working-directory': 'packages/node-agent/dist', env: { GH_TOKEN: '${{ github.token }}' } })
+    const publishExecution = runShellBlockWithFiles(
+      stepByName(deployJob, 'Publish GitHub Release')!.run!
+        .replaceAll('${{ steps.settings.outputs.version_tag }}', 'v0.1.0-dev.7')
+        .replaceAll('${{ steps.settings.outputs.target_env }}', 'integration'),
+      { GITHUB_SHA: 'b'.repeat(40), DEPLOY_SHA: 'a'.repeat(40) },
+      { 'release-notes.md': 'notes', 'release-manifest.json': '{}' },
+      { gh: '#!/bin/sh\nprintf "%s\\n" "$@" > release.args\n' },
+      ['release.args']
+    )
+    expect(publishExecution.result.status).toBe(0)
+    const publishArgs = publishExecution.outputs['release.args']!.trim().split('\n')
+    expect(publishArgs[publishArgs.indexOf('--target') + 1]).toBe('a'.repeat(40))
+    expect(publishArgs).toContain('--prerelease')
     expect(stepByName(deployJob, 'Resolve or create D1 database')?.env).toMatchObject({ AGENT_RELEASE_TAG: '${{ steps.settings.outputs.version_tag }}', CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN_DEPLOY }}' })
     expect(stepNames.indexOf('Deploy Worker')).toBeGreaterThan(stepNames.indexOf('Publish GitHub Release'))
     expect(stepUses(deploy.jobs.deploy!)).toEqual(expect.arrayContaining([ACTION_UPLOAD_ARTIFACT]))
@@ -425,13 +564,37 @@ describe('workflow contract values', () => {
     expect(stepByName(fuzz.jobs['router-fuzz']!, 'Install dependencies')?.run).toBe('npm ci')
     expect(stepByName(fuzz.jobs['router-fuzz']!, 'Run router fuzz corpus')).toMatchObject({ 'working-directory': 'packages/router-worker' })
     expect(fuzz.jobs['agent-fuzz']).toHaveProperty('defaults.run.working-directory', 'packages/node-agent')
-    expect(fuzz.jobs['agent-fuzz']!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.6', 'cache-dependency-path': 'packages/node-agent/go.mod' })
+    expect(fuzz.jobs['agent-fuzz']!.steps.find((step) => step.uses === ACTION_SETUP_GO)?.with).toEqual({ 'go-version': '1.26.11', 'cache-dependency-path': 'packages/node-agent/go.mod' })
     expect(stepByName(fuzz.jobs['agent-fuzz']!, 'Run agent fuzz targets')).toBeDefined()
   })
 
   it('REQ-REL-004 rejects unsafe workflow_run checkout, floating actions, reusable workflows, and floating runners', () => {
     const valid = runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [resolve(repoRoot, '.github/workflows')] })
     expect(valid.status).toBe(0)
+
+    const provenanceDir = mkdtempSync(resolve(tmpdir(), 'workflow-provenance-'))
+    try {
+      writeFileSync(resolve(provenanceDir, 'deploy.yml'), YAML.stringify(workflow('deploy.yml')))
+      expect(runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [provenanceDir] }).status).toBe(0)
+      const mutations = [
+        (deploy: Workflow) => { delete deploy.jobs.resolve },
+        (deploy: Workflow) => { (deploy.jobs.resolve! as { if?: string }).if = 'true' },
+        (deploy: Workflow) => { deploy.jobs.resolve!.outputs!.sha = '${{ github.event.workflow_run.head_sha }}' },
+        (deploy: Workflow) => { (deploy.jobs.resolve!.permissions as Record<string, string>).contents = 'write' },
+        (deploy: Workflow) => { (deploy.jobs.deploy! as { needs?: readonly string[] }).needs = [] },
+        (deploy: Workflow) => { (deploy.jobs.resolve!.steps[0]! as { uses?: string }).uses = ACTION_CHECKOUT },
+        (deploy: Workflow) => { deploy.jobs.deploy!.steps.find((step) => step.uses === ACTION_CHECKOUT)!.with!.ref = '${{ github.event.workflow_run.head_sha }}' },
+        (deploy: Workflow) => { deploy.jobs.deploy!.steps.find((step) => step.uses === ACTION_CHECKOUT)!.with!['persist-credentials'] = true }
+      ]
+      for (const mutate of mutations) {
+        const deploy = workflow('deploy.yml')
+        mutate(deploy)
+        writeFileSync(resolve(provenanceDir, 'deploy.yml'), YAML.stringify(deploy))
+        expect(runScript('packages/router-worker/scripts/workflow-safety.mjs', { args: [provenanceDir] }).status).not.toBe(0)
+      }
+    } finally {
+      rmSync(provenanceDir, { recursive: true, force: true })
+    }
 
     const temp = mkdtempSync(resolve(tmpdir(), 'workflow-safety-'))
     try {
